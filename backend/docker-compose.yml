@@ -1,0 +1,20 @@
+version: '3.8'   # Versión del formato de docker-compose
+
+services:
+  postgres:
+    image: postgres:latest              # Imagen oficial de Postgres desde Docker Hub
+    container_name: postgres-container  # Nombre del contenedor
+    restart: always                     # El contenedor se reinicia automáticamente si falla o al reiniciar tu máquina
+    ports:
+      - "5432:5432"                     # Mapea el puerto 5432 del host al puerto 5432 del contenedor
+    environment:
+      POSTGRES_USER: postgres           # Usuario superusuario de Postgres
+      POSTGRES_PASSWORD: heartguard1234 # Contraseña del usuario
+      POSTGRES_DB: heartguard           # Crea automáticamente la base de datos "heartguard"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+        # Volumen persistente para que los datos no se pierdan si se elimina el contenedor
+
+volumes:
+  postgres-data:                        # Definición del volumen persistente
+    name: postgres-data                 # Nombre explícito del volumen
