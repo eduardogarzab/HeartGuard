@@ -62,6 +62,13 @@ For the **first project deliverable**, we also added a backend module in **Go** 
 
 - **Go Backend (Gin framework)** → Exclusive to administrators. Provides login and CRUD operations for patients.
 - **PostgreSQL schema (`init.sql`)** → Includes organizations, patients, alerts, predictions, and emergency contacts.
+
+To create the database and insert the data fast in Postgres use the next command inside the backend folder:
+
+```bash
+docker exec -i postgres-container psql -U postgres -d postgres < init.sql
+```
+
 - **Constraint in Postgres** → Guarantees only **one admin per organization**.
 - **Frontend views**:
   - `/login` → Login screen for administrators.
