@@ -1,20 +1,90 @@
-version: '3.8'   # Versión del formato de docker-compose
-
 services:
+  # Base de datos principal para datos estructurados
   postgres:
-    image: postgres:latest              # Imagen oficial de Postgres desde Docker Hub
-    container_name: postgres-container  # Nombre del contenedor
-    restart: always                     # El contenedor se reinicia automáticamente si falla o al reiniciar tu máquina
-    ports:
-      - "5432:5432"                     # Mapea el puerto 5432 del host al puerto 5432 del contenedor
+    image: postgres:15
     environment:
-      POSTGRES_USER: postgres           # Usuario superusuario de Postgres
-      POSTGRES_PASSWORD: heartguard1234 # Contraseña del usuario
-      POSTGRES_DB: heartguard           # Crea automáticamente la base de datos "heartguard"
+      POSTGRES_DB: heartguard
+      POSTGRES_USER: heartguard
+      POSTGRES_PASSWORD: heartguard123
+    ports:
+      - "5432:5432"
     volumes:
-      - postgres-data:/var/lib/postgresql/data
-        # Volumen persistente para que los datos no se pierdan si se elimina el contenedor
+      - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - heartguard-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U heartguard -d heartguard"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Base de datos de series de tiempo para métricas fisiológicas
+  influxdb:
+    image: influxdb:2.7
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: heartguard123
+      DOCKER_INFLUXDB_INIT_ORG: heartguard
+      DOCKER_INFLUXDB_INIT_BUCKET: metrics
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: heartguard-admin-token-123
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+    networks:
+      - heartguard-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8086/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Cache y sistema de tiempo real
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - heartguard-network
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend Go para administradores
+  backend-go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8080:8080"
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_USER: heartguard
+      DB_PASSWORD: heartguard123
+      DB_NAME: heartguard
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      JWT_SECRET: heartguard-jwt-secret-key-123
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - heartguard-network
 
 volumes:
-  postgres-data:                        # Definición del volumen persistente
-    name: postgres-data                 # Nombre explícito del volumen
+  postgres_data:
+  influxdb_data:
+  redis_data:
+
+networks:
+  heartguard-network:
+    driver: bridge
