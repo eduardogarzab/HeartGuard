@@ -82,15 +82,20 @@ Esto iniciará:
 
 #### En Windows:
 ```cmd
-# Script nativo de Windows
+# Opción 1: Script nativo de Windows (requiere curl)
 test.bat
 
-# O con Git Bash (si lo tienes instalado)
+# Opción 2: Con Git Bash (recomendado)
 ./test.sh
 
-# O simplemente abrir en navegador
-# http://localhost:8080/
+# Opción 3: Solo navegador
+# Abrir: http://localhost:8080/
 ```
+
+**Nota:** Si `test.bat` no funciona, es porque Windows no tiene `curl` instalado. En ese caso:
+1. **Usa Git Bash** con `./test.sh` (recomendado)
+2. **Instala curl** en Windows
+3. **Usa el navegador** en http://localhost:8080/
 
 ### 4. Verificar que Funciona
 
