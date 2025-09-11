@@ -1,0 +1,15 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <style name="Base.Theme.Proyecto" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/teal_accent</item>
+        <item name="colorOnPrimary">@color/navy_dark</item>
+
+        <item name="android:windowBackground">@color/navy_dark</item>
+        <item name="colorSurface">@color/navy_light</item>
+        <item name="colorOnSurface">@color/slate_light</item>
+
+        <item name="android:textColor">@color/slate_light</item>
+        <item name="android:textColorHint">@color/slate_dark</item>
+    </style>
+
+    <style name="Theme.Proyecto" parent="Base.Theme.Proyecto" />
+</resources>

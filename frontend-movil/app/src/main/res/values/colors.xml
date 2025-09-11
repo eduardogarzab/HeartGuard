@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+
+    <color name="navy_dark">#0A192E</color>
+    <color name="navy_light">#172A45</color>
+    <color name="teal_accent">#64FFDA</color>
+    <color name="slate_light">#CCD6F6</color>
+    <color name="slate_dark">#8892B0</color>
+    <color name="alert_red_light">#FF8A80</color>
+    <color name="alert_red_dark">#4D1A1A</color>
+</resources>
