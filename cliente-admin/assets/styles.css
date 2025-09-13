@@ -1,0 +1,592 @@
+/* =========================
+   HeartGuard – styles.css
+   ========================= */
+
+/* ---- Design tokens ---- */
+:root {
+	--bg: #0b1020;
+	--card: #121a33;
+	--muted: #9aa7c7;
+	--text: #e9eefc;
+	--accent: #5b8cff;
+	--success: #2bb673;
+	--danger: #ff5d73;
+	--warn: #f6c445;
+	--border: rgba(255, 255, 255, 0.08);
+
+	/* UI chrome */
+	--topbar-h: 56px; /* altura del header */
+}
+
+/* ---- Reset base ---- */
+* {
+	box-sizing: border-box;
+}
+html,
+body {
+	margin: 0;
+	max-width: 100%;
+	background: var(--bg);
+	color: var(--text);
+	font-family: Inter, system-ui, Segoe UI, Roboto, sans-serif;
+
+	/* >>> No scroll de página en desktop */
+	overflow: hidden;
+}
+
+/* ---- Topbar ---- */
+.topbar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	border-bottom: 1px solid var(--border);
+	backdrop-filter: saturate(1.1) blur(6px);
+	position: sticky;
+	top: 0;
+	z-index: 50;
+	background: linear-gradient(180deg, rgba(9, 14, 30, 0.9), rgba(9, 14, 30, 0.6));
+	min-height: var(--topbar-h);
+}
+.brand {
+	font-weight: 700;
+	letter-spacing: 0.2px;
+}
+.nav {
+	display: flex;
+	gap: 12px;
+	align-items: center;
+}
+.user-menu {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.user-menu .sep {
+	opacity: 0.5;
+}
+
+/* ---- App layout (2 columnas en desktop) ---- */
+.layout {
+	display: grid;
+	grid-template-columns: 320px 1fr;
+	gap: 16px;
+	padding: 16px;
+	height: calc(100vh - var(--topbar-h)); /* llena pantalla menos header */
+	align-items: stretch;
+}
+.sidebar,
+.content {
+	height: 100%;
+	min-height: 0;
+}
+
+/* ---- Sidebar ---- */
+.sidebar {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+/* ---- Content column ---- */
+.content {
+	display: grid;
+	grid-template-rows: 1fr;
+	min-width: 0;
+}
+
+/* ---- Grid interna de tarjetas (desktop con ÁREAS)
+   fila 1: map     | alerts
+   fila 2: metrics | alerts
+-------------------------------------------------- */
+.grid {
+	display: grid;
+	grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+	grid-template-areas:
+		"map alerts"
+		"metrics alerts";
+	gap: 16px;
+	height: 100%;
+	min-width: 0;
+	min-height: 0;
+	grid-auto-rows: minmax(0, 1fr);
+	align-content: stretch;
+	align-items: stretch;
+}
+
+/* Mapeo DOM -> áreas */
+.grid > .card:nth-child(1) {
+	grid-area: map;
+}
+.grid > .card:nth-child(2) {
+	grid-area: alerts;
+}
+.grid > .card:nth-child(3) {
+	grid-area: metrics;
+}
+.span-2 {
+	grid-column: auto;
+}
+
+/* ---- Card ---- */
+.card {
+	width: 100%;
+	max-width: 100%;
+	min-width: 0;
+	background: var(--card);
+	border: 1px solid var(--border);
+	border-radius: 16px;
+	padding: 14px;
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25);
+	display: flex;
+	flex-direction: column;
+	overflow: hidden; /* evita scroll interno visual */
+	min-height: 0;
+}
+.card h3 {
+	margin: 0 0 10px 0;
+	font-size: 16px;
+	color: #d6e2ff;
+	flex-shrink: 0;
+}
+
+/* ---- Stats ---- */
+.stats {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 10px;
+}
+.stat {
+	background: rgba(255, 255, 255, 0.03);
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	padding: 10px;
+	text-align: center;
+}
+.stat-value {
+	font-size: 20px;
+	font-weight: 700;
+}
+.stat-label {
+	font-size: 12px;
+	color: var(--muted);
+}
+
+/* ---- Forms ---- */
+label {
+	display: grid;
+	gap: 6px;
+	margin: 10px 0;
+	font-size: 14px;
+	color: #c9d5f5;
+}
+input,
+select {
+	background: #0f1530;
+	border: 1px solid var(--border);
+	color: var(--text);
+	padding: 10px;
+	border-radius: 10px;
+}
+
+/* ---- Buttons ---- */
+.btn {
+	border: 1px solid var(--border);
+	background: #0f1530;
+	color: var(--text);
+	padding: 8px 12px;
+	border-radius: 10px;
+	cursor: pointer;
+}
+.btn:hover {
+	background: #121a33;
+}
+.btn-primary {
+	background: var(--accent);
+	border-color: transparent;
+}
+.btn-ghost {
+	background: transparent;
+}
+
+/* ---- Pills ---- */
+.pill {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 999px;
+	border: 1px solid var(--border);
+}
+.pill[data-level="critica"] {
+	background: rgba(255, 93, 115, 0.12);
+	border-color: rgba(255, 93, 115, 0.4);
+}
+.pill[data-level="alta"] {
+	background: rgba(246, 196, 69, 0.12);
+	border-color: rgba(246, 196, 69, 0.4);
+}
+.pill[data-level="media"] {
+	background: rgba(91, 140, 255, 0.12);
+	border-color: rgba(91, 140, 255, 0.4);
+}
+.muted {
+	color: var(--muted);
+	font-size: 14px;
+}
+
+/* ---- Map / Lists / Members ---- */
+.map {
+	flex: 1 1 auto;
+	height: auto;
+	min-height: 260px;
+	border-radius: 12px;
+	border: 1px solid var(--border);
+	width: 100%;
+}
+.alert-list,
+.member-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 10px;
+	overflow: auto;
+	-webkit-overflow-scrolling: touch;
+}
+/* En desktop no capamos la altura de alertas (scroll interno si excede) */
+.alert-list {
+	flex: 1 1 auto;
+	height: auto;
+	max-height: none;
+}
+.member-list {
+	max-height: 260px;
+}
+
+.alert-item {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	gap: 10px;
+	align-items: center;
+	padding: 10px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.03);
+	cursor: pointer;
+}
+.alert-item:hover {
+	background: rgba(255, 255, 255, 0.06);
+}
+.alert-item .badge {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+}
+.badge.critica {
+	background: var(--danger);
+}
+.badge.alta {
+	background: var(--warn);
+}
+.badge.media {
+	background: var(--accent);
+}
+
+.member-item {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 10px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.03);
+	cursor: pointer;
+}
+.member-item:hover {
+	background: rgba(255, 255, 255, 0.06);
+}
+.member-item .right {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+}
+.dot.ok {
+	background: var(--success);
+}
+.dot.warn {
+	background: var(--warn);
+}
+.dot.danger {
+	background: var(--danger);
+}
+
+/* ---- Charts ---- */
+.chart-container {
+	position: relative;
+	width: 100%;
+	flex: 1 1 auto;
+	min-height: 200px;
+	min-width: 0;
+
+	/* >>> Sin barra de scroll en la gráfica */
+	overflow: hidden;
+}
+img,
+canvas,
+svg,
+video,
+iframe {
+	max-width: 100%;
+	height: auto;
+	display: block;
+}
+.chart-container canvas {
+	width: 100% !important;
+	height: auto !important;
+}
+
+/* ---- Drawer ---- */
+.drawer {
+	position: fixed;
+	right: 0;
+	top: var(--topbar-h);
+	bottom: 0;
+	width: 520px;
+	max-width: 100vw;
+	background: var(--card);
+	border-left: 1px solid var(--border);
+	transform: translateX(110%);
+	transition: transform 0.25s ease;
+	box-shadow: -8px 0 24px rgba(0, 0, 0, 0.3);
+	z-index: 1050;
+	display: flex;
+	flex-direction: column;
+}
+.drawer.open {
+	transform: translateX(0);
+}
+.drawer header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	padding: 12px 14px;
+	border-bottom: 1px solid var(--border);
+	flex-shrink: 0;
+}
+.drawer-body {
+	padding: 14px;
+	overflow-y: auto;
+	flex-grow: 1;
+}
+.detalle-grid {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 20px;
+}
+
+/* ---- Login ---- */
+.login-body {
+	display: grid;
+	place-items: center;
+	height: 100vh;
+}
+.login-container {
+	width: min(420px, 92vw);
+}
+.login-form {
+	display: grid;
+	gap: 8px;
+}
+.hint {
+	color: var(--muted);
+	font-size: 12px;
+}
+
+/* =========================
+   Responsividad
+   ========================= */
+
+/* <= 1100px: permitimos scroll de página y grid fluido */
+@media (max-width: 1100px) {
+	html,
+	body {
+		overflow-x: hidden;
+		overflow-y: auto; /* vuelve el scroll cuando ya no cabe en alto */
+	}
+
+	.layout {
+		grid-template-columns: 1fr;
+		height: auto;
+		min-height: 0;
+	}
+	.sidebar {
+		display: grid;
+		grid-template-columns: 1fr 1fr;
+		gap: 16px;
+	}
+	.sidebar .card:first-child {
+		grid-column: span 2;
+	}
+
+	.content {
+		display: block;
+		height: auto;
+		min-height: 0;
+	}
+
+	/* Grid móvil: apilar en orden natural */
+	.grid {
+		display: grid;
+		grid-template-columns: 1fr;
+		grid-template-areas:
+			"map"
+			"alerts"
+			"metrics";
+		gap: 16px;
+		height: auto;
+		grid-auto-rows: auto;
+	}
+
+	.drawer {
+		top: 56px;
+	}
+}
+
+/* <= 768px: pilas completas */
+@media (max-width: 768px) {
+	.sidebar {
+		grid-template-columns: 1fr;
+	}
+	.sidebar .card:first-child {
+		grid-column: span 1;
+	}
+	.detalle-grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* <= 480px: acolchados compactos y límite de listas largas */
+@media (max-width: 480px) {
+	.layout {
+		padding: 12px;
+	}
+	.card {
+		padding: 12px;
+	}
+	.alert-list {
+		max-height: 360px;
+	}
+}
+
+.sidebar {
+	display: grid;
+	grid-template-rows: auto 1fr auto;
+	gap: 16px;
+	height: 100%;
+	min-height: 0;
+	overflow: hidden; /* evita que la columna “empuje” el layout */
+}
+
+/* La card de Miembros debe poder encoger y dejar que la lista sea la que scrollee */
+.sidebar .card:nth-child(2) {
+	min-height: 0; /* importante para que el 1fr funcione sin overflow */
+	display: flex;
+	flex-direction: column;
+}
+
+/* La lista de miembros scrollea dentro, pero ocultamos la barra */
+.member-list {
+	flex: 1 1 auto;
+	overflow-y: auto;
+	-webkit-overflow-scrolling: touch;
+	scrollbar-width: none; /* Firefox: oculta barra */
+}
+.member-list::-webkit-scrollbar {
+	/* WebKit: oculta barra */
+	display: none;
+}
+
+/* En “Resumen de hoy”, limita la altura del chart para no desbordar */
+.sidebar .card:nth-child(3) .chart-container {
+	height: clamp(200px, 28vh, 300px); /* ajusta a tu gusto */
+	min-height: 180px;
+	max-height: 320px;
+	overflow: hidden; /* sin barra visible */
+}
+
+/* Asegura que las otras listas (alertas) sigan ocultando la barra si las usas aquí */
+.alert-list {
+	scrollbar-width: none;
+}
+.alert-list::-webkit-scrollbar {
+	display: none;
+}
+
+/* --- Card header con acciones a la derecha --- */
+.card-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	margin-bottom: 10px; /* separa del contenido */
+}
+.card-header h3 {
+	margin: 0;
+	font-size: 16px;
+	color: #d6e2ff;
+}
+
+/* Contenedor de botones */
+.card-actions {
+	display: inline-flex;
+	gap: 8px;
+}
+
+/* Botón de icono minimalista */
+.icon-btn {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	padding: 8px;
+	border-radius: 10px;
+	border: 1px solid var(--border);
+	background: #0f1530;
+	color: var(--text);
+	cursor: pointer;
+	transition: transform 0.05s ease, background 0.15s ease;
+}
+.icon-btn:hover {
+	background: #121a33;
+}
+.icon-btn:active {
+	transform: translateY(1px);
+}
+
+/* Accesibilidad: ocultar texto auxiliar pero disponible para screen readers */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* En pantallas muy pequeñas, que no rompa el layout */
+@media (max-width: 420px) {
+	.card-actions {
+		gap: 6px;
+	}
+	.icon-btn {
+		padding: 6px;
+	}
+}

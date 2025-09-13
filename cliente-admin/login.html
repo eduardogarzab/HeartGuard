@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>HeartGuard – Acceso</title>
+		<link rel="stylesheet" href="assets/styles.css" />
+	</head>
+	<body class="login-body">
+		<main class="login-container card">
+			<h1 class="brand">❤️ HeartGuard</h1>
+			<p class="muted">Panel del administrador de <strong>familia</strong></p>
+			<form id="formLogin" class="login-form">
+				<label
+					>Usuario
+					<input id="loginUser" type="text" required placeholder="maria_admin" />
+				</label>
+				<label
+					>Contraseña
+					<input id="loginPass" type="password" required placeholder="••••••••" />
+				</label>
+				<button id="btnLogin" class="btn btn-primary" type="submit">Entrar</button>
+				<p class="hint">Demo: maria_admin / admin123</p>
+			</form>
+		</main>
+		<script type="module" src="assets/js/login.js"></script>
+	</body>
+</html>
