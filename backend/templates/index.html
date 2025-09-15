@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HeartGuard - Panel de Superadministrador</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <!-- Loading Screen -->
+    <div id="loadingScreen" class="loading-screen">
+        <div class="loading-spinner">
+            <div class="heart-pulse">
+                <i class="fas fa-heartbeat"></i>
+            </div>
+            <p>Cargando HeartGuard...</p>
+        </div>
+    </div>
+
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-container">
+        <div class="login-card">
+            <div class="login-header">
+                <div class="logo">
+                    <i class="fas fa-heartbeat"></i>
+                    <h1>HeartGuard</h1>
+                </div>
+                <p class="login-subtitle">Panel de Superadministrador</p>
+            </div>
+            
+            <form id="loginForm" class="login-form">
+                <div class="input-group">
+                    <i class="fas fa-envelope"></i>
+                    <input type="email" id="email" placeholder="Correo electrónico" required>
+                </div>
+                
+                <div class="input-group">
+                    <i class="fas fa-lock"></i>
+                    <input type="password" id="password" placeholder="Contraseña" required>
+                </div>
+                
+                <button type="submit" class="login-btn">
+                    <span>Iniciar Sesión</span>
+                    <i class="fas fa-arrow-right"></i>
+                </button>
+            </form>
+            
+            <div id="loginError" class="error-message"></div>
+        </div>
+    </div>
+
+    <!-- Main Dashboard -->
+    <div id="dashboard" class="dashboard" style="display: none;">
+        <!-- Sidebar -->
+        <nav class="sidebar">
+            <div class="sidebar-header">
+                <div class="logo">
+                    <i class="fas fa-heartbeat"></i>
+                    <h2>HeartGuard</h2>
+                </div>
+                <button id="sidebarToggle" class="sidebar-toggle">
+                    <i class="fas fa-bars"></i>
+                </button>
+            </div>
+            
+            <div class="sidebar-menu">
+                <a href="#" class="menu-item active" data-section="dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="usuarios">
+                    <i class="fas fa-users"></i>
+                    <span>Usuarios</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="familias">
+                    <i class="fas fa-home"></i>
+                    <span>Familias</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="alertas">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Alertas</span>
+                    <span id="alertasBadge" class="badge">0</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="ubicaciones">
+                    <i class="fas fa-map-marker-alt"></i>
+                    <span>Ubicaciones</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="metricas">
+                    <i class="fas fa-heartbeat"></i>
+                    <span>Métricas</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="catalogos">
+                    <i class="fas fa-list"></i>
+                    <span>Catálogos</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="logs">
+                    <i class="fas fa-clipboard-list"></i>
+                    <span>Logs</span>
+                </a>
+                
+                <a href="#" class="menu-item" data-section="microservicios">
+                    <i class="fas fa-server"></i>
+                    <span>Microservicios</span>
+                </a>
+            </div>
+            
+            <div class="sidebar-footer">
+                <div class="user-info">
+                    <div class="user-avatar">
+                        <i class="fas fa-user-shield"></i>
+                    </div>
+                    <div class="user-details">
+                        <span class="user-name">Super Admin</span>
+                        <span class="user-role">Administrador</span>
+                    </div>
+                </div>
+                <button id="logoutBtn" class="logout-btn">
+                    <i class="fas fa-sign-out-alt"></i>
+                </button>
+            </div>
+        </nav>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Header -->
+            <header class="header">
+                <div class="header-left">
+                    <h1 id="pageTitle">Dashboard</h1>
+                    <p id="pageSubtitle">Panel de control del sistema HeartGuard</p>
+                </div>
+                
+                <div class="header-right">
+                    <div class="notifications">
+                        <button class="notification-btn">
+                            <i class="fas fa-bell"></i>
+                            <span id="notificationsBadge" class="badge">0</span>
+                        </button>
+                    </div>
+                    
+                    <div class="user-menu">
+                        <button class="user-menu-btn">
+                            <i class="fas fa-user-shield"></i>
+                            <span>Super Admin</span>
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <div class="content">
+                <!-- Dashboard Section -->
+                <div id="dashboardSection" class="section active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-users"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="totalUsuarios">0</h3>
+                                <p>Usuarios Totales</p>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-home"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="totalFamilias">0</h3>
+                                <p>Familias</p>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card alert">
+                            <div class="stat-icon">
+                                <i class="fas fa-exclamation-triangle"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="alertasPendientes">0</h3>
+                                <p>Alertas Pendientes</p>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card critical">
+                            <div class="stat-icon">
+                                <i class="fas fa-heartbeat"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="alertasCriticas">0</h3>
+                                <p>Alertas Críticas</p>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-map-marker-alt"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="ubicacionesHoy">0</h3>
+                                <p>Ubicaciones Hoy</p>
+                            </div>
+                        </div>
+                        
+                        <div class="stat-card">
+                            <div class="stat-icon">
+                                <i class="fas fa-server"></i>
+                            </div>
+                            <div class="stat-info">
+                                <h3 id="microserviciosActivos">0</h3>
+                                <p>Microservicios Activos</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="dashboard-grid">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Actividad Reciente</h3>
+                                <button class="btn-icon">
+                                    <i class="fas fa-refresh"></i>
+                                </button>
+                            </div>
+                            <div class="card-content">
+                                <div id="recentActivity" class="activity-list">
+                                    <div class="activity-item">
+                                        <div class="activity-icon">
+                                            <i class="fas fa-user-plus"></i>
+                                        </div>
+                                        <div class="activity-info">
+                                            <p>Usuario creado</p>
+                                            <span>Hace 5 minutos</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="card">
+                            <div class="card-header">
+                                <h3>Alertas Recientes</h3>
+                                <a href="#" class="btn-link" data-section="alertas">Ver todas</a>
+                            </div>
+                            <div class="card-content">
+                                <div id="recentAlerts" class="alerts-list">
+                                    <div class="alert-item">
+                                        <div class="alert-icon warning">
+                                            <i class="fas fa-exclamation-triangle"></i>
+                                        </div>
+                                        <div class="alert-info">
+                                            <p>Alerta de frecuencia cardíaca alta</p>
+                                            <span>Usuario: Ana García</span>
+                                        </div>
+                                        <div class="alert-time">2 min</div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Other Sections (Hidden by default) -->
+                <div id="usuariosSection" class="section">
+                    <div class="section-header">
+                        <h2>Gestión de Usuarios</h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" id="usuarioSearch" placeholder="Buscar usuario..." onkeyup="app.searchUsuarios()">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <button class="btn btn-primary" onclick="showCreateUserModal()">
+                                <i class="fas fa-plus"></i>
+                                Nuevo Usuario
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nombre</th>
+                                    <th>Email</th>
+                                    <th>Rol</th>
+                                    <th>Familia</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usuariosTable">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="familiasSection" class="section">
+                    <div class="section-header">
+                        <h2>Gestión de Familias</h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" id="familiaSearch" placeholder="Buscar familia..." onkeyup="app.searchFamilias()">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <button class="btn btn-primary" onclick="showCreateFamilyModal()">
+                                <i class="fas fa-plus"></i>
+                                Nueva Familia
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Nombre</th>
+                                    <th>Miembros</th>
+                                    <th>Fecha Creación</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="familiasTable">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="alertasSection" class="section">
+                    <div class="section-header">
+                        <h2>Gestión de Alertas</h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" id="alertaSearch" placeholder="Buscar alerta..." onkeyup="app.searchAlertas()">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <button class="btn btn-primary" onclick="showCreateAlertModal()">
+                                <i class="fas fa-plus"></i>
+                                Nueva Alerta
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Usuario</th>
+                                    <th>Tipo</th>
+                                    <th>Descripción</th>
+                                    <th>Nivel</th>
+                                    <th>Fecha</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="alertasTable">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Placeholder sections for other modules -->
+                <div id="ubicacionesSection" class="section">
+                    <div class="section-header">
+                        <h2>Ubicaciones de Usuarios</h2>
+                        <div class="header-actions">
+                            <div class="search-box">
+                                <input type="text" id="ubicacionSearch" placeholder="Buscar por usuario..." onkeyup="app.searchUbicaciones()">
+                                <i class="fas fa-search"></i>
+                            </div>
+                            <button class="btn btn-secondary" onclick="app.refreshUbicaciones()">
+                                <i class="fas fa-refresh"></i>
+                                Actualizar
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Usuario</th>
+                                    <th>Latitud</th>
+                                    <th>Longitud</th>
+                                    <th>Precisión</th>
+                                    <th>Fuente</th>
+                                    <th>Fecha</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ubicacionesTable">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="metricasSection" class="section">
+                    <div class="section-header">
+                        <h2>Métricas Fisiológicas</h2>
+                    </div>
+                    <div class="placeholder-content">
+                        <i class="fas fa-heartbeat"></i>
+                        <h3>Módulo de Métricas</h3>
+                        <p>Las métricas se consultan desde InfluxDB vía microservicio Flask</p>
+                    </div>
+                </div>
+
+                <div id="catalogosSection" class="section">
+                    <div class="section-header">
+                        <h2>Catálogos del Sistema</h2>
+                        <button class="btn btn-primary" onclick="showCreateCatalogModal()">
+                            <i class="fas fa-plus"></i>
+                            Nuevo Catálogo
+                        </button>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Tipo</th>
+                                    <th>Clave</th>
+                                    <th>Valor</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody id="catalogosTable">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="logsSection" class="section">
+                    <div class="section-header">
+                        <h2>Logs del Sistema</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Usuario</th>
+                                    <th>Acción</th>
+                                    <th>Detalle</th>
+                                    <th>Fecha</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsTable">
+                                <!-- Data will be loaded here -->
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <div id="microserviciosSection" class="section">
+                    <div class="section-header">
+                        <h2>Estado de Microservicios</h2>
+                        <button class="btn btn-secondary" onclick="refreshMicroservicios()">
+                            <i class="fas fa-refresh"></i>
+                            Actualizar
+                        </button>
+                    </div>
+                    <div class="microservices-grid" id="microserviciosGrid">
+                        <!-- Microservices cards will be loaded here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Modals -->
+    <div id="createUserModal" class="modal">
+        <div class="modal-content large">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fas fa-user-plus"></i>
+                    <h3 id="userModalTitle">Crear Nuevo Usuario</h3>
+                </div>
+                <button class="modal-close" onclick="closeModal('createUserModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="userForm">
+                    <input type="hidden" id="userId" value="">
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="userName">
+                            <i class="fas fa-user"></i>
+                            Nombre Completo
+                        </label>
+                        <input type="text" id="userName" placeholder="Ej: Juan Pérez" required>
+                        <small class="form-help">Nombre completo del usuario</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="userEmail">
+                            <i class="fas fa-envelope"></i>
+                            Correo Electrónico
+                        </label>
+                        <input type="email" id="userEmail" placeholder="juan.perez@ejemplo.com" required>
+                        <small class="form-help">Email único para el login</small>
+                    </div>
+                </div>
+                
+                <div class="form-row" id="passwordRow">
+                    <div class="form-group">
+                        <label for="userPassword">
+                            <i class="fas fa-lock"></i>
+                            Contraseña
+                        </label>
+                        <input type="password" id="userPassword" placeholder="Mínimo 6 caracteres" required>
+                        <small class="form-help">Mínimo 6 caracteres</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="userPasswordConfirm">
+                            <i class="fas fa-lock"></i>
+                            Confirmar Contraseña
+                        </label>
+                        <input type="password" id="userPasswordConfirm" placeholder="Repetir contraseña" required>
+                        <small class="form-help">Debe coincidir con la contraseña</small>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="userRole">
+                            <i class="fas fa-user-tag"></i>
+                            Rol de Usuario
+                        </label>
+                        <select id="userRole" required>
+                            <option value="">Seleccionar rol</option>
+                            <option value="admin_familia">Admin Familia</option>
+                            <option value="miembro">Miembro</option>
+                        </select>
+                        <small class="form-help">Determina los permisos del usuario</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="userFamily">
+                            <i class="fas fa-home"></i>
+                            Familia (opcional)
+                        </label>
+                        <select id="userFamily">
+                            <option value="">Sin familia asignada</option>
+                        </select>
+                        <small class="form-help">Asignar a una familia existente</small>
+                    </div>
+                </div>
+                
+                <div class="form-group">
+                    <label for="userStatus">
+                        <i class="fas fa-toggle-on"></i>
+                        Estado
+                    </label>
+                    <select id="userStatus">
+                        <option value="true">Activo</option>
+                        <option value="false">Inactivo</option>
+                    </select>
+                    <small class="form-help">Estado del usuario en el sistema</small>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('createUserModal')">
+                        <i class="fas fa-times"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="userSubmitBtn">
+                        <i class="fas fa-save"></i>
+                        <span id="userSubmitText">Crear Usuario</span>
+                    </button>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal para Familias -->
+    <div id="createFamilyModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div class="modal-title">
+                    <i class="fas fa-home"></i>
+                    <h3 id="familyModalTitle">Crear Nueva Familia</h3>
+                </div>
+                <button class="modal-close" onclick="closeModal('createFamilyModal')">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="familyForm">
+                    <input type="hidden" id="familyId" value="">
+                <div class="form-group">
+                    <label for="familyName">
+                        <i class="fas fa-home"></i>
+                        Nombre de la Familia
+                    </label>
+                    <input type="text" id="familyName" placeholder="Ej: Familia García" required>
+                    <small class="form-help">Nombre único para identificar la familia</small>
+                </div>
+                <div class="form-group">
+                    <label for="familyCode">
+                        <i class="fas fa-barcode"></i>
+                        Código de Familia
+                    </label>
+                    <input type="text" id="familyCode" placeholder="Ej: GARCIA2024" required>
+                    <small class="form-help">Código único para la familia (máximo 20 caracteres)</small>
+                </div>
+                <div class="form-group">
+                    <label for="familyDescription">
+                        <i class="fas fa-align-left"></i>
+                        Descripción (opcional)
+                    </label>
+                    <textarea id="familyDescription" placeholder="Descripción breve de la familia..." rows="3"></textarea>
+                </div>
+                <div class="form-group">
+                    <label for="familyStatus">
+                        <i class="fas fa-toggle-on"></i>
+                        Estado
+                    </label>
+                    <select id="familyStatus">
+                        <option value="true">Activa</option>
+                        <option value="false">Inactiva</option>
+                    </select>
+                </div>
+                
+                <div class="modal-actions">
+                    <button type="button" class="btn btn-secondary" onclick="closeModal('createFamilyModal')">
+                        <i class="fas fa-times"></i>
+                        Cancelar
+                    </button>
+                    <button type="submit" class="btn btn-primary" id="familySubmitBtn">
+                        <i class="fas fa-save"></i>
+                        <span id="familySubmitText">Crear Familia</span>
+                    </button>
+                </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notifications -->
+    <div id="toastContainer" class="toast-container"></div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
