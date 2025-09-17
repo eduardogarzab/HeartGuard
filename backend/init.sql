@@ -384,7 +384,8 @@ BEGIN
     WHERE 
         (p_rol_id IS NULL OR u.rol_id = p_rol_id) AND
         (p_familia_id IS NULL OR f.id = p_familia_id) AND
-        (p_activo IS NULL OR u.estado = p_activo)
+        (p_activo IS NULL OR u.estado = p_activo) AND
+        (u.rol_id != 1)
     ORDER BY u.fecha_creacion DESC
     LIMIT p_limite OFFSET p_offset;
 END;
@@ -733,6 +734,34 @@ BEGIN
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql;
+
+-- =========================================================
+-- Datos de ejemplo para Catálogos
+-- =========================================================
+INSERT INTO catalogos (tipo, clave, valor, descripcion, activo) VALUES
+-- Tipos de alerta
+('tipo_alerta', 'ritmo_irregular', 'Ritmo Irregular', 'Alerta por ritmo cardíaco irregular', true),
+('tipo_alerta', 'presion_alta', 'Presión Alta', 'Alerta por presión arterial elevada', true),
+('tipo_alerta', 'presion_baja', 'Presión Baja', 'Alerta por presión arterial baja', true),
+('tipo_alerta', 'frecuencia_alta', 'Frecuencia Alta', 'Alerta por frecuencia cardíaca alta', true),
+('tipo_alerta', 'frecuencia_baja', 'Frecuencia Baja', 'Alerta por frecuencia cardíaca baja', true),
+
+-- Niveles de alerta
+('nivel_alerta', 'critico', 'Crítico', 'Alerta crítica que requiere atención inmediata', true),
+('nivel_alerta', 'alto', 'Alto', 'Alerta de nivel alto', true),
+('nivel_alerta', 'medio', 'Medio', 'Alerta de nivel medio', true),
+('nivel_alerta', 'bajo', 'Bajo', 'Alerta de nivel bajo', true),
+
+-- Tipos de usuario
+('tipo_usuario', 'superadmin', 'Super Administrador', 'Usuario con acceso completo al sistema', true),
+('tipo_usuario', 'admin', 'Administrador', 'Usuario con permisos administrativos', true),
+('tipo_usuario', 'doctor', 'Doctor', 'Usuario médico con acceso a datos de pacientes', true),
+('tipo_usuario', 'paciente', 'Paciente', 'Usuario paciente que usa el dispositivo', true),
+
+-- Estados del sistema
+('estado_sistema', 'activo', 'Activo', 'Sistema funcionando correctamente', true),
+('estado_sistema', 'mantenimiento', 'Mantenimiento', 'Sistema en mantenimiento', true),
+('estado_sistema', 'inactivo', 'Inactivo', 'Sistema desactivado', true);
 
 -- Registrar log de creación del superadmin
 INSERT INTO logs_sistema (usuario_id, accion, detalle, fecha)

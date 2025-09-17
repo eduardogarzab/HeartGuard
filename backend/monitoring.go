@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -36,25 +35,6 @@ type AtenderAlertaRequest struct {
 	AtendidoPor int `json:"atendido_por" binding:"required"`
 }
 
-// Estructuras para catálogos
-type Catalogo struct {
-	ID     int    `json:"id"`
-	Tipo   string `json:"tipo"`
-	Clave  string `json:"clave"`
-	Valor  string `json:"valor"`
-}
-
-type CreateCatalogoRequest struct {
-	Tipo  string `json:"tipo" binding:"required"`
-	Clave string `json:"clave" binding:"required"`
-	Valor string `json:"valor" binding:"required"`
-}
-
-type UpdateCatalogoRequest struct {
-	Tipo  *string `json:"tipo,omitempty"`
-	Clave *string `json:"clave,omitempty"`
-	Valor *string `json:"valor,omitempty"`
-}
 
 // Estructuras para logs del sistema
 type LogSistema struct {
@@ -296,179 +276,6 @@ func deleteAlerta(c *gin.Context) {
 	})
 }
 
-// =========================================================
-// CRUD CATÁLOGOS
-// =========================================================
-
-func getCatalogos(c *gin.Context) {
-	tipo := c.Query("tipo")
-	
-	var query string
-	var args []interface{}
-	
-	if tipo != "" {
-		query = `SELECT id, tipo, clave, valor FROM catalogos WHERE tipo = $1 ORDER BY tipo, clave`
-		args = []interface{}{tipo}
-	} else {
-		query = `SELECT id, tipo, clave, valor FROM catalogos ORDER BY tipo, clave`
-		args = []interface{}{}
-	}
-	
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "Error consultando catálogos"})
-		return
-	}
-	defer rows.Close()
-
-	var catalogos []Catalogo
-	for rows.Next() {
-		var catalogo Catalogo
-		err := rows.Scan(&catalogo.ID, &catalogo.Tipo, &catalogo.Clave, &catalogo.Valor)
-		if err != nil {
-			c.JSON(500, gin.H{"error": "Error escaneando catálogos"})
-			return
-		}
-		catalogos = append(catalogos, catalogo)
-	}
-
-	c.JSON(200, gin.H{
-		"success": true,
-		"data":    catalogos,
-		"total":   len(catalogos),
-	})
-}
-
-func createCatalogo(c *gin.Context) {
-	var req CreateCatalogoRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "Datos inválidos"})
-		return
-	}
-
-	// Verificar que no exista la combinación tipo-clave
-	var count int
-	err := db.QueryRow(`SELECT COUNT(*) FROM catalogos WHERE tipo = $1 AND clave = $2`, 
-		req.Tipo, req.Clave).Scan(&count)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "Error verificando catálogo existente"})
-		return
-	}
-
-	if count > 0 {
-		c.JSON(400, gin.H{"error": "Ya existe un catálogo con ese tipo y clave"})
-		return
-	}
-
-	// Crear catálogo
-	query := `INSERT INTO catalogos (tipo, clave, valor) VALUES ($1, $2, $3) RETURNING id`
-	var catalogoID int
-	err = db.QueryRow(query, req.Tipo, req.Clave, req.Valor).Scan(&catalogoID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "Error creando catálogo"})
-		return
-	}
-
-	// Registrar log
-	superAdminID, _ := c.Get("usuario_id")
-	registrarLog(superAdminID.(int), "CREATE_CATALOGO", fmt.Sprintf(`{"catalogo_id": %d, "tipo": "%s", "clave": "%s"}`, catalogoID, req.Tipo, req.Clave))
-
-	c.JSON(201, gin.H{
-		"success": true,
-		"data": gin.H{
-			"id":    catalogoID,
-			"tipo":  req.Tipo,
-			"clave": req.Clave,
-			"valor": req.Valor,
-		},
-		"message": "Catálogo creado exitosamente",
-	})
-}
-
-func updateCatalogo(c *gin.Context) {
-	catalogoID := c.Param("id")
-	var req UpdateCatalogoRequest
-	
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(400, gin.H{"error": "Datos inválidos"})
-		return
-	}
-
-	// Obtener datos actuales
-	var currentCatalogo Catalogo
-	err := db.QueryRow(`SELECT id, tipo, clave, valor FROM catalogos WHERE id = $1`, 
-		catalogoID).Scan(&currentCatalogo.ID, &currentCatalogo.Tipo, &currentCatalogo.Clave, &currentCatalogo.Valor)
-	if err != nil {
-		c.JSON(404, gin.H{"error": "Catálogo no encontrado"})
-		return
-	}
-
-	// Usar valores actuales como por defecto
-	tipo := currentCatalogo.Tipo
-	clave := currentCatalogo.Clave
-	valor := currentCatalogo.Valor
-
-	// Sobrescribir con valores nuevos
-	if req.Tipo != nil {
-		tipo = *req.Tipo
-	}
-	if req.Clave != nil {
-		clave = *req.Clave
-	}
-	if req.Valor != nil {
-		valor = *req.Valor
-	}
-
-	// Actualizar catálogo
-	query := `UPDATE catalogos SET tipo = $1, clave = $2, valor = $3 WHERE id = $4`
-	result, err := db.Exec(query, tipo, clave, valor, catalogoID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "Error actualizando catálogo"})
-		return
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		c.JSON(404, gin.H{"error": "Catálogo no encontrado"})
-		return
-	}
-
-	// Registrar log
-	superAdminID, _ := c.Get("usuario_id")
-	registrarLog(superAdminID.(int), "UPDATE_CATALOGO", fmt.Sprintf(`{"catalogo_id": %s, "campos": %+v}`, catalogoID, req))
-
-	c.JSON(200, gin.H{
-		"success": true,
-		"message": "Catálogo actualizado exitosamente",
-	})
-}
-
-func deleteCatalogo(c *gin.Context) {
-	catalogoID := c.Param("id")
-	
-	// Eliminar catálogo
-	query := `DELETE FROM catalogos WHERE id = $1`
-	result, err := db.Exec(query, catalogoID)
-	if err != nil {
-		c.JSON(500, gin.H{"error": "Error eliminando catálogo"})
-		return
-	}
-
-	rowsAffected, _ := result.RowsAffected()
-	if rowsAffected == 0 {
-		c.JSON(404, gin.H{"error": "Catálogo no encontrado"})
-		return
-	}
-
-	// Registrar log
-	superAdminID, _ := c.Get("usuario_id")
-	registrarLog(superAdminID.(int), "DELETE_CATALOGO", fmt.Sprintf(`{"catalogo_id": %s}`, catalogoID))
-
-	c.JSON(200, gin.H{
-		"success": true,
-		"message": "Catálogo eliminado exitosamente",
-	})
-}
 
 // =========================================================
 // LOGS DEL SISTEMA
@@ -477,30 +284,17 @@ func deleteCatalogo(c *gin.Context) {
 func getLogsSistema(c *gin.Context) {
 	fmt.Println("🔍 getLogsSistema called")
 
-	// Usar stored procedure para obtener logs
-	query := `SELECT * FROM sp_get_logs_sistema($1, $2, $3, $4)`
+	// Consulta directa para obtener logs
+	query := `
+		SELECT l.id, l.usuario_id, COALESCE(u.nombre, 'Sistema') as usuario_nombre,
+		       l.accion, l.detalle, TO_CHAR(l.fecha, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as fecha
+		FROM logs_sistema l
+		LEFT JOIN usuarios u ON l.usuario_id = u.id
+		ORDER BY l.fecha DESC
+		LIMIT 100
+	`
 
-	limit := c.DefaultQuery("limit", "100")
-	offset := c.DefaultQuery("offset", "0")
-	usuarioID := c.Query("usuario_id")
-	accion := c.Query("accion")
-
-	limitInt, _ := strconv.Atoi(limit)
-	offsetInt, _ := strconv.Atoi(offset)
-
-	var usuarioIDInt *int
-	if usuarioID != "" {
-		if id, err := strconv.Atoi(usuarioID); err == nil {
-			usuarioIDInt = &id
-		}
-	}
-
-	var accionStr *string
-	if accion != "" {
-		accionStr = &accion
-	}
-
-	rows, err := db.Query(query, limitInt, offsetInt, usuarioIDInt, accionStr)
+	rows, err := db.Query(query)
 	if err != nil {
 		fmt.Printf("❌ Error querying logs: %v\n", err)
 		c.JSON(500, gin.H{"error": "Error consultando logs del sistema"})
@@ -511,12 +305,12 @@ func getLogsSistema(c *gin.Context) {
 	var logs []map[string]interface{}
 	for rows.Next() {
 		var log struct {
-			ID           int       `json:"id"`
-			UsuarioID    int       `json:"usuario_id"`
-			UsuarioNombre string   `json:"usuario_nombre"`
-			Accion       string    `json:"accion"`
-			Detalle      string    `json:"detalle"`
-			Fecha        time.Time `json:"fecha"`
+			ID            int     `json:"id"`
+			UsuarioID     *int    `json:"usuario_id"`
+			UsuarioNombre string  `json:"usuario_nombre"`
+			Accion        string  `json:"accion"`
+			Detalle       string  `json:"detalle"`
+			Fecha         string  `json:"fecha"`
 		}
 
 		err := rows.Scan(&log.ID, &log.UsuarioID, &log.UsuarioNombre, &log.Accion, 
@@ -526,9 +320,14 @@ func getLogsSistema(c *gin.Context) {
 			continue
 		}
 
+		usuarioID := 0
+		if log.UsuarioID != nil {
+			usuarioID = *log.UsuarioID
+		}
+
 		logs = append(logs, map[string]interface{}{
 			"id":            log.ID,
-			"usuario_id":    log.UsuarioID,
+			"usuario_id":    usuarioID,
 			"usuario_nombre": log.UsuarioNombre,
 			"accion":        log.Accion,
 			"detalle":       log.Detalle,
@@ -552,20 +351,20 @@ func getDashboardStats(c *gin.Context) {
 	fmt.Println("🔍 getDashboardStats called")
 
 	// Usar stored procedure para obtener estadísticas del dashboard
-	query := `SELECT * FROM sp_get_dashboard_stats()`
+	query := `SELECT * FROM sp_dashboard_ejecutivo()`
 
 	row := db.QueryRow(query)
 	var stats struct {
 		TotalUsuarios     int64 `json:"total_usuarios"`
 		TotalFamilias     int64 `json:"total_familias"`
-		TotalAlertas      int64 `json:"total_alertas"`
 		AlertasPendientes int64 `json:"alertas_pendientes"`
-		UsuariosActivos   int64 `json:"usuarios_activos"`
-		FamiliasActivas   int64 `json:"familias_activas"`
+		AlertasCriticas   int64 `json:"alertas_criticas"`
+		UbicacionesHoy    int64 `json:"ubicaciones_hoy"`
+		MicroserviciosActivos int64 `json:"microservicios_activos"`
 	}
 
-	err := row.Scan(&stats.TotalUsuarios, &stats.TotalFamilias, &stats.TotalAlertas,
-		&stats.AlertasPendientes, &stats.UsuariosActivos, &stats.FamiliasActivas)
+	err := row.Scan(&stats.TotalUsuarios, &stats.TotalFamilias, &stats.AlertasPendientes,
+		&stats.AlertasCriticas, &stats.UbicacionesHoy, &stats.MicroserviciosActivos)
 	if err != nil {
 		fmt.Printf("❌ Error querying dashboard stats: %v\n", err)
 		c.JSON(500, gin.H{"error": "Error obteniendo estadísticas"})

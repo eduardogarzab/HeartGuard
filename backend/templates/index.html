@@ -277,7 +277,7 @@
                                 <input type="text" id="usuarioSearch" placeholder="Buscar usuario..." onkeyup="app.searchUsuarios()">
                                 <i class="fas fa-search"></i>
                             </div>
-                            <button class="btn btn-primary" onclick="showCreateUserModal()">
+                            <button class="btn btn-primary" onclick="app.openModal('createUserModal')">
                                 <i class="fas fa-plus"></i>
                                 Nuevo Usuario
                             </button>
@@ -311,7 +311,7 @@
                                 <input type="text" id="familiaSearch" placeholder="Buscar familia..." onkeyup="app.searchFamilias()">
                                 <i class="fas fa-search"></i>
                             </div>
-                            <button class="btn btn-primary" onclick="showCreateFamilyModal()">
+                            <button class="btn btn-primary" onclick="app.openModal('createFamilyModal')">
                                 <i class="fas fa-plus"></i>
                                 Nueva Familia
                             </button>
@@ -344,10 +344,6 @@
                                 <input type="text" id="alertaSearch" placeholder="Buscar alerta..." onkeyup="app.searchAlertas()">
                                 <i class="fas fa-search"></i>
                             </div>
-                            <button class="btn btn-primary" onclick="showCreateAlertModal()">
-                                <i class="fas fa-plus"></i>
-                                Nueva Alerta
-                            </button>
                         </div>
                     </div>
                     <div class="table-container">
@@ -421,7 +417,7 @@
                 <div id="catalogosSection" class="section">
                     <div class="section-header">
                         <h2>Catálogos del Sistema</h2>
-                        <button class="btn btn-primary" onclick="showCreateCatalogModal()">
+                        <button class="btn btn-primary" onclick="app.openModal('createCatalogModal')">
                             <i class="fas fa-plus"></i>
                             Nuevo Catálogo
                         </button>
@@ -469,7 +465,7 @@
                 <div id="microserviciosSection" class="section">
                     <div class="section-header">
                         <h2>Estado de Microservicios</h2>
-                        <button class="btn btn-secondary" onclick="refreshMicroservicios()">
+                        <button class="btn btn-secondary" onclick="app.refreshMicroservicios()">
                             <i class="fas fa-refresh"></i>
                             Actualizar
                         </button>
@@ -647,9 +643,73 @@
         </div>
     </div>
 
+    <!-- Modal para Crear/Editar Catálogo -->
+    <div id="createCatalogModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="catalogModalTitle">Nuevo Catálogo</h3>
+                <button class="modal-close" onclick="app.closeModal('createCatalogModal')">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="catalogForm">
+                    <input type="hidden" id="catalogId" name="id">
+                    
+                    <div class="form-group">
+                        <label for="catalogType">Tipo *</label>
+                        <select id="catalogType" name="tipo" required>
+                            <option value="">Seleccionar tipo...</option>
+                            <option value="tipo_alerta">Tipo de Alerta</option>
+                            <option value="nivel_alerta">Nivel de Alerta</option>
+                            <option value="tipo_usuario">Tipo de Usuario</option>
+                            <option value="estado_sistema">Estado del Sistema</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="catalogClave">Clave *</label>
+                        <input type="text" id="catalogClave" name="clave" placeholder="Ej: ritmo_irregular" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="catalogValor">Valor *</label>
+                        <input type="text" id="catalogValor" name="valor" placeholder="Ej: Ritmo Irregular" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="catalogDescripcion">Descripción</label>
+                        <textarea id="catalogDescripcion" name="descripcion" rows="3" placeholder="Descripción detallada del catálogo"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="catalogActivo" name="activo" checked>
+                            <span class="checkmark"></span>
+                            Activo
+                        </label>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn btn-secondary" onclick="app.closeModal('createCatalogModal')">
+                    Cancelar
+                </button>
+                <button type="button" class="btn btn-primary" id="catalogSubmitBtn" onclick="app.handleCatalogSubmit()">
+                    Crear Catálogo
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Toast Notifications -->
     <div id="toastContainer" class="toast-container"></div>
 
+    <!-- Chart.js for microservices charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Leaflet for maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

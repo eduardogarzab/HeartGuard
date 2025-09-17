@@ -887,3 +887,210 @@ func getUbicacionesUsuario(c *gin.Context) {
 		"total":   len(ubicaciones),
 	})
 }
+
+// =========================================================
+// Funciones CRUD para Catálogos
+// =========================================================
+
+type Catalogo struct {
+	ID          int    `json:"id" db:"id"`
+	Tipo        string `json:"tipo" db:"tipo"`
+	Clave       string `json:"clave" db:"clave"`
+	Valor       string `json:"valor" db:"valor"`
+	Descripcion string `json:"descripcion" db:"descripcion"`
+	Activo      bool   `json:"activo" db:"activo"`
+	FechaCreacion string `json:"fecha_creacion" db:"fecha_creacion"`
+}
+
+type CreateCatalogoRequest struct {
+	Tipo        string `json:"tipo" binding:"required"`
+	Clave       string `json:"clave" binding:"required"`
+	Valor       string `json:"valor" binding:"required"`
+	Descripcion string `json:"descripcion"`
+	Activo      bool   `json:"activo"`
+}
+
+type UpdateCatalogoRequest struct {
+	Tipo        string `json:"tipo"`
+	Clave       string `json:"clave"`
+	Valor       string `json:"valor"`
+	Descripcion string `json:"descripcion"`
+	Activo      bool   `json:"activo"`
+}
+
+func getCatalogos(c *gin.Context) {
+	fmt.Println("📋 Getting catalogos...")
+	
+	query := `
+		SELECT id, tipo, clave, valor, descripcion, activo, 
+		       TO_CHAR(fecha_creacion, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as fecha_creacion
+		FROM catalogos 
+		ORDER BY tipo, clave
+	`
+	
+	rows, err := db.Query(query)
+	if err != nil {
+		fmt.Printf("❌ Error getting catalogos: %v\n", err)
+		c.JSON(500, gin.H{"success": false, "error": "Error al obtener catálogos"})
+		return
+	}
+	defer rows.Close()
+	
+	var catalogos []Catalogo
+	for rows.Next() {
+		var catalogo Catalogo
+		err := rows.Scan(&catalogo.ID, &catalogo.Tipo, &catalogo.Clave, &catalogo.Valor, &catalogo.Descripcion, &catalogo.Activo, &catalogo.FechaCreacion)
+		if err != nil {
+			fmt.Printf("❌ Error scanning catalogo: %v\n", err)
+			c.JSON(500, gin.H{"success": false, "error": "Error al procesar catálogos"})
+			return
+		}
+		catalogos = append(catalogos, catalogo)
+	}
+	
+	fmt.Printf("✅ Found %d catalogos\n", len(catalogos))
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    catalogos,
+		"total":   len(catalogos),
+	})
+}
+
+func getCatalogo(c *gin.Context) {
+	fmt.Println("📋 Getting single catalogo...")
+	
+	id := c.Param("id")
+	query := `
+		SELECT id, tipo, clave, valor, descripcion, activo, 
+		       TO_CHAR(fecha_creacion, 'YYYY-MM-DD"T"HH24:MI:SS"Z"') as fecha_creacion
+		FROM catalogos 
+		WHERE id = $1
+	`
+	
+	var catalogo Catalogo
+	err := db.QueryRow(query, id).Scan(&catalogo.ID, &catalogo.Tipo, &catalogo.Clave, &catalogo.Valor, &catalogo.Descripcion, &catalogo.Activo, &catalogo.FechaCreacion)
+	if err != nil {
+		fmt.Printf("❌ Error getting catalogo: %v\n", err)
+		c.JSON(404, gin.H{"success": false, "error": "Catálogo no encontrado"})
+		return
+	}
+	
+	fmt.Printf("✅ Found catalogo with ID: %s\n", id)
+	c.JSON(200, gin.H{
+		"success": true,
+		"data":    catalogo,
+	})
+}
+
+func createCatalogo(c *gin.Context) {
+	fmt.Println("📝 Creating catalogo...")
+	
+	var req CreateCatalogoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("❌ Error binding JSON: %v\n", err)
+		c.JSON(400, gin.H{"success": false, "error": "Datos inválidos"})
+		return
+	}
+	
+	query := `
+		INSERT INTO catalogos (tipo, clave, valor, descripcion, activo)
+		VALUES ($1, $2, $3, $4, $5)
+		RETURNING id
+	`
+	
+	var id int
+	err := db.QueryRow(query, req.Tipo, req.Clave, req.Valor, req.Descripcion, req.Activo).Scan(&id)
+	if err != nil {
+		fmt.Printf("❌ Error creating catalogo: %v\n", err)
+		c.JSON(500, gin.H{"success": false, "error": "Error al crear catálogo"})
+		return
+	}
+	
+	fmt.Printf("✅ Created catalogo with ID: %d\n", id)
+	c.JSON(201, gin.H{"success": true, "id": id})
+}
+
+func updateCatalogo(c *gin.Context) {
+	fmt.Println("✏️ Updating catalogo...")
+	
+	id := c.Param("id")
+	var req UpdateCatalogoRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		fmt.Printf("❌ Error binding JSON: %v\n", err)
+		c.JSON(400, gin.H{"success": false, "error": "Datos inválidos"})
+		return
+	}
+	
+	// Build dynamic query
+	setParts := []string{}
+	args := []interface{}{}
+	argIndex := 1
+	
+	if req.Tipo != "" {
+		setParts = append(setParts, fmt.Sprintf("tipo = $%d", argIndex))
+		args = append(args, req.Tipo)
+		argIndex++
+	}
+	if req.Clave != "" {
+		setParts = append(setParts, fmt.Sprintf("clave = $%d", argIndex))
+		args = append(args, req.Clave)
+		argIndex++
+	}
+	if req.Valor != "" {
+		setParts = append(setParts, fmt.Sprintf("valor = $%d", argIndex))
+		args = append(args, req.Valor)
+		argIndex++
+	}
+	if req.Descripcion != "" {
+		setParts = append(setParts, fmt.Sprintf("descripcion = $%d", argIndex))
+		args = append(args, req.Descripcion)
+		argIndex++
+	}
+	
+	setParts = append(setParts, fmt.Sprintf("activo = $%d", argIndex))
+	args = append(args, req.Activo)
+	argIndex++
+	
+	args = append(args, id)
+	
+	query := fmt.Sprintf("UPDATE catalogos SET %s WHERE id = $%d", strings.Join(setParts, ", "), argIndex)
+	
+	result, err := db.Exec(query, args...)
+	if err != nil {
+		fmt.Printf("❌ Error updating catalogo: %v\n", err)
+		c.JSON(500, gin.H{"success": false, "error": "Error al actualizar catálogo"})
+		return
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(404, gin.H{"success": false, "error": "Catálogo no encontrado"})
+		return
+	}
+	
+	fmt.Printf("✅ Updated catalogo with ID: %s\n", id)
+	c.JSON(200, gin.H{"success": true})
+}
+
+func deleteCatalogo(c *gin.Context) {
+	fmt.Println("🗑️ Deleting catalogo...")
+	
+	id := c.Param("id")
+	query := "DELETE FROM catalogos WHERE id = $1"
+	
+	result, err := db.Exec(query, id)
+	if err != nil {
+		fmt.Printf("❌ Error deleting catalogo: %v\n", err)
+		c.JSON(500, gin.H{"success": false, "error": "Error al eliminar catálogo"})
+		return
+	}
+	
+	rowsAffected, _ := result.RowsAffected()
+	if rowsAffected == 0 {
+		c.JSON(404, gin.H{"success": false, "error": "Catálogo no encontrado"})
+		return
+	}
+	
+	fmt.Printf("✅ Deleted catalogo with ID: %s\n", id)
+	c.JSON(200, gin.H{"success": true})
+}

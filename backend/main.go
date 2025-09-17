@@ -216,6 +216,7 @@ func main() {
 			
 			// CRUD Catálogos
 			protected.GET("/catalogos", getCatalogos)
+			protected.GET("/catalogos/:id", getCatalogo)
 			protected.POST("/catalogos", createCatalogo)
 			protected.PUT("/catalogos/:id", updateCatalogo)
 			protected.DELETE("/catalogos/:id", deleteCatalogo)
