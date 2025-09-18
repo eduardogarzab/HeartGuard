@@ -1,354 +1,248 @@
 # 🏥 HeartGuard Backend - Guía de Instalación en Fedora
 
-Esta guía te llevará paso a paso para instalar y ejecutar el backend de HeartGuard en Fedora.
+Esta guía te llevará paso a paso para instalar y ejecutar el backend de HeartGuard en un sistema Fedora moderno.
 
 ## 📋 Requisitos Previos
 
 - **Fedora 37+** (recomendado Fedora 38/39)
-- **Acceso sudo** para instalar paquetes
-- **Conexión a internet** para descargar dependencias
-- **Mínimo 4GB RAM** y **10GB espacio libre**
+- **Acceso `sudo`** para instalar paquetes.
+- **Conexión a internet** estable.
+- **Mínimo 4GB de RAM** y **10GB de espacio en disco**.
 
-## 🛠️ Paso 1: Instalar Docker
+---
 
-### 1.1 Actualizar el sistema
+## 🛠️ Paso 1: Instalar Docker y Docker Compose (Método Correcto)
+
+El método de instalación de Docker ha cambiado. Los paquetes `docker` y `docker-compose` ya no se usan. Sigue estos pasos para instalar la versión oficial.
+
+### 1.1 Actualizar el Sistema
+Asegúrate de que todos tus paquetes estén al día.
 ```bash
 sudo dnf update -y
 ```
 
-### 1.2 Instalar Docker
+### 1.2 Añadir el Repositorio Oficial de Docker
+Esto es necesario para obtener la versión comunitaria (`-ce`) más reciente.
 ```bash
-# Instalar Docker
-sudo dnf install -y docker docker-compose
+# Instalar utilidades para manejar repositorios
+sudo dnf -y install dnf-utils
 
-# Habilitar Docker para iniciar automáticamente
-sudo systemctl enable docker
-sudo systemctl start docker
-
-# Agregar tu usuario al grupo docker (requiere logout/login)
-sudo usermod -aG docker $USER
-
-# Verificar instalación
-docker --version
-docker-compose --version
+# Añadir el repositorio de Docker
+sudo dnf config-manager --add-repo [https://download.docker.com/linux/fedora/docker-ce.repo](https://download.docker.com/linux/fedora/docker-ce.repo)
 ```
 
-### 1.3 Verificar Docker
+### 1.3 Instalar Docker Engine y el Plugin de Compose
+Instalamos los paquetes con los nombres correctos desde el nuevo repositorio.
 ```bash
-# Probar Docker (después de logout/login)
+# Instala Docker Engine, CLI, Containerd y el plugin oficial de Compose
+sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+```
+
+### 1.4 Iniciar y Habilitar Docker
+```bash
+# Iniciar el servicio de Docker
+sudo systemctl start docker
+
+# Habilitar Docker para que inicie automáticamente con el sistema
+sudo systemctl enable docker
+
+# (Recomendado) Agregar tu usuario al grupo 'docker' para usarlo sin 'sudo'
+# IMPORTANTE: Debes CERRAR SESIÓN y volver a iniciarla para que el cambio aplique.
+sudo usermod -aG docker $USER
+```
+
+### 1.5 Verificar la Instalación
+Una vez que hayas reiniciado tu sesión, comprueba que todo funciona. **Nota que `docker-compose` ahora es `docker compose` (con un espacio)**.
+```bash
+# Verificar la versión de Docker Engine
+docker --version
+
+# Verificar la versión del plugin de Compose
+docker compose version
+
+# Probar que Docker funciona correctamente
 docker run hello-world
 ```
 
+---
+
 ## 🐹 Paso 2: Instalar Go
 
-### 2.1 Descargar Go
+### 2.1 Instalar Go
 ```bash
 # Ir al directorio temporal
 cd /tmp
 
-# Descargar Go 1.21 (última versión estable)
-wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
+# Instalar wget si no lo tienes
+sudo dnf install -y wget
 
-# Verificar descarga
-ls -la go1.21.5.linux-amd64.tar.gz
-```
+# Descargar Go 1.21 (puedes verificar la última versión en go.dev/dl)
+wget [https://go.dev/dl/go1.21.5.linux-amd64.tar.gz](https://go.dev/dl/go1.21.5.linux-amd64.tar.gz)
 
-### 2.2 Instalar Go
-```bash
-# Eliminar instalación anterior (si existe)
+# Eliminar cualquier instalación anterior para asegurar una instalación limpia
 sudo rm -rf /usr/local/go
 
-# Extraer Go
+# Extraer el archivo en la ubicación recomendada
 sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+```
 
-# Agregar Go al PATH
-echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
+### 2.2 Configurar las Variables de Entorno de Go
+Estos comandos añaden Go a tu PATH de forma permanente.
+```bash
+# Añadir las rutas al archivo de configuración de tu shell (funciona para bash y zsh)
+echo '# GoLang Paths' >> ~/.bashrc
 echo 'export GOPATH=$HOME/go' >> ~/.bashrc
-echo 'export PATH=$PATH:$GOPATH/bin' >> ~/.bashrc
+echo 'export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin' >> ~/.bashrc
 
-# Recargar configuración
+# Aplicar los cambios a tu sesión actual
 source ~/.bashrc
 
-# Verificar instalación
+# Crear el directorio de trabajo de Go
+mkdir -p $GOPATH/{bin,pkg,src}
+
+# Verificar la instalación y configuración
 go version
-```
-
-### 2.3 Configurar Go
-```bash
-# Crear directorio de trabajo
-mkdir -p $HOME/go/{bin,pkg,src}
-
-# Verificar configuración
-go env GOPATH
 go env GOROOT
+go env GOPATH
 ```
+
+---
 
 ## 📦 Paso 3: Instalar Dependencias del Sistema
 
-```bash
-# Instalar herramientas necesarias
-sudo dnf install -y git curl wget netstat-nat lsof
+El paquete `netstat-nat` era incorrecto. `netstat` viene dentro de `net-tools`.
 
-# Instalar herramientas de desarrollo
+```bash
+# Instalar herramientas de desarrollo y utilidades necesarias
 sudo dnf groupinstall -y "Development Tools"
+sudo dnf install -y git curl wget lsof net-tools
 
 # Verificar instalaciones
 git --version
 curl --version
 ```
 
+---
+
 ## 📁 Paso 4: Clonar y Preparar el Proyecto
 
-### 4.1 Clonar el repositorio
 ```bash
-# Ir al directorio de proyectos
-cd ~/Documents/  # o donde prefieras
+# Ve a un directorio de tu elección, por ejemplo, Documentos
+cd ~/Documents/
 
-# Clonar el repositorio
-git clone https://github.com/tu-usuario/HeartGuard.git
+# Clona el repositorio (RECUERDA cambiar "tu-usuario/HeartGuard.git")
+git clone [https://github.com/tu-usuario/HeartGuard.git](https://github.com/tu-usuario/HeartGuard.git)
 cd HeartGuard/backend
+
+# Verifica que los archivos principales estén presentes
+ls -la
 ```
 
-### 4.2 Verificar archivos
-```bash
-# Verificar que todos los archivos estén presentes
-ls -la
-# Deberías ver: main.go, crud.go, monitoring.go, init.sql, docker-compose.yml, etc.
-```
+---
 
 ## 🚀 Paso 5: Ejecutar el Backend
 
-### 5.1 Construir sin caché (primera vez)
-```bash
-# Construir todas las imágenes Docker sin usar caché
-docker-compose build --no-cache
+Se ha corregido `docker-compose` a la nueva sintaxis `docker compose`.
 
-# Este proceso puede tomar 5-10 minutos la primera vez
+### 5.1 Construir las Imágenes Docker
+```bash
+# Construir todas las imágenes sin usar caché (ideal para la primera vez)
+docker compose build --no-cache
 ```
 
-### 5.2 Levantar los servicios
+### 5.2 Levantar los Servicios
 ```bash
-# Levantar todos los servicios en segundo plano
-docker-compose up -d
+# Levantar todos los servicios en segundo plano (-d para 'detached')
+docker compose up -d
 
-# Verificar que todos los servicios estén corriendo
-docker-compose ps
+# Verificar que todos los contenedores estén corriendo ('Up' o 'running')
+docker compose ps
 ```
 
-### 5.3 Verificar logs
+### 5.3 Revisar los Logs
 ```bash
-# Ver logs de todos los servicios
-docker-compose logs
-
-# Ver logs de un servicio específico
-docker-compose logs backend-go
-docker-compose logs postgres
-docker-compose logs redis
-docker-compose logs influxdb
+# Ver los logs de un servicio específico para asegurar que inició bien
+docker compose logs -f backend-go
 ```
+
+---
 
 ## ✅ Paso 6: Verificar que Todo Funcione
 
-### 6.1 Verificar puertos
+### 6.1 Verificar Puertos
 ```bash
-# Verificar que los puertos estén en uso
+# Verificar que los puertos principales estén escuchando
 sudo netstat -tlnp | grep -E ':(8080|5432|6379|8086)'
-
-# O usando lsof
-sudo lsof -i :8080  # Backend Go
-sudo lsof -i :5432  # PostgreSQL
-sudo lsof -i :6379  # Redis
-sudo lsof -i :8086  # InfluxDB
 ```
 
-### 6.2 Probar la API
+### 6.2 Probar la API desde la Terminal
 ```bash
-# Probar endpoint principal
+# Probar que la API responde (deberías obtener una respuesta HTTP 200 OK)
 curl -I http://localhost:8080/api
-
-# Probar endpoint de salud
-curl http://localhost:8080/api/health
-
-# Probar login (debería fallar sin credenciales)
-curl -X POST http://localhost:8080/admin/login
 ```
 
-### 6.3 Acceder a la interfaz web
-```bash
-# Abrir navegador
-firefox http://localhost:8080 &
-# O
-google-chrome http://localhost:8080 &
-```
+### 6.3 Acceder a la Interfaz Web
+Abre tu navegador y ve a **http://localhost:8080**. Deberías ver la pantalla de login.
 
-**Credenciales de acceso:**
 - **Email:** `admin@heartguard.com`
-- **Password:** `admin123`
+- **Contraseña:** `admin123`
 
-## 🔧 Comandos Útiles de Docker Compose
+---
 
-### Comandos básicos
+## 🔧 Comandos Útiles de Docker Compose (Sintaxis Corregida)
+
 ```bash
-# Ver estado de servicios
-docker-compose ps
+# Ver estado de los servicios
+docker compose ps
 
-# Ver logs en tiempo real
-docker-compose logs -f
+# Ver logs de todos los servicios en tiempo real
+docker compose logs -f
 
 # Ver logs de un servicio específico
-docker-compose logs -f backend-go
-
-# Reiniciar un servicio
-docker-compose restart backend-go
+docker compose logs -f backend-go
 
 # Reiniciar todos los servicios
-docker-compose restart
+docker compose restart
+
+# Detener todos los servicios
+docker compose down
+
+# Detener servicios Y ELIMINAR VOLÚMENES (¡borra los datos de la BD!)
+docker compose down -v
+
+# Reconstruir y levantar los servicios (cuando haces cambios en el código)
+docker compose up -d --build
 ```
 
-### Comandos de construcción
-```bash
-# Construir sin caché (cuando hay cambios)
-docker-compose build --no-cache
-
-# Construir solo un servicio
-docker-compose build --no-cache backend-go
-
-# Reconstruir y levantar
-docker-compose up -d --build
-```
-
-### Comandos de limpieza
-```bash
-# Parar todos los servicios
-docker-compose down
-
-# Parar y eliminar volúmenes (CUIDADO: elimina datos)
-docker-compose down -v
-
-# Parar y eliminar imágenes
-docker-compose down --rmi all
-
-# Limpiar todo (servicios, volúmenes, imágenes)
-docker-compose down -v --rmi all
-```
-
-## 🐛 Solución de Problemas
-
-### Problema: "Docker no está corriendo"
-```bash
-# Iniciar Docker
-sudo systemctl start docker
-
-# Verificar estado
-sudo systemctl status docker
-
-# Habilitar inicio automático
-sudo systemctl enable docker
-```
+## 🐛 Solución de Problemas Comunes
 
 ### Problema: "Puerto ya está en uso"
 ```bash
-# Ver qué está usando el puerto
+# Ver qué proceso está usando el puerto (ej: 8080)
 sudo lsof -i :8080
 
-# Parar el proceso (reemplazar PID)
+# Detener el proceso (reemplazar <PID> con el número de la columna PID)
 sudo kill -9 <PID>
-
-# O cambiar puerto en docker-compose.yml
 ```
 
 ### Problema: "Base de datos no conecta"
 ```bash
 # Ver logs de PostgreSQL
-docker-compose logs postgres
+docker compose logs postgres
 
-# Reiniciar base de datos
-docker-compose restart postgres
-
-# Verificar conexión
-docker-compose exec postgres psql -U heartguard -d heartguard -c "SELECT 1;"
+# Reiniciar el contenedor de la base de datos
+docker compose restart postgres
 ```
 
-### Problema: "Backend no responde"
+### Problema: "Permiso denegado al ejecutar docker"
+Si no reiniciaste sesión después de añadir tu usuario al grupo `docker`, usa `sudo` o reinicia tu sesión.
 ```bash
-# Ver logs del backend
-docker-compose logs backend-go
+# Opción 1: Usar sudo
+sudo docker compose ps
 
-# Reconstruir backend
-docker-compose build --no-cache backend-go
-docker-compose up -d backend-go
-
-# Verificar variables de entorno
-docker-compose exec backend-go env
+# Opción 2: Iniciar una nueva sesión de shell que reconozca tu nuevo grupo
+newgrp docker
 ```
-
-### Problema: "Archivos estáticos no cargan"
-```bash
-# Verificar que los archivos existan
-ls -la static/css/style.css
-ls -la static/js/app.js
-
-# Reconstruir imagen
-docker-compose build --no-cache backend-go
-```
-
-## 🔄 Flujo de Desarrollo
-
-### Cuando hagas cambios en el código:
-```bash
-# 1. Parar servicios
-docker-compose down
-
-# 2. Reconstruir sin caché
-docker-compose build --no-cache
-
-# 3. Levantar servicios
-docker-compose up -d
-
-# 4. Verificar logs
-docker-compose logs -f backend-go
-```
-
-### Para desarrollo continuo:
-```bash
-# Mantener logs abiertos en una terminal
-docker-compose logs -f
-
-# En otra terminal, hacer cambios y reconstruir
-docker-compose build --no-cache backend-go
-docker-compose up -d backend-go
-```
-
-## 📊 Verificación Final
-
-Después de seguir todos los pasos, deberías poder:
-
-1. ✅ **Acceder a http://localhost:8080**
-2. ✅ **Hacer login con admin@heartguard.com / admin123**
-3. ✅ **Ver el dashboard con estadísticas**
-4. ✅ **Navegar por todas las secciones**
-5. ✅ **Ver datos en las tablas**
-6. ✅ **Usar todas las funcionalidades**
-
-## 🆘 Obtener Ayuda
-
-Si tienes problemas:
-
-1. **Verifica los logs:** `docker-compose logs`
-2. **Revisa el estado:** `docker-compose ps`
-3. **Prueba el script de testing:** `./test_web.sh`
-4. **Verifica los puertos:** `sudo netstat -tlnp`
-
-## 📝 Notas Importantes
-
-- **Primera ejecución:** Puede tomar 10-15 minutos
-- **Memoria:** El sistema usa ~2GB de RAM
-- **Espacio:** Los volúmenes Docker ocupan ~3GB
-- **Puertos:** Asegúrate de que 8080, 5432, 6379, 8086 estén libres
-- **Firewall:** Si tienes firewall, abre los puertos necesarios
-
 ---
 
 **🎉 ¡Felicidades! Tu backend de HeartGuard está listo para usar.**
-
-Para más información, consulta el archivo `README_WEB.md` o ejecuta `./test_web.sh` para verificar que todo funcione correctamente.
