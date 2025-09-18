@@ -4,10 +4,10 @@ Esta guía te llevará paso a paso para instalar y ejecutar el backend de HeartG
 
 ## 📋 Requisitos Previos
 
-- **Fedora 37+** (recomendado Fedora 38/39)
-- **Acceso `sudo`** para instalar paquetes.
-- **Conexión a internet** estable.
-- **Mínimo 4GB de RAM** y **10GB de espacio en disco**.
+-   **Fedora 37+** (recomendado Fedora 38/39)
+-   **Acceso `sudo`** para instalar paquetes.
+-   **Conexión a internet** estable.
+-   **Mínimo 4GB de RAM** y **10GB de espacio en disco**.
 
 ---
 
@@ -16,13 +16,17 @@ Esta guía te llevará paso a paso para instalar y ejecutar el backend de HeartG
 El método de instalación de Docker ha cambiado. Los paquetes `docker` y `docker-compose` ya no se usan. Sigue estos pasos para instalar la versión oficial.
 
 ### 1.1 Actualizar el Sistema
+
 Asegúrate de que todos tus paquetes estén al día.
+
 ```bash
 sudo dnf update -y
 ```
 
 ### 1.2 Añadir el Repositorio Oficial de Docker
+
 Esto es necesario para obtener la versión comunitaria (`-ce`) más reciente.
+
 ```bash
 # Instalar utilidades para manejar repositorios
 sudo dnf -y install dnf-utils
@@ -32,13 +36,16 @@ sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/dock
 ```
 
 ### 1.3 Instalar Docker Engine y el Plugin de Compose
+
 Instalamos los paquetes con los nombres correctos desde el nuevo repositorio.
+
 ```bash
 # Instala Docker Engine, CLI, Containerd y el plugin oficial de Compose
 sudo dnf install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
 ```
 
 ### 1.4 Iniciar y Habilitar Docker
+
 ```bash
 # Iniciar el servicio de Docker
 sudo systemctl start docker
@@ -52,7 +59,9 @@ sudo usermod -aG docker $USER
 ```
 
 ### 1.5 Verificar la Instalación
+
 Una vez que hayas reiniciado tu sesión, comprueba que todo funciona. **Nota que `docker-compose` ahora es `docker compose` (con un espacio)**.
+
 ```bash
 # Verificar la versión de Docker Engine
 docker --version
@@ -69,6 +78,7 @@ docker run hello-world
 ## 🐹 Paso 2: Instalar Go
 
 ### 2.1 Instalar Go
+
 ```bash
 # Ir al directorio temporal
 cd /tmp
@@ -76,7 +86,7 @@ cd /tmp
 # Instalar wget si no lo tienes
 sudo dnf install -y wget
 
-# Descargar Go 1.21 (puedes verificar la última versión en go.dev/dl) 
+# Descargar Go 1.21 (puedes verificar la última versión en go.dev/dl)
 wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
 
 # Eliminar cualquier instalación anterior para asegurar una instalación limpia
@@ -87,7 +97,9 @@ sudo tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
 ```
 
 ### 2.2 Configurar las Variables de Entorno de Go
+
 Estos comandos añaden Go a tu PATH de forma permanente.
+
 ```bash
 # Añadir las rutas al archivo de configuración de tu shell (funciona para bash y zsh)
 echo '# GoLang Paths' >> ~/.bashrc
@@ -130,7 +142,7 @@ curl --version
 # Ve a un directorio de tu elección, por ejemplo, Documentos
 cd ~/Documents/
 
-# Clona el repositorio 
+# Clona el repositorio
 git clone https://github.com/eduardogarzab/HeartGuard.git
 cd HeartGuard/backend
 
@@ -142,14 +154,15 @@ ls -la
 
 ## 🚀 Paso 5: Ejecutar el Backend
 
-
 ### 5.1 Construir las Imágenes Docker
+
 ```bash
 # Construir todas las imágenes sin usar caché (ideal para la primera vez)
 docker compose build --no-cache
 ```
 
 ### 5.2 Levantar los Servicios
+
 ```bash
 # Levantar todos los servicios en segundo plano (-d para 'detached')
 docker compose up -d
@@ -159,6 +172,7 @@ docker compose ps
 ```
 
 ### 5.3 Revisar los Logs
+
 ```bash
 # Ver los logs de un servicio específico para asegurar que inició bien
 docker compose logs -f backend-go
@@ -169,22 +183,67 @@ docker compose logs -f backend-go
 ## ✅ Paso 6: Verificar que Todo Funcione
 
 ### 6.1 Verificar Puertos
+
 ```bash
 # Verificar que los puertos principales estén escuchando
 sudo netstat -tlnp | grep -E ':(8080|5432|6379|8086)'
 ```
 
 ### 6.2 Probar la API desde la Terminal
+
 ```bash
 # Probar que la API responde (deberías obtener una respuesta HTTP 200 OK)
 curl -I http://localhost:8080/api
 ```
 
 ### 6.3 Acceder a la Interfaz Web
+
 Abre tu navegador y ve a **http://localhost:8080**. Deberías ver la pantalla de login.
 
-- **Email:** `admin@heartguard.com`
-- **Contraseña:** `admin123`
+-   **Email:** `admin@heartguard.com`
+-   **Contraseña:** `admin123`
+
+---
+
+## 🔥 Paso 7: Revisar Configuración del Firewall
+
+En Fedora y derivados, firewalld puede bloquear el acceso externo a los puertos.
+En Google Cloud (GCP) también debes abrir los puertos en el firewall de la VPC para que el tráfico externo llegue a tu VM.
+
+### 7.1 Abrir Puertos en Fedora (firewalld)
+
+```bash
+sudo firewall-cmd --permanent --add-port=8080/tcp
+sudo firewall-cmd --permanent --add-port=5432/tcp
+sudo firewall-cmd --permanent --add-port=6379/tcp
+sudo firewall-cmd --permanent --add-port=8086/tcp
+sudo firewall-cmd --reload
+```
+
+### 7.2 Abrir Puertos en Google Cloud (GCP)
+
+### Abrir Puertos en Google Cloud (GCP)
+
+Sigue estos pasos para permitir el acceso externo al puerto 8080 en tu VM:
+
+1. Ve a **Google Cloud Console** → **VPC network** → **Firewall rules**.
+2. Haz clic en **Create firewall rule**.
+3. Completa la configuración recomendada:
+
+    | Campo                   | Valor recomendado                    |
+    | ----------------------- | ------------------------------------ |
+    | **Name**                | `allow-heartguard-8080`              |
+    | **Network**             | La VPC de tu VM                      |
+    | **Priority**            | `1000`                               |
+    | **Direction**           | `Ingress`                            |
+    | **Action**              | `Allow`                              |
+    | **Targets**             | All instances (o por tags)           |
+    | **Source IP ranges**    | `0.0.0.0/0` (global) o tu IP pública |
+    | **Protocols and ports** | `tcp:8080`                           |
+
+4. Haz clic en **Save** y espera unos segundos para que la regla se aplique.
+
+> **Nota:** Para mayor seguridad, puedes limitar el rango de IP de origen a tu IP pública.
 
 ---
 
@@ -216,6 +275,7 @@ docker compose up -d --build
 ## 🐛 Solución de Problemas Comunes
 
 ### Problema: "Puerto ya está en uso"
+
 ```bash
 # Ver qué proceso está usando el puerto (ej: 8080)
 sudo lsof -i :8080
@@ -225,6 +285,7 @@ sudo kill -9 <PID>
 ```
 
 ### Problema: "Base de datos no conecta"
+
 ```bash
 # Ver logs de PostgreSQL
 docker compose logs postgres
@@ -234,7 +295,9 @@ docker compose restart postgres
 ```
 
 ### Problema: "Permiso denegado al ejecutar docker"
+
 Si no reiniciaste sesión después de añadir tu usuario al grupo `docker`, usa `sudo` o reinicia tu sesión.
+
 ```bash
 # Opción 1: Usar sudo
 sudo docker compose ps
@@ -242,6 +305,7 @@ sudo docker compose ps
 # Opción 2: Iniciar una nueva sesión de shell que reconozca tu nuevo grupo
 newgrp docker
 ```
+
 ---
 
 **🎉 ¡Felicidades! Tu backend de HeartGuard está listo para usar.**
