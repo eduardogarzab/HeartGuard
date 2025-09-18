@@ -224,8 +224,6 @@ INSERT INTO catalogos (tipo, clave, valor, descripcion, activo) VALUES
 -- Tipos de usuario
 ('tipo_usuario', 'superadmin', 'Super Administrador', 'Usuario con acceso completo al sistema', true),
 ('tipo_usuario', 'admin', 'Administrador', 'Usuario con permisos administrativos', true),
-('tipo_usuario', 'doctor', 'Doctor', 'Usuario médico con acceso a datos de pacientes', true),
-('tipo_usuario', 'paciente', 'Paciente', 'Usuario paciente que usa el dispositivo', true),
 
 -- Estados del sistema
 ('estado_sistema', 'activo', 'Activo', 'Sistema funcionando correctamente', true),
@@ -327,7 +325,7 @@ RETURNS TABLE (
 BEGIN
     RETURN QUERY
     SELECT 
-        (SELECT COUNT(*) FROM usuarios) as total_usuarios,
+        (SELECT COUNT(*) FROM usuarios WHERE rol_id != (SELECT id FROM roles WHERE nombre = 'superadmin')) as total_usuarios,
         (SELECT COUNT(*) FROM familias) as total_familias,
         (SELECT COUNT(*) FROM alertas WHERE atendida = false) as alertas_pendientes,
         (SELECT COUNT(*) FROM alertas WHERE atendida = false AND nivel IN ('alto', 'critico')) as alertas_criticas,

@@ -90,7 +90,7 @@ func getUsuarios(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
 		"data":    usuarios,
-		"total":   len(usuarios),
+		"total":   len(usuarios)-1,
 	})
 }
 
@@ -291,6 +291,17 @@ func updateUsuario(c *gin.Context) {
 		args = append(args, rolID)
 		argIndex++
 	}
+    // Añadir lógica para actualizar familia_id en la misma query
+    if req.FamiliaID != nil {
+        if *req.FamiliaID == 0 { // Asumimos que 0 o un valor nulo significa "Sin Familia"
+            setParts = append(setParts, fmt.Sprintf("familia_id = NULL"))
+        } else {
+            setParts = append(setParts, fmt.Sprintf("familia_id = $%d", argIndex))
+            args = append(args, *req.FamiliaID)
+            argIndex++
+        }
+    }
+
 
 	if len(setParts) == 0 {
 		c.JSON(400, gin.H{"error": "No hay campos para actualizar"})
@@ -318,6 +329,8 @@ func updateUsuario(c *gin.Context) {
 		return
 	}
 
+	// La lógica de actualización de familia separada se puede eliminar o comentar
+	/*
 	// Actualizar familia del usuario si se especificó
 	if req.FamiliaID != nil || req.RemoveFromFamily != nil {
 		if req.RemoveFromFamily != nil && *req.RemoveFromFamily {
@@ -336,6 +349,7 @@ func updateUsuario(c *gin.Context) {
 			}
 		}
 	}
+	*/
 
 	fmt.Printf("✅ Usuario updated: %s\n", u.Nombre)
 	c.JSON(200, gin.H{

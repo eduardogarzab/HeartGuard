@@ -25,7 +25,6 @@ class HeartGuardApp {
         document.getElementById('editUserForm')?.addEventListener('submit', (e) => this.handleUserSubmit(e, true));
 
         // --- Navegación y UI ---
-        document.getElementById('sidebarToggle')?.addEventListener('click', () => this.toggleSidebar());
         document.querySelectorAll('.menu-item').forEach(item => item.addEventListener('click', (e) => this.handleMenuClick(e)));
         document.getElementById('logoutBtn')?.addEventListener('click', () => this.handleLogout());
 
@@ -44,6 +43,10 @@ class HeartGuardApp {
                 if (modal) this.closeModal(modal.id);
             });
         });
+
+        // --- Lógica para menú móvil ---
+        document.getElementById('mobileMenuToggle')?.addEventListener('click', () => this.toggleMobileMenu());
+        document.getElementById('overlay')?.addEventListener('click', () => this.toggleMobileMenu(false));
     }
 
     checkAuthStatus() {
@@ -110,6 +113,11 @@ class HeartGuardApp {
         document.querySelector('.menu-item.active')?.classList.remove('active');
         menuItem.classList.add('active');
         this.showSection(menuItem.dataset.section);
+        
+        // Cerrar sidebar en móvil después de la selección
+        if (document.body.clientWidth <= 768) {
+            this.toggleMobileMenu(false);
+        }
     }
     
     showSection(sectionName) {
@@ -423,7 +431,7 @@ class HeartGuardApp {
             nombre: form.querySelector('#userName')?.value,
             email: form.querySelector('#userEmail')?.value,
             rol: form.querySelector('#userRole')?.value,
-            familia_id: parseInt(form.querySelector('#userFamily')?.value) || null,
+            familia_id: parseInt(form.querySelector('#userFamily')?.value || '0'),
             relacion: 'miembro'
         };
         
@@ -1287,10 +1295,18 @@ class HeartGuardApp {
         setTimeout(() => toast.remove(), 4000);
     }
     
-    toggleSidebar() {
+    toggleMobileMenu(forceOpen = null) {
         const sidebar = document.querySelector('.sidebar');
-        sidebar.classList.toggle('collapsed');
-        localStorage.setItem('sidebarCollapsed', sidebar.classList.contains('collapsed'));
+        const overlay = document.getElementById('overlay');
+        const isOpen = sidebar.classList.contains('is-open');
+
+        if (forceOpen === true || (forceOpen === null && !isOpen)) {
+            sidebar.classList.add('is-open');
+            overlay.classList.add('active');
+        } else {
+            sidebar.classList.remove('is-open');
+            overlay.classList.remove('active');
+        }
     }
 }
 
