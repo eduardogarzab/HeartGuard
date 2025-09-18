@@ -26,7 +26,6 @@ type Usuario struct {
 	Longitud            *float64  `json:"longitud,omitempty"`
 	UltimaActualizacion *time.Time `json:"ultima_actualizacion,omitempty"`
 	FechaCreacion       time.Time `json:"fecha_creacion"`
-	Estado              bool      `json:"estado"`
 	NombreFamilia       *string   `json:"nombre_familia,omitempty"`
 	Relacion            *string   `json:"relacion,omitempty"`
 }
@@ -35,7 +34,6 @@ type Familia struct {
 	ID            int       `json:"id"`
 	NombreFamilia string    `json:"nombre_familia"`
 	FechaCreacion time.Time `json:"fecha_creacion"`
-	Estado        bool      `json:"estado"`
 	TotalMiembros int       `json:"total_miembros,omitempty"`
 }
 
@@ -64,7 +62,6 @@ type EstadisticasSistema struct {
 	TotalFamilias        int `json:"total_familias"`
 	AlertasPendientes    int `json:"alertas_pendientes"`
 	MicroserviciosActivos int `json:"microservicios_activos"`
-	UbicacionesHoy       int `json:"ubicaciones_hoy"`
 	MetricasHoy          int `json:"metricas_hoy"`
 }
 
@@ -87,7 +84,6 @@ type UpdateUsuarioRequest struct {
 	Email     *string `json:"email,omitempty"`
 	Rol       *string `json:"rol,omitempty"`
 	FamiliaID *int    `json:"familia_id,omitempty"`
-	Estado    *bool   `json:"estado,omitempty"`
 }
 
 type CreateFamiliaRequest struct {
@@ -198,15 +194,6 @@ func main() {
 			protected.POST("/familias/asignar", asignarUsuarioFamilia)
 			protected.POST("/familias/remover", removerUsuarioFamilia)
 			
-			// Ubicaciones
-			protected.GET("/ubicaciones", getUbicaciones)
-			protected.GET("/ubicaciones/usuario/:id", getUbicacionesUsuario)
-			
-			// CRUD Métricas
-			protected.GET("/metricas", getMetricas)
-			protected.POST("/metricas", createMetrica)
-			protected.GET("/metricas/usuario/:id", getMetricasUsuario)
-			protected.DELETE("/metricas/:id", deleteMetrica)
 			
 			// CRUD Alertas
 			protected.GET("/alertas", getAlertas)
@@ -256,17 +243,17 @@ func login(c *gin.Context) {
 	var passwordHash string
 	var rolID int
 	query := `SELECT u.id, u.nombre, u.email, u.rol_id, u.latitud, u.longitud, 
-			  u.ultima_actualizacion, u.fecha_creacion, u.estado, u.password_hash,
+			  u.ultima_actualizacion, u.fecha_creacion, u.password_hash,
 			  r.nombre as rol_nombre
 			  FROM usuarios u
 			  JOIN roles r ON u.rol_id = r.id
-			  WHERE u.email = $1 AND r.nombre = 'superadmin' AND u.estado = true`
+			  WHERE u.email = $1 AND r.nombre = 'superadmin'`
 	
 	err := db.QueryRow(query, req.Email).Scan(
 		&usuario.ID, &usuario.Nombre, &usuario.Email, &rolID, 
 		&usuario.Latitud, &usuario.Longitud,
 		&usuario.UltimaActualizacion, &usuario.FechaCreacion, 
-		&usuario.Estado, &passwordHash, &usuario.Rol,
+		&passwordHash, &usuario.Rol,
 	)
 
 	if err != nil {

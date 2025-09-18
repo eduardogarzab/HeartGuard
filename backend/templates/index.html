@@ -87,15 +87,7 @@
                     <span id="alertasBadge" class="badge">0</span>
                 </a>
                 
-                <a href="#" class="menu-item" data-section="ubicaciones">
-                    <i class="fas fa-map-marker-alt"></i>
-                    <span>Ubicaciones</span>
-                </a>
                 
-                <a href="#" class="menu-item" data-section="metricas">
-                    <i class="fas fa-heartbeat"></i>
-                    <span>Métricas</span>
-                </a>
                 
                 <a href="#" class="menu-item" data-section="catalogos">
                     <i class="fas fa-list"></i>
@@ -119,7 +111,7 @@
                         <i class="fas fa-user-shield"></i>
                     </div>
                     <div class="user-details">
-                        <span class="user-name">Super Admin</span>
+                        <span class="user-name">Admin</span>
                         <span class="user-role">Administrador</span>
                     </div>
                 </div>
@@ -138,22 +130,6 @@
                     <p id="pageSubtitle">Panel de control del sistema HeartGuard</p>
                 </div>
                 
-                <div class="header-right">
-                    <div class="notifications">
-                        <button class="notification-btn">
-                            <i class="fas fa-bell"></i>
-                            <span id="notificationsBadge" class="badge">0</span>
-                        </button>
-                    </div>
-                    
-                    <div class="user-menu">
-                        <button class="user-menu-btn">
-                            <i class="fas fa-user-shield"></i>
-                            <span>Super Admin</span>
-                            <i class="fas fa-chevron-down"></i>
-                        </button>
-                    </div>
-                </div>
             </header>
 
             <!-- Content Area -->
@@ -201,15 +177,6 @@
                             </div>
                         </div>
                         
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-map-marker-alt"></i>
-                            </div>
-                            <div class="stat-info">
-                                <h3 id="ubicacionesHoy">0</h3>
-                                <p>Ubicaciones Hoy</p>
-                            </div>
-                        </div>
                         
                         <div class="stat-card">
                             <div class="stat-icon">
@@ -292,7 +259,6 @@
                                     <th>Email</th>
                                     <th>Rol</th>
                                     <th>Familia</th>
-                                    <th>Estado</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
@@ -325,7 +291,6 @@
                                     <th>Nombre</th>
                                     <th>Miembros</th>
                                     <th>Fecha Creación</th>
-                                    <th>Estado</th>
                                     <th>Acciones</th>
                                 </tr>
                             </thead>
@@ -356,8 +321,6 @@
                                     <th>Descripción</th>
                                     <th>Nivel</th>
                                     <th>Fecha</th>
-                                    <th>Estado</th>
-                                    <th>Acciones</th>
                                 </tr>
                             </thead>
                             <tbody id="alertasTable">
@@ -367,52 +330,7 @@
                     </div>
                 </div>
 
-                <!-- Placeholder sections for other modules -->
-                <div id="ubicacionesSection" class="section">
-                    <div class="section-header">
-                        <h2>Ubicaciones de Usuarios</h2>
-                        <div class="header-actions">
-                            <div class="search-box">
-                                <input type="text" id="ubicacionSearch" placeholder="Buscar por usuario..." onkeyup="app.searchUbicaciones()">
-                                <i class="fas fa-search"></i>
-                            </div>
-                            <button class="btn btn-secondary" onclick="app.refreshUbicaciones()">
-                                <i class="fas fa-refresh"></i>
-                                Actualizar
-                            </button>
-                        </div>
-                    </div>
-                    <div class="table-container">
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>ID</th>
-                                    <th>Usuario</th>
-                                    <th>Latitud</th>
-                                    <th>Longitud</th>
-                                    <th>Precisión</th>
-                                    <th>Fuente</th>
-                                    <th>Fecha</th>
-                                    <th>Acciones</th>
-                                </tr>
-                            </thead>
-                            <tbody id="ubicacionesTable">
-                                <!-- Data will be loaded here -->
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
 
-                <div id="metricasSection" class="section">
-                    <div class="section-header">
-                        <h2>Métricas Fisiológicas</h2>
-                    </div>
-                    <div class="placeholder-content">
-                        <i class="fas fa-heartbeat"></i>
-                        <h3>Módulo de Métricas</h3>
-                        <p>Las métricas se consultan desde InfluxDB vía microservicio Flask</p>
-                    </div>
-                </div>
 
                 <div id="catalogosSection" class="section">
                     <div class="section-header">
@@ -464,14 +382,41 @@
 
                 <div id="microserviciosSection" class="section">
                     <div class="section-header">
-                        <h2>Estado de Microservicios</h2>
-                        <button class="btn btn-secondary" onclick="app.refreshMicroservicios()">
-                            <i class="fas fa-refresh"></i>
-                            Actualizar
-                        </button>
+                        <h2>Status Dashboard</h2>
+                        <div class="header-actions">
+                            <div class="last-updated">
+                                <i class="fas fa-clock"></i>
+                                <span id="lastUpdateTime">Actualizando...</span>
+                            </div>
+                            <button class="btn btn-secondary" onclick="app.refreshMicroservicios()">
+                                <i class="fas fa-refresh"></i>
+                                Actualizar
+                            </button>
+                        </div>
                     </div>
-                    <div class="microservices-grid" id="microserviciosGrid">
-                        <!-- Microservices cards will be loaded here -->
+                    
+                    <!-- Overall System Status -->
+                    <div class="system-status">
+                        <div class="status-indicator">
+                            <div class="status-dot operational" id="systemStatusDot"></div>
+                            <div class="status-text">
+                                <span class="status-label">Todos los sistemas operativos</span>
+                                <span class="status-detail" id="systemStatusDetail">Todos los servicios están funcionando correctamente</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Services Grid -->
+                    <div class="services-grid" id="servicesGrid">
+                        <!-- Services will be loaded here -->
+                    </div>
+
+                    <!-- Performance Metrics -->
+                    <div class="metrics-section">
+                        <h3>Métricas de Rendimiento</h3>
+                        <div class="metrics-grid" id="metricsGrid">
+                            <!-- Metrics will be loaded here -->
+                        </div>
                     </div>
                 </div>
             </div>
@@ -554,17 +499,6 @@
                     </div>
                 </div>
                 
-                <div class="form-group">
-                    <label for="userStatus">
-                        <i class="fas fa-toggle-on"></i>
-                        Estado
-                    </label>
-                    <select id="userStatus">
-                        <option value="true">Activo</option>
-                        <option value="false">Inactivo</option>
-                    </select>
-                    <small class="form-help">Estado del usuario en el sistema</small>
-                </div>
                 
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('createUserModal')">
@@ -616,16 +550,6 @@
                         Descripción (opcional)
                     </label>
                     <textarea id="familyDescription" placeholder="Descripción breve de la familia..." rows="3"></textarea>
-                </div>
-                <div class="form-group">
-                    <label for="familyStatus">
-                        <i class="fas fa-toggle-on"></i>
-                        Estado
-                    </label>
-                    <select id="familyStatus">
-                        <option value="true">Activa</option>
-                        <option value="false">Inactiva</option>
-                    </select>
                 </div>
                 
                 <div class="modal-actions">

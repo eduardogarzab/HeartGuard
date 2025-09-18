@@ -16,8 +16,7 @@ CREATE TABLE roles (
     nombre VARCHAR(50) UNIQUE NOT NULL,
     descripcion TEXT,
     permisos JSONB DEFAULT '{}',
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    activo BOOLEAN DEFAULT TRUE
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =========================================================
@@ -27,12 +26,11 @@ CREATE TABLE familias (
     id SERIAL PRIMARY KEY,
     nombre_familia VARCHAR(100) NOT NULL,
     codigo_familia VARCHAR(20) UNIQUE, -- Código para invitaciones
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    estado BOOLEAN DEFAULT TRUE
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- =========================================================
--- Tabla: Usuarios (Normalizada - sin familia_id directo)
+-- Tabla: Usuarios (Normalizada - con familia_id directo)
 -- =========================================================
 CREATE TABLE usuarios (
     id SERIAL PRIMARY KEY,
@@ -40,26 +38,13 @@ CREATE TABLE usuarios (
     email VARCHAR(150) UNIQUE NOT NULL,
     password_hash TEXT NOT NULL,
     rol_id INT NOT NULL REFERENCES roles(id),
+    familia_id INT REFERENCES familias(id),
     latitud DECIMAL(9,6),   -- última ubicación rápida
     longitud DECIMAL(9,6),
     ultima_actualizacion TIMESTAMP,
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    estado BOOLEAN DEFAULT TRUE
+    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- =========================================================
--- Tabla: Miembros de Familia (Relación muchos a muchos)
--- =========================================================
-CREATE TABLE miembros_familia (
-    id SERIAL PRIMARY KEY,
-    familia_id INT REFERENCES familias(id) ON DELETE CASCADE,
-    usuario_id INT REFERENCES usuarios(id) ON DELETE CASCADE,
-    relacion VARCHAR(50), -- padre, madre, hijo, hija, etc.
-    es_admin_familia BOOLEAN DEFAULT FALSE,
-    fecha_ingreso TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    activo BOOLEAN DEFAULT TRUE,
-    UNIQUE(familia_id, usuario_id)
-);
 
 -- =========================================================
 -- Tabla: Ubicaciones (Histórico)
@@ -135,17 +120,13 @@ CREATE TABLE microservicios (
 -- Índices para usuarios
 CREATE INDEX idx_usuarios_email ON usuarios(email);
 CREATE INDEX idx_usuarios_rol_id ON usuarios(rol_id);
-CREATE INDEX idx_usuarios_estado ON usuarios(estado) WHERE estado = true;
 CREATE INDEX idx_usuarios_fecha_creacion ON usuarios(fecha_creacion);
 
 -- Índices para familias
 CREATE INDEX idx_familias_codigo ON familias(codigo_familia);
-CREATE INDEX idx_familias_estado ON familias(estado) WHERE estado = true;
 
--- Índices para miembros_familia
-CREATE INDEX idx_miembros_familia_familia_id ON miembros_familia(familia_id);
-CREATE INDEX idx_miembros_familia_usuario_id ON miembros_familia(usuario_id);
-CREATE INDEX idx_miembros_familia_admin ON miembros_familia(familia_id, es_admin_familia) WHERE es_admin_familia = true;
+-- Índices para usuarios (incluyendo familia_id)
+CREATE INDEX idx_usuarios_familia_id ON usuarios(familia_id);
 
 -- Índices para ubicaciones
 CREATE INDEX idx_ubicaciones_usuario_id ON ubicaciones(usuario_id);
@@ -161,7 +142,6 @@ CREATE INDEX idx_alertas_nivel ON alertas(nivel) WHERE nivel IN ('alto', 'critic
 -- Índices para catálogos
 CREATE INDEX idx_catalogos_tipo ON catalogos(tipo);
 CREATE INDEX idx_catalogos_tipo_clave ON catalogos(tipo, clave);
-CREATE INDEX idx_catalogos_activo ON catalogos(activo) WHERE activo = true;
 
 -- Índices para logs
 CREATE INDEX idx_logs_usuario_id ON logs_sistema(usuario_id);
@@ -180,14 +160,13 @@ CREATE INDEX idx_microservicios_nombre ON microservicios(nombre);
 CREATE VIEW v_usuarios_completos AS
 SELECT 
     u.id, u.nombre, u.email, u.latitud, u.longitud, 
-    u.ultima_actualizacion, u.fecha_creacion, u.estado,
+    u.ultima_actualizacion, u.fecha_creacion,
     r.nombre as rol_nombre, r.descripcion as rol_descripcion,
-    f.id as familia_id, f.nombre_familia,
-    mf.relacion, mf.es_admin_familia
+    u.familia_id, f.nombre_familia,
+    NULL as relacion, NULL as es_admin_familia
 FROM usuarios u
 JOIN roles r ON u.rol_id = r.id
-LEFT JOIN miembros_familia mf ON u.id = mf.usuario_id AND mf.activo = true
-LEFT JOIN familias f ON mf.familia_id = f.id AND f.estado = true;
+LEFT JOIN familias f ON u.familia_id = f.id;
 
 -- Vista: Alertas con información del usuario
 CREATE VIEW v_alertas_completas AS
@@ -198,19 +177,18 @@ SELECT
     u2.nombre as atendido_por_nombre
 FROM alertas a
 JOIN usuarios u ON a.usuario_id = u.id
-LEFT JOIN miembros_familia mf ON u.id = mf.usuario_id AND mf.activo = true
-LEFT JOIN familias f ON mf.familia_id = f.id
+LEFT JOIN familias f ON u.familia_id = f.id
 LEFT JOIN usuarios u2 ON a.atendido_por = u2.id;
 
 -- Vista: Estadísticas de familias
 CREATE VIEW v_estadisticas_familias AS
 SELECT 
-    f.id, f.nombre_familia, f.fecha_creacion, f.estado,
-    COUNT(mf.usuario_id) as total_miembros,
-    COUNT(CASE WHEN mf.es_admin_familia = true THEN 1 END) as total_admins
+    f.id, f.nombre_familia, f.fecha_creacion,
+    COUNT(u.id) as total_miembros,
+    COUNT(CASE WHEN u.rol_id = (SELECT r.id FROM roles r WHERE r.nombre = 'admin_familia') THEN 1 END) as total_admins
 FROM familias f
-LEFT JOIN miembros_familia mf ON f.id = mf.familia_id AND mf.activo = true
-GROUP BY f.id, f.nombre_familia, f.fecha_creacion, f.estado;
+LEFT JOIN usuarios u ON f.id = u.familia_id
+GROUP BY f.id, f.nombre_familia, f.fecha_creacion;
 
 -- =========================================================
 -- DATOS INICIALES
@@ -229,18 +207,30 @@ INSERT INTO roles (nombre, descripcion, permisos) VALUES
 -- Nota: La creación del superadmin se hace después de definir las funciones
 
 -- Insertar catálogos por defecto
-INSERT INTO catalogos (tipo, clave, valor, descripcion) VALUES
-('tipo_alerta', 'frecuencia_cardiaca', 'Frecuencia Cardíaca Anormal', 'Alerta por frecuencia cardíaca fuera de rango'),
-('tipo_alerta', 'presion_arterial', 'Presión Arterial Elevada', 'Alerta por presión arterial alta'),
-('tipo_alerta', 'oxigenacion', 'Nivel de Oxigenación Bajo', 'Alerta por saturación de oxígeno baja'),
-('nivel_alerta', 'bajo', 'Bajo', 'Prioridad baja'),
-('nivel_alerta', 'medio', 'Medio', 'Prioridad media'),
-('nivel_alerta', 'alto', 'Alto', 'Prioridad alta'),
-('nivel_alerta', 'critico', 'Crítico', 'Prioridad crítica'),
-('relacion_familiar', 'padre', 'Padre', 'Relación paterna'),
-('relacion_familiar', 'madre', 'Madre', 'Relación materna'),
-('relacion_familiar', 'hijo', 'Hijo', 'Relación filial'),
-('relacion_familiar', 'hija', 'Hija', 'Relación filial');
+INSERT INTO catalogos (tipo, clave, valor, descripcion, activo) VALUES
+-- Tipos de alerta
+('tipo_alerta', 'ritmo_irregular', 'Ritmo Irregular', 'Alerta por ritmo cardíaco irregular', true),
+('tipo_alerta', 'presion_alta', 'Presión Alta', 'Alerta por presión arterial elevada', true),
+('tipo_alerta', 'presion_baja', 'Presión Baja', 'Alerta por presión arterial baja', true),
+('tipo_alerta', 'frecuencia_alta', 'Frecuencia Alta', 'Alerta por frecuencia cardíaca alta', true),
+('tipo_alerta', 'frecuencia_baja', 'Frecuencia Baja', 'Alerta por frecuencia cardíaca baja', true),
+
+-- Niveles de alerta
+('nivel_alerta', 'critico', 'Crítico', 'Alerta crítica que requiere atención inmediata', true),
+('nivel_alerta', 'alto', 'Alto', 'Alerta de nivel alto', true),
+('nivel_alerta', 'medio', 'Medio', 'Alerta de nivel medio', true),
+('nivel_alerta', 'bajo', 'Bajo', 'Alerta de nivel bajo', true),
+
+-- Tipos de usuario
+('tipo_usuario', 'superadmin', 'Super Administrador', 'Usuario con acceso completo al sistema', true),
+('tipo_usuario', 'admin', 'Administrador', 'Usuario con permisos administrativos', true),
+('tipo_usuario', 'doctor', 'Doctor', 'Usuario médico con acceso a datos de pacientes', true),
+('tipo_usuario', 'paciente', 'Paciente', 'Usuario paciente que usa el dispositivo', true),
+
+-- Estados del sistema
+('estado_sistema', 'activo', 'Activo', 'Sistema funcionando correctamente', true),
+('estado_sistema', 'mantenimiento', 'Mantenimiento', 'Sistema en mantenimiento', true),
+('estado_sistema', 'inactivo', 'Inactivo', 'Sistema desactivado', true);
 
 -- Insertar microservicios por defecto
 INSERT INTO microservicios (nombre, url, estado, descripcion) VALUES
@@ -301,12 +291,9 @@ INSERT INTO usuarios (nombre, email, password_hash, rol_id, fecha_creacion) VALU
 ('Ana López', 'ana.lopez@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W', 
  (SELECT id FROM roles WHERE nombre = 'miembro'), CURRENT_TIMESTAMP);
 
--- Insertar miembros de familia
-INSERT INTO miembros_familia (familia_id, usuario_id, relacion, es_admin_familia, fecha_ingreso) VALUES
-(2, 2, 'padre', true, CURRENT_TIMESTAMP),    -- Juan García es admin de la familia García
-(2, 3, 'madre', false, CURRENT_TIMESTAMP),   -- María García es miembro de la familia García
-(3, 4, 'padre', true, CURRENT_TIMESTAMP),    -- Carlos Rodríguez es admin de la familia Rodríguez
-(3, 5, 'madre', true, CURRENT_TIMESTAMP);    -- Ana López es admin de la familia López
+-- Asignar usuarios a familias (usando la nueva estructura)
+UPDATE usuarios SET familia_id = 2 WHERE id IN (2, 3);  -- Juan y María García a familia García
+UPDATE usuarios SET familia_id = 3 WHERE id IN (4, 5);  -- Carlos y Ana a familia López
 
 -- Insertar ubicaciones de ejemplo
 INSERT INTO ubicaciones (usuario_id, latitud, longitud, timestamp, precision_metros, fuente) VALUES
@@ -335,18 +322,16 @@ RETURNS TABLE (
     total_familias BIGINT,
     alertas_pendientes BIGINT,
     alertas_criticas BIGINT,
-    ubicaciones_hoy BIGINT,
     microservicios_activos BIGINT
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        (SELECT COUNT(*) FROM usuarios WHERE estado = true) as total_usuarios,
-        (SELECT COUNT(*) FROM familias WHERE estado = true) as total_familias,
+        (SELECT COUNT(*) FROM usuarios) as total_usuarios,
+        (SELECT COUNT(*) FROM familias) as total_familias,
         (SELECT COUNT(*) FROM alertas WHERE atendida = false) as alertas_pendientes,
         (SELECT COUNT(*) FROM alertas WHERE atendida = false AND nivel IN ('alto', 'critico')) as alertas_criticas,
-        (SELECT COUNT(*) FROM ubicaciones WHERE DATE(timestamp) = CURRENT_DATE) as ubicaciones_hoy,
-        (SELECT COUNT(*) FROM microservicios WHERE estado = 'activo') as microservicios_activos;
+        4::BIGINT as microservicios_activos;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -355,8 +340,7 @@ CREATE OR REPLACE FUNCTION sp_get_usuarios(
     p_limite INT DEFAULT 50,
     p_offset INT DEFAULT 0,
     p_rol_id INT DEFAULT NULL,
-    p_familia_id INT DEFAULT NULL,
-    p_activo BOOLEAN DEFAULT NULL
+    p_familia_id INT DEFAULT NULL
 )
 RETURNS TABLE (
     id INT,
@@ -367,24 +351,21 @@ RETURNS TABLE (
     relacion VARCHAR(50),
     es_admin_familia BOOLEAN,
     ultima_actualizacion TIMESTAMP,
-    fecha_creacion TIMESTAMP,
-    estado BOOLEAN
+    fecha_creacion TIMESTAMP
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
         u.id, u.nombre, u.email, r.nombre as rol_nombre,
         COALESCE(f.nombre_familia, 'Sin familia') as familia_nombre,
-        mf.relacion, mf.es_admin_familia,
-        u.ultima_actualizacion, u.fecha_creacion, u.estado
+        NULL::VARCHAR(50) as relacion, NULL::BOOLEAN as es_admin_familia,
+        u.ultima_actualizacion, u.fecha_creacion
     FROM usuarios u
     JOIN roles r ON u.rol_id = r.id
-    LEFT JOIN miembros_familia mf ON u.id = mf.usuario_id AND mf.activo = true
-    LEFT JOIN familias f ON mf.familia_id = f.id AND f.estado = true
+    LEFT JOIN familias f ON u.familia_id = f.id
     WHERE 
         (p_rol_id IS NULL OR u.rol_id = p_rol_id) AND
-        (p_familia_id IS NULL OR f.id = p_familia_id) AND
-        (p_activo IS NULL OR u.estado = p_activo) AND
+        (p_familia_id IS NULL OR u.familia_id = p_familia_id) AND
         (u.rol_id != 1)
     ORDER BY u.fecha_creacion DESC
     LIMIT p_limite OFFSET p_offset;
@@ -435,8 +416,7 @@ BEGIN
         a.fecha_atencion, a.atendido_por
     FROM alertas a
     JOIN usuarios u ON a.usuario_id = u.id
-    LEFT JOIN miembros_familia mf ON u.id = mf.usuario_id AND mf.activo = true
-    LEFT JOIN familias f ON mf.familia_id = f.id AND f.estado = true
+    LEFT JOIN familias f ON u.familia_id = f.id
     ORDER BY a.fecha DESC;
 END;
 $$ LANGUAGE plpgsql;
@@ -494,21 +474,20 @@ $$ LANGUAGE plpgsql;
 -- 9. Crear familia
 CREATE OR REPLACE FUNCTION sp_create_familia(
     p_nombre_familia VARCHAR(100),
-    p_codigo_familia VARCHAR(20) DEFAULT NULL
+    p_codigo_familia VARCHAR(20) DEFAULT NULL,
+    p_descripcion TEXT DEFAULT NULL
 )
 RETURNS TABLE (
     familia_id INT,
-    nombre_familia VARCHAR(100),
-    codigo_familia VARCHAR(20),
-    fecha_creacion TIMESTAMP
+    familia_nombre VARCHAR(100),
+    familia_codigo VARCHAR(20),
+    familia_fecha_creacion TIMESTAMP
 ) AS $$
 BEGIN
+    RETURN QUERY
     INSERT INTO familias (nombre_familia, codigo_familia, fecha_creacion)
     VALUES (p_nombre_familia, p_codigo_familia, CURRENT_TIMESTAMP)
-    RETURNING id, nombre_familia, codigo_familia, fecha_creacion 
-    INTO familia_id, nombre_familia, codigo_familia, fecha_creacion;
-    
-    RETURN NEXT;
+    RETURNING id, nombre_familia, codigo_familia, fecha_creacion;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -516,8 +495,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION sp_update_familia(
     p_familia_id INT,
     p_nombre_familia VARCHAR(100) DEFAULT NULL,
-    p_codigo_familia VARCHAR(20) DEFAULT NULL,
-    p_estado BOOLEAN DEFAULT NULL
+    p_codigo_familia VARCHAR(20) DEFAULT NULL
 )
 RETURNS BOOLEAN AS $$
 BEGIN
@@ -528,8 +506,7 @@ BEGIN
     UPDATE familias 
     SET 
         nombre_familia = COALESCE(p_nombre_familia, nombre_familia),
-        codigo_familia = COALESCE(p_codigo_familia, codigo_familia),
-        estado = COALESCE(p_estado, estado)
+        codigo_familia = COALESCE(p_codigo_familia, codigo_familia)
     WHERE id = p_familia_id;
     
     RETURN TRUE;
@@ -539,28 +516,25 @@ $$ LANGUAGE plpgsql;
 -- 11. Obtener familias con estadísticas
 CREATE OR REPLACE FUNCTION sp_get_familias(
     p_limite INT DEFAULT 50,
-    p_offset INT DEFAULT 0,
-    p_activo BOOLEAN DEFAULT NULL
+    p_offset INT DEFAULT 0
 )
 RETURNS TABLE (
     id INT,
     nombre_familia VARCHAR(100),
     codigo_familia VARCHAR(20),
     fecha_creacion TIMESTAMP,
-    estado BOOLEAN,
     total_miembros BIGINT,
     total_admins BIGINT
 ) AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        f.id, f.nombre_familia, f.codigo_familia, f.fecha_creacion, f.estado,
-        COUNT(mf.usuario_id) as total_miembros,
-        COUNT(CASE WHEN mf.es_admin_familia = true THEN 1 END) as total_admins
+        f.id, f.nombre_familia, f.codigo_familia, f.fecha_creacion,
+        COUNT(u.id) as total_miembros,
+        COUNT(CASE WHEN u.rol_id = (SELECT r.id FROM roles r WHERE r.nombre = 'admin_familia') THEN 1 END) as total_admins
     FROM familias f
-    LEFT JOIN miembros_familia mf ON f.id = mf.familia_id AND mf.activo = true
-    WHERE (p_activo IS NULL OR f.estado = p_activo)
-    GROUP BY f.id, f.nombre_familia, f.codigo_familia, f.fecha_creacion, f.estado
+    LEFT JOIN usuarios u ON f.id = u.familia_id
+    GROUP BY f.id, f.nombre_familia, f.codigo_familia, f.fecha_creacion
     ORDER BY f.fecha_creacion DESC
     LIMIT p_limite OFFSET p_offset;
 END;
@@ -583,8 +557,8 @@ BEGIN
         (SELECT COUNT(*) FROM familias) AS total_familias,
         (SELECT COUNT(*) FROM alertas) AS total_alertas,
         (SELECT COUNT(*) FROM alertas WHERE atendida = false) AS alertas_pendientes,
-        (SELECT COUNT(*) FROM usuarios WHERE estado = true AND rol_id != 1) AS usuarios_activos,
-        (SELECT COUNT(*) FROM familias WHERE estado = true) AS familias_activas;
+        (SELECT COUNT(*) FROM usuarios WHERE rol_id != 1) AS usuarios_activos,
+        (SELECT COUNT(*) FROM familias) AS familias_activas;
 END;
 $$ LANGUAGE plpgsql;
 
@@ -677,91 +651,8 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 16. Asignar usuario a familia
-CREATE OR REPLACE FUNCTION sp_asignar_usuario_familia(
-    p_usuario_id INT,
-    p_familia_id INT,
-    p_relacion VARCHAR(50),
-    p_es_admin_familia BOOLEAN DEFAULT FALSE
-)
-RETURNS BOOLEAN AS $$
-BEGIN
-    -- Verificar que el usuario y la familia existen
-    IF NOT EXISTS (SELECT 1 FROM usuarios WHERE id = p_usuario_id) THEN
-        RAISE EXCEPTION 'Usuario no encontrado';
-    END IF;
-    
-    IF NOT EXISTS (SELECT 1 FROM familias WHERE id = p_familia_id) THEN
-        RAISE EXCEPTION 'Familia no encontrada';
-    END IF;
-    
-    -- Si ya existe la relación, actualizarla
-    IF EXISTS (SELECT 1 FROM miembros_familia WHERE usuario_id = p_usuario_id AND familia_id = p_familia_id) THEN
-        UPDATE miembros_familia 
-        SET relacion = p_relacion, 
-            es_admin_familia = p_es_admin_familia,
-            activo = true,
-            fecha_asignacion = CURRENT_TIMESTAMP
-        WHERE usuario_id = p_usuario_id AND familia_id = p_familia_id;
-    ELSE
-        -- Crear nueva relación
-        INSERT INTO miembros_familia (usuario_id, familia_id, relacion, es_admin_familia, activo, fecha_asignacion)
-        VALUES (p_usuario_id, p_familia_id, p_relacion, p_es_admin_familia, true, CURRENT_TIMESTAMP);
-    END IF;
-    
-    RETURN TRUE;
-END;
-$$ LANGUAGE plpgsql;
 
--- 17. Remover usuario de familia
-CREATE OR REPLACE FUNCTION sp_remover_usuario_familia(
-    p_usuario_id INT,
-    p_familia_id INT
-)
-RETURNS BOOLEAN AS $$
-BEGIN
-    -- Verificar que la relación existe
-    IF NOT EXISTS (SELECT 1 FROM miembros_familia WHERE usuario_id = p_usuario_id AND familia_id = p_familia_id) THEN
-        RAISE EXCEPTION 'Relación usuario-familia no encontrada';
-    END IF;
-    
-    -- Marcar como inactivo en lugar de eliminar
-    UPDATE miembros_familia 
-    SET activo = false,
-        fecha_remocion = CURRENT_TIMESTAMP
-    WHERE usuario_id = p_usuario_id AND familia_id = p_familia_id;
-    
-    RETURN TRUE;
-END;
-$$ LANGUAGE plpgsql;
 
--- =========================================================
--- Datos de ejemplo para Catálogos
--- =========================================================
-INSERT INTO catalogos (tipo, clave, valor, descripcion, activo) VALUES
--- Tipos de alerta
-('tipo_alerta', 'ritmo_irregular', 'Ritmo Irregular', 'Alerta por ritmo cardíaco irregular', true),
-('tipo_alerta', 'presion_alta', 'Presión Alta', 'Alerta por presión arterial elevada', true),
-('tipo_alerta', 'presion_baja', 'Presión Baja', 'Alerta por presión arterial baja', true),
-('tipo_alerta', 'frecuencia_alta', 'Frecuencia Alta', 'Alerta por frecuencia cardíaca alta', true),
-('tipo_alerta', 'frecuencia_baja', 'Frecuencia Baja', 'Alerta por frecuencia cardíaca baja', true),
-
--- Niveles de alerta
-('nivel_alerta', 'critico', 'Crítico', 'Alerta crítica que requiere atención inmediata', true),
-('nivel_alerta', 'alto', 'Alto', 'Alerta de nivel alto', true),
-('nivel_alerta', 'medio', 'Medio', 'Alerta de nivel medio', true),
-('nivel_alerta', 'bajo', 'Bajo', 'Alerta de nivel bajo', true),
-
--- Tipos de usuario
-('tipo_usuario', 'superadmin', 'Super Administrador', 'Usuario con acceso completo al sistema', true),
-('tipo_usuario', 'admin', 'Administrador', 'Usuario con permisos administrativos', true),
-('tipo_usuario', 'doctor', 'Doctor', 'Usuario médico con acceso a datos de pacientes', true),
-('tipo_usuario', 'paciente', 'Paciente', 'Usuario paciente que usa el dispositivo', true),
-
--- Estados del sistema
-('estado_sistema', 'activo', 'Activo', 'Sistema funcionando correctamente', true),
-('estado_sistema', 'mantenimiento', 'Mantenimiento', 'Sistema en mantenimiento', true),
-('estado_sistema', 'inactivo', 'Inactivo', 'Sistema desactivado', true);
 
 -- Registrar log de creación del superadmin
 INSERT INTO logs_sistema (usuario_id, accion, detalle, fecha)

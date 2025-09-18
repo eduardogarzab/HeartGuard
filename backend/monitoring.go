@@ -359,12 +359,11 @@ func getDashboardStats(c *gin.Context) {
 		TotalFamilias     int64 `json:"total_familias"`
 		AlertasPendientes int64 `json:"alertas_pendientes"`
 		AlertasCriticas   int64 `json:"alertas_criticas"`
-		UbicacionesHoy    int64 `json:"ubicaciones_hoy"`
 		MicroserviciosActivos int64 `json:"microservicios_activos"`
 	}
 
 	err := row.Scan(&stats.TotalUsuarios, &stats.TotalFamilias, &stats.AlertasPendientes,
-		&stats.AlertasCriticas, &stats.UbicacionesHoy, &stats.MicroserviciosActivos)
+		&stats.AlertasCriticas, &stats.MicroserviciosActivos)
 	if err != nil {
 		fmt.Printf("❌ Error querying dashboard stats: %v\n", err)
 		c.JSON(500, gin.H{"error": "Error obteniendo estadísticas"})
@@ -463,47 +462,8 @@ func updateEstadoMicroservicio(c *gin.Context) {
 	})
 }
 
+
 // =========================================================
-// MÉTRICAS (PLACEHOLDER - VAN A INFLUXDB)
-// =========================================================
-
-func getMetricas(c *gin.Context) {
-	// Placeholder - las métricas se consultan desde InfluxDB
-	// Esto se implementará cuando esté listo el microservicio Flask
-	c.JSON(200, gin.H{
-		"success": true,
-		"data":    []interface{}{},
-		"total":   0,
-		"message": "Métricas se consultan desde InfluxDB vía microservicio Flask",
-	})
-}
-
-func createMetrica(c *gin.Context) {
-	// Placeholder - las métricas se insertan en InfluxDB
-	// Esto se implementará cuando esté listo el microservicio Flask
-	c.JSON(501, gin.H{
-		"error": "Las métricas se insertan directamente en InfluxDB desde el dispositivo móvil vía microservicio Flask",
-	})
-}
-
-func getMetricasUsuario(c *gin.Context) {
-	// Placeholder - las métricas se consultan desde InfluxDB
-	// Esto se implementará cuando esté listo el microservicio Flask
-	c.JSON(200, gin.H{
-		"success": true,
-		"data":    []interface{}{},
-		"total":   0,
-		"message": "Métricas se consultan desde InfluxDB vía microservicio Flask",
-	})
-}
-
-func deleteMetrica(c *gin.Context) {
-	// Placeholder - las métricas se eliminan desde InfluxDB
-	// Esto se implementará cuando esté listo el microservicio Flask
-	c.JSON(501, gin.H{
-		"error": "Las métricas se eliminan directamente en InfluxDB",
-	})
-}// =========================================================
 // FUNCIONES AUXILIARES
 // =========================================================
 
