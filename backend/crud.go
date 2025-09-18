@@ -434,7 +434,7 @@ func getFamilias(c *gin.Context) {
 	}
 	defer rows.Close()
 
-	var familias []map[string]interface{}
+	familias := make([]map[string]interface{}, 0)
 	for rows.Next() {
 		var f struct {
 			ID            int       `json:"id"`

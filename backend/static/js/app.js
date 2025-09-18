@@ -7,6 +7,8 @@ class HeartGuardApp {
     constructor() {
         this.baseURL = '/admin';
         this.token = localStorage.getItem('heartguard_token');
+        const segments = document.getElementById('microservicesSegments');
+        this.microservicesTotal = segments ? Number(segments.dataset.total || 4) : 4;
         this.init();
     }
 
@@ -142,18 +144,98 @@ class HeartGuardApp {
     
     renderDashboard(data) {
         console.log('📊 Dashboard data received:', data);
-        Object.entries({
-            'totalUsuarios': data.total_usuarios, 'totalFamilias': data.total_familias,
-            'alertasPendientes': data.alertas_pendientes, 'alertasCriticas': data.alertas_criticas,
-            'microserviciosActivos': data.microservicios_activos
-        }).forEach(([id, value]) => {
-            const el = document.getElementById(id);
-            console.log(`🔍 Element ${id}:`, el, 'Value:', value);
-            if(el) el.textContent = value ?? 0;
-        });
-        
-        // Update sidebar badges
+
+        const totalUsuarios = Number(data.total_usuarios ?? 0);
+        const totalFamilias = Number(data.total_familias ?? 0);
+        const alertasTotales = Number(data.alertas_pendientes ?? 0);
+        const alertasCriticas = Number(data.alertas_criticas ?? 0);
+        const microserviciosActivos = Number(data.microservicios_activos ?? 0);
+
+        const maxBarValue = Math.max(totalUsuarios, totalFamilias, 1);
+
+        this.updateAlertChart(alertasTotales, alertasCriticas);
+        this.updateBarChart('usuarios', totalUsuarios, maxBarValue);
+        this.updateBarChart('familias', totalFamilias, maxBarValue);
+        this.updateMicroservicesChart(microserviciosActivos);
+
         this.updateSidebarBadges(data);
+    }
+
+    updateAlertChart(total, criticos) {
+        const circle = document.getElementById('alertCircle');
+        const ring = document.getElementById('alertCircleRing');
+        const totalLabel = document.getElementById('alertTotalValue');
+        const tooltip = document.getElementById('alertTooltip');
+        const criticalLabel = document.getElementById('alertCriticalLabel');
+
+        if (!circle || !ring || !totalLabel) return;
+
+        const safeTotal = Number.isFinite(total) ? total : 0;
+        const safeCriticos = Number.isFinite(criticos) ? criticos : 0;
+        const totalFormatted = safeTotal.toLocaleString('es-MX');
+        const critFormatted = safeCriticos.toLocaleString('es-MX');
+        const ratio = safeTotal > 0 ? Math.min(safeCriticos / safeTotal, 1) : 0;
+        const degrees = ratio * 360;
+
+        totalLabel.textContent = totalFormatted;
+        ring.style.background = safeTotal === 0
+            ? 'conic-gradient(var(--border-color) 0deg, var(--border-color) 360deg)'
+            : `conic-gradient(var(--critical-color) 0deg ${degrees}deg, var(--primary-color) ${degrees}deg 360deg)`;
+        circle.classList.toggle('is-empty', safeTotal === 0);
+
+        if (tooltip) {
+            tooltip.textContent = safeTotal === 0
+                ? 'Sin alertas críticas'
+                : `${critFormatted} críticas (${Math.round(ratio * 100)}%)`;
+        }
+
+        if (criticalLabel) {
+            criticalLabel.textContent = `${critFormatted} críticas`;
+        }
+    }
+
+    updateBarChart(key, value, maxValue) {
+        const bar = document.getElementById(`${key}Bar`);
+        const label = document.getElementById(`${key}Value`);
+        if (!bar || !label) return;
+
+        const safeValue = Number.isFinite(value) ? value : 0;
+        const safeMax = Number.isFinite(maxValue) && maxValue > 0 ? maxValue : Math.max(safeValue, 1);
+        const percent = safeValue === 0 ? 0 : Math.min(100, Math.max(15, (safeValue / safeMax) * 100));
+
+        bar.style.height = `${percent}%`;
+        bar.style.width = '100%';
+        bar.classList.toggle('is-empty', safeValue === 0);
+        label.textContent = safeValue.toLocaleString('es-MX');
+    }
+
+    updateMicroservicesChart(activos) {
+        const container = document.getElementById('microservicesSegments');
+        const summary = document.getElementById('microserviciosSummary');
+        if (!container || !summary) return;
+
+        const total = Number(container.dataset.total || this.microservicesTotal || 4);
+        const normalizedTotal = total > 0 ? total : 4;
+        const normalizedActivos = Math.max(0, Math.min(Number.isFinite(activos) ? activos : 0, normalizedTotal));
+
+        container.dataset.total = normalizedTotal;
+
+        if (container.childElementCount !== normalizedTotal) {
+            container.innerHTML = '';
+            for (let i = 0; i < normalizedTotal; i += 1) {
+                const segment = document.createElement('div');
+                segment.className = 'segment';
+                container.appendChild(segment);
+            }
+        }
+
+        Array.from(container.children).forEach((segment, index) => {
+            segment.classList.toggle('active', index < normalizedActivos);
+            segment.classList.toggle('inactive', index >= normalizedActivos);
+        });
+
+        summary.textContent = `${normalizedActivos}/${normalizedTotal} activos`;
+        this.microservicesTotal = normalizedTotal;
     }
     
     updateSidebarBadges(data) {
@@ -183,10 +265,10 @@ class HeartGuardApp {
         }
 
         const rowRenderers = {
-            usuarios: user => `<td>${user.id}</td><td>${user.nombre}</td><td>${user.email}</td><td>${user.rol}</td><td>${user.familia_nombre || '-'}</td><td><button class="btn btn-sm" onclick="app.openModal('createUserModal', ${user.id})"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-error" onclick="app.deleteItem('usuarios', ${user.id})"><i class="fas fa-trash"></i></button></td>`,
-            familias: family => `<td>${family.id}</td><td>${family.nombre_familia}</td><td>${family.total_miembros}</td><td>${new Date(family.fecha_creacion).toLocaleDateString()}</td><td><button class="btn btn-sm" onclick="app.openModal('createFamilyModal', ${family.id})"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-error" onclick="app.deleteItem('familias', ${family.id})"><i class="fas fa-trash"></i></button></td>`,
+            usuarios: user => `<td>${user.id}</td><td>${user.nombre}</td><td>${user.email}</td><td>${user.rol}</td><td>${user.familia_nombre || '-'}</td><td class="table-actions"><button class="action-button" onclick="app.openModal('createUserModal', ${user.id})"><i class="fas fa-pen"></i>Editar</button><button class="action-button danger" onclick="app.deleteItem('usuarios', ${user.id})"><i class="fas fa-trash"></i>Eliminar</button></td>`,
+            familias: family => `<td>${family.id}</td><td>${family.nombre_familia}</td><td>${family.total_miembros}</td><td>${new Date(family.fecha_creacion).toLocaleDateString()}</td><td class="table-actions"><button class="action-button" onclick="app.openModal('createFamilyModal', ${family.id})"><i class="fas fa-pen"></i>Editar</button><button class="action-button danger" onclick="app.deleteItem('familias', ${family.id})"><i class="fas fa-trash"></i>Eliminar</button></td>`,
             alertas: alerta => `<td>${alerta.id}</td><td>${alerta.usuario_nombre || '-'}</td><td>${alerta.tipo || '-'}</td><td>${alerta.descripcion || '-'}</td><td>${alerta.nivel || 'Media'}</td><td>${new Date(alerta.fecha).toLocaleDateString()}</td>`,
-            catalogos: catalogo => `<td>${catalogo.id}</td><td>${catalogo.tipo || '-'}</td><td>${catalogo.clave || '-'}</td><td>${catalogo.valor || '-'}</td><td><button class="btn btn-sm" onclick="app.openModal('createCatalogModal', ${catalogo.id})"><i class="fas fa-edit"></i></button><button class="btn btn-sm btn-error" onclick="app.deleteItem('catalogos', ${catalogo.id})"><i class="fas fa-trash"></i></button></td>`,
+            catalogos: catalogo => `<td>${catalogo.id}</td><td>${catalogo.tipo || '-'}</td><td>${catalogo.clave || '-'}</td><td>${catalogo.valor || '-'}</td><td class="table-actions"><button class="action-button" onclick="app.openModal('createCatalogModal', ${catalogo.id})"><i class="fas fa-pen"></i>Editar</button><button class="action-button danger" onclick="app.deleteItem('catalogos', ${catalogo.id})"><i class="fas fa-trash"></i>Eliminar</button></td>`,
             logs: log => `<td>${log.id}</td><td>${log.usuario_nombre || 'Sistema'}</td><td>${log.accion || '-'}</td><td>${log.detalle || '-'}</td><td>${new Date(log.fecha).toLocaleString()}</td>`,
         };
         
@@ -558,6 +640,12 @@ class HeartGuardApp {
     renderFallbackDashboard() {
         console.log('🎯 Rendering fallback dashboard');
         
+        this.updateAlertChart(0, 0);
+        this.updateBarChart('usuarios', 0, 1);
+        this.updateBarChart('familias', 0, 1);
+        this.updateMicroservicesChart(0);
+        this.updateSidebarBadges({ alertas_pendientes: 0, alertas_criticas: 0 });
+
         // Actualizar el status del sistema
         const systemStatusDot = document.getElementById('systemStatusDot');
         const systemStatusLabel = document.getElementById('systemStatusDetail');
@@ -944,8 +1032,8 @@ class HeartGuardApp {
                     <canvas id="microserviciosChart" width="800" height="400"></canvas>
                 </div>
                 <div class="chart-controls">
-                    <button class="btn btn-sm btn-secondary" onclick="app.refreshMicroservicios()">
-                        <i class="fas fa-refresh"></i> Actualizar
+                    <button class="action-button" onclick="app.refreshMicroservicios()">
+                        <i class="fas fa-rotate"></i> Actualizar
                     </button>
                 </div>
             </div>

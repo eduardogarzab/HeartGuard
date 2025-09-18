@@ -29,24 +29,24 @@
                 </div>
                 <p class="login-subtitle">Panel de Superadministrador</p>
             </div>
-            
+
             <form id="loginForm" class="login-form">
                 <div class="input-group">
                     <i class="fas fa-envelope"></i>
                     <input type="email" id="email" placeholder="Correo electrónico" required>
                 </div>
-                
+
                 <div class="input-group">
                     <i class="fas fa-lock"></i>
                     <input type="password" id="password" placeholder="Contraseña" required>
                 </div>
-                
+
                 <button type="submit" class="login-btn">
                     <span>Iniciar Sesión</span>
                     <i class="fas fa-arrow-right"></i>
                 </button>
             </form>
-            
+
             <div id="loginError" class="error-message"></div>
         </div>
     </div>
@@ -64,47 +64,47 @@
                     <i class="fas fa-bars"></i>
                 </button>
             </div>
-            
+
             <div class="sidebar-menu">
                 <a href="#" class="menu-item active" data-section="dashboard">
                     <i class="fas fa-chart-line"></i>
                     <span>Dashboard</span>
                 </a>
-                
+
                 <a href="#" class="menu-item" data-section="usuarios">
                     <i class="fas fa-users"></i>
                     <span>Usuarios</span>
                 </a>
-                
+
                 <a href="#" class="menu-item" data-section="familias">
                     <i class="fas fa-home"></i>
                     <span>Familias</span>
                 </a>
-                
+
                 <a href="#" class="menu-item" data-section="alertas">
                     <i class="fas fa-exclamation-triangle"></i>
                     <span>Alertas</span>
                     <span id="alertasBadge" class="badge">0</span>
                 </a>
-                
-                
-                
+
+
+
                 <a href="#" class="menu-item" data-section="catalogos">
                     <i class="fas fa-list"></i>
                     <span>Catálogos</span>
                 </a>
-                
+
                 <a href="#" class="menu-item" data-section="logs">
                     <i class="fas fa-clipboard-list"></i>
                     <span>Logs</span>
                 </a>
-                
+
                 <a href="#" class="menu-item" data-section="microservicios">
                     <i class="fas fa-server"></i>
                     <span>Microservicios</span>
                 </a>
             </div>
-            
+
             <div class="sidebar-footer">
                 <div class="user-info">
                     <div class="user-avatar">
@@ -129,110 +129,59 @@
                     <h1 id="pageTitle">Dashboard</h1>
                     <p id="pageSubtitle">Panel de control del sistema HeartGuard</p>
                 </div>
-                
+
             </header>
 
             <!-- Content Area -->
             <div class="content">
                 <!-- Dashboard Section -->
                 <div id="dashboardSection" class="section active">
-                    <div class="stats-grid">
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-users"></i>
+                    <div class="dashboard-charts">
+                        <div class="chart-card alert-chart">
+                            <div class="chart-header">
+                                <h3>Alertas Totales</h3>
+                                <span id="alertCriticalLabel">0 críticas</span>
                             </div>
-                            <div class="stat-info">
-                                <h3 id="totalUsuarios">0</h3>
-                                <p>Usuarios Totales</p>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-home"></i>
-                            </div>
-                            <div class="stat-info">
-                                <h3 id="totalFamilias">0</h3>
-                                <p>Familias</p>
+                            <div class="alert-circle" id="alertCircle">
+                                <div class="alert-circle-ring" id="alertCircleRing"></div>
+                                <div class="alert-circle-inner">
+                                    <span id="alertTotalValue">0</span>
+                                    <small>Total</small>
+                                </div>
+                                <div class="alert-tooltip" id="alertTooltip">0 críticas</div>
                             </div>
                         </div>
-                        
-                        <div class="stat-card alert">
-                            <div class="stat-icon">
-                                <i class="fas fa-exclamation-triangle"></i>
-                            </div>
-                            <div class="stat-info">
-                                <h3 id="alertasPendientes">0</h3>
-                                <p>Alertas Pendientes</p>
-                            </div>
-                        </div>
-                        
-                        <div class="stat-card critical">
-                            <div class="stat-icon">
-                                <i class="fas fa-heartbeat"></i>
-                            </div>
-                            <div class="stat-info">
-                                <h3 id="alertasCriticas">0</h3>
-                                <p>Alertas Críticas</p>
-                            </div>
-                        </div>
-                        
-                        
-                        <div class="stat-card">
-                            <div class="stat-icon">
-                                <i class="fas fa-server"></i>
-                            </div>
-                            <div class="stat-info">
-                                <h3 id="microserviciosActivos">0</h3>
-                                <p>Microservicios Activos</p>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="dashboard-grid">
-                        <div class="card">
-                            <div class="card-header">
-                                <h3>Actividad Reciente</h3>
-                                <button class="btn-icon">
-                                    <i class="fas fa-refresh"></i>
-                                </button>
-                            </div>
-                            <div class="card-content">
-                                <div id="recentActivity" class="activity-list">
-                                    <div class="activity-item">
-                                        <div class="activity-icon">
-                                            <i class="fas fa-user-plus"></i>
-                                        </div>
-                                        <div class="activity-info">
-                                            <p>Usuario creado</p>
-                                            <span>Hace 5 minutos</span>
-                                        </div>
+
+                        <div class="chart-card dual-chart">
+                            <div class="dual-chart-body">
+                                <div class="column-chart">
+                                    <span class="column-label">Usuarios</span>
+                                    <div class="column-wrapper">
+                                        <div class="column-fill" id="usuariosBar"></div>
                                     </div>
+                                    <span class="column-value" id="usuariosValue">0</span>
+                                </div>
+                                <div class="column-chart familias">
+                                    <span class="column-label">Familias</span>
+                                    <div class="column-wrapper">
+                                        <div class="column-fill" id="familiasBar"></div>
+                                    </div>
+                                    <span class="column-value" id="familiasValue">0</span>
                                 </div>
                             </div>
+                            <p class="chart-footnote">Usuarios y Familias Registradas.</p>
                         </div>
-                        
-                        <div class="card">
-                            <div class="card-header">
-                                <h3>Alertas Recientes</h3>
-                                <a href="#" class="btn-link" data-section="alertas">Ver todas</a>
+
+                        <div class="chart-card metrics-card">
+                            <div class="chart-header">
+                                <h3>Microservicios</h3>
+                                <span id="microserviciosSummary">0/4 activos</span>
                             </div>
-                            <div class="card-content">
-                                <div id="recentAlerts" class="alerts-list">
-                                    <div class="alert-item">
-                                        <div class="alert-icon warning">
-                                            <i class="fas fa-exclamation-triangle"></i>
-                                        </div>
-                                        <div class="alert-info">
-                                            <p>Alerta de frecuencia cardíaca alta</p>
-                                            <span>Usuario: Ana García</span>
-                                        </div>
-                                        <div class="alert-time">2 min</div>
-                                    </div>
-                                </div>
-                            </div>
+                            <div class="microservices-segments" id="microservicesSegments" data-total="4"></div>
+                            <p class="chart-footnote">Cada bloque representa el estado de un microservicio.</p>
                         </div>
                     </div>
+
                 </div>
 
                 <!-- Other Sections (Hidden by default) -->
@@ -388,13 +337,13 @@
                                 <i class="fas fa-clock"></i>
                                 <span id="lastUpdateTime">Actualizando...</span>
                             </div>
-                            <button class="btn btn-secondary" onclick="app.refreshMicroservicios()">
-                                <i class="fas fa-refresh"></i>
+                            <button class="action-button" onclick="app.refreshMicroservicios()">
+                                <i class="fas fa-rotate"></i>
                                 Actualizar
                             </button>
                         </div>
                     </div>
-                    
+
                     <!-- Overall System Status -->
                     <div class="system-status">
                         <div class="status-indicator">
@@ -454,7 +403,7 @@
                         <small class="form-help">Email único para el login</small>
                     </div>
                 </div>
-                
+
                 <div class="form-row" id="passwordRow">
                     <div class="form-group">
                         <label for="userPassword">
@@ -473,7 +422,7 @@
                         <small class="form-help">Debe coincidir con la contraseña</small>
                     </div>
                 </div>
-                
+
                 <div class="form-row">
                     <div class="form-group">
                         <label for="userRole">
@@ -498,8 +447,8 @@
                         <small class="form-help">Asignar a una familia existente</small>
                     </div>
                 </div>
-                
-                
+
+
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('createUserModal')">
                         <i class="fas fa-times"></i>
@@ -551,7 +500,7 @@
                     </label>
                     <textarea id="familyDescription" placeholder="Descripción breve de la familia..." rows="3"></textarea>
                 </div>
-                
+
                 <div class="modal-actions">
                     <button type="button" class="btn btn-secondary" onclick="closeModal('createFamilyModal')">
                         <i class="fas fa-times"></i>
@@ -579,7 +528,7 @@
             <div class="modal-body">
                 <form id="catalogForm">
                     <input type="hidden" id="catalogId" name="id">
-                    
+
                     <div class="form-group">
                         <label for="catalogType">Tipo *</label>
                         <select id="catalogType" name="tipo" required>
@@ -590,22 +539,22 @@
                             <option value="estado_sistema">Estado del Sistema</option>
                         </select>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="catalogClave">Clave *</label>
                         <input type="text" id="catalogClave" name="clave" placeholder="Ej: ritmo_irregular" required>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="catalogValor">Valor *</label>
                         <input type="text" id="catalogValor" name="valor" placeholder="Ej: Ritmo Irregular" required>
                     </div>
-                    
+
                     <div class="form-group">
                         <label for="catalogDescripcion">Descripción</label>
                         <textarea id="catalogDescripcion" name="descripcion" rows="3" placeholder="Descripción detallada del catálogo"></textarea>
                     </div>
-                    
+
                     <div class="form-group">
                         <label class="checkbox-label">
                             <input type="checkbox" id="catalogActivo" name="activo" checked>
