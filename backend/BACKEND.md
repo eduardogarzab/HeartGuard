@@ -28,7 +28,7 @@ Esto es necesario para obtener la versión comunitaria (`-ce`) más reciente.
 sudo dnf -y install dnf-utils
 
 # Añadir el repositorio de Docker
-sudo dnf config-manager --add-repo [https://download.docker.com/linux/fedora/docker-ce.repo](https://download.docker.com/linux/fedora/docker-ce.repo)
+sudo dnf config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ```
 
 ### 1.3 Instalar Docker Engine y el Plugin de Compose
@@ -130,8 +130,8 @@ curl --version
 # Ve a un directorio de tu elección, por ejemplo, Documentos
 cd ~/Documents/
 
-# Clona el repositorio (RECUERDA cambiar "tu-usuario/HeartGuard.git")
-git clone [https://github.com/tu-usuario/HeartGuard.git](https://github.com/tu-usuario/HeartGuard.git)
+# Clona el repositorio 
+git clone https://github.com/eduardogarzab/HeartGuard.git
 cd HeartGuard/backend
 
 # Verifica que los archivos principales estén presentes
@@ -142,7 +142,6 @@ ls -la
 
 ## 🚀 Paso 5: Ejecutar el Backend
 
-Se ha corregido `docker-compose` a la nueva sintaxis `docker compose`.
 
 ### 5.1 Construir las Imágenes Docker
 ```bash

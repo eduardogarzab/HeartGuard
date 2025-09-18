@@ -90,7 +90,7 @@ func getUsuarios(c *gin.Context) {
 	c.JSON(200, gin.H{
 		"success": true,
 		"data":    usuarios,
-		"total":   len(usuarios)-1,
+		"total":   len(usuarios),
 	})
 }
 
