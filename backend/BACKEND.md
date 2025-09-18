@@ -76,8 +76,8 @@ cd /tmp
 # Instalar wget si no lo tienes
 sudo dnf install -y wget
 
-# Descargar Go 1.21 (puedes verificar la última versión en go.dev/dl)
-wget [https://go.dev/dl/go1.21.5.linux-amd64.tar.gz](https://go.dev/dl/go1.21.5.linux-amd64.tar.gz)
+# Descargar Go 1.21 (puedes verificar la última versión en go.dev/dl) 
+wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
 
 # Eliminar cualquier instalación anterior para asegurar una instalación limpia
 sudo rm -rf /usr/local/go
