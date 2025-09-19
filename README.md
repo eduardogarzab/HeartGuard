@@ -4,46 +4,11 @@
 
 HeartGuard es un sistema de monitoreo de salud familiar con un **Superadministrador** que gestiona familias y usuarios a nivel global. El sistema está diseñado para monitorear la salud de miembros de familias a través de métricas fisiológicas en tiempo real.
 
-### 🏗️ Arquitectura del Sistema
+### 🏗️ Arquitectura de hardware del Sistema
+![Preview](arquitecturadehardware.png)
 
-```
-                    ┌─────────────────┐
-                    │  Backend Go     │
-                    │ (Superadministrador)│
-                    │   Puerto 8080   │
-                    │                 │
-                    │ • Web Dashboard │
-                    │ • API REST      │
-                    │ • Autenticación │
-                    └─────────────────┘
-                           │
-                    ┌──────┴──────┐
-                    │             │
-                    ▼             ▼
-            ┌─────────────┐ ┌─────────────┐
-            │ PostgreSQL  │ │    Redis    │
-            │ Puerto 5432 │ │ Puerto 6379 │
-            │             │ │             │
-            │ • Familias  │ │ • Sesiones  │
-            │ • Usuarios  │ │ • Tokens    │
-            │ • Roles     │ │ • Cache     │
-            │ • Alertas   │ │             │
-            │ • Ubicaciones│ │             │
-            │ • Logs      │ │             │
-            └─────────────┘ └─────────────┘
-                    │
-                    │ (futuro)
-                    ▼
-            ┌─────────────┐
-            │   InfluxDB  │
-            │ Puerto 8086 │
-            │             │
-            │ • Métricas  │
-            │   Fisiológicas│
-            │ • Series de │
-            │   Tiempo    │
-            └─────────────┘
-```
+### 🏗️ Arquitectura de software del Sistema
+![Preview](arquitecturadesoftware.png)
 
 ## 🚀 Inicio Rápido
 
@@ -123,11 +88,6 @@ docker-compose ps
 - ✅ **Ver estadísticas** de miembros por familia
 - ✅ **Filtrar familias** por nombre
 
-### 📍 Gestión de Ubicaciones
-- ✅ **Ver ubicaciones** de todos los usuarios
-- ✅ **Filtrar ubicaciones** por usuario
-- ✅ **Historial de ubicaciones** con timestamps
-
 ### 🚨 Gestión de Alertas
 - ✅ **Ver todas las alertas** del sistema
 - ✅ **Atender alertas** pendientes
@@ -174,20 +134,20 @@ Cuando ejecutas `docker-compose up -d`, el sistema realiza la siguiente secuenci
 
 #### 3. **Creación de Stored Procedures**
 ```bash
-# 14 stored procedures creados automáticamente:
+# 13 stored procedures creados automáticamente:
+- sp_dashboard_ejecutivo() - Resumen ejecutivo con métricas clave
 - sp_get_usuarios() - Listar usuarios con filtros
-- sp_get_familias() - Listar familias con estadísticas
+- sp_create_alerta() - Crear nueva alerta
+- sp_get_alertas() - Listar alertas con información de usuario y familia
+- sp_atender_alerta() - Marcar alerta como atendida
+- registrar_log_sistema() - Registrar acción en logs del sistema
+- actualizar_estado_microservicio() - Actualizar estado de un microservicio
 - sp_create_familia() - Crear nueva familia
 - sp_update_familia() - Actualizar familia existente
-- sp_get_alertas() - Listar alertas con filtros
-- sp_get_ubicaciones() - Listar ubicaciones
-- sp_get_logs_sistema() - Listar logs del sistema
-- sp_get_dashboard_stats() - Estadísticas del dashboard
-- sp_asignar_usuario_familia() - Asignar usuario a familia
-- sp_remover_usuario_familia() - Remover usuario de familia
-- sp_atender_alerta() - Marcar alerta como atendida
-- sp_create_alerta() - Crear nueva alerta
-- crear_superadmin() - Función para crear superadmin
+- sp_get_familias() - Listar familias con estadísticas
+- sp_get_dashboard_stats() - Obtener estadísticas generales del sistema
+- sp_get_logs_sistema() - Listar logs del sistema con filtros
+- crear_superadmin() - Función para crear superadmin (mencionada al inicio)
 ```
 
 #### 4. **Inicialización de Servicios**
@@ -278,20 +238,23 @@ docker-compose up -d backend-go
 ### Backend Go (Superadministrador) - Puerto 8080
 
 #### Autenticación
-- `POST /admin/login` - Iniciar sesión
+- `POST /admin/login` - Iniciar sesión como superadministrador
 - `POST /admin/logout` - Cerrar sesión
+
+#### Dashboard y Estadísticas
+- `GET /admin/dashboard` - Obtener estadísticas generales del sistema
 
 #### Usuarios
 - `GET /admin/usuarios` - Listar usuarios (con filtros)
 - `POST /admin/usuarios` - Crear usuario
-- `GET /admin/usuarios/:id` - Obtener usuario
+- `GET /admin/usuarios/:id` - Obtener usuario por ID
 - `PUT /admin/usuarios/:id` - Actualizar usuario
 - `DELETE /admin/usuarios/:id` - Eliminar usuario
 
 #### Familias
 - `GET /admin/familias` - Listar familias (con filtros)
 - `POST /admin/familias` - Crear familia
-- `GET /admin/familias/:id` - Obtener familia
+- `GET /admin/familias/:id` - Obtener familia por ID
 - `PUT /admin/familias/:id` - Actualizar familia
 - `DELETE /admin/familias/:id` - Eliminar familia
 
@@ -300,96 +263,106 @@ docker-compose up -d backend-go
 - `POST /admin/familias/remover` - Remover usuario de familia
 
 #### Alertas
-- `GET /admin/alertas` - Listar alertas (con filtros)
+- `GET /admin/alertas` - Listar alertas
 - `POST /admin/alertas` - Crear alerta
-- `PUT /admin/alertas/:id/atender` - Atender alerta
+- `PUT /admin/alertas/:id/atender` - Marcar alerta como atendida
 - `DELETE /admin/alertas/:id` - Eliminar alerta
-
-#### Ubicaciones
-- `GET /admin/ubicaciones` - Listar ubicaciones (con filtros)
-- `GET /admin/ubicaciones/usuario/:id` - Ubicaciones de usuario específico
-
-#### Dashboard y Monitoreo
-- `GET /admin/dashboard` - Estadísticas del dashboard
-- `GET /admin/logs` - Logs del sistema (con filtros)
-- `GET /admin/microservicios` - Estado de microservicios
 
 #### Catálogos
 - `GET /admin/catalogos` - Listar catálogos
+- `GET /admin/catalogos/:id` - Obtener catálogo por ID
 - `POST /admin/catalogos` - Crear catálogo
 - `PUT /admin/catalogos/:id` - Actualizar catálogo
 - `DELETE /admin/catalogos/:id` - Eliminar catálogo
+
+#### Logs del Sistema
+- `GET /admin/logs` - Listar logs del sistema (con filtros)
+
+#### Monitoreo de Microservicios
+- `GET /admin/microservicios` - Consultar estado de microservicios
+- `PUT /admin/microservicios/:id/estado` - Actualizar estado de un microservicio
 
 ## 🗄️ Estructura de Base de Datos
 
 ### PostgreSQL (Datos Estructurados)
 
-#### Tabla: roles
-- `id` (SERIAL PRIMARY KEY)
-- `nombre` (VARCHAR, UNIQUE) - 'superadmin', 'admin_familia', 'miembro'
-- `descripcion` (TEXT)
-- `permisos` (JSONB)
+# 🗄️ Estructura de Base de Datos (PostgreSQL)
 
-#### Tabla: familias
-- `id` (SERIAL PRIMARY KEY)
-- `nombre_familia` (VARCHAR, UNIQUE)
-- `codigo_familia` (VARCHAR, UNIQUE)
-- `descripcion` (TEXT)
-- `fecha_creacion` (TIMESTAMP)
-- `estado` (BOOLEAN)
+## Tabla: `roles`
+- `id` **SERIAL PRIMARY KEY**
+- `nombre` **VARCHAR UNIQUE** — ('superadmin', 'admin_familia', 'miembro')
+- `descripcion` **TEXT**
+- `permisos` **JSONB**
+- `fecha_creacion` **TIMESTAMP**
 
-#### Tabla: usuarios
-- `id` (SERIAL PRIMARY KEY)
-- `nombre` (VARCHAR)
-- `email` (VARCHAR, UNIQUE)
-- `password_hash` (TEXT)
-- `rol_id` (INT, FK → roles.id)
-- `fecha_creacion` (TIMESTAMP)
-- `estado` (BOOLEAN)
+---
 
-#### Tabla: miembros_familia
-- `id` (SERIAL PRIMARY KEY)
-- `familia_id` (INT, FK → familias.id)
-- `usuario_id` (INT, FK → usuarios.id)
-- `relacion` (VARCHAR) - 'padre', 'madre', 'hijo', 'hija', etc.
-- `es_admin_familia` (BOOLEAN)
-- `activo` (BOOLEAN)
-- `fecha_asignacion` (TIMESTAMP)
+## Tabla: `familias`
+- `id` **SERIAL PRIMARY KEY**
+- `nombre_familia` **VARCHAR**
+- `codigo_familia` **VARCHAR UNIQUE** — Código para que los usuarios se unan
+- `fecha_creacion` **TIMESTAMP**
 
-#### Tabla: ubicaciones
-- `id` (SERIAL PRIMARY KEY)
-- `usuario_id` (INT, FK → usuarios.id)
-- `latitud` (NUMERIC)
-- `longitud` (NUMERIC)
-- `timestamp` (TIMESTAMP)
-- `precision_metros` (INT)
-- `fuente` (VARCHAR) - 'gps', 'network', 'manual'
+---
 
-#### Tabla: alertas
-- `id` (SERIAL PRIMARY KEY)
-- `usuario_id` (INT, FK → usuarios.id)
-- `tipo` (VARCHAR) - 'frecuencia_cardiaca', 'presion_arterial', etc.
-- `descripcion` (TEXT)
-- `nivel` (VARCHAR) - 'info', 'warning', 'critical'
-- `fecha` (TIMESTAMP)
-- `atendida` (BOOLEAN)
-- `atendido_por` (INT, FK → usuarios.id)
-- `fecha_atencion` (TIMESTAMP)
+## Tabla: `usuarios`
+- `id` **SERIAL PRIMARY KEY**
+- `nombre` **VARCHAR**
+- `email` **VARCHAR UNIQUE**
+- `password_hash` **TEXT**
+- `rol_id` **INT** → FK → `roles.id`
+- `familia_id` **INT** → FK → `familias.id`
+- `latitud` **DECIMAL** — Última ubicación conocida
+- `longitud` **DECIMAL** — Última ubicación conocida
+- `ultima_actualizacion` **TIMESTAMP**
+- `fecha_creacion` **TIMESTAMP**
 
-#### Tabla: catalogos
-- `id` (SERIAL PRIMARY KEY)
-- `tipo` (VARCHAR) - 'tipo_alerta', 'tipo_ubicacion', etc.
-- `clave` (VARCHAR)
-- `valor` (VARCHAR)
-- `descripcion` (TEXT)
-- `activo` (BOOLEAN)
+---
 
-#### Tabla: logs_sistema
-- `id` (SERIAL PRIMARY KEY)
-- `usuario_id` (INT, FK → usuarios.id)
-- `accion` (VARCHAR) - 'LOGIN', 'LOGOUT', 'CREATE_USER', etc.
-- `detalle` (TEXT)
-- `fecha` (TIMESTAMP)
+## Tabla: `alertas`
+- `id` **SERIAL PRIMARY KEY**
+- `usuario_id` **INT** → FK → `usuarios.id`
+- `tipo` **VARCHAR**
+- `descripcion` **TEXT**
+- `nivel` **VARCHAR** — ('bajo', 'medio', 'alto', 'critico')
+- `fecha` **TIMESTAMP**
+- `atendida` **BOOLEAN**
+- `fecha_atencion` **TIMESTAMP**
+- `atendido_por` **INT** → FK → `usuarios.id`
+- `latitud` **DECIMAL** — Ubicación origen
+- `longitud` **DECIMAL** — Ubicación origen
+
+---
+
+## Tabla: `catalogos`
+- `id` **SERIAL PRIMARY KEY**
+- `tipo` **VARCHAR** — ('tipo_alerta', 'nivel_alerta', 'estado_sistema', etc.)
+- `clave` **VARCHAR**
+- `valor` **VARCHAR**
+- `descripcion` **TEXT**
+- `activo` **BOOLEAN**
+- `fecha_creacion` **TIMESTAMP**
+
+---
+
+## Tabla: `logs_sistema`
+- `id` **SERIAL PRIMARY KEY**
+- `usuario_id` **INT** → FK → `usuarios.id` (puede ser nulo si la acción es del sistema)
+- `accion` **VARCHAR** — ('LOGIN', 'CREATE_USER', 'SYSTEM_INIT', etc.)
+- `detalle` **JSONB** — Información contextual
+- `fecha` **TIMESTAMP**
+
+---
+
+## Tabla: `microservicios`
+- `id` **SERIAL PRIMARY KEY**
+- `nombre` **VARCHAR**
+- `url` **VARCHAR**
+- `estado` **VARCHAR** — ('activo', 'inactivo', 'error')
+- `ultima_verificacion` **TIMESTAMP**
+- `version` **VARCHAR**
+- `descripcion` **TEXT**
+- `fecha_creacion` **TIMESTAMP**
 
 ### Redis (Cache y Sesiones)
 
