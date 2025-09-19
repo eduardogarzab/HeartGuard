@@ -402,27 +402,44 @@ El sistema incluye InfluxDB configurado y listo para almacenar métricas fisiol�
 ## 🛠️ Desarrollo
 
 ### Estructura del Proyecto
+¡Claro, hermano\! Aquí tienes la estructura del proyecto actualizada y en el formato que te gusta. He revisado todos los archivos para asegurarme de que refleje exactamente cómo está organizado tu repositorio ahora.
+
+### 🛠️ Estructura del Proyecto
 
 ```
 HeartGuard/
-├── backend/                    # Backend Go para superadministrador
-│   ├── docker-compose.yml     # Orquestación de servicios
-│   ├── Dockerfile             # Imagen Docker para Go
-│   ├── main.go               # Aplicación principal
-│   ├── crud.go               # Operaciones CRUD
-│   ├── monitoring.go         # Monitoreo y logs
-│   ├── init.sql              # Inicialización de PostgreSQL
-│   ├── go.mod                # Dependencias Go
-│   ├── static/               # Archivos estáticos web
-│   │   ├── css/style.css     # Estilos del dashboard
-│   │   └── js/app.js         # JavaScript del dashboard
-│   └── templates/            # Plantillas HTML
-│       └── index.html        # Dashboard principal
-├── frontend-movil/           # App Android (en desarrollo)
-├── cliente-admin/            # Cliente web alternativo
-├── test.sh                   # Script de pruebas (Mac/Linux)
-├── test.bat                  # Script de pruebas (Windows)
-└── README.md                 # Este archivo
+├── backend/                  # Backend en Go para el Superadministrador
+│   ├── docker-compose.yml    # Orquesta los servicios de backend y base de datos
+│   ├── Dockerfile            # Define la imagen Docker para la app de Go
+│   ├── main.go               # Punto de entrada principal de la aplicación
+│   ├── crud.go               # Lógica para operaciones CRUD (Crear, Leer, Actualizar, Borrar)
+│   ├── monitoring.go         # Endpoints y lógica para monitoreo
+│   ├── init.sql              # Script de inicialización para la base de datos PostgreSQL
+│   ├── go.mod                # Gestiona las dependencias del proyecto
+│   ├── go.sum                # Hashes de las dependencias para seguridad
+│   ├── static/               # Archivos estáticos para el dashboard web
+│   │   ├── css/style.css     # Hoja de estilos principal
+│   │   └── js/app.js         # Lógica JavaScript del frontend
+│   └── templates/            # Plantillas HTML que renderiza el backend
+│       └── index.html        # Página principal del dashboard
+│
+├── frontend/                 # Contiene todas las aplicaciones cliente
+│   ├── cliente-admin/        # Cliente web para el administrador (HTML, CSS, JS)
+│   │   ├── dashboard.html    # El panel de control principal
+│   │   ├── login.html        # La página de inicio de sesión
+│   │   └── assets/           # Recursos para el cliente web
+│   │       ├── js/           # Scripts para la lógica del dashboard
+│   │       └── styles.css    # Estilos para el cliente admin
+│   │
+│   └── frontend-movil/       # Aplicación nativa para Android (Kotlin)
+│       ├── app/              # Código fuente principal de la app
+│       ├── build.gradle.kts  # Script de construcción de la app
+│       └── readme.md         # Instrucciones específicas para la app móvil
+│
+├── arquitecturadehardware.png # Diagrama de la arquitectura de hardware
+├── arquitecturadesoftware.png # Diagrama de la arquitectura de software
+├── README.md                 # La documentación principal del proyecto
+└── LICENSE                   # La licencia del proyecto (MIT)
 ```
 
 ### Comandos de Desarrollo
