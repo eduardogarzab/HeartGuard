@@ -30,6 +30,30 @@ async function init() {
 
 let _miembros = [];
 let _seriesCache = new Map();
+let _selectedMember = null;
+
+function openModal(id) {
+	const m = document.getElementById(id);
+	if (m) m.classList.add("active");
+}
+function closeModal(id) {
+	const m = document.getElementById(id);
+	if (m) m.classList.remove("active");
+}
+
+function wireModalsGlobal() {
+	document.body.addEventListener("click", (e) => {
+		const btn = e.target.closest("[data-close-modal]");
+		if (btn) {
+			closeModal(btn.getAttribute("data-close-modal"));
+		}
+	});
+	document.addEventListener("keydown", (e) => {
+		if (e.key === "Escape") {
+			document.querySelectorAll(".modal.active").forEach((m) => m.classList.remove("active"));
+		}
+	});
+}
 
 /**
  * Carga los datos de un miembro en las gráficas principales del dashboard.
@@ -64,7 +88,12 @@ async function bootstrapData() {
         <div><strong>${m.nombre} ${m.apellido}</strong> <span class="muted">(${m.rel})</span></div>
         <div class="right"><span class="dot ${status}"></span><button class="btn btn-ghost">Ver</button></div>
       `;
-			li.addEventListener("click", () => openMember(m));
+			li.addEventListener("click", () => {
+				document.querySelectorAll(".member-item.selected").forEach((x) => x.classList.remove("selected"));
+				li.classList.add("selected");
+				_selectedMember = m;
+				openMember(m);
+			});
 			ul.appendChild(li);
 		});
 
@@ -135,5 +164,115 @@ function startPolling() {
 		}
 	}, 20000);
 }
+
+// Invitaciones
+async function generarInvitacion() {
+	const role = document.getElementById("roleSelect").value;
+	const btn = document.getElementById("btnGenerarInvitacion");
+	btn.disabled = true;
+	btn.textContent = "Generando...";
+	try {
+		const res = await API.invitarMiembro(role);
+		document.getElementById("inviteLink").value = res.url;
+		const mins = Math.round((res.expira_en - Date.now()) / 60000);
+		document.getElementById("inviteExpire").textContent = `Expira en ${mins} min`;
+		document.getElementById("inviteResult").classList.remove("hidden");
+	} catch (e) {
+		alert("No fue posible generar la invitación");
+	} finally {
+		btn.disabled = false;
+		btn.textContent = "Generar enlace";
+	}
+}
+
+function copiarInvitacion() {
+	const input = document.getElementById("inviteLink");
+	if (!input.value) return;
+	navigator.clipboard.writeText(input.value).then(() => {
+		const old = input.value;
+		const btn = document.getElementById("btnCopiarInv");
+		const prev = btn.textContent;
+		btn.textContent = "Copiado";
+		setTimeout(() => (btn.textContent = prev), 1400);
+	});
+}
+
+async function compartirInvitacion() {
+	const link = document.getElementById("inviteLink").value;
+	if (!link) return;
+	if (navigator.share) {
+		try {
+			await navigator.share({ title: "Invitación HeartGuard", text: "Únete a mi familia en HeartGuard", url: link });
+		} catch {}
+	} else {
+		copiarInvitacion();
+	}
+}
+
+// Eliminación
+function solicitarEliminar() {
+	// Poblar select con miembros actuales (excluye quizás al admin logueado si se desea, por ahora todos)
+	const sel = document.getElementById("selectEliminar");
+	if (!sel) return;
+	sel.innerHTML = "";
+	_miembros.forEach((m) => {
+		const opt = document.createElement("option");
+		opt.value = m.usuario_id;
+		opt.textContent = `${m.nombre} ${m.apellido} (${m.rel})`;
+		sel.appendChild(opt);
+	});
+	openModal("modalEliminar");
+}
+
+async function confirmarEliminar() {
+	const sel = document.getElementById("selectEliminar");
+	if (!sel || !sel.value) {
+		return;
+	}
+	const usuarioId = parseInt(sel.value, 10);
+	const btn = document.getElementById("btnConfirmEliminar");
+	btn.disabled = true;
+	btn.textContent = "Eliminando...";
+	try {
+		await API.eliminarMiembro(usuarioId);
+		closeModal("modalEliminar");
+		_seriesCache.clear();
+		await bootstrapData();
+		if (_selectedMember && _selectedMember.usuario_id === usuarioId) {
+			_selectedMember = null;
+		}
+	} catch (e) {
+		alert("No se pudo eliminar");
+	} finally {
+		btn.disabled = false;
+		btn.textContent = "Eliminar";
+	}
+}
+
+function wireActions() {
+	const gen = document.getElementById("btnGenerarInvitacion");
+	if (gen) gen.addEventListener("click", generarInvitacion);
+	const copy = document.getElementById("btnCopiarInv");
+	if (copy) copy.addEventListener("click", copiarInvitacion);
+	const share = document.getElementById("btnCompartirInv");
+	if (share) share.addEventListener("click", compartirInvitacion);
+	const confirm = document.getElementById("btnConfirmEliminar");
+	if (confirm) confirm.addEventListener("click", confirmarEliminar);
+
+	// Botones que podrían estar en headers (si existen)
+	const btnOpenInv = document.getElementById("btnOpenInvModal");
+	if (btnOpenInv) btnOpenInv.addEventListener("click", () => openModal("modalInvitacion"));
+	const btnSolicitarElim = document.getElementById("btnOpenDeleteModal");
+	if (btnSolicitarElim) btnSolicitarElim.addEventListener("click", solicitarEliminar);
+
+	// Icon buttons en card miembros
+	const addMember = document.getElementById("btnAddMember");
+	if (addMember) addMember.addEventListener("click", () => openModal("modalInvitacion"));
+	const removeMember = document.getElementById("btnRemoveMember");
+	if (removeMember) removeMember.addEventListener("click", solicitarEliminar);
+}
+
+wireModalsGlobal();
+wireActions();
 
 window.addEventListener("DOMContentLoaded", init);

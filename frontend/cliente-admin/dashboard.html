@@ -116,6 +116,58 @@
 			</section>
 		</main>
 
+		<!-- Modal Invitación -->
+		<div id="modalInvitacion" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+			<div class="dialog">
+				<header class="dialog-header">
+					<h4>Nueva invitación</h4>
+					<button class="icon-btn" data-close-modal="modalInvitacion" aria-label="Cerrar">✕</button>
+				</header>
+				<div class="dialog-body">
+					<p class="muted" id="invInfo">Genera un enlace temporal para invitar a un nuevo miembro.</p>
+					<div class="invite-actions" id="inviteActionsIdle">
+						<label for="roleSelect">Rol</label>
+						<select id="roleSelect">
+							<option value="miembro">Miembro</option>
+							<option value="admin">Admin</option>
+						</select>
+						<button id="btnGenerarInvitacion" class="btn btn-primary" type="button">Generar enlace</button>
+					</div>
+					<div class="invite-result hidden" id="inviteResult">
+						<label>Enlace</label>
+						<div class="copy-row">
+							<input id="inviteLink" readonly />
+							<button id="btnCopiarInv" class="btn">Copiar</button>
+							<button id="btnCompartirInv" class="btn btn-ghost" title="Compartir" type="button">Compartir</button>
+						</div>
+						<p class="hint" id="inviteExpire">Expira en —</p>
+					</div>
+				</div>
+				<footer class="dialog-footer">
+					<button class="btn btn-ghost" data-close-modal="modalInvitacion">Cerrar</button>
+				</footer>
+			</div>
+		</div>
+
+		<!-- Modal Confirmación Eliminación -->
+		<div id="modalEliminar" class="modal" aria-hidden="true" role="dialog" aria-modal="true">
+			<div class="dialog">
+				<header class="dialog-header">
+					<h4>Eliminar miembro</h4>
+					<button class="icon-btn" data-close-modal="modalEliminar" aria-label="Cerrar">✕</button>
+				</header>
+				<div class="dialog-body">
+					<label for="selectEliminar">Selecciona el miembro que deseas eliminar</label>
+					<select id="selectEliminar"></select>
+					<p class="muted small">Esta acción no se puede deshacer. Se perderán sus métricas y alertas.</p>
+				</div>
+				<footer class="dialog-footer">
+					<button class="btn btn-ghost" data-close-modal="modalEliminar">Cancelar</button>
+					<button id="btnConfirmEliminar" class="btn btn-danger">Eliminar</button>
+				</footer>
+			</div>
+		</div>
+
 		<script type="module" src="assets/js/dashboard.js"></script>
 	</body>
 </html>

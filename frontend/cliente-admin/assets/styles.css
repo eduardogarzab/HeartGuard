@@ -209,6 +209,96 @@ select {
 	background: transparent;
 }
 
+.btn-danger {
+	background: var(--danger);
+	border-color: transparent;
+	color: #fff;
+}
+.btn-danger:hover {
+	filter: brightness(1.1);
+}
+
+.member-item.selected {
+	background: rgba(255, 255, 255, 0.06);
+	border-left: 3px solid var(--accent);
+	padding-left: 9px;
+}
+
+/* ---- Modals / Dialogs ---- */
+.modal {
+	position: fixed;
+	inset: 0;
+	background: rgba(10, 14, 25, 0.72);
+	backdrop-filter: blur(6px);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 24px;
+	opacity: 0;
+	pointer-events: none;
+	transition: opacity 0.25s ease;
+	z-index: 1100;
+}
+.modal.active {
+	opacity: 1;
+	pointer-events: auto;
+}
+.dialog {
+	background: var(--card);
+	width: 100%;
+	max-width: 460px;
+	border: 1px solid var(--border);
+	border-radius: 12px;
+	display: flex;
+	flex-direction: column;
+	box-shadow: 0 6px 28px -4px rgba(0, 0, 0, 0.5);
+	animation: pop 0.25s ease;
+}
+@keyframes pop {
+	from {
+		transform: translateY(8px);
+		opacity: 0;
+	}
+	to {
+		transform: translateY(0);
+		opacity: 1;
+	}
+}
+.dialog-header,
+.dialog-footer {
+	padding: 16px 20px;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+.dialog-header h4 {
+	margin: 0;
+	font-size: 16px;
+}
+.dialog-body {
+	padding: 0 20px 20px;
+	display: flex;
+	gap: 16px;
+	flex-direction: column;
+}
+.dialog-footer {
+	gap: 12px;
+	justify-content: flex-end;
+}
+.copy-row {
+	display: flex;
+	gap: 8px;
+}
+.copy-row input {
+	flex: 1;
+}
+.invite-result.hidden {
+	display: none;
+}
+.small {
+	font-size: 12px;
+}
+
 /* ---- Pills ---- */
 .pill {
 	display: inline-block;

@@ -170,4 +170,28 @@ export const API = {
 		}
 		return apiClient.put(`/api/v1/alertas/${id}/resolver`);
 	},
+
+	// Generar invitación (en backend real se generaría un token único)
+	async invitarMiembro(role = "miembro") {
+		if (CONFIG.DEMO_MODE) {
+			// Simular creación de token de invitación
+			const token = Math.random().toString(36).slice(2, 10);
+			const url = `${location.origin}/registro?inv=${token}&rol=${encodeURIComponent(role)}`;
+			return { invitacion_id: Date.now(), url, expira_en: Date.now() + 1000 * 60 * 60 };
+		}
+		return apiClient.post("/api/v1/mi-familia/invitaciones", { role });
+	},
+
+	async eliminarMiembro(usuario_id) {
+		if (CONFIG.DEMO_MODE) {
+			const idx = DEMO_DATA.members.findIndex((m) => m.usuario_id === usuario_id);
+			if (idx === -1) throw new Error("Miembro no encontrado");
+			DEMO_DATA.members.splice(idx, 1);
+			// También borrar series y alertas asociadas
+			delete DEMO_DATA.series[usuario_id];
+			DEMO_DATA.alerts = DEMO_DATA.alerts.filter((a) => a.usuario_id !== usuario_id);
+			return { ok: true };
+		}
+		return apiClient.delete(`/api/v1/miembros/${usuario_id}`);
+	},
 };
