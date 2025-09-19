@@ -606,6 +606,13 @@ docker-compose up -d --build backend-go
 - Alertas automáticas basadas en umbrales
 - Machine Learning para detección de patrones
 
+
+#### Dentro de la estructura del proyecto, se especifica que las siguientes carpetas contienen su propio archivo README.md con instrucciones detalladas:
+backend/: Contiene el README.md específico para el servicio del Superadministrador en Go.
+cliente-admin/: Contiene el README.md para el cliente web alternativo.
+frontend-movil/: Contiene el README.md con los detalles sobre la aplicación móvil en desarrollo.
+
+
 ## 📝 Notas Importantes
 
 - ✅ El sistema está **completamente funcional** como backend base
