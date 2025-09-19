@@ -276,7 +276,6 @@ body::before {
     display: flex;
     min-height: 100vh;
     position: relative;
-    /* backdrop-filter: blur(24px); */ /* Esta propiedad puede causar que el sidebar (con position: fixed) no se quede fijo. */
 }
 
 .dashboard::before {
@@ -1607,7 +1606,7 @@ textarea {
 @media (max-width: 768px) {
     .sidebar {
         transform: translateX(-100%);
-        z-index: 1001;
+        z-index: 1001; /* Asegura que esté por encima del overlay */
     }
 
     .sidebar.is-open {
@@ -1619,21 +1618,33 @@ textarea {
     }
 
     .mobile-menu-toggle {
-        display: block !important; /* Forzar la visibilidad en móvil */
+        display: block !important;
+        position: relative;
+        z-index: 9999;
+        background: red; /* para verlo sí o sí */
+        color: white;
+        padding: 10px;
+    }
+
+    .overlay {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        z-index: 1000; /* Debe estar debajo del sidebar */
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity var(--transition-normal);
+    }
+
+    .overlay.active {
+        opacity: 1;
+        pointer-events: auto;
     }
 
     .header-left {
         flex-grow: 1;
         text-align: center;
-    }
-
-    .section-header {
-        flex-wrap: wrap;
-        gap: var(--spacing-md);
-    }
-
-    .data-table {
-        min-width: 600px; /* Forzar scroll horizontal en tablas */
+        margin-right: 2rem; /* Espacio para que no se pegue al borde */
     }
 }
 
@@ -1780,7 +1791,6 @@ textarea {
     padding: var(--spacing-lg);
     border: 1px solid var(--border-light);
     box-shadow: var(--shadow-md);
-    /* overflow-x: auto;  Quitamos esto de aquí */
 }
 
 .table-responsive-wrapper {

@@ -47,19 +47,6 @@ CREATE TABLE usuarios (
 
 
 -- =========================================================
--- Tabla: Ubicaciones (Histórico)
--- =========================================================
-CREATE TABLE ubicaciones (
-    id SERIAL PRIMARY KEY,
-    usuario_id INT REFERENCES usuarios(id) ON DELETE CASCADE,
-    latitud DECIMAL(9,6) NOT NULL,
-    longitud DECIMAL(9,6) NOT NULL,
-    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    precision_metros INT,
-    fuente VARCHAR(50) DEFAULT 'gps' -- gps, network, manual
-);
-
--- =========================================================
 -- Tabla: Alertas
 -- =========================================================
 CREATE TABLE alertas (
@@ -71,7 +58,9 @@ CREATE TABLE alertas (
     fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     atendida BOOLEAN DEFAULT FALSE,
     fecha_atencion TIMESTAMP,
-    atendido_por INT REFERENCES usuarios(id)
+    atendido_por INT REFERENCES usuarios(id),
+    latitud DECIMAL(9,6),
+    longitud DECIMAL(9,6)
 );
 
 -- =========================================================
@@ -128,11 +117,6 @@ CREATE INDEX idx_familias_codigo ON familias(codigo_familia);
 -- Índices para usuarios (incluyendo familia_id)
 CREATE INDEX idx_usuarios_familia_id ON usuarios(familia_id);
 
--- Índices para ubicaciones
-CREATE INDEX idx_ubicaciones_usuario_id ON ubicaciones(usuario_id);
-CREATE INDEX idx_ubicaciones_timestamp ON ubicaciones(timestamp DESC);
-CREATE INDEX idx_ubicaciones_usuario_timestamp ON ubicaciones(usuario_id, timestamp DESC);
-
 -- Índices para alertas
 CREATE INDEX idx_alertas_usuario_id ON alertas(usuario_id);
 CREATE INDEX idx_alertas_fecha ON alertas(fecha DESC);
@@ -158,8 +142,8 @@ CREATE INDEX idx_microservicios_nombre ON microservicios(nombre);
 
 -- Vista: Usuarios con información completa
 CREATE VIEW v_usuarios_completos AS
-SELECT 
-    u.id, u.nombre, u.email, u.latitud, u.longitud, 
+SELECT
+    u.id, u.nombre, u.email, u.latitud, u.longitud,
     u.ultima_actualizacion, u.fecha_creacion,
     r.nombre as rol_nombre, r.descripcion as rol_descripcion,
     u.familia_id, f.nombre_familia,
@@ -170,7 +154,7 @@ LEFT JOIN familias f ON u.familia_id = f.id;
 
 -- Vista: Alertas con información del usuario
 CREATE VIEW v_alertas_completas AS
-SELECT 
+SELECT
     a.id, a.usuario_id, u.nombre as usuario_nombre,
     f.nombre_familia, a.tipo, a.descripcion, a.nivel,
     a.fecha, a.atendida, a.fecha_atencion,
@@ -182,7 +166,7 @@ LEFT JOIN usuarios u2 ON a.atendido_por = u2.id;
 
 -- Vista: Estadísticas de familias
 CREATE VIEW v_estadisticas_familias AS
-SELECT 
+SELECT
     f.id, f.nombre_familia, f.fecha_creacion,
     COUNT(u.id) as total_miembros,
     COUNT(CASE WHEN u.rol_id = (SELECT r.id FROM roles r WHERE r.nombre = 'admin_familia') THEN 1 END) as total_admins
@@ -261,12 +245,12 @@ DECLARE
 BEGIN
     -- Obtener ID del rol superadmin
     SELECT id INTO v_rol_superadmin_id FROM roles WHERE nombre = 'superadmin';
-    
+
     -- Crear usuario superadmin
     INSERT INTO usuarios (nombre, email, password_hash, rol_id)
     VALUES (p_nombre, p_email, p_password_hash, v_rol_superadmin_id)
     RETURNING id INTO v_usuario_id;
-    
+
     RETURN v_usuario_id;
 END;
 $$ LANGUAGE plpgsql;
@@ -280,32 +264,25 @@ SELECT crear_superadmin(
 
 -- Insertar usuarios adicionales (no superadmin)
 INSERT INTO usuarios (nombre, email, password_hash, rol_id, fecha_creacion) VALUES
-('Juan García', 'juan.garcia@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W', 
+('Juan García', 'juan.garcia@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W',
  (SELECT id FROM roles WHERE nombre = 'admin_familia'), CURRENT_TIMESTAMP),
-('María García', 'maria.garcia@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W', 
+('María García', 'maria.garcia@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W',
  (SELECT id FROM roles WHERE nombre = 'miembro'), CURRENT_TIMESTAMP),
-('Carlos Rodríguez', 'carlos.rodriguez@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W', 
+('Carlos Rodríguez', 'carlos.rodriguez@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W',
  (SELECT id FROM roles WHERE nombre = 'admin_familia'), CURRENT_TIMESTAMP),
-('Ana López', 'ana.lopez@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W', 
+('Ana López', 'ana.lopez@email.com', '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W',
  (SELECT id FROM roles WHERE nombre = 'miembro'), CURRENT_TIMESTAMP);
 
 -- Asignar usuarios a familias (usando la nueva estructura)
 UPDATE usuarios SET familia_id = 2 WHERE id IN (2, 3);  -- Juan y María García a familia García
 UPDATE usuarios SET familia_id = 3 WHERE id IN (4, 5);  -- Carlos y Ana a familia López
 
--- Insertar ubicaciones de ejemplo
-INSERT INTO ubicaciones (usuario_id, latitud, longitud, timestamp, precision_metros, fuente) VALUES
-(2, 19.4326, -99.1332, CURRENT_TIMESTAMP - INTERVAL '1 hour', 5, 'gps'),
-(3, 19.4330, -99.1335, CURRENT_TIMESTAMP - INTERVAL '2 hours', 8, 'gps'),
-(4, 19.4320, -99.1325, CURRENT_TIMESTAMP - INTERVAL '30 minutes', 3, 'gps'),
-(5, 19.4335, -99.1340, CURRENT_TIMESTAMP - INTERVAL '1 hour 30 minutes', 6, 'gps');
-
 -- Insertar alertas de ejemplo
-INSERT INTO alertas (usuario_id, tipo, descripcion, nivel, fecha) VALUES
-(3, 'frecuencia_cardiaca', 'Frecuencia cardíaca elevada detectada: 120 bpm', 'alto', CURRENT_TIMESTAMP - INTERVAL '30 minutes'),
-(4, 'presion_arterial', 'Presión arterial alta: 150/95 mmHg', 'critico', CURRENT_TIMESTAMP - INTERVAL '1 hour'),
-(5, 'oxigenacion', 'Saturación de oxígeno baja: 88%', 'medio', CURRENT_TIMESTAMP - INTERVAL '2 hours'),
-(2, 'frecuencia_cardiaca', 'Frecuencia cardíaca irregular detectada', 'alto', CURRENT_TIMESTAMP - INTERVAL '45 minutes');
+INSERT INTO alertas (usuario_id, tipo, descripcion, nivel, fecha, latitud, longitud) VALUES
+(3, 'frecuencia_cardiaca', 'Frecuencia cardíaca elevada detectada: 120 bpm', 'alto', CURRENT_TIMESTAMP - INTERVAL '30 minutes', 19.4326, -99.1332),
+(4, 'presion_arterial', 'Presión arterial alta: 150/95 mmHg', 'critico', CURRENT_TIMESTAMP - INTERVAL '1 hour', 25.6866, -100.3161),
+(5, 'oxigenacion', 'Saturación de oxígeno baja: 88%', 'medio', CURRENT_TIMESTAMP - INTERVAL '2 hours', 19.4326, -99.1332),
+(2, 'frecuencia_cardiaca', 'Frecuencia cardíaca irregular detectada', 'alto', CURRENT_TIMESTAMP - INTERVAL '45 minutes', 25.6866, -100.3161);
 
 -- =========================================================
 -- STORED PROCEDURES
@@ -324,7 +301,7 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         (SELECT COUNT(*) FROM usuarios WHERE rol_id != (SELECT id FROM roles WHERE nombre = 'superadmin')) as total_usuarios,
         (SELECT COUNT(*) FROM familias) as total_familias,
         (SELECT COUNT(*) FROM alertas WHERE atendida = false) as alertas_pendientes,
@@ -353,7 +330,7 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         u.id, u.nombre, u.email, r.nombre as rol_nombre,
         COALESCE(f.nombre_familia, 'Sin familia') as familia_nombre,
         NULL::VARCHAR(50) as relacion, NULL::BOOLEAN as es_admin_familia,
@@ -361,7 +338,7 @@ BEGIN
     FROM usuarios u
     JOIN roles r ON u.rol_id = r.id
     LEFT JOIN familias f ON u.familia_id = f.id
-    WHERE 
+    WHERE
         (p_rol_id IS NULL OR u.rol_id = p_rol_id) AND
         (p_familia_id IS NULL OR u.familia_id = p_familia_id) AND
         (u.rol_id != 1)
@@ -375,17 +352,19 @@ CREATE OR REPLACE FUNCTION sp_create_alerta(
     p_usuario_id INT,
     p_tipo VARCHAR(50),
     p_descripcion TEXT,
-    p_nivel VARCHAR(20)
+    p_nivel VARCHAR(20),
+    p_latitud DECIMAL(9,6),
+    p_longitud DECIMAL(9,6)
 )
 RETURNS TABLE (
     alerta_id INT,
     fecha TIMESTAMP
 ) AS $$
 BEGIN
-    INSERT INTO alertas (usuario_id, tipo, descripcion, nivel, fecha)
-    VALUES (p_usuario_id, p_tipo, p_descripcion, p_nivel, CURRENT_TIMESTAMP)
+    INSERT INTO alertas (usuario_id, tipo, descripcion, nivel, fecha, latitud, longitud)
+    VALUES (p_usuario_id, p_tipo, p_descripcion, p_nivel, CURRENT_TIMESTAMP, p_latitud, p_longitud)
     RETURNING id, fecha INTO alerta_id, fecha;
-    
+
     RETURN NEXT;
 END;
 $$ LANGUAGE plpgsql;
@@ -403,15 +382,17 @@ RETURNS TABLE (
     fecha TIMESTAMP,
     atendida BOOLEAN,
     fecha_atencion TIMESTAMP,
-    atendido_por INT
+    atendido_por INT,
+    latitud DECIMAL(9,6),
+    longitud DECIMAL(9,6)
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
-        a.id, a.usuario_id, u.nombre as usuario_nombre, 
+    SELECT
+        a.id, a.usuario_id, u.nombre as usuario_nombre,
         COALESCE(f.nombre_familia, 'Sin familia') as familia_nombre,
         a.tipo, a.descripcion, a.nivel, a.fecha, a.atendida,
-        a.fecha_atencion, a.atendido_por
+        a.fecha_atencion, a.atendido_por, a.latitud, a.longitud
     FROM alertas a
     JOIN usuarios u ON a.usuario_id = u.id
     LEFT JOIN familias f ON u.familia_id = f.id
@@ -426,12 +407,12 @@ CREATE OR REPLACE FUNCTION sp_atender_alerta(
 )
 RETURNS BOOLEAN AS $$
 BEGIN
-    UPDATE alertas 
-    SET atendida = true, 
+    UPDATE alertas
+    SET atendida = true,
         fecha_atencion = CURRENT_TIMESTAMP,
         atendido_por = p_atendido_por
     WHERE id = p_alerta_id;
-    
+
     RETURN FOUND;
 END;
 $$ LANGUAGE plpgsql;
@@ -459,12 +440,12 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM microservicios WHERE id = p_microservicio_id) THEN
         RETURN FALSE;
     END IF;
-    
-    UPDATE microservicios 
+
+    UPDATE microservicios
     SET estado = p_estado,
         ultima_verificacion = CURRENT_TIMESTAMP
     WHERE id = p_microservicio_id;
-    
+
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql;
@@ -500,13 +481,13 @@ BEGIN
     IF NOT EXISTS (SELECT 1 FROM familias WHERE id = p_familia_id) THEN
         RETURN FALSE;
     END IF;
-    
-    UPDATE familias 
-    SET 
+
+    UPDATE familias
+    SET
         nombre_familia = COALESCE(p_nombre_familia, nombre_familia),
         codigo_familia = COALESCE(p_codigo_familia, codigo_familia)
     WHERE id = p_familia_id;
-    
+
     RETURN TRUE;
 END;
 $$ LANGUAGE plpgsql;
@@ -526,7 +507,7 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         f.id, f.nombre_familia, f.codigo_familia, f.fecha_creacion,
         COUNT(u.id) as total_miembros,
         COUNT(CASE WHEN u.rol_id = (SELECT r.id FROM roles r WHERE r.nombre = 'admin_familia') THEN 1 END) as total_admins
@@ -560,67 +541,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 13. Obtener ubicaciones con filtros
-CREATE OR REPLACE FUNCTION sp_get_ubicaciones(
-    p_limite INT DEFAULT 50,
-    p_offset INT DEFAULT 0,
-    p_usuario_id INT DEFAULT NULL
-)
-RETURNS TABLE (
-    id INT,
-    usuario_id INT,
-    usuario_nombre VARCHAR(100),
-    latitud DECIMAL(9,6),
-    longitud DECIMAL(9,6),
-    ubicacion_timestamp TIMESTAMP,
-    precision_metros INT,
-    fuente VARCHAR(50)
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        u.id, u.usuario_id, us.nombre as usuario_nombre,
-        u.latitud, u.longitud, u.timestamp as ubicacion_timestamp,
-        u.precision_metros, u.fuente
-    FROM ubicaciones u
-    JOIN usuarios us ON u.usuario_id = us.id
-    WHERE (p_usuario_id IS NULL OR u.usuario_id = p_usuario_id)
-    ORDER BY u.timestamp DESC
-    LIMIT p_limite OFFSET p_offset;
-END;
-$$ LANGUAGE plpgsql;
-
--- 14. Obtener ubicaciones de un usuario específico
-CREATE OR REPLACE FUNCTION sp_get_ubicaciones_usuario(
-    p_usuario_id INT,
-    p_limite INT DEFAULT 50,
-    p_offset INT DEFAULT 0
-)
-RETURNS TABLE (
-    id INT,
-    usuario_id INT,
-    usuario_nombre VARCHAR(100),
-    latitud DECIMAL(9,6),
-    longitud DECIMAL(9,6),
-    ubicacion_timestamp TIMESTAMP,
-    precision_metros INT,
-    fuente VARCHAR(50)
-) AS $$
-BEGIN
-    RETURN QUERY
-    SELECT 
-        u.id, u.usuario_id, us.nombre as usuario_nombre,
-        u.latitud, u.longitud, u.timestamp as ubicacion_timestamp,
-        u.precision_metros, u.fuente
-    FROM ubicaciones u
-    JOIN usuarios us ON u.usuario_id = us.id
-    WHERE u.usuario_id = p_usuario_id
-    ORDER BY u.timestamp DESC
-    LIMIT p_limite OFFSET p_offset;
-END;
-$$ LANGUAGE plpgsql;
-
--- 15. Obtener logs del sistema con filtros
+-- 13. Obtener logs del sistema con filtros
 CREATE OR REPLACE FUNCTION sp_get_logs_sistema(
     p_limite INT DEFAULT 100,
     p_offset INT DEFAULT 0,
@@ -637,7 +558,7 @@ RETURNS TABLE (
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
+    SELECT
         l.id, l.usuario_id, COALESCE(u.nombre, 'Sistema') as usuario_nombre,
         l.accion, l.detalle, l.fecha
     FROM logs_sistema l

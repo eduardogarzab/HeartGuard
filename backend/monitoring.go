@@ -22,6 +22,8 @@ type Alerta struct {
 	Atendida      bool      `json:"atendida"`
 	FechaAtencion *time.Time `json:"fecha_atencion,omitempty"`
 	AtendidoPor   *int      `json:"atendido_por,omitempty"`
+	Latitud       *float64  `json:"latitud,omitempty"`
+	Longitud      *float64  `json:"longitud,omitempty"`
 }
 
 type CreateAlertaRequest struct {
@@ -29,6 +31,8 @@ type CreateAlertaRequest struct {
 	Tipo         string `json:"tipo" binding:"required"`
 	Descripcion  string `json:"descripcion" binding:"required"`
 	Nivel        string `json:"nivel" binding:"required"`
+	Latitud      *float64 `json:"latitud"`
+	Longitud     *float64 `json:"longitud"`
 }
 
 type AtenderAlertaRequest struct {
@@ -72,8 +76,8 @@ func createAlerta(c *gin.Context) {
 	}
 
 	// Usar stored procedure para crear alerta
-	rows, err := db.Query(`SELECT * FROM sp_create_alerta($1, $2, $3, $4)`, 
-		req.UsuarioID, req.Tipo, req.Descripcion, req.Nivel)
+	rows, err := db.Query(`SELECT * FROM sp_create_alerta($1, $2, $3, $4, $5, $6)`,
+		req.UsuarioID, req.Tipo, req.Descripcion, req.Nivel, req.Latitud, req.Longitud)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Error creando alerta"})
 		return
@@ -119,10 +123,11 @@ func getAlertas(c *gin.Context) {
 		var fechaAtencion sql.NullTime
 		var atendidoPor sql.NullInt64
 		var usuarioNombre, familiaNombre sql.NullString
+		var latitud, longitud sql.NullFloat64
 
 		err := rows.Scan(&alerta.ID, &alerta.UsuarioID, &usuarioNombre, &familiaNombre,
-			&alerta.Tipo, &alerta.Descripcion, &alerta.Nivel, &alerta.Fecha, 
-			&alerta.Atendida, &fechaAtencion, &atendidoPor)
+			&alerta.Tipo, &alerta.Descripcion, &alerta.Nivel, &alerta.Fecha,
+			&alerta.Atendida, &fechaAtencion, &atendidoPor, &latitud, &longitud)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "Error escaneando alertas"})
 			return
@@ -140,6 +145,12 @@ func getAlertas(c *gin.Context) {
 		if atendidoPor.Valid {
 			atendidoPorInt := int(atendidoPor.Int64)
 			alerta.AtendidoPor = &atendidoPorInt
+		}
+		if latitud.Valid {
+			alerta.Latitud = &latitud.Float64
+		}
+		if longitud.Valid {
+			alerta.Longitud = &longitud.Float64
 		}
 
 		alertas = append(alertas, alerta)
@@ -155,17 +166,18 @@ func getAlertas(c *gin.Context) {
 func getAlertasUsuario(c *gin.Context) {
 	usuarioID := c.Param("id")
 	limit := c.DefaultQuery("limit", "50")
-	
+
 	// Query para obtener alertas de un usuario específico
 	query := `SELECT a.id, a.usuario_id, u.nombre as usuario_nombre, f.nombre_familia,
-			  a.tipo, a.descripcion, a.nivel, a.fecha, a.atendida, a.fecha_atencion, a.atendido_por
+			  a.tipo, a.descripcion, a.nivel, a.fecha, a.atendida, a.fecha_atencion, a.atendido_por,
+			  a.latitud, a.longitud
 			  FROM alertas a
 			  JOIN usuarios u ON a.usuario_id = u.id
 			  LEFT JOIN familias f ON u.familia_id = f.id
 			  WHERE a.usuario_id = $1
 			  ORDER BY a.fecha DESC
 			  LIMIT $2`
-	
+
 	rows, err := db.Query(query, usuarioID, limit)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Error consultando alertas del usuario"})
@@ -179,10 +191,11 @@ func getAlertasUsuario(c *gin.Context) {
 		var fechaAtencion sql.NullTime
 		var atendidoPor sql.NullInt64
 		var usuarioNombre, familiaNombre sql.NullString
+		var latitud, longitud sql.NullFloat64
 
 		err := rows.Scan(&alerta.ID, &alerta.UsuarioID, &usuarioNombre, &familiaNombre,
-			&alerta.Tipo, &alerta.Descripcion, &alerta.Nivel, &alerta.Fecha, 
-			&alerta.Atendida, &fechaAtencion, &atendidoPor)
+			&alerta.Tipo, &alerta.Descripcion, &alerta.Nivel, &alerta.Fecha,
+			&alerta.Atendida, &fechaAtencion, &atendidoPor, &latitud, &longitud)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "Error escaneando alertas"})
 			return
@@ -201,6 +214,13 @@ func getAlertasUsuario(c *gin.Context) {
 			atendidoPorInt := int(atendidoPor.Int64)
 			alerta.AtendidoPor = &atendidoPorInt
 		}
+		if latitud.Valid {
+			alerta.Latitud = &latitud.Float64
+		}
+		if longitud.Valid {
+			alerta.Longitud = &longitud.Float64
+		}
+
 
 		alertas = append(alertas, alerta)
 	}
@@ -215,7 +235,7 @@ func getAlertasUsuario(c *gin.Context) {
 func atenderAlerta(c *gin.Context) {
 	alertaID := c.Param("id")
 	var req AtenderAlertaRequest
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": "Datos inválidos"})
 		return
@@ -250,9 +270,9 @@ func atenderAlerta(c *gin.Context) {
 
 func deleteAlerta(c *gin.Context) {
 	alertaID := c.Param("id")
-	
+
 	// Eliminar alerta (soft delete marcando como atendida)
-	query := `UPDATE alertas SET atendida = true, fecha_atencion = CURRENT_TIMESTAMP 
+	query := `UPDATE alertas SET atendida = true, fecha_atencion = CURRENT_TIMESTAMP
 			  WHERE id = $1`
 	result, err := db.Exec(query, alertaID)
 	if err != nil {
@@ -313,7 +333,7 @@ func getLogsSistema(c *gin.Context) {
 			Fecha         string  `json:"fecha"`
 		}
 
-		err := rows.Scan(&log.ID, &log.UsuarioID, &log.UsuarioNombre, &log.Accion, 
+		err := rows.Scan(&log.ID, &log.UsuarioID, &log.UsuarioNombre, &log.Accion,
 			&log.Detalle, &log.Fecha)
 		if err != nil {
 			fmt.Printf("❌ Error scanning log: %v\n", err)
@@ -379,9 +399,9 @@ func getDashboardStats(c *gin.Context) {
 
 func getHealthMicroservicios(c *gin.Context) {
 	// Consultar estado de microservicios
-	query := `SELECT id, nombre, url, estado, ultima_verificacion, version 
+	query := `SELECT id, nombre, url, estado, ultima_verificacion, version
 			  FROM microservicios ORDER BY nombre`
-	
+
 	rows, err := db.Query(query)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Error consultando microservicios"})
@@ -395,7 +415,7 @@ func getHealthMicroservicios(c *gin.Context) {
 		var ultimaVerificacion sql.NullTime
 		var version sql.NullString
 
-		err := rows.Scan(&microservicio.ID, &microservicio.Nombre, &microservicio.URL, 
+		err := rows.Scan(&microservicio.ID, &microservicio.Nombre, &microservicio.URL,
 			&microservicio.Estado, &ultimaVerificacion, &version)
 		if err != nil {
 			c.JSON(500, gin.H{"error": "Error escaneando microservicios"})
@@ -422,7 +442,7 @@ func getHealthMicroservicios(c *gin.Context) {
 func updateEstadoMicroservicio(c *gin.Context) {
 	microservicioID := c.Param("id")
 	var req UpdateEstadoMicroservicioRequest
-	
+
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(400, gin.H{"error": "Datos inválidos"})
 		return
@@ -435,7 +455,7 @@ func updateEstadoMicroservicio(c *gin.Context) {
 	}
 
 	// Usar stored procedure para actualizar estado
-	rows, err := db.Query(`SELECT actualizar_estado_microservicio($1, $2)`, 
+	rows, err := db.Query(`SELECT actualizar_estado_microservicio($1, $2)`,
 		microservicioID, req.Estado)
 	if err != nil {
 		c.JSON(500, gin.H{"error": "Error actualizando estado del microservicio"})
@@ -484,12 +504,10 @@ func registrarLog(usuarioID int, accion string, detalle string) {
 	}
 
 	// Insertar log usando stored procedure
-	_, err := db.Exec(`SELECT registrar_log_sistema($1, $2, $3)`, 
+	_, err := db.Exec(`SELECT registrar_log_sistema($1, $2, $3)`,
 		usuarioID, accion, detalleJSON)
 	if err != nil {
 		// Log del error pero no fallar la operación principal
 		fmt.Printf("Error registrando log: %v\n", err)
 	}
 }
-
-

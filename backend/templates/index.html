@@ -9,7 +9,6 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    <!-- Loading Screen -->
     <div id="loadingScreen" class="loading-screen">
         <div class="loading-spinner">
             <div class="heart-pulse">
@@ -19,7 +18,6 @@
         </div>
     </div>
 
-    <!-- Login Screen -->
     <div id="loginScreen" class="login-container">
         <div class="login-card">
             <div class="login-header">
@@ -51,10 +49,8 @@
         </div>
     </div>
 
-    <!-- Main Dashboard -->
     <div id="dashboard" class="dashboard" style="display: none;">
-        <!-- Sidebar -->
-        <nav class="sidebar">
+       <nav class="sidebar">
             <div class="sidebar-header">
                 <div class="logo">
                     <i class="fas fa-heartbeat"></i>
@@ -82,8 +78,6 @@
                     <i class="fas fa-exclamation-triangle"></i>
                     <span>Alertas</span>
                 </a>
-
-
 
                 <a href="#" class="menu-item" data-section="catalogos">
                     <i class="fas fa-list"></i>
@@ -118,26 +112,20 @@
             </div>
         </nav>
 
-        <!-- Main Content -->
-        <main class="main-content">
-            <!-- Header -->
+         <main class="main-content">
             <header class="header">
                 <button id="mobileMenuToggle" class="mobile-menu-toggle">
-                    <i class="fas fa-grip-lines"></i>
+                    <i class="fas fa-bars"></i>
                 </button>
                 <div class="header-left">
                     <h1 id="pageTitle">Dashboard</h1>
                     <p id="pageSubtitle">Panel de control del sistema HeartGuard</p>
                 </div>
-
             </header>
 
-            <!-- Overlay for mobile menu -->
             <div id="overlay" class="overlay"></div>
 
-            <!-- Content Area -->
             <div class="content">
-                <!-- Dashboard Section -->
                 <div id="dashboardSection" class="section active">
                     <div class="dashboard-charts">
                         <div class="chart-card alert-chart">
@@ -184,10 +172,8 @@
                             <p class="chart-footnote">Cada bloque representa el estado de un microservicio.</p>
                         </div>
                     </div>
-
                 </div>
 
-                <!-- Other Sections (Hidden by default) -->
                 <div id="usuariosSection" class="section">
                     <div class="section-header">
                         <h2>Gestión de Usuarios</h2>
@@ -215,9 +201,7 @@
                                         <th>Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody id="usuariosTable">
-                                    <!-- Data will be loaded here -->
-                                </tbody>
+                                <tbody id="usuariosTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -249,9 +233,7 @@
                                         <th>Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody id="familiasTable">
-                                    <!-- Data will be loaded here -->
-                                </tbody>
+                                <tbody id="familiasTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -278,17 +260,15 @@
                                         <th>Descripción</th>
                                         <th>Nivel</th>
                                         <th>Fecha</th>
+                                        <th>Latitud</th>
+                                        <th>Longitud</th>
                                     </tr>
                                 </thead>
-                                <tbody id="alertasTable">
-                                    <!-- Data will be loaded here -->
-                                </tbody>
+                                <tbody id="alertasTable"></tbody>
                             </table>
                         </div>
                     </div>
                 </div>
-
-
 
                 <div id="catalogosSection" class="section">
                     <div class="section-header">
@@ -310,9 +290,7 @@
                                         <th>Acciones</th>
                                     </tr>
                                 </thead>
-                                <tbody id="catalogosTable">
-                                    <!-- Data will be loaded here -->
-                                </tbody>
+                                <tbody id="catalogosTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -334,9 +312,7 @@
                                         <th>Fecha</th>
                                     </tr>
                                 </thead>
-                                <tbody id="logsTable">
-                                    <!-- Data will be loaded here -->
-                                </tbody>
+                                <tbody id="logsTable"></tbody>
                             </table>
                         </div>
                     </div>
@@ -356,8 +332,6 @@
                             </button>
                         </div>
                     </div>
-
-                    <!-- Overall System Status -->
                     <div class="system-status">
                         <div class="status-indicator">
                             <div class="status-dot operational" id="systemStatusDot"></div>
@@ -367,25 +341,16 @@
                             </div>
                         </div>
                     </div>
-
-                    <!-- Services Grid -->
-                    <div class="services-grid" id="servicesGrid">
-                        <!-- Services will be loaded here -->
-                    </div>
-
-                    <!-- Performance Metrics -->
+                    <div class="services-grid" id="servicesGrid"></div>
                     <div class="metrics-section">
                         <h3>Métricas de Rendimiento</h3>
-                        <div class="metrics-grid" id="metricsGrid">
-                            <!-- Metrics will be loaded here -->
-                        </div>
+                        <div class="metrics-grid" id="metricsGrid"></div>
                     </div>
                 </div>
             </div>
         </main>
     </div>
 
-    <!-- Modals -->
     <div id="createUserModal" class="modal">
         <div class="modal-content large">
             <div class="modal-header">
@@ -477,7 +442,6 @@
         </div>
     </div>
 
-    <!-- Modal para Familias -->
     <div id="createFamilyModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -529,7 +493,6 @@
         </div>
     </div>
 
-    <!-- Modal para Crear/Editar Catálogo -->
     <div id="createCatalogModal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
@@ -588,12 +551,9 @@
         </div>
     </div>
 
-    <!-- Toast Notifications -->
     <div id="toastContainer" class="toast-container"></div>
 
-    <!-- Chart.js for microservices charts -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <!-- Leaflet for maps -->
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="/static/js/app.js"></script>

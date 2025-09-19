@@ -102,9 +102,9 @@ class HeartGuardApp {
     showDashboard() {
         document.getElementById('loginScreen').style.display = 'none';
         document.getElementById('dashboard').style.display = 'flex';
-        if (localStorage.getItem('sidebarCollapsed') === 'true') {
-            document.querySelector('.sidebar').classList.add('collapsed');
-        }
+        //if (localStorage.getItem('sidebarCollapsed') === 'true') {
+          //  document.querySelector('.sidebar').classList.add('collapsed');
+        //}
     }
 
     handleMenuClick(e) {
@@ -113,13 +113,13 @@ class HeartGuardApp {
         document.querySelector('.menu-item.active')?.classList.remove('active');
         menuItem.classList.add('active');
         this.showSection(menuItem.dataset.section);
-        
+
         // Cerrar sidebar en móvil después de la selección
         if (document.body.clientWidth <= 768) {
             this.toggleMobileMenu(false);
         }
     }
-    
+
     showSection(sectionName) {
         document.querySelector('.section.active')?.classList.remove('active');
         document.getElementById(`${sectionName}Section`)?.classList.add('active');
@@ -127,7 +127,7 @@ class HeartGuardApp {
     }
 
     // --- Carga y Renderizado de Datos ---
-    
+
     async loadSectionData(sectionName) {
         try {
             const endpointMap = {
@@ -149,7 +149,7 @@ class HeartGuardApp {
             this.showToast(`Error al cargar ${sectionName}: ${error.message}`, 'error');
         }
     }
-    
+
     renderDashboard(data) {
         console.log('📊 Dashboard data received:', data);
 
@@ -245,7 +245,7 @@ class HeartGuardApp {
         summary.textContent = `${normalizedActivos}/${normalizedTotal} activos`;
         this.microservicesTotal = normalizedTotal;
     }
-    
+
     updateSidebarBadges(data) {
         // Update alertas badge in sidebar
         const alertasBadge = document.getElementById('alertasBadge');
@@ -253,7 +253,7 @@ class HeartGuardApp {
             alertasBadge.textContent = data.alertas_pendientes ?? 0;
             console.log('🔔 Updated alertasBadge:', data.alertas_pendientes);
         }
-        
+
         // Update notifications badge if exists
         const notificationsBadge = document.getElementById('notificationsBadge');
         if (notificationsBadge) {
@@ -275,11 +275,11 @@ class HeartGuardApp {
         const rowRenderers = {
             usuarios: user => `<td>${user.id}</td><td>${user.nombre}</td><td>${user.email}</td><td>${user.rol}</td><td>${user.familia_nombre || '-'}</td><td class="table-actions"><button class="action-button" onclick="app.openModal('createUserModal', ${user.id})"><i class="fas fa-pen"></i>Editar</button><button class="action-button danger" onclick="app.deleteItem('usuarios', ${user.id})"><i class="fas fa-trash"></i>Eliminar</button></td>`,
             familias: family => `<td>${family.id}</td><td>${family.nombre_familia}</td><td>${family.total_miembros}</td><td>${new Date(family.fecha_creacion).toLocaleDateString()}</td><td class="table-actions"><button class="action-button" onclick="app.openModal('createFamilyModal', ${family.id})"><i class="fas fa-pen"></i>Editar</button><button class="action-button danger" onclick="app.deleteItem('familias', ${family.id})"><i class="fas fa-trash"></i>Eliminar</button></td>`,
-            alertas: alerta => `<td>${alerta.id}</td><td>${alerta.usuario_nombre || '-'}</td><td>${alerta.tipo || '-'}</td><td>${alerta.descripcion || '-'}</td><td>${alerta.nivel || 'Media'}</td><td>${new Date(alerta.fecha).toLocaleDateString()}</td>`,
+            alertas: alerta => `<td>${alerta.id}</td><td>${alerta.usuario_nombre || '-'}</td><td>${alerta.tipo || '-'}</td><td>${alerta.descripcion || '-'}</td><td>${alerta.nivel || 'Media'}</td><td>${new Date(alerta.fecha).toLocaleDateString()}</td><td>${alerta.latitud || '-'}</td><td>${alerta.longitud || '-'}</td>`,
             catalogos: catalogo => `<td>${catalogo.id}</td><td>${catalogo.tipo || '-'}</td><td>${catalogo.clave || '-'}</td><td>${catalogo.valor || '-'}</td><td class="table-actions"><button class="action-button" onclick="app.openModal('createCatalogModal', ${catalogo.id})"><i class="fas fa-pen"></i>Editar</button><button class="action-button danger" onclick="app.deleteItem('catalogos', ${catalogo.id})"><i class="fas fa-trash"></i>Eliminar</button></td>`,
             logs: log => `<td>${log.id}</td><td>${log.usuario_nombre || 'Sistema'}</td><td>${log.accion || '-'}</td><td>${log.detalle || '-'}</td><td>${new Date(log.fecha).toLocaleString()}</td>`,
         };
-        
+
         data.forEach(item => {
             const row = tbody.insertRow();
             row.innerHTML = rowRenderers[type](item);
@@ -291,21 +291,21 @@ class HeartGuardApp {
     async openModal(modalId, itemId = null) {
         console.log('🔥🔥🔥 openModal called:', { modalId, itemId });
         console.log('🔥🔥🔥 this context:', this);
-        
+
         const modal = document.getElementById(modalId);
         console.log('🔍 Modal element:', modal);
         if (!modal) {
             console.error('❌ Modal not found:', modalId);
             return;
         }
-        
+
         const form = modal.querySelector('form');
         console.log('🔍 Form element:', form);
         if (!form) {
             console.error('❌ Form not found in modal:', modalId);
             return;
         }
-        
+
         form.reset();
         const isEdit = Boolean(itemId);
         console.log('📋 Modal setup:', { modalId, itemId, isEdit });
@@ -335,7 +335,7 @@ class HeartGuardApp {
                  // Clear userId field explicitly for create mode
                  modal.querySelector('#userId').value = '';
                  console.log('🧹 Cleared userId field for create mode:', modal.querySelector('#userId').value);
-                 
+
                  // Show password fields when creating
                  const passwordRow = modal.querySelector('#passwordRow');
                  if (passwordRow) {
@@ -396,7 +396,7 @@ class HeartGuardApp {
         e.preventDefault();
         console.log('🔥 handleFamilySubmit called!');
         console.log('📋 Event target:', e.target);
-        
+
         const form = e.target;
         const id = form.querySelector('#familyId').value || null;
         const data = {
@@ -404,29 +404,29 @@ class HeartGuardApp {
             codigo_familia: form.querySelector('#familyCode').value,
             descripcion: form.querySelector('#familyDescription').value,
         };
-        
+
         console.log('📤 Family data:', { id, data });
-        
+
         await this.saveItem('familias', id, data);
         this.closeModal('createFamilyModal');
     }
-    
+
     async handleUserSubmit(e, isEdit = false) {
         e.preventDefault();
         console.log('🔥🔥🔥 handleUserSubmit called!', { isEdit });
         console.log('📋 Event target:', e.target);
-        
+
         const form = e.target;
         const userId = form.querySelector('#userId')?.value;
         const isEditMode = isEdit || userId !== '';
-        
+
         console.log('📋 Form data:', {
             userId: userId,
             userName: form.querySelector('#userName')?.value,
             userEmail: form.querySelector('#userEmail')?.value,
             isEditMode: isEditMode
         });
-        
+
         const userData = {
             nombre: form.querySelector('#userName')?.value,
             email: form.querySelector('#userEmail')?.value,
@@ -434,36 +434,36 @@ class HeartGuardApp {
             familia_id: parseInt(form.querySelector('#userFamily')?.value || '0'),
             relacion: 'miembro'
         };
-        
+
         // Solo incluir contraseña para crear
         if (!isEditMode) {
             const password = form.querySelector('#userPassword')?.value;
             const passwordConfirm = form.querySelector('#userPasswordConfirm')?.value;
-            
+
             if (!password) {
                 this.showToast('La contraseña es requerida', 'error');
                 return;
             }
-            
+
             if (password !== passwordConfirm) {
                 this.showToast('Las contraseñas no coinciden', 'error');
                 return;
             }
-            
+
             userData.password = password;
         }
-        
+
         console.log('📤 Sending user data:', userData);
-        
+
         try {
             const response = await this.apiCall(
                 isEditMode ? `/usuarios/${userId}` : '/usuarios',
                 isEditMode ? 'PUT' : 'POST',
                 userData
             );
-            
+
             console.log('📥 Response received:', response);
-            
+
             if (response.success) {
                 this.showToast(`Usuario ${isEditMode ? 'actualizado' : 'creado'} exitosamente`, 'success');
                 this.closeModal('createUserModal');
@@ -503,15 +503,15 @@ class HeartGuardApp {
     }
 
 
-    
+
 
     // --- Funciones para Catálogos ---
-    
+
     async handleCatalogSubmit() {
         console.log('📋 Submitting catalog form...');
         const form = document.getElementById('catalogForm');
         const formData = new FormData(form);
-        
+
         const data = {
             tipo: formData.get('tipo'),
             clave: formData.get('clave'),
@@ -519,10 +519,10 @@ class HeartGuardApp {
             descripcion: formData.get('descripcion'),
             activo: document.getElementById('catalogActivo').checked
         };
-        
+
         const catalogId = formData.get('id');
         const isEdit = Boolean(catalogId);
-        
+
         try {
             let response;
             if (isEdit) {
@@ -534,24 +534,24 @@ class HeartGuardApp {
                 response = await this.apiCall('/catalogos', 'POST', data);
                 this.showToast('Catálogo creado con éxito', 'success');
             }
-            
+
             if (!response.success) throw new Error(response.error);
-            
+
             this.closeModal('createCatalogModal');
             this.loadSectionData('catalogos');
-            
+
         } catch (error) {
             console.error('❌ Error saving catalog:', error);
             this.showToast(`Error: ${error.message}`, 'error');
         }
     }
-    
+
     async loadCatalogData(id) {
         console.log('📋 Loading catalog data for ID:', id);
         try {
             const response = await this.apiCall(`/catalogos/${id}`);
             if (!response.success) throw new Error(response.error);
-            
+
             const catalog = response.data;
             document.getElementById('catalogId').value = catalog.id;
             document.getElementById('catalogType').value = catalog.tipo;
@@ -559,16 +559,16 @@ class HeartGuardApp {
             document.getElementById('catalogValor').value = catalog.valor;
             document.getElementById('catalogDescripcion').value = catalog.descripcion || '';
             document.getElementById('catalogActivo').checked = catalog.activo;
-            
+
             document.getElementById('catalogModalTitle').textContent = 'Editar Catálogo';
             document.getElementById('catalogSubmitBtn').textContent = 'Actualizar Catálogo';
-            
+
         } catch (error) {
             console.error('❌ Error loading catalog data:', error);
             this.showToast(`Error al cargar datos: ${error.message}`, 'error');
         }
     }
-    
+
     resetCatalogForm() {
         console.log('🔄 Resetting catalog form...');
         const form = document.getElementById('catalogForm');
@@ -580,66 +580,66 @@ class HeartGuardApp {
     }
 
     // --- Funciones para Microservicios ---
-    
+
     async renderMicroservicios(data) {
         console.log('🖥️ Rendering enterprise microservices dashboard...', data);
-        
+
         // Actualizar timestamp
         this.updateLastRefreshTime();
-        
+
         // SIEMPRE usar datos dummy coloridos para la demo
         console.log('📊 Usando datos dummy coloridos para la demo');
         const dummyData = [
-            { 
-                id: 1, 
-                nombre: 'HeartGuard API', 
+            {
+                id: 1,
+                nombre: 'HeartGuard API',
                 estado: 'activo',
                 responseTime: 45,
                 uptime: 99.9,
                 requests: 1250
             },
-            { 
-                id: 2, 
-                nombre: 'Authentication Service', 
+            {
+                id: 2,
+                nombre: 'Authentication Service',
                 estado: 'activo',
                 responseTime: 23,
                 uptime: 99.8,
                 requests: 890
             },
-            { 
-                id: 3, 
-                nombre: 'Metrics Service', 
+            {
+                id: 3,
+                nombre: 'Metrics Service',
                 estado: 'degraded',
                 responseTime: 156,
                 uptime: 98.5,
                 requests: 450
             },
-            { 
-                id: 4, 
-                nombre: 'Notification Service', 
+            {
+                id: 4,
+                nombre: 'Notification Service',
                 estado: 'activo',
                 responseTime: 67,
                 uptime: 99.7,
                 requests: 320
             },
-            { 
-                id: 5, 
-                nombre: 'Database Service', 
+            {
+                id: 5,
+                nombre: 'Database Service',
                 estado: 'activo',
                 responseTime: 12,
                 uptime: 99.95,
                 requests: 2100
             },
-            { 
-                id: 6, 
-                nombre: 'Cache Service', 
+            {
+                id: 6,
+                nombre: 'Cache Service',
                 estado: 'outage',
                 responseTime: 0,
                 uptime: 0,
                 requests: 0
             }
         ];
-        
+
         // SIEMPRE usar el fallback para mostrar datos dummy visibles
         console.log('🎯 Usando fallback dashboard para garantizar visibilidad');
         this.renderFallbackDashboard();
@@ -647,7 +647,7 @@ class HeartGuardApp {
 
     renderFallbackDashboard() {
         console.log('🎯 Rendering fallback dashboard');
-        
+
         this.updateAlertChart(0, 0);
         this.updateBarChart('usuarios', 0, 1);
         this.updateBarChart('familias', 0, 1);
@@ -663,7 +663,7 @@ class HeartGuardApp {
         if (systemStatusLabel) {
             systemStatusLabel.textContent = 'Todos los servicios están funcionando correctamente';
         }
-        
+
         // Renderizar servicios dummy
         const container = document.getElementById('servicesGrid');
         if (container) {
@@ -700,7 +700,7 @@ class HeartGuardApp {
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="service-card">
                     <div class="service-header">
                         <div class="service-name">
@@ -733,7 +733,7 @@ class HeartGuardApp {
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="service-card">
                     <div class="service-header">
                         <div class="service-name">
@@ -766,7 +766,7 @@ class HeartGuardApp {
                         </div>
                     </div>
                 </div>
-                
+
                 <div class="service-card">
                     <div class="service-header">
                         <div class="service-name">
@@ -801,7 +801,7 @@ class HeartGuardApp {
                 </div>
             `;
         }
-        
+
         // Renderizar métricas
         const metricsContainer = document.getElementById('metricsGrid');
         if (metricsContainer) {
@@ -832,12 +832,12 @@ class HeartGuardApp {
 
     updateLastRefreshTime() {
         const now = new Date();
-        const timeString = now.toLocaleTimeString('es-ES', { 
-            hour: '2-digit', 
+        const timeString = now.toLocaleTimeString('es-ES', {
+            hour: '2-digit',
             minute: '2-digit',
             second: '2-digit'
         });
-        
+
         const lastUpdateElement = document.getElementById('lastUpdateTime');
         if (lastUpdateElement) {
             lastUpdateElement.textContent = `Última actualización: ${timeString}`;
@@ -848,22 +848,22 @@ class HeartGuardApp {
         console.log('🎯 renderSystemStatus called with:', services);
         const systemStatusDot = document.getElementById('systemStatusDot');
         const systemStatusLabel = document.getElementById('systemStatusDetail');
-        
+
         console.log('🎯 systemStatusDot:', systemStatusDot);
         console.log('🎯 systemStatusLabel:', systemStatusLabel);
-        
+
         if (!systemStatusDot || !systemStatusLabel) {
             console.error('❌ Elementos del sistema status no encontrados');
             return;
         }
-        
+
         // Calcular estado general del sistema
         const operationalServices = services.filter(s => s.estado === 'activo').length;
         const degradedServices = services.filter(s => s.estado === 'degraded').length;
         const outageServices = services.filter(s => s.estado === 'inactivo' || s.estado === 'outage').length;
-        
+
         let systemStatus, statusClass, statusMessage;
-        
+
         if (outageServices > 0) {
             systemStatus = 'outage';
             statusClass = 'outage';
@@ -877,7 +877,7 @@ class HeartGuardApp {
             statusClass = 'operational';
             statusMessage = 'Todos los servicios están funcionando correctamente';
         }
-        
+
         systemStatusDot.className = `status-dot ${statusClass}`;
         systemStatusLabel.textContent = statusMessage;
     }
@@ -890,12 +890,12 @@ class HeartGuardApp {
             console.error('❌ Container servicesGrid no encontrado');
             return;
         }
-        
+
         container.innerHTML = services.map(service => {
             const statusClass = this.getStatusClass(service.estado);
             const statusText = this.getStatusText(service.estado);
             const icon = this.getServiceIcon(service.nombre);
-            
+
             return `
                 <div class="service-card">
                     <div class="service-header">
@@ -941,13 +941,13 @@ class HeartGuardApp {
             console.error('❌ Container metricsGrid no encontrado');
             return;
         }
-        
+
         // Calcular métricas generales
         const totalRequests = services.reduce((sum, s) => sum + (s.requests || 0), 0);
         const avgResponseTime = services.reduce((sum, s) => sum + (s.responseTime || 0), 0) / services.length;
         const avgUptime = services.reduce((sum, s) => sum + (s.uptime || 0), 0) / services.length;
         const operationalCount = services.filter(s => s.estado === 'activo').length;
-        
+
         container.innerHTML = `
             <div class="metric-card">
                 <div class="metric-value">${totalRequests.toLocaleString()}</div>
@@ -1028,10 +1028,10 @@ class HeartGuardApp {
             default: return 'Estable';
         }
     }
-    
+
     createSimpleChart(container, data) {
         console.log('🎨 Creando gráfica simple...', data);
-        
+
         // Crear HTML básico
         container.innerHTML = `
             <div class="microservices-chart-container">
@@ -1046,13 +1046,13 @@ class HeartGuardApp {
                 </div>
             </div>
         `;
-        
+
         // Esperar un momento para que el DOM se actualice
         setTimeout(() => {
             this.initSimpleChart(data);
         }, 100);
     }
-    
+
     initSimpleChart(data) {
         console.log('🎨 Inicializando gráfica simple con datos:', data);
         const canvas = document.getElementById('microserviciosChart');
@@ -1060,23 +1060,23 @@ class HeartGuardApp {
             console.error('❌ Canvas no encontrado después de crear HTML');
             return;
         }
-        
+
         const ctx = canvas.getContext('2d');
-        
+
         // Datos simples para la demo
         const labels = ['00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00'];
-        
+
         // Colores diferentes para cada microservicio
         const colors = [
             '#FF6B6B', // Rojo coral
             '#4ECDC4', // Verde azulado
             '#45B7D1'  // Azul claro
         ];
-        
+
         // Crear datasets con patrón de accidente
         const datasets = data.map((microservicio, index) => {
             const color = colors[index] || '#666666';
-            
+
             // Patrón: 2 arriba, 1 abajo (simulando accidente)
             let chartData;
             if (index === 0) {
@@ -1089,13 +1089,13 @@ class HeartGuardApp {
                 // Microservicio 3: ON, OFF, ON, ON, OFF, ON, ON
                 chartData = [1, 0, 1, 1, 0, 1, 1];
             }
-            
+
             console.log(`📊 Dataset ${index}:`, {
                 nombre: microservicio.nombre,
                 color,
                 data: chartData
             });
-            
+
             return {
                 label: microservicio.nombre,
                 data: chartData,
@@ -1111,13 +1111,13 @@ class HeartGuardApp {
                 pointBorderWidth: 2
             };
         });
-        
+
         // Verificar que Chart esté disponible
         if (typeof Chart === 'undefined') {
             console.error('❌ Chart.js no está cargado');
             return;
         }
-        
+
         // Crear la gráfica
         try {
             const chart = new Chart(ctx, {
@@ -1183,28 +1183,28 @@ class HeartGuardApp {
                     }
                 }
             });
-            
+
             console.log('✅ Gráfica mejorada creada exitosamente');
             window.microserviciosChart = chart;
         } catch (error) {
             console.error('❌ Error creando gráfica:', error);
         }
     }
-    
-    
-    
+
+
+
     generateSimpleStatusData(isActive) {
         // Generar datos dummy más realistas para la demo
         const data = [];
         const hours = ['00:00', '01:00', '02:00', '03:00', '04:00', '05:00', '06:00'];
-        
+
         // Crear patrones predefinidos para cada microservicio
         const patterns = {
             'Android API Service': [1, 1, 1, 0, 0, 1, 1], // Se cae en la madrugada
             'Flask Metrics Service': [1, 1, 0, 0, 1, 1, 1], // Problemas en la noche
             'Notification Service': [0, 1, 1, 1, 1, 0, 1]  // Inestable
         };
-        
+
         // Usar el patrón basado en el estado inicial
         let pattern;
         if (isActive) {
@@ -1212,10 +1212,10 @@ class HeartGuardApp {
         } else {
             pattern = Math.random() < 0.5 ? patterns['Flask Metrics Service'] : patterns['Notification Service'];
         }
-        
+
         return pattern;
     }
-    
+
     async checkMicroservicioHealth(id) {
         console.log('🔍 Checking microservicio health:', id);
         try {
@@ -1231,25 +1231,25 @@ class HeartGuardApp {
             this.showToast(`Error: ${error.message}`, 'error');
         }
     }
-    
+
     showMicroservicioChart(id, nombre) {
         console.log('📊 Showing microservicio chart:', id, nombre);
         this.showToast(`Gráfica detallada de ${nombre} - Función en desarrollo`, 'info');
     }
-    
+
     updateMicroserviciosChart() {
         console.log('📊 Updating microservicios chart...');
         const timeRange = document.getElementById('timeRangeSelect').value;
         this.showToast(`Actualizando gráfica para ${timeRange}`, 'info');
         // Aquí se actualizaría la gráfica con el nuevo rango de tiempo
     }
-    
+
     refreshMicroserviciosChart() {
         console.log('🔄 Refreshing microservicios chart...');
         this.loadSectionData('microservicios');
         this.showToast('Gráfica actualizada', 'success');
     }
-    
+
     async refreshMicroservicios() {
         console.log('🔄 Refreshing microservicios...');
         await this.loadSectionData('microservicios');
@@ -1284,7 +1284,7 @@ class HeartGuardApp {
         if (response.status === 401) this.handleLogout();
         return response.json();
     }
-    
+
     showToast(message, type = 'success') {
         const container = document.getElementById('toastContainer');
         const toast = document.createElement('div');
@@ -1294,7 +1294,7 @@ class HeartGuardApp {
         container.appendChild(toast);
         setTimeout(() => toast.remove(), 4000);
     }
-    
+
     toggleMobileMenu(forceOpen = null) {
         const sidebar = document.querySelector('.sidebar');
         const overlay = document.getElementById('overlay');
@@ -1315,21 +1315,21 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('🚀 DOM Content Loaded - Initializing HeartGuardApp');
     window.app = new HeartGuardApp();
     console.log('✅ HeartGuardApp initialized:', window.app);
-    
+
     // Verificar que los elementos existan
     const nuevoUsuarioBtn = document.querySelector('button[onclick*="createUserModal"]');
     console.log('🔍 Nuevo Usuario button found:', nuevoUsuarioBtn);
-    
+
     const createUserModal = document.getElementById('createUserModal');
     console.log('🔍 createUserModal found:', createUserModal);
-    
+
     // Agregar event listener adicional para debug
     if (nuevoUsuarioBtn) {
         nuevoUsuarioBtn.addEventListener('click', function(e) {
             console.log('🔥 Button clicked!', e);
             console.log('🔥 app object:', window.app);
             console.log('🔥 app.openModal:', window.app.openModal);
-            
+
             // Probar abrir modal directamente
             try {
                 console.log('🔥 Calling app.openModal directly...');
@@ -1339,7 +1339,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    
+
     // Función global de prueba
     window.testOpenModal = function() {
         console.log('🧪 Testing openModal...');
