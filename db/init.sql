@@ -530,6 +530,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
   expires_at     TIMESTAMP,
   revoked_at     TIMESTAMP,
+  scopes         TEXT[] NOT NULL DEFAULT '{}'::text[],
   UNIQUE (key_hash)
 );
 

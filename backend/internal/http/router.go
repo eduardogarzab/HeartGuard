@@ -2,6 +2,7 @@ package http
 
 import (
 	"net/http"
+	"path/filepath"
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -10,6 +11,7 @@ import (
 	"heartguard-superadmin/internal/superadmin"
 )
 
+// NewRouter arma todas las rutas: API bajo /v1/... y UI estática bajo /
 func NewRouter(logger authmw.Logger, cfg *config.Config, h *superadmin.Handlers) http.Handler {
 	r := chi.NewRouter()
 	r.Use(middleware.RequestID)
@@ -19,6 +21,7 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, h *superadmin.Handlers)
 	// Health
 	r.Get("/healthz", h.Healthz)
 
+	// API superadmin
 	r.Route("/v1/superadmin", func(r chi.Router) {
 		r.Use(authmw.RequireSuperadmin(cfg, nil))
 
@@ -47,6 +50,10 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, h *superadmin.Handlers)
 		r.Get("/audit-logs", h.ListAuditLogs)
 	})
 
+	// UI estática desde ./web
+	static := http.Dir(filepath.Clean("web"))
+	r.Handle("/*", spa(static))
+
 	return r
 }
 
@@ -55,4 +62,30 @@ func NewServer(cfg *config.Config, h http.Handler) *http.Server {
 		Addr:    cfg.HTTPAddr,
 		Handler: h,
 	}
+}
+
+// spa: sirve index.html como fallback para rutas desconocidas (hash-router o client-side routing)
+func spa(root http.FileSystem) http.Handler {
+	fs := http.FileServer(root)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		f, err := root.Open(path)
+		if err == nil {
+			defer f.Close()
+			stat, _ := f.Stat()
+			if stat != nil && !stat.IsDir() {
+				fs.ServeHTTP(w, r)
+				return
+			}
+		}
+		// fallback a /index.html
+		index, err := root.Open("/index.html")
+		if err != nil {
+			http.Error(w, "index not found", http.StatusInternalServerError)
+			return
+		}
+		defer index.Close()
+		info, _ := index.Stat()
+		http.ServeContent(w, r, "index.html", info.ModTime(), index)
+	})
 }

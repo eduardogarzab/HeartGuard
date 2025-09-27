@@ -1,14 +1,19 @@
 package superadmin
 
 import (
-	"context"
-	"time"
+    "context"
+    "encoding/json"
+    "errors"
+    "fmt"
+    "strings"
+    "time"
 
-	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgxpool"
-	"heartguard-superadmin/internal/models"
+    "github.com/google/uuid"
+    "github.com/jackc/pgx/v5"
+    "github.com/jackc/pgx/v5/pgxpool"
+    "heartguard-superadmin/internal/models"
 )
+
 
 type Repo struct{ pool *pgxpool.Pool }
 
@@ -165,8 +170,22 @@ func (r *Repo) CreateAPIKey(ctx context.Context, label string, expires *time.Tim
 }
 
 func (r *Repo) RevokeAPIKey(ctx context.Context, id string) error {
-	_, err := r.pool.Exec(ctx, `UPDATE api_keys SET revoked_at = NOW() WHERE id=$1`, id)
-	return err
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	cmd, err := r.pool.Exec(ctx, `
+UPDATE api_keys
+SET revoked_at = NOW()
+WHERE id = $1 AND revoked_at IS NULL
+`, uid)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return errors.New("not_found_or_already_revoked")
+	}
+	return nil
 }
 
 func (r *Repo) SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error {
@@ -187,45 +206,162 @@ func (r *Repo) SetAPIKeyPermissions(ctx context.Context, id string, permCodes []
 	})
 }
 
-func (r *Repo) ListAPIKeys(ctx context.Context, limit, offset int) ([]models.APIKey, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, label, created_at, expires_at, revoked_at
-		   FROM api_keys
-		  ORDER BY created_at DESC
-		  LIMIT $1 OFFSET $2`, limit, offset,
-	)
-	if err != nil { return nil, err }
-	defer rows.Close()
-	var out []models.APIKey
-	for rows.Next() {
-		var m models.APIKey
-		if err := rows.Scan(&m.ID, &m.Label, &m.CreatedAt, &m.ExpiresAt, &m.RevokedAt); err != nil { return nil, err }
-		out = append(out, m)
+func (r *Repo) ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error) {
+	q := `
+SELECT
+  id,
+  COALESCE(label, '') AS label,
+  owner_user_id,
+  COALESCE(scopes, ARRAY[]::text[]) AS scopes,
+  expires_at,
+  created_at,
+  revoked_at,
+  (revoked_at IS NOT NULL) AS revoked
+FROM api_keys
+`
+	if activeOnly {
+		q += "WHERE revoked_at IS NULL\n"
 	}
-	return out, rows.Err()
+	q += "ORDER BY COALESCE(revoked_at, created_at) DESC\nLIMIT $1 OFFSET $2"
+
+	rows, err := r.pool.Query(ctx, q, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.APIKey, 0, 32)
+	for rows.Next() {
+		var item models.APIKey
+		var owner *uuid.UUID
+		var scopes []string
+		if err := rows.Scan(
+			&item.ID,
+			&item.Label,
+			&owner,
+			&scopes,
+			&item.ExpiresAt,
+			&item.CreatedAt,
+			&item.RevokedAt,
+			&item.Revoked,
+		); err != nil {
+			return nil, err
+		}
+		if owner != nil {
+			s := owner.String()
+			item.OwnerUserID = &s
+		}
+		item.Scopes = scopes
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // Audit
 func (r *Repo) ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error) {
-	rows, err := r.pool.Query(ctx,
-		`SELECT id, action, ts
-		FROM audit_logs
-		WHERE ($1::timestamptz IS NULL OR ts >= $1::timestamptz)
-			AND ($2::timestamptz IS NULL OR ts <= $2::timestamptz)
-			AND ($3::text IS NULL OR action = $3::text)
-		ORDER BY ts DESC
-		LIMIT $4 OFFSET $5`,
-		from, to, action, limit, offset,
-	)
-	if err != nil { return nil, err }
-	defer rows.Close()
-	var out []models.AuditLog
-	for rows.Next() {
-		var a models.AuditLog
-		if err := rows.Scan(&a.ID, &a.Action, &a.When); err != nil { return nil, err }
-		out = append(out, a)
-	}
-	return out, rows.Err()
+    where := "WHERE 1=1\n"
+    args := []any{}
+    i := 1
+
+    if from != nil {
+        where += fmt.Sprintf("AND ts >= $%d\n", i)
+        args = append(args, *from)
+        i++
+    }
+    if to != nil {
+        where += fmt.Sprintf("AND ts <= $%d\n", i)
+        args = append(args, *to)
+        i++
+    }
+    if action != nil && strings.TrimSpace(*action) != "" {
+        where += fmt.Sprintf("AND action = $%d\n", i)
+        args = append(args, strings.TrimSpace(*action))
+        i++
+    }
+
+    query := fmt.Sprintf(`
+SELECT
+  id::text,
+  action,
+  ts,
+  user_id,          -- uuid nullable
+  entity,           -- text nullable
+  entity_id,        -- uuid nullable
+  details,          -- jsonb nullable
+  ip::text          -- inet -> text
+FROM audit_logs
+%s
+ORDER BY ts DESC
+LIMIT $%d OFFSET $%d
+`, where, i, i+1)
+
+    args = append(args, limit, offset)
+
+    rows, err := r.pool.Query(ctx, query, args...)
+    if err != nil {
+        return nil, err
+    }
+    defer rows.Close()
+
+    out := make([]models.AuditLog, 0, limit)
+    for rows.Next() {
+        var (
+            idText     string
+            actionStr  string
+            ts         time.Time
+            userUUID   *uuid.UUID
+            entity     *string
+            entityUUID *uuid.UUID
+            detailsRaw []byte
+            ipText     *string
+        )
+        if err := rows.Scan(
+            &idText,
+            &actionStr,
+            &ts,
+            &userUUID,
+            &entity,
+            &entityUUID,
+            &detailsRaw,
+            &ipText,
+        ); err != nil {
+            return nil, err
+        }
+
+        var userID *string
+        if userUUID != nil {
+            s := userUUID.String()
+            userID = &s
+        }
+        var entityID *string
+        if entityUUID != nil {
+            s := entityUUID.String()
+            entityID = &s
+        }
+
+        var details map[string]any
+        if len(detailsRaw) > 0 {
+            _ = json.Unmarshal(detailsRaw, &details) // si falla, deja nil
+        }
+
+        out = append(out, models.AuditLog{
+            ID:       idText,
+            Action:   actionStr,
+            TS:       ts,
+            UserID:   userID,
+            Entity:   entity,
+            EntityID: entityID,
+            Details:  details,
+            IP:       ipText,
+        })
+    }
+    if err := rows.Err(); err != nil {
+        return nil, err
+    }
+    return out, nil
 }
 
 // util

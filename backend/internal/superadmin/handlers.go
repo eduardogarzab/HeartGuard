@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
@@ -257,8 +258,9 @@ func (h *Handlers) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffset(r)
+	activeOnly := parseBool(r.URL.Query().Get("active_only"), false) // por defecto listamos TODAS
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second); defer cancel()
-	list, err := h.repo.ListAPIKeys(ctx, limit, offset)
+	list, err := h.repo.ListAPIKeys(ctx, activeOnly, limit, offset)
 	if err != nil { writeProblem(w, 500, "db_error", err.Error(), nil); return }
 	writeJSON(w, 200, list)
 }
@@ -290,4 +292,17 @@ func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+// Helpers for Repo
+
+func parseBool(s string, def bool) bool {
+	switch strings.ToLower(strings.TrimSpace(s)) {
+	case "1", "t", "true", "yes", "y":
+		return true
+	case "0", "f", "false", "no", "n":
+		return false
+	default:
+		return def
+	}
 }

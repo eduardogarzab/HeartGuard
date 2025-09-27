@@ -10,56 +10,25 @@ include .env
 export
 endif
 
-# --------- Guards ---------
-ifndef DATABASE_URL
-$(info [i] DATABASE_URL no está en el entorno. Asegúrate de tener .env en la raíz.)
-endif
-
 # Usado por psql (para init/seed con el superuser)
 export PGPASSWORD := $(PGSUPER_PASS)
 
 # DSN de app (para health/psql)
 DB_URL := postgres://$(DBUSER):$(DBPASS)@$(PGHOST):$(PGPORT)/$(DBNAME)?sslmode=disable
 
-# =========================
-# Backend (Go)
-# =========================
-.PHONY: run dev build lint test tidy
+.PHONY: help up down logs \
+        dev run build tidy lint test \
+        db-url db-init db-seed db-reset db-drop db-health db-psql
 
-run:
-	@echo ">> running $(APP) (HTTP_ADDR=$(HTTP_ADDR))"
-	GOFLAGS=-mod=mod \
-	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) SUPERADMIN_TEST_TOKEN=$(SUPERADMIN_TEST_TOKEN) \
-	go run ./cmd/$(APP)
-
-dev:
-	@echo ">> dev $(APP) (HTTP_ADDR=$(HTTP_ADDR))"
-	GOFLAGS=-mod=mod \
-	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) SUPERADMIN_TEST_TOKEN=$(SUPERADMIN_TEST_TOKEN) \
-	go run ./cmd/$(APP)
-
-build:
-	@echo ">> build $(APP)"
-	GOOS=linux GOARCH=amd64 go build -o bin/$(APP) ./cmd/$(APP)
-
-lint:
-	@echo ">> go vet"
-	go vet ./...
-
-test:
-	@echo ">> go test"
-	go test ./...
-
-tidy:
-	@echo ">> go mod tidy"
-	cd backend 2>/dev/null || true
-	go mod tidy
+help:
+	@echo "Targets:"
+	@echo "  up / down / logs"
+	@echo "  dev / run / build / tidy / lint / test (backend dentro de ./backend)"
+	@echo "  db-init / db-seed / db-health / db-reset / db-psql"
 
 # =========================
 # Docker (Postgres service)
 # =========================
-.PHONY: up down logs
-
 up:
 	@echo ">> docker compose up -d"
 	docker compose up -d
@@ -73,36 +42,47 @@ logs:
 	docker compose logs -f postgres
 
 # =========================
+# Backend (Go) - ejecuta SIEMPRE dentro de ./backend
+# =========================
+dev:
+	@echo ">> dev $(APP) (HTTP_ADDR=$(HTTP_ADDR))"
+	cd backend && \
+	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) SUPERADMIN_TEST_TOKEN=$(SUPERADMIN_TEST_TOKEN) \
+	go run ./cmd/$(APP)
+
+run:
+	@echo ">> run $(APP)"
+	cd backend && \
+	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) SUPERADMIN_TEST_TOKEN=$(SUPERADMIN_TEST_TOKEN) \
+	go run ./cmd/$(APP)
+
+build:
+	@echo ">> build $(APP)"
+	cd backend && GOOS=linux GOARCH=amd64 go build -o bin/$(APP) ./cmd/$(APP)
+
+tidy:
+	@echo ">> go mod tidy"
+	cd backend && go mod tidy
+
+lint:
+	@echo ">> go vet"
+	cd backend && go vet ./...
+
+test:
+	@echo ">> go test"
+	cd backend && go test ./...
+
+# =========================
 # DB (init/seed/health)
 # =========================
-.PHONY: help perms db-url db-init db-seed db-reset db-drop db-health db-psql
-
-help:
-	@echo "Targets:"
-	@echo "  make up/down/logs   -> docker postgres"
-	@echo "  make dev/run        -> backend"
-	@echo "  make tidy           -> go mod tidy"
-	@echo "  make perms          -> fija permisos de scripts/sql"
-	@echo "  make db-url         -> imprime el DSN app"
-	@echo "  make db-init        -> crea rol, DB, schema, extensiones, DDL (init.sql)"
-	@echo "  make db-seed        -> carga semillas (seed.sql)"
-	@echo "  make db-reset       -> drop -> init -> seed"
-	@echo "  make db-drop        -> dropdb (ignora error si no existe)"
-	@echo "  make db-health      -> checks básicos contra DB"
-	@echo "  make db-psql        -> psql como app user (DSN)"
-
-perms:
-	@chmod 644 db/*.sql 2>/dev/null || true
-	@chmod 755 scripts/*.sh 2>/dev/null || true
-
 db-url:
 	@echo "$(DB_URL)"
 
-db-init: perms
+db-init:
 	@echo "== init.sql =="
 	psql -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) -v dbname=$(DBNAME) -v dbuser=$(DBUSER) -v dbpass='$(DBPASS)' -f - < db/init.sql
 
-db-seed: perms
+db-seed:
 	@echo "== seed.sql =="
 	psql -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) -d $(DBNAME) -f - < db/seed.sql
 
