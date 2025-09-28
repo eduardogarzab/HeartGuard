@@ -31,4 +31,10 @@
         android:label="fragment_detail"
         tools:layout="@layout/fragment_detail" />
 
+    <fragment
+        android:id="@+id/alertsFragment"
+        android:name="com.example.integracion.ui.alerts.AlertsFragment"
+        android:label="AlertsFragment"
+        tools:layout="@layout/fragment_alerts"/>
+
 </navigation>

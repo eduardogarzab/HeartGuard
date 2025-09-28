@@ -1,6 +1,9 @@
 package com.example.integracion.data.repository
 
 import com.example.integracion.R
+import com.example.integracion.data.model.Alert
+import com.example.integracion.data.model.AlertLevel
+import com.example.integracion.data.model.AlertStatus
 import com.example.integracion.data.model.Metric
 import com.example.integracion.data.model.MetricDataPoint
 import com.example.integracion.data.model.MetricType
@@ -47,7 +50,6 @@ object MetricRepository {
                 minValue = 115f,
                 maxValue = 128f
             ),
-            // --- NUEVO BLOQUE DE TEMPERATURA AÑADIDO ---
             Metric(
                 type = MetricType.TEMPERATURE,
                 title = "Temperatura",
@@ -60,7 +62,35 @@ object MetricRepository {
                 minValue = 36.6f,
                 maxValue = 37.1f
             )
-            // -------------------------------------------
+        )
+    }
+
+    fun getAlerts(): List<Alert> {
+        return listOf(
+            Alert(
+                id = "alert-001",
+                title = "Ritmo Cardíaco Anómalo",
+                description = "Se detectó un posible evento de arritmia.",
+                level = AlertLevel.CRITICAL,
+                status = AlertStatus.CREATED,
+                date = Date(System.currentTimeMillis() - 3600000 * 1) // Hace 1 hora
+            ),
+            Alert(
+                id = "alert-002",
+                title = "Desaturación de Oxígeno",
+                description = "El nivel de SpO2 bajó del umbral recomendado.",
+                level = AlertLevel.HIGH,
+                status = AlertStatus.ACKNOWLEDGED,
+                date = Date(System.currentTimeMillis() - 3600000 * 5) // Hace 5 horas
+            ),
+            Alert(
+                id = "alert-003",
+                title = "Presión Arterial Elevada",
+                description = "Lectura de presión sistólica por encima de 140 mmHg.",
+                level = AlertLevel.MEDIUM,
+                status = AlertStatus.RESOLVED,
+                date = Date(System.currentTimeMillis() - 3600000 * 24 * 2) // Hace 2 días
+            )
         )
     }
 
