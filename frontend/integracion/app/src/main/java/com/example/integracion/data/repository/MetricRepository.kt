@@ -46,7 +46,21 @@ object MetricRepository {
                 avgValue = 122f,
                 minValue = 115f,
                 maxValue = 128f
+            ),
+            // --- NUEVO BLOQUE DE TEMPERATURA AÑADIDO ---
+            Metric(
+                type = MetricType.TEMPERATURE,
+                title = "Temperatura",
+                currentValue = "36.8",
+                unit = "°C",
+                iconResId = R.drawable.ic_temperature,
+                iconColor = R.color.metric_temp,
+                history = generateRandomData(36.5f, 37.2f),
+                avgValue = 36.9f,
+                minValue = 36.6f,
+                maxValue = 37.1f
             )
+            // -------------------------------------------
         )
     }
 

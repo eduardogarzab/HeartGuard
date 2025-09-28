@@ -1,4 +1,4 @@
-package com.example.integracion.data.model // Asegúrate que el paquete sea el tuyo
+package com.example.integracion.data.model
 
 import java.util.Date
 
@@ -7,7 +7,8 @@ enum class MetricType {
     SPO2,
     BLOOD_PRESSURE,
     HRV,
-    ECG
+    ECG,
+    TEMPERATURE // <-- LA LÍNEA QUE FALTABA
 }
 
 data class MetricDataPoint(
@@ -16,15 +17,13 @@ data class MetricDataPoint(
     val secondaryValue: Float? = null
 )
 
-// ... (imports y otras clases)
-
 data class Metric(
     val type: MetricType,
     val title: String,
     val currentValue: String,
     val unit: String,
-    val iconResId: Int, // <-- AÑADIDO
-    val iconColor: Int, // <-- AÑADIDO
+    val iconResId: Int,
+    val iconColor: Int,
     val history: List<MetricDataPoint>,
     val avgValue: Float,
     val minValue: Float,
