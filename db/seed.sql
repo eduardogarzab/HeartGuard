@@ -2,6 +2,9 @@
 -- HeartGuard DB (v2.5) - SEED (datos iniciales)
 -- =========================================================
 
+-- Requerido para bcrypt (crypt/gen_salt) y gen_random_uuid()
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
+
 -- Catálogos base
 INSERT INTO user_statuses(code,label) VALUES
   ('active','Activo'),('blocked','Bloqueado'),('pending','Pendiente')
@@ -129,27 +132,32 @@ INSERT INTO caregiver_relationship_types(code,label) VALUES
  ('child','Hijo/a'),('friend','Amigo/a')
 ON CONFLICT (code) DO NOTHING;
 
--- Usuario superadmin demo (REEMPLAZA EL HASH EN PRODUCCIÓN)
-INSERT INTO users(name, email, password_hash, user_status_id, two_factor_enabled)
+-- =========================================================
+-- Usuario superadmin demo (password fijo: Admin#2025)
+-- - Usa bcrypt generado por pgcrypto (crypt + gen_salt('bf', 10))
+-- - ON CONFLICT actualiza password/status para mantener el acceso
+-- =========================================================
+INSERT INTO users (name, email, password_hash, user_status_id, two_factor_enabled, created_at)
 VALUES (
   'Super Admin',
   'admin@heartguard.com',
-  '$2a$10$N7KxoF.LMMfTn0rD04rc.eR3P5ENvz3hnhIhZMTrS4.QmGjTLo4.W',
+  crypt('Admin#2025', gen_salt('bf', 10)),
   (SELECT id FROM user_statuses WHERE code='active'),
-  FALSE
+  FALSE,
+  NOW()
 )
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (email) DO UPDATE
+SET name = EXCLUDED.name,
+    password_hash = EXCLUDED.password_hash,
+    user_status_id = EXCLUDED.user_status_id;
 
+-- Asignar rol superadmin
 INSERT INTO user_role(user_id, role_id)
-SELECT u.id, r.id FROM users u, roles r
+SELECT u.id, r.id
+FROM users u, roles r
 WHERE u.email='admin@heartguard.com' AND r.name='superadmin'
 ON CONFLICT DO NOTHING;
 
--- (Opcional) Organización demo + asociación del superadmin como org_admin
--- INSERT INTO organizations(code,name) VALUES ('FAM-001','Familia García')
--- ON CONFLICT (code) DO NOTHING;
--- INSERT INTO user_org_membership(org_id,user_id,org_role_id)
--- SELECT o.id, u.id, (SELECT id FROM org_roles WHERE code='org_admin')
--- FROM organizations o, users u
--- WHERE o.code='FAM-001' AND u.email='admin@heartguard.com'
--- ON CONFLICT DO NOTHING;
+-- Organización demo
+INSERT INTO organizations(code,name) VALUES ('FAM-001','Familia García')
+ON CONFLICT (code) DO NOTHING;

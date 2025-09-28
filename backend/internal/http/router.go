@@ -6,86 +6,76 @@ import (
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	"github.com/redis/go-redis/v9"
+
+	"heartguard-superadmin/internal/auth"
 	"heartguard-superadmin/internal/config"
 	authmw "heartguard-superadmin/internal/middleware"
 	"heartguard-superadmin/internal/superadmin"
 )
 
-// NewRouter arma todas las rutas: API bajo /v1/... y UI estática bajo /
-func NewRouter(logger authmw.Logger, cfg *config.Config, h *superadmin.Handlers) http.Handler {
+func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, rdb *redis.Client, h *superadmin.Handlers) http.Handler {
 	r := chi.NewRouter()
-	r.Use(middleware.RequestID)
-	r.Use(middleware.RealIP)
-	r.Use(middleware.Recoverer)
+	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
+	r.Use(authmw.RateLimit(rdb, cfg.RateLimitRPS, cfg.RateLimitBurst))
 
 	// Health
 	r.Get("/healthz", h.Healthz)
 
-	// API superadmin
-	r.Route("/v1/superadmin", func(r chi.Router) {
-		r.Use(authmw.RequireSuperadmin(cfg, nil))
+	// Auth públicas
+	ah := auth.NewHandlers(cfg, repo)
+	r.Route("/v1/auth", func(r chi.Router) {
+		r.Post("/login", ah.Login)
+		r.Post("/refresh", ah.Refresh)
+		r.Post("/logout", ah.Logout)
+	})
 
-		r.Route("/organizations", func(r chi.Router) {
+	// Superadmin protegidas
+	r.Route("/v1/superadmin", func(s chi.Router) {
+		s.Use(authmw.RequireSuperadmin(cfg, rdb, repo))
+
+		s.Route("/organizations", func(r chi.Router) {
 			r.Post("/", h.CreateOrganization)
 			r.Get("/", h.ListOrganizations)
 			r.Get("/{id}", h.GetOrganization)
 			r.Patch("/{id}", h.UpdateOrganization)
 			r.Delete("/{id}", h.DeleteOrganization)
-
 			r.Post("/{id}/invitations", h.CreateInvitation)
 			r.Post("/{id}/members", h.AddMember)
 			r.Delete("/{id}/members/{userId}", h.RemoveMember)
 		})
 
-		r.Post("/invitations/{token}/consume", h.ConsumeInvitation)
-
-		r.Get("/users", h.SearchUsers)
-		r.Patch("/users/{id}/status", h.UpdateUserStatus)
-
-		r.Post("/api-keys", h.CreateAPIKey)
-		r.Post("/api-keys/{id}/permissions", h.SetAPIKeyPermissions)
-		r.Delete("/api-keys/{id}", h.RevokeAPIKey)
-		r.Get("/api-keys", h.ListAPIKeys)
-
-		r.Get("/audit-logs", h.ListAuditLogs)
+		s.Post("/invitations/{token}/consume", h.ConsumeInvitation)
+		s.Get("/users", h.SearchUsers)
+		s.Patch("/users/{id}/status", h.UpdateUserStatus)
+		s.Post("/api-keys", h.CreateAPIKey)
+		s.Post("/api-keys/{id}/permissions", h.SetAPIKeyPermissions)
+		s.Delete("/api-keys/{id}", h.RevokeAPIKey)
+		s.Get("/api-keys", h.ListAPIKeys)
+		s.Get("/audit-logs", h.ListAuditLogs)
 	})
 
-	// UI estática desde ./web
-	static := http.Dir(filepath.Clean("web"))
-	r.Handle("/*", spa(static))
-
-	return r
-}
-
-func NewServer(cfg *config.Config, h http.Handler) *http.Server {
-	return &http.Server{
-		Addr:    cfg.HTTPAddr,
-		Handler: h,
-	}
-}
-
-// spa: sirve index.html como fallback para rutas desconocidas (hash-router o client-side routing)
-func spa(root http.FileSystem) http.Handler {
-	fs := http.FileServer(root)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path := r.URL.Path
-		f, err := root.Open(path)
+	// Static web/ (lo que ya tienes)
+	fs := http.Dir("web")
+	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
+		up := req.URL.Path
+		if up == "/" { up = "/index.html" }
+		f, err := fs.Open(up)
 		if err == nil {
 			defer f.Close()
-			stat, _ := f.Stat()
-			if stat != nil && !stat.IsDir() {
-				fs.ServeHTTP(w, r)
-				return
-			}
+			fi, _ := f.Stat()
+			http.ServeContent(w, req, filepath.Base(up), fi.ModTime(), f)
+			return
 		}
-		// fallback a /index.html
-		index, err := root.Open("/index.html")
+		idx, err := fs.Open("/index.html")
 		if err != nil {
 			http.Error(w, "index not found", http.StatusInternalServerError)
 			return
 		}
-		defer index.Close()
-		info, _ := index.Stat()
-		http.ServeContent(w, r, "index.html", info.ModTime(), index)
+		defer idx.Close()
+		fi, _ := idx.Stat()
+		http.ServeContent(w, req, "index.html", fi.ModTime(), idx)
 	})
+
+	return r
 }

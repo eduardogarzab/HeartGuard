@@ -47,13 +47,17 @@ logs:
 dev:
 	@echo ">> dev $(APP) (HTTP_ADDR=$(HTTP_ADDR))"
 	cd backend && \
-	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) SUPERADMIN_TEST_TOKEN=$(SUPERADMIN_TEST_TOKEN) \
+	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) \
+	JWT_SECRET=$(JWT_SECRET) ACCESS_TOKEN_TTL=$(ACCESS_TOKEN_TTL) REFRESH_TOKEN_TTL=$(REFRESH_TOKEN_TTL) \
+	REDIS_URL=$(REDIS_URL) RATE_LIMIT_RPS=$(RATE_LIMIT_RPS) RATE_LIMIT_BURST=$(RATE_LIMIT_BURST) \
 	go run ./cmd/$(APP)
 
 run:
 	@echo ">> run $(APP)"
 	cd backend && \
-	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) SUPERADMIN_TEST_TOKEN=$(SUPERADMIN_TEST_TOKEN) \
+	ENV=$(ENV) HTTP_ADDR=$(HTTP_ADDR) DATABASE_URL=$(DATABASE_URL) \
+	JWT_SECRET=$(JWT_SECRET) ACCESS_TOKEN_TTL=$(ACCESS_TOKEN_TTL) REFRESH_TOKEN_TTL=$(REFRESH_TOKEN_TTL) \
+	REDIS_URL=$(REDIS_URL) RATE_LIMIT_RPS=$(RATE_LIMIT_RPS) RATE_LIMIT_BURST=$(RATE_LIMIT_BURST) \
 	go run ./cmd/$(APP)
 
 build:
@@ -104,3 +108,23 @@ db-health:
 
 db-psql:
 	psql "$(DB_URL)"
+
+# =========================
+# Reset completo (Postgres + Redis + volúmenes)
+# =========================
+reset-all:
+	@echo ">> Bajando servicios..."
+	docker compose down -v --remove-orphans
+
+	@echo ">> Borrando volúmenes (Postgres y Redis)..."
+	-docker volume rm heartguard_postgres_data || true
+	-docker volume rm heartguard-redis || true
+
+	@echo ">> Levantando servicios limpios..."
+	docker compose up -d
+
+	@echo ">> Re-inicializando DB..."
+	make db-init
+	make db-seed
+
+	@echo ">> Reset completo OK"

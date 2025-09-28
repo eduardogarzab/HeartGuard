@@ -1,56 +1,48 @@
 <!DOCTYPE html>
-<html lang="es" data-theme="light">
+<html lang="es" data-theme="dark">
 	<head>
-		<meta charset="utf-8" />
-		<meta name="viewport" content="width=device-width, initial-scale=1" />
-		<title>HeartGuard • Superadmin</title>
-
-		<!-- Tipografía e íconos (CDN) -->
-		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Material+Symbols+Rounded" rel="stylesheet" />
-		<link rel="stylesheet" href="assets/css/styles.css" />
+		<meta charset="UTF-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+		<title>HeartGuard — Superadmin</title>
+		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+		<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Material+Symbols+Rounded" rel="stylesheet" />
+		<link rel="stylesheet" href="./assets/css/styles.css" />
 	</head>
 	<body>
+		<!-- Topbar -->
 		<header class="topbar">
 			<div class="brand">
-				<span class="logo material-symbols-rounded">monitor_heart</span>
-				<span class="title">HeartGuard • Superadmin</span>
+				<div class="logo material-symbols-rounded">health_and_safety</div>
+				<div class="title">HeartGuard — Superadmin</div>
 			</div>
-			<div class="top-actions">
-				<button id="themeToggle" class="btn ghost" title="Modo claro/oscuro">
-					<span class="material-symbols-rounded">dark_mode</span>
-				</button>
-				<div class="divider"></div>
-				<button id="refreshBtn" class="btn ghost" title="Refrescar vista">
-					<span class="material-symbols-rounded">refresh</span>
-				</button>
+			<div class="actions">
+				<button class="btn ghost" id="themeToggle"><span class="material-symbols-rounded">dark_mode</span> Tema</button>
+				<span class="divider"></span>
+				<button class="btn" id="refreshBtn"><span class="material-symbols-rounded">refresh</span> Refrescar</button>
 			</div>
 		</header>
 
-		<nav class="subbar">
-			<div class="env">Backend: <span id="envBase"></span></div>
-			<div class="auth">
-				<label class="switch">
-					<input type="checkbox" id="authMode" checked />
-					<span class="slider"></span>
-				</label>
-				<span class="auth-label">Demo header</span>
-				<input id="bearerToken" type="text" placeholder="Bearer token (let-me-in)" />
+		<!-- Subbar: entorno + auth -->
+		<div class="subbar">
+			<div class="env">Backend: <strong id="envBase"></strong></div>
+			<div class="auth" id="authArea">
+				<!-- Rellenado por app.js: Login / Usuario + Logout -->
 			</div>
-		</nav>
+		</div>
 
-		<main id="app" class="container"></main>
+		<!-- Contenedor principal -->
+		<main class="container">
+			<div id="app"><!-- Router --></div>
+		</main>
 
-		<div id="toastRoot" class="toast-root"></div>
+		<!-- Modal -->
+		<div class="modal-root" id="modalRoot"></div>
 
-		<!-- Modales -->
-		<div id="modalRoot" class="modal-root"></div>
+		<!-- Toasts -->
+		<div class="toast-root" id="toastRoot"></div>
 
-		<footer class="footer">
-			<span>© HeartGuard</span>
-			<span class="dot"></span>
-			<span>UI Admin • v0.1</span>
-		</footer>
+		<footer class="footer"><span>© HeartGuard</span> <span class="dot"></span> <span>Panel Superadmin</span></footer>
 
-		<script src="assets/js/app.js"></script>
+		<script src="./assets/js/app.js"></script>
 	</body>
 </html>

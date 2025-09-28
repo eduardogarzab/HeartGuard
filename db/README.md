@@ -1,64 +1,78 @@
-# HeartGuard DB — PostgreSQL + PostGIS
+# HeartGuard Database (PostgreSQL + PostGIS)
 
-## Propósito
-- Esquema clínico y de operaciones.
-- Catálogos y seguridad básica.
-- Vistas de conveniencia para alertas activas.
+## Descripción
+
+Módulo de base de datos para HeartGuard que define el esquema principal, catálogos, roles, usuarios, seeds y extensiones necesarias para el sistema de monitoreo y alertas.
+
+---
+
+## Tecnologías
+
+- **PostgreSQL 14+**
+- **PostGIS**
+- **pgcrypto** (UUIDs y bcrypt para hashes)
+- **Docker** (opcional para desarrollo)
+
+---
+
+## Estructura
+
+```
+db/
+├── init.sql        # Creación de esquema, extensiones, roles y tablas
+├── seed.sql        # Datos iniciales (catálogos, roles, permisos, superadmin demo)
+└── migrations/     # Directorio opcional para futuras migraciones
+```
+
+---
 
 ## Requisitos
-- **Docker + Compose**
-- **Make**
-- **Extensiones:** `postgis`, `pgcrypto`
 
-## Variables (desde `.env` raíz)
-- `PGSUPER`, `PGSUPER_PASS`
-- `PGHOST`, `PGPORT`
+- Docker + Docker Compose
+- Make
+- psql (opcional fuera de Docker)
+
+---
+
+## Variables de entorno
+
+Ver archivo `.env`:
+
+- `PGSUPER`, `PGSUPER_PASS`, `PGHOST`, `PGPORT`
 - `DBNAME`, `DBUSER`, `DBPASS`
-- `DATABASE_URL`
+- `DATABASE_URL` (cadena completa)
 
-## Comandos principales
-```sh
-docker compose up -d
-make db-init
-make db-seed
-make db-health
-make db-reset
-make db-psql
-```
+---
 
-## DSN de conexión
-```
-postgres://heartguard_app:dev_change_me@127.0.0.1:5432/heartguard?sslmode=disable
-```
+## Comandos principales (`Makefile`)
 
-## Smoke test
-```sh
-export $(grep -v '^#' .env | xargs)
-psql "$DATABASE_URL" <<'SQL'
-INSERT INTO organizations(code, name)
-VALUES ('FAM-001', 'Familia Demo')
-ON CONFLICT DO NOTHING;
+| Comando         | Descripción                                                        |
+|-----------------|--------------------------------------------------------------------|
+| `make db-init`  | Inicializar la base de datos                                       |
+| `make db-seed`  | Cargar datos iniciales (catálogos, roles, superadmin demo)         |
+| `make db-health`| Verificar estado (healthcheck básico y conteos)                    |
+| `make db-reset` | Resetear base de datos                                             |
+| `make db-psql`  | Abrir cliente interactivo                                          |
 
-WITH o AS (SELECT id FROM organizations WHERE code='FAM-001')
-INSERT INTO patients(org_id, person_name, birthdate)
-SELECT o.id, 'Paciente Demo', '1980-01-01' FROM o
-ON CONFLICT DO NOTHING;
+---
 
-WITH p AS (SELECT id FROM patients WHERE person_name='Paciente Demo'),
-   t AS (SELECT id FROM alert_types WHERE code='ARRHYTHMIA'),
-   s AS (SELECT id FROM alert_status WHERE code='created'),
-   l AS (SELECT id FROM alert_levels WHERE code='high')
-INSERT INTO alerts(patient_id, type_id, status_id, alert_level_id, description, created_at)
-SELECT p.id, t.id, s.id, l.id, 'Prueba de alerta', NOW()
-FROM p, t, s, l
-ON CONFLICT DO NOTHING;
+## Usuario Superadmin de Demo
 
-SELECT * FROM v_patient_active_alerts;
-SQL
-```
+Se incluye automáticamente al ejecutar el seed:
 
-## Solución de problemas
-- **Puerto ocupado:** cambia mapeo en `docker-compose.yml`
-- **Borrar datos:** `docker compose down -v`
-- **Logs:** `docker compose logs -f postgres`
-- **Entrar al contenedor:** `docker exec -it heartguard-postgres psql -U postgres`
+- **Email:** `admin@heartguard.com`
+- **Password:** `Admin#2025`
+- **Rol:** `superadmin`
+- **Estado:** `activo`
+
+La contraseña se genera en cada seed con pgcrypto/bcrypt para garantizar acceso estable en entornos de demo.
+
+---
+
+## Notas
+
+- No usar este usuario en producción (solo para demo).
+- Para cambiar credenciales en producción, ajustar `seed.sql`.
+- PostGIS es requerido aunque algunas tablas iniciales no lo usen (compatibilidad futura).
+- Los catálogos y roles utilizan `ON CONFLICT` para seeds idempotentes.
+

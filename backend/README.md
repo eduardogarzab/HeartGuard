@@ -2,41 +2,91 @@
 
 ## Descripción
 
-API para superadministración: organizaciones, invitaciones, membresías, usuarios, API keys y auditoría.  
-**Autenticación de demo:**  
-- `X-Demo-Superadmin: 1`  
-- `Authorization: Bearer let-me-in`
+API de superadministración para HeartGuard: gestiona organizaciones, invitaciones, membresías, usuarios, API keys y auditoría.
+
+- **Autenticación real** con JWT (access + refresh).
+- **Redis** utilizado para refresh tokens y rate limiting.
+- **Panel web** (HTML/CSS/JS) servido directamente desde el backend.
 
 ## Requisitos
 
-- **Go** 1.22+
-- **PostgreSQL** 14+ ya inicializado
-- Variable `DATABASE_URL` en `.env`
+- Go `1.22+`
+- PostgreSQL `14+` (inicializada con `db/init.sql` y `db/seed.sql`)
+- Redis (se levanta vía Docker Compose)
+- Variables configuradas en `.env` (ver `.env.example` y README raíz)
 
-## Setup
+## Variables principales
 
-```bash
+- `DATABASE_URL`
+- `HTTP_ADDR`
+- `JWT_SECRET`
+- `ACCESS_TOKEN_TTL` (ej: `15m`)
+- `REFRESH_TOKEN_TTL` (ej: `720h`)
+- `REDIS_URL` (ej: `redis://localhost:6379/0`)
+- `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST`
+
+## Setup rápido
+
+```sh
 cp .env.example .env
 nano .env
+make up         # levanta Postgres + Redis
+make db-init
+make db-seed
+make tidy
 make dev
 ```
 
-## Health Check
+**Reset completo** (Postgres + Redis + volúmenes + DB + datos seed):
 
-```bash
+```sh
+make reset-all
+```
+
+## Health check
+
+```sh
 curl -i http://localhost:8080/healthz
 ```
 
-## Autenticación demo
+## Panel web
 
-- Header:  
-    ```bash
-    -H "X-Demo-Superadmin: 1"
-    ```
-- Token:  
-    ```bash
-    -H "Authorization: Bearer let-me-in"
-    ```
+- **URL:** [http://localhost:8080/](http://localhost:8080/)
+- Login contra `/v1/auth/login`
+- Uso de Bearer en `/v1/superadmin/*`
+- Refresh automático en expiración
+- Logout revoca el refresh token
+
+## Autenticación
+
+**Login:**
+```http
+POST /v1/auth/login
+Body: {"email":"...","password":"..."}
+Respuesta: access_token, refresh_token, user
+```
+
+**Refresh:**
+```http
+POST /v1/auth/refresh
+Body: {"refresh_token":"..."}
+Respuesta: access_token, refresh_token (rotados)
+```
+
+**Logout:**
+```http
+POST /v1/auth/logout
+Body: {"refresh_token":"..."}
+Respuesta: 204 No Content
+```
+
+## Protección de rutas
+
+Todas las rutas bajo `/v1/superadmin` requieren:
+
+```
+Authorization: Bearer <access_token>
+```
 
 ## Endpoints principales
 
@@ -44,50 +94,70 @@ curl -i http://localhost:8080/healthz
 - **Invitaciones:** crear / consumir
 - **Miembros:** añadir / eliminar
 - **Usuarios:** listar / cambiar status
-- **API keys:** crear / asignar permisos / eliminar / listar
-- **Auditoría:** listar logs con filtros
+- **API keys:** crear / asignar permisos / revocar / listar
+- **Auditoría:** listar logs (filtros: from, to, action)
 
-## Smoke Test
+## Smoke test
 
-1. **Listar organizaciones:**
-     ```bash
-     curl -s -H "X-Demo-Superadmin: 1" http://localhost:8080/v1/superadmin/organizations
-     ```
-2. **Crear organización:**
-     ```bash
-     curl -s -X POST -H "X-Demo-Superadmin: 1" -H "Content-Type: application/json" \
-         -d '{"code":"FAM-TEST","name":"Familia Test"}' \
-         http://localhost:8080/v1/superadmin/organizations
-     ```
-3. **Ver auditoría:**
-     ```bash
-     curl -s -H "X-Demo-Superadmin: 1" http://localhost:8080/v1/superadmin/audit-logs
-     ```
-4. **Crear API key:**
-     ```bash
-     openssl rand -hex 32
-     curl -s -X POST -H "X-Demo-Superadmin: 1" -H "Content-Type: application/json" \
-         -d '{"label":"demo","raw_key":"prueba123456789123456789123456789123456789"}' \
-         http://localhost:8080/v1/superadmin/api-keys
-     ```
-5. **Buscar usuarios:**
-     ```bash
-     curl -s -H "X-Demo-Superadmin: 1" "http://localhost:8080/v1/superadmin/users?q=admin&limit=10"
-     ```
+1. **Login:**
+    ```sh
+    curl -s -X POST http://localhost:8080/v1/auth/login \
+      -H "Content-Type: application/json" \
+      -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
+    ```
+    Guarda los tokens:
+    ```sh
+    ACCESS_TOKEN="..."
+    REFRESH_TOKEN="..."
+    ```
+
+2. **Listar organizaciones:**
+    ```sh
+    curl -s http://localhost:8080/v1/superadmin/organizations \
+      -H "Authorization: Bearer $ACCESS_TOKEN"
+    ```
+
+3. **Crear organización:**
+    ```sh
+    curl -s -X POST http://localhost:8080/v1/superadmin/organizations \
+      -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d '{"code":"FAM-TEST","name":"Familia Test"}'
+    ```
+
+4. **Auditoría:**
+    ```sh
+    curl -s http://localhost:8080/v1/superadmin/audit-logs \
+      -H "Authorization: Bearer $ACCESS_TOKEN"
+    ```
+
+5. **Crear API key:**
+    ```sh
+    RAW=$(openssl rand -hex 32)
+    curl -s -X POST http://localhost:8080/v1/superadmin/api-keys \
+      -H "Authorization: Bearer $ACCESS_TOKEN" \
+      -H "Content-Type: application/json" \
+      -d "{\"label\":\"demo\",\"raw_key\":\"$RAW\"}"
+    ```
+
+6. **Refresh:**
+    ```sh
+    curl -s -X POST http://localhost:8080/v1/auth/refresh \
+      -H "Content-Type: application/json" \
+      -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
+    ```
+
+7. **Logout:**
+    ```sh
+    curl -s -X POST http://localhost:8080/v1/auth/logout \
+      -H "Content-Type: application/json" \
+      -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}" -i
+    ```
 
 ## Troubleshooting
 
-- **API key inválida:**  `raw_key` mínimo 32 caracteres
-
-- **DATABASE_URL faltante:**  
-    ```bash
-    export $(grep -v '^#' .env | xargs)
-    ```
-- **Módulos Go faltantes:**  
-    ```bash
-    go mod tidy
-    ```
-- **jq faltante:**  
-    ```bash
-    sudo apt install jq
-    ```
+- `invalid_credentials` → revisar email/password y que el usuario no esté bloqueado
+- `invalid token` en refresh/logout → token expirado o revocado
+- `DATABASE_URL is required` → `export $(grep -v '^#' .env | xargs)`
+- Dependencias Go → `make tidy`
+- Instalar jq en Ubuntu → `sudo apt install jq`
