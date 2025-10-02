@@ -12,13 +12,57 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"heartguard-superadmin/internal/models"
 )
 
-type Repo struct{ pool *pgxpool.Pool }
+type pgPool interface {
+	Query(context.Context, string, ...any) (pgx.Rows, error)
+	QueryRow(context.Context, string, ...any) pgx.Row
+	Exec(context.Context, string, ...any) (pgconn.CommandTag, error)
+	Begin(context.Context) (pgx.Tx, error)
+	Ping(context.Context) error
+}
 
-func NewRepo(pool *pgxpool.Pool) *Repo { return &Repo{pool: pool} }
+type Repo struct {
+	pool      pgPool
+	auditPool *pgxpool.Pool
+}
+
+func NewRepo(pool *pgxpool.Pool) *Repo {
+	return &Repo{pool: pool, auditPool: pool}
+}
+
+// NewRepoWithPool allows injecting a custom pgx pool implementation (tests).
+func NewRepoWithPool(pool pgPool) *Repo { return &Repo{pool: pool} }
+
+func (r *Repo) AuditPool() *pgxpool.Pool { return r.auditPool }
+
+func (r *Repo) Ping(ctx context.Context) error {
+	if r.pool == nil {
+		return errors.New("nil pool")
+	}
+	return r.pool.Ping(ctx)
+}
+
+var nowFn = time.Now
+
+func invitationStatus(inv *models.OrgInvitation, now time.Time) string {
+	if inv == nil {
+		return ""
+	}
+	if inv.RevokedAt != nil {
+		return "revoked"
+	}
+	if inv.UsedAt != nil {
+		return "used"
+	}
+	if now.After(inv.ExpiresAt) {
+		return "expired"
+	}
+	return "pending"
+}
 
 // ------------------------------
 // Organizations
@@ -98,10 +142,16 @@ func (r *Repo) CreateInvitation(ctx context.Context, orgID, orgRoleID string, em
 	err := r.pool.QueryRow(ctx, `
 INSERT INTO org_invitations (id, org_id, email, org_role_id, token, expires_at, created_by, created_at)
 VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW() + make_interval(secs => $5), $6, NOW())
-RETURNING id, org_id, email, org_role_id, token, expires_at, used_at, created_by, created_at
+RETURNING id, org_id, email, org_role_id,
+        (SELECT code FROM org_roles WHERE id = org_role_id) AS org_role_code,
+        token, expires_at, used_at, revoked_at, created_by, created_at
 `, orgID, email, orgRoleID, token, int64(ttl.Seconds()), createdBy).
-		Scan(&m.ID, &m.OrgID, &m.Email, &m.OrgRoleID, &m.Token, &m.ExpiresAt, &m.UsedAt, &m.CreatedBy, &m.CreatedAt)
-	return &m, err
+		Scan(&m.ID, &m.OrgID, &m.Email, &m.OrgRoleID, &m.OrgRoleCode, &m.Token, &m.ExpiresAt, &m.UsedAt, &m.RevokedAt, &m.CreatedBy, &m.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	m.Status = invitationStatus(&m, nowFn())
+	return &m, nil
 }
 
 func (r *Repo) ConsumeInvitation(ctx context.Context, token, userID string) error {
@@ -110,7 +160,7 @@ func (r *Repo) ConsumeInvitation(ctx context.Context, token, userID string) erro
 		if err := tx.QueryRow(ctx, `
 SELECT org_id, org_role_id
 FROM org_invitations
-WHERE token=$1 AND used_at IS NULL AND expires_at > NOW()
+WHERE token=$1 AND used_at IS NULL AND expires_at > NOW() AND revoked_at IS NULL
 FOR UPDATE
 `, token).Scan(&orgID, &roleID); err != nil {
 			return err
@@ -125,6 +175,81 @@ ON CONFLICT (org_id, user_id) DO UPDATE SET org_role_id = EXCLUDED.org_role_id
 		_, err := tx.Exec(ctx, `UPDATE org_invitations SET used_at = NOW() WHERE token=$1`, token)
 		return err
 	})
+}
+
+func (r *Repo) ListOrgInvitations(ctx context.Context, orgID string, limit, offset int) ([]models.OrgInvitation, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+        i.id::text,
+        i.org_id::text,
+        i.email,
+        i.org_role_id::text,
+        COALESCE(oroles.code, '') AS org_role_code,
+        i.token,
+        i.expires_at,
+        i.used_at,
+        i.revoked_at,
+        i.created_by::text,
+        i.created_at
+FROM org_invitations i
+LEFT JOIN org_roles oroles ON oroles.id = i.org_role_id
+WHERE i.org_id = $1
+ORDER BY i.created_at DESC
+LIMIT $2 OFFSET $3
+`, orgID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.OrgInvitation, 0, limit)
+	now := nowFn()
+	for rows.Next() {
+		var (
+			createdBy *uuid.UUID
+			item      models.OrgInvitation
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&item.OrgID,
+			&item.Email,
+			&item.OrgRoleID,
+			&item.OrgRoleCode,
+			&item.Token,
+			&item.ExpiresAt,
+			&item.UsedAt,
+			&item.RevokedAt,
+			&createdBy,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		if createdBy != nil {
+			s := createdBy.String()
+			item.CreatedBy = &s
+		}
+		item.Status = invitationStatus(&item, now)
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CancelInvitation(ctx context.Context, invitationID string) error {
+	cmd, err := r.pool.Exec(ctx, `
+UPDATE org_invitations
+SET revoked_at = NOW()
+WHERE id = $1 AND revoked_at IS NULL AND used_at IS NULL
+`, invitationID)
+	if err != nil {
+		return err
+	}
+	if cmd.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
 }
 
 // ------------------------------
@@ -148,6 +273,52 @@ func (r *Repo) RemoveMember(ctx context.Context, orgID, userID string) error {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (r *Repo) ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+        m.org_id::text,
+        m.user_id::text,
+        u.email,
+        u.name,
+        m.org_role_id::text,
+        COALESCE(oroles.code, '') AS role_code,
+        COALESCE(oroles.label, '') AS role_label,
+        m.joined_at
+FROM user_org_membership m
+JOIN users u ON u.id = m.user_id
+LEFT JOIN org_roles oroles ON oroles.id = m.org_role_id
+WHERE m.org_id = $1
+ORDER BY m.joined_at DESC
+LIMIT $2 OFFSET $3
+`, orgID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Membership, 0, limit)
+	for rows.Next() {
+		var item models.Membership
+		if err := rows.Scan(
+			&item.OrgID,
+			&item.UserID,
+			&item.Email,
+			&item.Name,
+			&item.OrgRoleID,
+			&item.OrgRoleCode,
+			&item.OrgRoleLabel,
+			&item.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // ------------------------------
@@ -473,7 +644,7 @@ WHERE token_hash = $1 AND revoked_at IS NULL
 // ------------------------------
 // Tx helper
 // ------------------------------
-func withTx(ctx context.Context, pool *pgxpool.Pool, fn func(pgx.Tx) error) error {
+func withTx(ctx context.Context, pool pgPool, fn func(pgx.Tx) error) (err error) {
 	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err

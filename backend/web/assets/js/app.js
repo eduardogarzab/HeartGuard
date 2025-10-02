@@ -294,7 +294,7 @@ function escapeHtml(str) {
 
 /* ---------- ORGANIZATIONS ---------- */
 Router.register("/organizations", async (el) => {
-  const t = tabs(["Listado", "Crear", "Actualizar", "Eliminar"]);
+  const t = tabs(["Listado", "Crear", "Actualizar", "Eliminar", "Miembros", "Invitaciones"]);
   el.innerHTML = panelScaffold("groups", "Organizaciones",
     `<button class="btn" id="backHome"><span class="material-symbols-rounded">arrow_back</span>Inicio</button>`, `${t.html}`);
   $("#backHome").onclick = () => (location.hash = "/");
@@ -369,7 +369,167 @@ Router.register("/organizations", async (el) => {
     };
   }
 
-  await list(); bindTabs((tid, idx) => [list, create, update, remove][idx]?.());
+  function members() {
+    panes.innerHTML = `
+      <form id="memberList" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="mOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Limit</label><input id="mLimit" type="number" value="25" min="1" max="200"/></div>
+        <div class="form-field"><label>&nbsp;</label><button class="btn"><span class="material-symbols-rounded">group</span> Listar</button></div>
+      </form>
+      <div id="memberResults" style="margin-top:12px"></div>
+      <hr />
+      <h3 style="margin-top:10px">Agregar miembro</h3>
+      <form id="memberAdd" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="mAddOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>User ID</label><input id="mAddUser" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Org Role ID</label><input id="mAddRole" type="text" required placeholder="uuid"/></div>
+        <div class="form-field full"><button class="btn"><span class="material-symbols-rounded">person_add</span> Agregar</button></div>
+      </form>
+      <h3 style="margin-top:20px">Remover miembro</h3>
+      <form id="memberRemove" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="mRemOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>User ID</label><input id="mRemUser" type="text" required placeholder="uuid"/></div>
+        <div class="form-field full"><button class="btn danger"><span class="material-symbols-rounded">person_remove</span> Remover</button></div>
+      </form>`;
+
+    const res = $("#memberResults");
+    async function loadMembers(orgId, limit = 25) {
+      const data = await api(`/v1/superadmin/organizations/${orgId}/members`, { query: { limit } });
+      res.dataset.orgId = orgId;
+      res.dataset.limit = String(limit);
+      res.innerHTML = `
+        <table class="table">
+          <thead><tr><th>User ID</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Join</th></tr></thead>
+          <tbody>${(data || []).map(m => `
+            <tr>
+              <td>${m.user_id}</td>
+              <td>${escapeHtml(m.name || "")}</td>
+              <td>${escapeHtml(m.email || "")}</td>
+              <td><span class="badge">${escapeHtml(m.org_role_code || "")}</span></td>
+              <td>${new Date(m.joined_at || Date.now()).toLocaleString()}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    $("#memberList").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#mOrg").value.trim();
+      const limit = +$("#mLimit").value || 25;
+      try { await loadMembers(orgId, limit); }
+      catch (err) { toast("Miembros", err.message, "error"); }
+    };
+
+    $("#memberAdd").onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = { user_id: $("#mAddUser").value.trim(), org_role_id: $("#mAddRole").value.trim() };
+      const orgId = $("#mAddOrg").value.trim();
+      try {
+        await api(`/v1/superadmin/organizations/${orgId}/members`, { method: "POST", data: payload });
+        toast("Miembros", "Miembro agregado", "ok");
+        if (res.dataset.orgId === orgId) await loadMembers(orgId, +(res.dataset.limit || 25));
+      } catch (err) { toast("Miembros", err.message, "error"); }
+    };
+
+    $("#memberRemove").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#mRemOrg").value.trim();
+      const userId = $("#mRemUser").value.trim();
+      try {
+        await api(`/v1/superadmin/organizations/${orgId}/members/${userId}`, { method: "DELETE" });
+        toast("Miembros", "Miembro removido", "ok");
+        if (res.dataset.orgId === orgId) await loadMembers(orgId, +(res.dataset.limit || 25));
+      } catch (err) { toast("Miembros", err.message, "error"); }
+    };
+  }
+
+  function invitations() {
+    panes.innerHTML = `
+      <form id="invList" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="invOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Limit</label><input id="invLimit" type="number" value="25" min="1" max="200"/></div>
+        <div class="form-field"><label>&nbsp;</label><button class="btn"><span class="material-symbols-rounded">mail</span> Listar</button></div>
+      </form>
+      <div id="invResults" style="margin-top:12px"></div>
+      <hr />
+      <h3 style="margin-top:10px">Generar invitación</h3>
+      <form id="invCreate" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="invCreateOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Org Role ID</label><input id="invCreateRole" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Email (opcional)</label><input id="invCreateEmail" type="email" placeholder="demo@acme.com"/></div>
+        <div class="form-field"><label>TTL (horas)</label><input id="invCreateTTL" type="number" value="48" min="1" max="720"/></div>
+        <div class="form-field full"><button class="btn"><span class="material-symbols-rounded">add</span> Crear invitación</button></div>
+      </form>
+      <h3 style="margin-top:20px">Cancelar invitación</h3>
+      <form id="invCancel" class="form-grid">
+        <div class="form-field"><label>Invitation ID</label><input id="invCancelId" type="text" required placeholder="uuid"/></div>
+        <div class="form-field full"><button class="btn danger"><span class="material-symbols-rounded">block</span> Cancelar</button></div>
+      </form>`;
+
+    const res = $("#invResults");
+    const statusBadge = (status) => {
+      const s = (status || "").toLowerCase();
+      if (s === "pending") return '<span class="badge warn">pending</span>';
+      if (s === "used") return '<span class="badge success">used</span>';
+      if (s === "revoked" || s === "expired") return `<span class="badge danger">${s}</span>`;
+      return `<span class="badge">${status || ""}</span>`;
+    };
+
+    async function loadInvites(orgId, limit = 25) {
+      const data = await api(`/v1/superadmin/organizations/${orgId}/invitations`, { query: { limit } });
+      res.dataset.orgId = orgId;
+      res.dataset.limit = String(limit);
+      res.innerHTML = `
+        <table class="table">
+          <thead><tr><th>ID</th><th>Email</th><th>Rol</th><th>Status</th><th>Expira</th><th>Creada</th></tr></thead>
+          <tbody>${(data || []).map(inv => `
+            <tr>
+              <td>${inv.id}</td>
+              <td>${escapeHtml(inv.email || "-")}</td>
+              <td>${escapeHtml(inv.org_role_code || inv.org_role_id || "")}</td>
+              <td>${statusBadge(inv.status)}</td>
+              <td>${new Date(inv.expires_at || Date.now()).toLocaleString()}</td>
+              <td>${new Date(inv.created_at || Date.now()).toLocaleString()}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    $("#invList").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#invOrg").value.trim();
+      const limit = +$("#invLimit").value || 25;
+      try { await loadInvites(orgId, limit); }
+      catch (err) { toast("Invitaciones", err.message, "error"); }
+    };
+
+    $("#invCreate").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#invCreateOrg").value.trim();
+      const payload = {
+        org_role_id: $("#invCreateRole").value.trim(),
+        email: $("#invCreateEmail").value.trim() || null,
+        ttl_hours: +$("#invCreateTTL").value || 24,
+      };
+      try {
+        await api(`/v1/superadmin/organizations/${orgId}/invitations`, { method: "POST", data: payload });
+        toast("Invitaciones", "Invitación creada", "ok");
+        if (res.dataset.orgId === orgId) await loadInvites(orgId, +(res.dataset.limit || 25));
+      } catch (err) { toast("Invitaciones", err.message, "error"); }
+    };
+
+    $("#invCancel").onsubmit = async (e) => {
+      e.preventDefault();
+      const invitationId = $("#invCancelId").value.trim();
+      try {
+        await api(`/v1/superadmin/invitations/${invitationId}`, { method: "DELETE" });
+        toast("Invitaciones", "Invitación cancelada", "ok");
+        if (res.dataset.orgId) await loadInvites(res.dataset.orgId, +(res.dataset.limit || 25));
+      } catch (err) { toast("Invitaciones", err.message, "error"); }
+    };
+  }
+
+  await list(); bindTabs((tid, idx) => [list, create, update, remove, members, invitations][idx]?.());
 });
 
 /* ---------- USERS ---------- */
