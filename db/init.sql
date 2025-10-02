@@ -239,6 +239,7 @@ CREATE TABLE IF NOT EXISTS org_invitations (
   token        VARCHAR(120) NOT NULL UNIQUE,
   expires_at   TIMESTAMP NOT NULL,
   used_at      TIMESTAMP,
+  revoked_at   TIMESTAMP,
   created_by   UUID REFERENCES users(id) ON DELETE SET NULL,
   created_at   TIMESTAMP NOT NULL DEFAULT NOW()
 );

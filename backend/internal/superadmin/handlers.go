@@ -14,18 +14,51 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"heartguard-superadmin/internal/audit"
 	mw "heartguard-superadmin/internal/middleware"
+	"heartguard-superadmin/internal/models"
 )
 
+type Repository interface {
+	AuditPool() *pgxpool.Pool
+	Ping(context.Context) error
+
+	CreateOrganization(ctx context.Context, code, name string) (*models.Organization, error)
+	ListOrganizations(ctx context.Context, limit, offset int) ([]models.Organization, error)
+	GetOrganization(ctx context.Context, id string) (*models.Organization, error)
+	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
+	DeleteOrganization(ctx context.Context, id string) error
+
+	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttl time.Duration, createdBy *string) (*models.OrgInvitation, error)
+	ListOrgInvitations(ctx context.Context, orgID string, limit, offset int) ([]models.OrgInvitation, error)
+	ConsumeInvitation(ctx context.Context, token, userID string) error
+	CancelInvitation(ctx context.Context, invitationID string) error
+
+	AddMember(ctx context.Context, orgID, userID, orgRoleID string) error
+	RemoveMember(ctx context.Context, orgID, userID string) error
+	ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error)
+
+	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
+	UpdateUserStatus(ctx context.Context, userID, status string) error
+
+	CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error)
+	SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error
+	RevokeAPIKey(ctx context.Context, id string) error
+	ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error)
+
+	ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error)
+}
+
 type Handlers struct {
-	repo     *Repo
+	repo     Repository
 	logger   *zap.Logger
 	validate *validator.Validate
 }
 
-func NewHandlers(r *Repo, l *zap.Logger) *Handlers {
+func NewHandlers(r Repository, l *zap.Logger) *Handlers {
 	v := validator.New(validator.WithRequiredStructEnabled())
 	return &Handlers{repo: r, logger: l, validate: v}
 }
@@ -102,6 +135,16 @@ func clientIP(r *http.Request) *string {
 	return nil
 }
 
+func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, entity string, entityID *string, details map[string]any) {
+	pool := h.repo.AuditPool()
+	if pool == nil {
+		return
+	}
+	ctxA, cancel := audit.Ctx(ctx)
+	defer cancel()
+	_ = audit.Write(ctxA, pool, actorPtr(r), action, entity, entityID, details, clientIP(r))
+}
+
 // Organizations
 
 type orgReq struct {
@@ -123,10 +166,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "ORG_CREATE", "organization", &org.ID, map[string]any{"code": org.Code}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "ORG_CREATE", "organization", &org.ID, map[string]any{"code": org.Code})
 	writeJSON(w, 201, org)
 }
 
@@ -175,10 +215,7 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "ORG_UPDATE", "organization", &org.ID, map[string]any{"code": org.Code}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "ORG_UPDATE", "organization", &org.ID, map[string]any{"code": org.Code})
 	writeJSON(w, 200, org)
 }
 
@@ -190,10 +227,7 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 404, "not_found", "organization not found", nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "ORG_DELETE", "organization", &id, nil, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "ORG_DELETE", "organization", &id, nil)
 	w.WriteHeader(204)
 }
 
@@ -220,11 +254,21 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "INVITE_CREATE", "org_invitation", &inv.ID, map[string]any{"org_id": orgID}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "INVITE_CREATE", "org_invitation", &inv.ID, map[string]any{"org_id": orgID})
 	writeJSON(w, 201, inv)
+}
+
+func (h *Handlers) ListOrgInvitations(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListOrgInvitations(ctx, orgID, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
 }
 
 type consumeReq struct {
@@ -245,10 +289,23 @@ func (h *Handlers) ConsumeInvitation(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 400, "invalid_token", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "INVITE_CONSUME", "org_invitation", nil, map[string]any{"token": token}, clientIP(r))
-		c()
+	h.writeAudit(ctx, r, "INVITE_CONSUME", "org_invitation", nil, map[string]any{"token": token})
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) CancelInvitation(w http.ResponseWriter, r *http.Request) {
+	invitationID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.CancelInvitation(ctx, invitationID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "invitation not found or already processed", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
 	}
+	h.writeAudit(ctx, r, "INVITE_CANCEL", "org_invitation", &invitationID, nil)
 	w.WriteHeader(204)
 }
 
@@ -273,10 +330,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "MEMBER_ADD", "membership", nil, map[string]any{"org_id": orgID}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "MEMBER_ADD", "membership", nil, map[string]any{"org_id": orgID, "user_id": req.UserID})
 	w.WriteHeader(204)
 }
 
@@ -289,11 +343,21 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 404, "not_found", "membership not found", nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "MEMBER_REMOVE", "membership", nil, map[string]any{"org_id": orgID}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "MEMBER_REMOVE", "membership", nil, map[string]any{"org_id": orgID, "user_id": userID})
 	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListMembers(ctx, orgID, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
 }
 
 // Users
@@ -329,10 +393,7 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "USER_STATUS_UPDATE", "user", &id, map[string]any{"status": req.Status}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "USER_STATUS_UPDATE", "user", &id, map[string]any{"status": req.Status})
 	w.WriteHeader(204)
 }
 
@@ -360,10 +421,7 @@ func (h *Handlers) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "APIKEY_CREATE", "api_key", &id, map[string]any{"label": req.Label}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "APIKEY_CREATE", "api_key", &id, map[string]any{"label": req.Label})
 	writeJSON(w, 201, map[string]string{"id": id, "hash": hex.EncodeToString(hash[:])})
 }
 
@@ -385,10 +443,7 @@ func (h *Handlers) SetAPIKeyPermissions(w http.ResponseWriter, r *http.Request) 
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "APIKEY_SET_PERMS", "api_key", &id, map[string]any{"count": len(req.Permissions)}, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "APIKEY_SET_PERMS", "api_key", &id, map[string]any{"count": len(req.Permissions)})
 	w.WriteHeader(204)
 }
 
@@ -400,10 +455,7 @@ func (h *Handlers) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "APIKEY_REVOKE", "api_key", &id, nil, clientIP(r))
-		c()
-	}
+	h.writeAudit(ctx, r, "APIKEY_REVOKE", "api_key", &id, nil)
 	w.WriteHeader(204)
 }
 
@@ -454,7 +506,7 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	if err := h.repo.pool.Ping(ctx); err != nil {
+	if err := h.repo.Ping(ctx); err != nil {
 		writeProblem(w, http.StatusServiceUnavailable, "db_down", err.Error(), nil)
 		return
 	}
