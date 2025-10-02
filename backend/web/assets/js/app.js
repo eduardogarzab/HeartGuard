@@ -294,7 +294,7 @@ function escapeHtml(str) {
 
 /* ---------- ORGANIZATIONS ---------- */
 Router.register("/organizations", async (el) => {
-  const t = tabs(["Listado", "Crear", "Actualizar", "Eliminar"]);
+  const t = tabs(["Listado", "Crear", "Actualizar", "Eliminar", "Miembros"]);
   el.innerHTML = panelScaffold("groups", "Organizaciones",
     `<button class="btn" id="backHome"><span class="material-symbols-rounded">arrow_back</span>Inicio</button>`, `${t.html}`);
   $("#backHome").onclick = () => (location.hash = "/");
@@ -369,7 +369,81 @@ Router.register("/organizations", async (el) => {
     };
   }
 
-  await list(); bindTabs((tid, idx) => [list, create, update, remove][idx]?.());
+  function members() {
+    panes.innerHTML = `
+      <form id="memberList" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="mOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Limit</label><input id="mLimit" type="number" value="25" min="1" max="200"/></div>
+        <div class="form-field"><label>&nbsp;</label><button class="btn"><span class="material-symbols-rounded">group</span> Listar</button></div>
+      </form>
+      <div id="memberResults" style="margin-top:12px"></div>
+      <hr />
+      <h3 style="margin-top:10px">Agregar miembro</h3>
+      <form id="memberAdd" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="mAddOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>User ID</label><input id="mAddUser" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Org Role ID</label><input id="mAddRole" type="text" required placeholder="uuid"/></div>
+        <div class="form-field full"><button class="btn"><span class="material-symbols-rounded">person_add</span> Agregar</button></div>
+      </form>
+      <h3 style="margin-top:20px">Remover miembro</h3>
+      <form id="memberRemove" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="mRemOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>User ID</label><input id="mRemUser" type="text" required placeholder="uuid"/></div>
+        <div class="form-field full"><button class="btn danger"><span class="material-symbols-rounded">person_remove</span> Remover</button></div>
+      </form>`;
+
+    const res = $("#memberResults");
+    async function loadMembers(orgId, limit = 25) {
+      const data = await api(`/v1/superadmin/organizations/${orgId}/members`, { query: { limit } });
+      res.dataset.orgId = orgId;
+      res.dataset.limit = String(limit);
+      res.innerHTML = `
+        <table class="table">
+          <thead><tr><th>User ID</th><th>Nombre</th><th>Email</th><th>Rol</th><th>Join</th></tr></thead>
+          <tbody>${(data || []).map(m => `
+            <tr>
+              <td>${m.user_id}</td>
+              <td>${escapeHtml(m.name || "")}</td>
+              <td>${escapeHtml(m.email || "")}</td>
+              <td><span class="badge">${escapeHtml(m.org_role_code || "")}</span></td>
+              <td>${new Date(m.joined_at || Date.now()).toLocaleString()}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    $("#memberList").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#mOrg").value.trim();
+      const limit = +$("#mLimit").value || 25;
+      try { await loadMembers(orgId, limit); }
+      catch (err) { toast("Miembros", err.message, "error"); }
+    };
+
+    $("#memberAdd").onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = { user_id: $("#mAddUser").value.trim(), org_role_id: $("#mAddRole").value.trim() };
+      const orgId = $("#mAddOrg").value.trim();
+      try {
+        await api(`/v1/superadmin/organizations/${orgId}/members`, { method: "POST", data: payload });
+        toast("Miembros", "Miembro agregado", "ok");
+        if (res.dataset.orgId === orgId) await loadMembers(orgId, +(res.dataset.limit || 25));
+      } catch (err) { toast("Miembros", err.message, "error"); }
+    };
+
+    $("#memberRemove").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#mRemOrg").value.trim();
+      const userId = $("#mRemUser").value.trim();
+      try {
+        await api(`/v1/superadmin/organizations/${orgId}/members/${userId}`, { method: "DELETE" });
+        toast("Miembros", "Miembro removido", "ok");
+        if (res.dataset.orgId === orgId) await loadMembers(orgId, +(res.dataset.limit || 25));
+      } catch (err) { toast("Miembros", err.message, "error"); }
+    };
+  }
+
+  await list(); bindTabs((tid, idx) => [list, create, update, remove, members][idx]?.());
 });
 
 /* ---------- USERS ---------- */
@@ -590,11 +664,118 @@ Router.register("/audit", async (el) => {
   await list(); bindTabs((tid, idx) => [list, filter][idx]?.());
 });
 
-/* ---------- PLACEHOLDERS ---------- */
+/* ---------- INVITATIONS MODULE ---------- */
 Router.register("/invitations", async (el) => {
+  const t = tabs(["Listado", "Crear", "Cancelar"]);
   el.innerHTML = panelScaffold("mail", "Invitaciones",
     `<button class="btn ghost" onclick="location.hash='/'"><span class="material-symbols-rounded">arrow_back</span>Inicio</button>`,
-    `<div class="tabs"><button class="tab active">Próximamente</button></div><div class="tabpanes"><p class="help">Integra aquí los endpoints de invitaciones.</p></div>`);
+    `${t.html}`);
+  const panes = $("#" + t.id);
+
+  const statusBadge = (status) => {
+    const s = (status || "").toLowerCase();
+    if (s === "pending") return '<span class="badge warn">pending</span>';
+    if (s === "used") return '<span class="badge success">used</span>';
+    if (s === "revoked" || s === "expired") return `<span class="badge danger">${s}</span>`;
+    return `<span class="badge">${status || ""}</span>`;
+  };
+
+  function listPane() {
+    panes.innerHTML = `
+      <form id="invList" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="invOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Status</label>
+          <select id="invStatus">
+            <option value="">Todos</option>
+            <option value="pending">Pendientes</option>
+            <option value="used">Usadas</option>
+            <option value="revoked">Revocadas</option>
+            <option value="expired">Expiradas</option>
+          </select>
+        </div>
+        <div class="form-field"><label>Limit</label><input id="invLimit" type="number" value="25" min="1" max="200"/></div>
+        <div class="form-field"><label>&nbsp;</label><button class="btn"><span class="material-symbols-rounded">mail</span> Listar</button></div>
+      </form>
+      <div id="invResults" class="mt"></div>`;
+
+    const res = $("#invResults");
+    async function load(orgId, status, limit) {
+      const query = { org_id: orgId, limit };
+      if (status) query.status = status;
+      const data = await api("/v1/superadmin/invitations", { query });
+      res.dataset.orgId = orgId;
+      res.dataset.limit = String(limit);
+      res.dataset.status = status || "";
+      res.innerHTML = `
+        <table class="table">
+          <thead><tr><th>ID</th><th>Email</th><th>Rol</th><th>Status</th><th>Expira</th><th>Creada</th></tr></thead>
+          <tbody>${(data || []).map(inv => `
+            <tr>
+              <td>${inv.id}</td>
+              <td>${escapeHtml(inv.email || "-")}</td>
+              <td>${escapeHtml(inv.org_role_code || inv.org_role_id || "")}</td>
+              <td>${statusBadge(inv.status)}</td>
+              <td>${new Date(inv.expires_at || Date.now()).toLocaleString()}</td>
+              <td>${new Date(inv.created_at || Date.now()).toLocaleString()}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>`;
+    }
+
+    $("#invList").onsubmit = async (e) => {
+      e.preventDefault();
+      const orgId = $("#invOrg").value.trim();
+      const status = $("#invStatus").value;
+      const limit = +$("#invLimit").value || 25;
+      try { await load(orgId, status, limit); }
+      catch (err) { toast("Invitaciones", err.message, "error"); }
+    };
+  }
+
+  function createPane() {
+    panes.innerHTML = `
+      <p class="help">Genera invitaciones asignando organización y rol. El TTL define su vigencia.</p>
+      <form id="invCreate" class="form-grid">
+        <div class="form-field"><label>Org ID</label><input id="invCreateOrg" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Org Role ID</label><input id="invCreateRole" type="text" required placeholder="uuid"/></div>
+        <div class="form-field"><label>Email (opcional)</label><input id="invCreateEmail" type="email" placeholder="demo@acme.com"/></div>
+        <div class="form-field"><label>TTL (horas)</label><input id="invCreateTTL" type="number" value="48" min="1" max="720"/></div>
+        <div class="form-field full"><button class="btn"><span class="material-symbols-rounded">add</span> Crear invitación</button></div>
+      </form>`;
+
+    $("#invCreate").onsubmit = async (e) => {
+      e.preventDefault();
+      const payload = {
+        org_id: $("#invCreateOrg").value.trim(),
+        org_role_id: $("#invCreateRole").value.trim(),
+        email: $("#invCreateEmail").value.trim() || null,
+        ttl_hours: +$("#invCreateTTL").value || 24,
+      };
+      try {
+        await api("/v1/superadmin/invitations", { method: "POST", data: payload });
+        toast("Invitaciones", "Invitación creada", "ok");
+      } catch (err) { toast("Invitaciones", err.message, "error"); }
+    };
+  }
+
+  function cancelPane() {
+    panes.innerHTML = `
+      <form id="invCancel" class="form-grid">
+        <div class="form-field"><label>Invitation ID</label><input id="invCancelId" type="text" required placeholder="uuid"/></div>
+        <div class="form-field full"><button class="btn danger"><span class="material-symbols-rounded">block</span> Cancelar invitación</button></div>
+      </form>`;
+
+    $("#invCancel").onsubmit = async (e) => {
+      e.preventDefault();
+      const invitationId = $("#invCancelId").value.trim();
+      try {
+        await api(`/v1/superadmin/invitations/${invitationId}`, { method: "DELETE" });
+        toast("Invitaciones", "Invitación cancelada", "ok");
+      } catch (err) { toast("Invitaciones", err.message, "error"); }
+    };
+  }
+
+  listPane(); bindTabs((tid, idx) => [listPane, createPane, cancelPane][idx]?.());
 });
 Router.register("/services", async (el) => {
   el.innerHTML = panelScaffold("hub", "Servicios",
@@ -604,12 +785,163 @@ Router.register("/services", async (el) => {
 Router.register("/catalogs", async (el) => {
   el.innerHTML = panelScaffold("view_list", "Catálogos",
     `<button class="btn ghost" onclick="location.hash='/'"><span class="material-symbols-rounded">arrow_back</span>Inicio</button>`,
-    `<div class="tabs"><button class="tab active">Próximamente</button></div><div class="tabpanes"><p class="help">Muestra org_roles, permissions, event_types, etc.</p></div>`);
+    `<div class="catalog-layout"><div id="catalogGrid" class="catalog-grid"></div><div id="catalogDetail" class="catalog-detail"></div></div>`);
+  const grid = $("#catalogGrid");
+  const detail = $("#catalogDetail");
+
+  let defs = [];
+  try { defs = await api("/v1/superadmin/catalogs"); }
+  catch (err) { detail.innerHTML = `<p class="help">${escapeHtml(err.message)}</p>`; return; }
+
+  function renderCatalog(def) {
+    const t = tabs(["Listado", "Crear", "Actualizar", "Eliminar"]);
+    detail.innerHTML = `<div class="catalog-header"><h3>${escapeHtml(def.label)}</h3><p class="help">${escapeHtml(def.description || "")}</p></div>${t.html}`;
+    const panes = $("#" + t.id);
+
+    async function listItems() {
+      try {
+        const items = await api(`/v1/superadmin/catalogs/${def.slug}`, { query: { limit: 200 } });
+        panes.innerHTML = `
+          <table class="table">
+            <thead><tr><th>ID</th><th>Código</th><th>Label</th>${def.has_weight ? "<th>Weight</th>" : ""}</tr></thead>
+            <tbody>${(items || []).map(item => `
+              <tr>
+                <td>${item.id}</td>
+                <td><span class="badge">${escapeHtml(item.code)}</span></td>
+                <td>${escapeHtml(item.label || "")}</td>
+                ${def.has_weight ? `<td>${item.weight ?? "-"}</td>` : ""}
+              </tr>`).join("")}
+            </tbody>
+          </table>`;
+      } catch (err) {
+        panes.innerHTML = `<p class="help">${escapeHtml(err.message)}</p>`;
+      }
+    }
+
+    function createItem() {
+      panes.innerHTML = `
+        <form id="catCreate" class="form-grid">
+          <div class="form-field"><label>Código</label><input id="catCode" type="text" required /></div>
+          <div class="form-field"><label>Label</label><input id="catLabel" type="text" required /></div>
+          ${def.has_weight ? `<div class="form-field"><label>Weight</label><input id="catWeight" type="number" required min="0" max="999"/></div>` : ""}
+          <div class="form-field full"><button class="btn"><span class="material-symbols-rounded">add</span> Crear</button></div>
+        </form>`;
+      $("#catCreate").onsubmit = async (e) => {
+        e.preventDefault();
+        const payload = {
+          code: $("#catCode").value.trim(),
+          label: $("#catLabel").value.trim(),
+        };
+        if (def.has_weight) payload.weight = +$("#catWeight").value;
+        try {
+          await api(`/v1/superadmin/catalogs/${def.slug}`, { method: "POST", data: payload });
+          toast("Catálogos", "Elemento creado", "ok");
+        } catch (err) { toast("Catálogos", err.message, "error"); }
+      };
+    }
+
+    function updateItem() {
+      panes.innerHTML = `
+        <form id="catUpdate" class="form-grid">
+          <div class="form-field"><label>ID</label><input id="catUpdId" type="text" required /></div>
+          <div class="form-field"><label>Nuevo código</label><input id="catUpdCode" type="text" placeholder="opcional"/></div>
+          <div class="form-field"><label>Nuevo label</label><input id="catUpdLabel" type="text" placeholder="opcional"/></div>
+          ${def.has_weight ? `<div class="form-field"><label>Nuevo weight</label><input id="catUpdWeight" type="number" min="0" max="999"/></div>` : ""}
+          <div class="form-field full"><button class="btn"><span class="material-symbols-rounded">save</span> Actualizar</button></div>
+        </form>`;
+      $("#catUpdate").onsubmit = async (e) => {
+        e.preventDefault();
+        const data = {};
+        if ($("#catUpdCode").value.trim()) data.code = $("#catUpdCode").value.trim();
+        if ($("#catUpdLabel").value.trim()) data.label = $("#catUpdLabel").value.trim();
+        if (def.has_weight && $("#catUpdWeight").value.trim()) data.weight = +$("#catUpdWeight").value;
+        try {
+          await api(`/v1/superadmin/catalogs/${def.slug}/${$("#catUpdId").value.trim()}`, { method: "PATCH", data });
+          toast("Catálogos", "Elemento actualizado", "ok");
+        } catch (err) { toast("Catálogos", err.message, "error"); }
+      };
+    }
+
+    function deleteItem() {
+      panes.innerHTML = `
+        <form id="catDelete" class="form-grid">
+          <div class="form-field"><label>ID</label><input id="catDelId" type="text" required /></div>
+          <div class="form-field full"><button class="btn danger"><span class="material-symbols-rounded">delete</span> Eliminar</button></div>
+        </form>`;
+      $("#catDelete").onsubmit = async (e) => {
+        e.preventDefault();
+        const id = $("#catDelId").value.trim();
+        try {
+          await api(`/v1/superadmin/catalogs/${def.slug}/${id}`, { method: "DELETE" });
+          toast("Catálogos", "Elemento eliminado", "ok");
+        } catch (err) { toast("Catálogos", err.message, "error"); }
+      };
+    }
+
+    listItems(); bindTabs((tid, idx) => [listItems, createItem, updateItem, deleteItem][idx]?.());
+  }
+
+  grid.innerHTML = defs.map((def, idx) => `
+    <button class="catalog-card${idx === 0 ? " active" : ""}" data-slug="${def.slug}">
+      <span class="material-symbols-rounded">view_list</span>
+      <div>
+        <div class="title">${escapeHtml(def.label)}</div>
+        <div class="desc">${escapeHtml(def.description || "")}</div>
+      </div>
+    </button>`).join("");
+
+  grid.querySelectorAll(".catalog-card").forEach(btn => {
+    btn.addEventListener("click", () => {
+      grid.querySelectorAll(".catalog-card").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      const def = defs.find(d => d.slug === btn.dataset.slug);
+      if (def) renderCatalog(def);
+    });
+  });
+
+  if (defs.length) renderCatalog(defs[0]);
+  else detail.innerHTML = `<p class="help">Sin catálogos registrados.</p>`;
 });
+
 Router.register("/metrics", async (el) => {
   el.innerHTML = panelScaffold("monitoring", "Métricas",
     `<button class="btn ghost" onclick="location.hash='/'"><span class="material-symbols-rounded">arrow_back</span>Inicio</button>`,
-    `<div class="tabs"><button class="tab active">Próximamente</button></div><div class="tabpanes"><p class="help">Incluye KPIs, actividad reciente y conteos (consultas al backend).</p></div>`);
+    `<div class="metrics-wrap"><p class="help">Cargando métricas...</p></div>`);
+  const container = $(".metrics-wrap");
+  try {
+    const data = await api("/v1/superadmin/metrics/overview", { query: { window_minutes: 1440, recent_limit: 12 } });
+    const maxCount = Math.max(1, ...(data.operation_counts || []).map(o => o.count));
+    container.innerHTML = `
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="label">Tiempo de respuesta</div><div class="value">${(data.average_response_ms || 0).toFixed(1)} ms</div></div>
+        <div class="kpi-card"><div class="label">Usuarios activos</div><div class="value">${data.active_users || 0}</div><span class="sub">Total: ${data.total_users || 0}</span></div>
+        <div class="kpi-card"><div class="label">Organizaciones activas</div><div class="value">${data.active_organizations || 0}</div><span class="sub">Total: ${data.total_organizations || 0}</span></div>
+        <div class="kpi-card"><div class="label">Invitaciones pendientes</div><div class="value">${data.pending_invitations || 0}</div></div>
+      </div>
+      <div class="metric-section">
+        <h3>Operaciones recientes</h3>
+        <div class="bar-chart">${(data.operation_counts || []).map(op => {
+          const width = Math.max(8, Math.round((op.count / maxCount) * 100));
+          return `<div class="bar"><span>${escapeHtml(op.action)}</span><div class="bar-track"><div class="bar-fill" style="width:${width}%"></div></div><strong>${op.count}</strong></div>`;
+        }).join("") || '<p class="help">Sin actividad registrada.</p>'}</div>
+      </div>
+      <div class="metric-section">
+        <h3>Actividad reciente</h3>
+        <table class="table">
+          <thead><tr><th>TS</th><th>Acción</th><th>Entidad</th><th>User</th></tr></thead>
+          <tbody>${(data.recent_activity || []).map(item => `
+            <tr>
+              <td>${new Date(item.ts || Date.now()).toLocaleString()}</td>
+              <td><span class="badge">${escapeHtml(item.action || "")}</span></td>
+              <td>${escapeHtml(item.entity || "-")}</td>
+              <td>${escapeHtml(item.user_id || "-")}</td>
+            </tr>`).join("")}
+          </tbody>
+        </table>
+      </div>`;
+  } catch (err) {
+    container.innerHTML = `<p class="help">${escapeHtml(err.message)}</p>`;
+  }
 });
 
 /* ---------- INIT ---------- */

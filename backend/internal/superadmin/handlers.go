@@ -14,18 +14,62 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"heartguard-superadmin/internal/audit"
 	mw "heartguard-superadmin/internal/middleware"
+	"heartguard-superadmin/internal/models"
 )
 
+type Repository interface {
+	AuditPool() *pgxpool.Pool
+	Ping(context.Context) error
+
+	CreateOrganization(ctx context.Context, code, name string) (*models.Organization, error)
+	ListOrganizations(ctx context.Context, limit, offset int) ([]models.Organization, error)
+	GetOrganization(ctx context.Context, id string) (*models.Organization, error)
+	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
+	DeleteOrganization(ctx context.Context, id string) error
+
+	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttl time.Duration, createdBy *string) (*models.OrgInvitation, error)
+	ListInvitations(ctx context.Context, orgID *string, status *string, limit, offset int) ([]models.OrgInvitation, error)
+	ConsumeInvitation(ctx context.Context, token, userID string) error
+	CancelInvitation(ctx context.Context, invitationID string) error
+
+	AddMember(ctx context.Context, orgID, userID, orgRoleID string) error
+	RemoveMember(ctx context.Context, orgID, userID string) error
+	ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error)
+
+	CatalogDefinitions() []models.CatalogDefinition
+	GetCatalogDefinition(slug string) (models.CatalogDefinition, bool)
+	ListCatalogItems(ctx context.Context, slug string, limit, offset int) ([]models.CatalogItem, error)
+	CreateCatalogItem(ctx context.Context, slug, code, label string, weight *int) (*models.CatalogItem, error)
+	UpdateCatalogItem(ctx context.Context, slug, id string, code, label *string, weight *int) (*models.CatalogItem, error)
+	DeleteCatalogItem(ctx context.Context, slug, id string) error
+
+	MetricsOverview(ctx context.Context, minutes int) (*models.MetricsOverview, error)
+	RecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error)
+
+	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
+	UpdateUserStatus(ctx context.Context, userID, status string) error
+
+	CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error)
+	SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error
+	RevokeAPIKey(ctx context.Context, id string) error
+	ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error)
+
+	ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error)
+}
+
 type Handlers struct {
-	repo     *Repo
+	repo     Repository
 	logger   *zap.Logger
 	validate *validator.Validate
 }
 
-func NewHandlers(r *Repo, l *zap.Logger) *Handlers {
+func NewHandlers(r Repository, l *zap.Logger) *Handlers {
 	v := validator.New(validator.WithRequiredStructEnabled())
 	return &Handlers{repo: r, logger: l, validate: v}
 }
@@ -102,6 +146,24 @@ func clientIP(r *http.Request) *string {
 	return nil
 }
 
+func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, entity string, entityID *string, details map[string]any) {
+	pool := h.repo.AuditPool()
+	if pool == nil {
+		return
+	}
+	ctxA, cancel := audit.Ctx(ctx)
+	defer cancel()
+	_ = audit.Write(ctxA, pool, actorPtr(r), action, entity, entityID, details, clientIP(r))
+}
+
+func (h *Handlers) writeAuditWithDuration(ctx context.Context, r *http.Request, started time.Time, action, entity string, entityID *string, details map[string]any) {
+	if details == nil {
+		details = make(map[string]any)
+	}
+	details["duration_ms"] = time.Since(started).Milliseconds()
+	h.writeAudit(ctx, r, action, entity, entityID, details)
+}
+
 // Organizations
 
 type orgReq struct {
@@ -118,15 +180,13 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	org, err := h.repo.CreateOrganization(ctx, req.Code, req.Name)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "ORG_CREATE", "organization", &org.ID, map[string]any{"code": org.Code}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "ORG_CREATE", "organization", &org.ID, map[string]any{"code": org.Code})
 	writeJSON(w, 201, org)
 }
 
@@ -170,15 +230,13 @@ func (h *Handlers) UpdateOrganization(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	org, err := h.repo.UpdateOrganization(ctx, id, req.Code, req.Name)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "ORG_UPDATE", "organization", &org.ID, map[string]any{"code": org.Code}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "ORG_UPDATE", "organization", &org.ID, map[string]any{"code": org.Code})
 	writeJSON(w, 200, org)
 }
 
@@ -186,27 +244,25 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.DeleteOrganization(ctx, id); err != nil {
 		writeProblem(w, 404, "not_found", "organization not found", nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "ORG_DELETE", "organization", &id, nil, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "ORG_DELETE", "organization", &id, nil)
 	w.WriteHeader(204)
 }
 
 // Invitations
 
 type inviteReq struct {
+	OrgID     string  `json:"org_id" validate:"required,uuid4"`
 	OrgRoleID string  `json:"org_role_id" validate:"required,uuid4"`
 	Email     *string `json:"email" validate:"omitempty,email"`
 	TTLHours  int     `json:"ttl_hours" validate:"required,min=1,max=720"`
 }
 
 func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "id")
 	var req inviteReq
 	fields, err := decodeAndValidate(r, &req, h.validate)
 	if err != nil {
@@ -215,16 +271,35 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	inv, err := h.repo.CreateInvitation(ctx, orgID, req.OrgRoleID, req.Email, time.Duration(req.TTLHours)*time.Hour, actorPtr(r))
+	started := time.Now()
+	inv, err := h.repo.CreateInvitation(ctx, req.OrgID, req.OrgRoleID, req.Email, time.Duration(req.TTLHours)*time.Hour, actorPtr(r))
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "INVITE_CREATE", "org_invitation", &inv.ID, map[string]any{"org_id": orgID}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "INVITE_CREATE", "org_invitation", &inv.ID, map[string]any{"org_id": req.OrgID})
 	writeJSON(w, 201, inv)
+}
+
+func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
+	orgID := strings.TrimSpace(r.URL.Query().Get("org_id"))
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	var orgPtr, statusPtr *string
+	if orgID != "" {
+		orgPtr = &orgID
+	}
+	if status != "" {
+		statusPtr = &status
+	}
+	list, err := h.repo.ListInvitations(ctx, orgPtr, statusPtr, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
 }
 
 type consumeReq struct {
@@ -241,14 +316,29 @@ func (h *Handlers) ConsumeInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.ConsumeInvitation(ctx, token, req.UserID); err != nil {
 		writeProblem(w, 400, "invalid_token", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "INVITE_CONSUME", "org_invitation", nil, map[string]any{"token": token}, clientIP(r))
-		c()
+	h.writeAuditWithDuration(ctx, r, started, "INVITE_CONSUME", "org_invitation", nil, map[string]any{"token": token})
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) CancelInvitation(w http.ResponseWriter, r *http.Request) {
+	invitationID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := h.repo.CancelInvitation(ctx, invitationID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "invitation not found or already processed", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
 	}
+	h.writeAuditWithDuration(ctx, r, started, "INVITE_CANCEL", "org_invitation", &invitationID, nil)
 	w.WriteHeader(204)
 }
 
@@ -269,14 +359,12 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.AddMember(ctx, orgID, req.UserID, req.OrgRoleID); err != nil {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "MEMBER_ADD", "membership", nil, map[string]any{"org_id": orgID}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "MEMBER_ADD", "membership", nil, map[string]any{"org_id": orgID, "user_id": req.UserID})
 	w.WriteHeader(204)
 }
 
@@ -285,18 +373,162 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	userID := chi.URLParam(r, "userId")
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.RemoveMember(ctx, orgID, userID); err != nil {
 		writeProblem(w, 404, "not_found", "membership not found", nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "MEMBER_REMOVE", "membership", nil, map[string]any{"org_id": orgID}, clientIP(r))
-		c()
+	h.writeAuditWithDuration(ctx, r, started, "MEMBER_REMOVE", "membership", nil, map[string]any{"org_id": orgID, "user_id": userID})
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
+	orgID := chi.URLParam(r, "id")
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListMembers(ctx, orgID, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
 	}
+	writeJSON(w, 200, list)
+}
+
+// ------------------------------
+// Catalogs
+// ------------------------------
+
+type catalogCreateReq struct {
+	Code   string `json:"code" validate:"required,min=2,max=60"`
+	Label  string `json:"label" validate:"required,min=2,max=160"`
+	Weight *int   `json:"weight" validate:"omitempty"`
+}
+
+type catalogUpdateReq struct {
+	Code   *string `json:"code" validate:"omitempty,min=2,max=60"`
+	Label  *string `json:"label" validate:"omitempty,min=2,max=160"`
+	Weight *int    `json:"weight" validate:"omitempty"`
+}
+
+func (h *Handlers) ListCatalogs(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, h.repo.CatalogDefinitions())
+}
+
+func (h *Handlers) ListCatalogItems(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if _, ok := h.repo.GetCatalogDefinition(slug); !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	items, err := h.repo.ListCatalogItems(ctx, slug, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, items)
+}
+
+func (h *Handlers) CreateCatalogItem(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	def, ok := h.repo.GetCatalogDefinition(slug)
+	if !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	var req catalogCreateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if !def.HasWeight {
+		req.Weight = nil
+	} else if req.Weight == nil {
+		writeProblem(w, 422, "invalid_fields", "weight is required for this catalog", map[string]string{"weight": "required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	started := time.Now()
+	item, err := h.repo.CreateCatalogItem(ctx, slug, req.Code, req.Label, req.Weight)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeProblem(w, 409, "conflict", "code already exists", map[string]string{"code": "unique"})
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAuditWithDuration(ctx, r, started, "CATALOG_CREATE", slug, &item.ID, map[string]any{"code": item.Code})
+	writeJSON(w, 201, item)
+}
+
+func (h *Handlers) UpdateCatalogItem(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	def, ok := h.repo.GetCatalogDefinition(slug)
+	if !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req catalogUpdateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if !def.HasWeight {
+		req.Weight = nil
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	started := time.Now()
+	item, err := h.repo.UpdateCatalogItem(ctx, slug, id, req.Code, req.Label, req.Weight)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeProblem(w, 409, "conflict", "code already exists", map[string]string{"code": "unique"})
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAuditWithDuration(ctx, r, started, "CATALOG_UPDATE", slug, &item.ID, map[string]any{"code": item.Code})
+	writeJSON(w, 200, item)
+}
+
+func (h *Handlers) DeleteCatalogItem(w http.ResponseWriter, r *http.Request) {
+	slug := chi.URLParam(r, "slug")
+	if _, ok := h.repo.GetCatalogDefinition(slug); !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	started := time.Now()
+	if err := h.repo.DeleteCatalogItem(ctx, slug, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "catalog item not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAuditWithDuration(ctx, r, started, "CATALOG_DELETE", slug, &id, nil)
 	w.WriteHeader(204)
 }
 
 // Users
+
+// ------------------------------
+// Users
+// ------------------------------
 
 func (h *Handlers) SearchUsers(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query().Get("q")
@@ -325,14 +557,12 @@ func (h *Handlers) UpdateUserStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.UpdateUserStatus(ctx, id, req.Status); err != nil {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "USER_STATUS_UPDATE", "user", &id, map[string]any{"status": req.Status}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "USER_STATUS_UPDATE", "user", &id, map[string]any{"status": req.Status})
 	w.WriteHeader(204)
 }
 
@@ -355,15 +585,13 @@ func (h *Handlers) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
 	hash := sha256.Sum256([]byte(req.RawKey))
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	id, err := h.repo.CreateAPIKey(ctx, req.Label, req.ExpiresAt, hex.EncodeToString(hash[:]), req.OwnerUser)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "APIKEY_CREATE", "api_key", &id, map[string]any{"label": req.Label}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "APIKEY_CREATE", "api_key", &id, map[string]any{"label": req.Label})
 	writeJSON(w, 201, map[string]string{"id": id, "hash": hex.EncodeToString(hash[:])})
 }
 
@@ -381,14 +609,12 @@ func (h *Handlers) SetAPIKeyPermissions(w http.ResponseWriter, r *http.Request) 
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.SetAPIKeyPermissions(ctx, id, req.Permissions); err != nil {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "APIKEY_SET_PERMS", "api_key", &id, map[string]any{"count": len(req.Permissions)}, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "APIKEY_SET_PERMS", "api_key", &id, map[string]any{"count": len(req.Permissions)})
 	w.WriteHeader(204)
 }
 
@@ -396,14 +622,12 @@ func (h *Handlers) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
+	started := time.Now()
 	if err := h.repo.RevokeAPIKey(ctx, id); err != nil {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	if ctxA, c := audit.Ctx(ctx); true {
-		_ = audit.Write(ctxA, h.repo.pool, actorPtr(r), "APIKEY_REVOKE", "api_key", &id, nil, clientIP(r))
-		c()
-	}
+	h.writeAuditWithDuration(ctx, r, started, "APIKEY_REVOKE", "api_key", &id, nil)
 	w.WriteHeader(204)
 }
 
@@ -450,11 +674,40 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, list)
 }
 
+func (h *Handlers) MetricsOverview(w http.ResponseWriter, r *http.Request) {
+	minutes := 1440
+	if s := r.URL.Query().Get("window_minutes"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 {
+			minutes = v
+		}
+	}
+	recentLimit := 15
+	if s := r.URL.Query().Get("recent_limit"); s != "" {
+		if v, err := strconv.Atoi(s); err == nil && v > 0 && v <= 50 {
+			recentLimit = v
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	overview, err := h.repo.MetricsOverview(ctx, minutes)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	recent, err := h.repo.RecentActivity(ctx, recentLimit)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	overview.RecentActivity = recent
+	writeJSON(w, 200, overview)
+}
+
 // Healthz
 func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	if err := h.repo.pool.Ping(ctx); err != nil {
+	if err := h.repo.Ping(ctx); err != nil {
 		writeProblem(w, http.StatusServiceUnavailable, "db_down", err.Error(), nil)
 		return
 	}

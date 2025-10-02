@@ -40,12 +40,30 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, 
 			r.Get("/{id}", h.GetOrganization)
 			r.Patch("/{id}", h.UpdateOrganization)
 			r.Delete("/{id}", h.DeleteOrganization)
-			r.Post("/{id}/invitations", h.CreateInvitation)
+			r.Get("/{id}/members", h.ListMembers)
 			r.Post("/{id}/members", h.AddMember)
 			r.Delete("/{id}/members/{userId}", h.RemoveMember)
 		})
 
-		s.Post("/invitations/{token}/consume", h.ConsumeInvitation)
+		s.Route("/invitations", func(r chi.Router) {
+			r.Get("/", h.ListInvitations)
+			r.Post("/", h.CreateInvitation)
+			r.Delete("/{id}", h.CancelInvitation)
+			r.Post("/{token}/consume", h.ConsumeInvitation)
+		})
+
+		s.Route("/catalogs", func(r chi.Router) {
+			r.Get("/", h.ListCatalogs)
+			r.Get("/{slug}", h.ListCatalogItems)
+			r.Post("/{slug}", h.CreateCatalogItem)
+			r.Patch("/{slug}/{id}", h.UpdateCatalogItem)
+			r.Delete("/{slug}/{id}", h.DeleteCatalogItem)
+		})
+
+		s.Route("/metrics", func(r chi.Router) {
+			r.Get("/overview", h.MetricsOverview)
+		})
+
 		s.Get("/users", h.SearchUsers)
 		s.Patch("/users/{id}/status", h.UpdateUserStatus)
 		s.Post("/api-keys", h.CreateAPIKey)
@@ -59,7 +77,9 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, 
 	fs := http.Dir("web")
 	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
 		up := req.URL.Path
-		if up == "/" { up = "/index.html" }
+		if up == "/" {
+			up = "/index.html"
+		}
 		f, err := fs.Open(up)
 		if err == nil {
 			defer f.Close()
