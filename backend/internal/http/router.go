@@ -40,15 +40,26 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, 
 			r.Get("/{id}", h.GetOrganization)
 			r.Patch("/{id}", h.UpdateOrganization)
 			r.Delete("/{id}", h.DeleteOrganization)
-			r.Get("/{id}/invitations", h.ListOrgInvitations)
-			r.Post("/{id}/invitations", h.CreateInvitation)
 			r.Get("/{id}/members", h.ListMembers)
 			r.Post("/{id}/members", h.AddMember)
 			r.Delete("/{id}/members/{userId}", h.RemoveMember)
 		})
 
-		s.Post("/invitations/{token}/consume", h.ConsumeInvitation)
-		s.Delete("/invitations/{id}", h.CancelInvitation)
+		s.Route("/invitations", func(r chi.Router) {
+			r.Get("/", h.ListInvitations)
+			r.Post("/", h.CreateInvitation)
+			r.Post("/{token}/consume", h.ConsumeInvitation)
+			r.Delete("/{id}", h.CancelInvitation)
+		})
+
+		s.Route("/catalogs", func(r chi.Router) {
+			r.Get("/{catalog}", h.ListCatalog)
+			r.Post("/{catalog}", h.CreateCatalogItem)
+			r.Patch("/{catalog}/{id}", h.UpdateCatalogItem)
+			r.Delete("/{catalog}/{id}", h.DeleteCatalogItem)
+		})
+
+		s.Get("/metrics/overview", h.MetricsOverview)
 		s.Get("/users", h.SearchUsers)
 		s.Patch("/users/{id}/status", h.UpdateUserStatus)
 		s.Post("/api-keys", h.CreateAPIKey)

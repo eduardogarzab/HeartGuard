@@ -3,6 +3,7 @@ package superadmin
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -136,21 +137,39 @@ func (r *Repo) DeleteOrganization(ctx context.Context, id string) error {
 // ------------------------------
 // Invitations
 // ------------------------------
-func (r *Repo) CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttl time.Duration, createdBy *string) (*models.OrgInvitation, error) {
-	token := uuid.NewString()
-	var m models.OrgInvitation
-	err := r.pool.QueryRow(ctx, `
-INSERT INTO org_invitations (id, org_id, email, org_role_id, token, expires_at, created_by, created_at)
-VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW() + make_interval(secs => $5), $6, NOW())
-RETURNING id, org_id, email, org_role_id,
-        (SELECT code FROM org_roles WHERE id = org_role_id) AS org_role_code,
-        token, expires_at, used_at, revoked_at, created_by, created_at
-`, orgID, email, orgRoleID, token, int64(ttl.Seconds()), createdBy).
-		Scan(&m.ID, &m.OrgID, &m.Email, &m.OrgRoleID, &m.OrgRoleCode, &m.Token, &m.ExpiresAt, &m.UsedAt, &m.RevokedAt, &m.CreatedBy, &m.CreatedAt)
+func (r *Repo) CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error) {
+	var (
+		m          models.OrgInvitation
+		emailVal   sql.NullString
+		roleCode   sql.NullString
+		usedAt     sql.NullTime
+		revokedAt  sql.NullTime
+		createdByU sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_org_invitation_create($1, $2, $3, $4, $5)`,
+		orgID, orgRoleID, email, ttlHours, createdBy).
+		Scan(&m.ID, &m.OrgID, &emailVal, &m.OrgRoleID, &roleCode, &m.Token, &m.ExpiresAt, &usedAt, &revokedAt, &createdByU, &m.CreatedAt, &m.Status)
 	if err != nil {
 		return nil, err
 	}
-	m.Status = invitationStatus(&m, nowFn())
+	if emailVal.Valid {
+		m.Email = &emailVal.String
+	}
+	if roleCode.Valid {
+		m.OrgRoleCode = roleCode.String
+	}
+	if usedAt.Valid {
+		t := usedAt.Time
+		m.UsedAt = &t
+	}
+	if revokedAt.Valid {
+		t := revokedAt.Time
+		m.RevokedAt = &t
+	}
+	if createdByU.Valid {
+		s := createdByU.String
+		m.CreatedBy = &s
+	}
 	return &m, nil
 }
 
@@ -177,58 +196,60 @@ ON CONFLICT (org_id, user_id) DO UPDATE SET org_role_id = EXCLUDED.org_role_id
 	})
 }
 
-func (r *Repo) ListOrgInvitations(ctx context.Context, orgID string, limit, offset int) ([]models.OrgInvitation, error) {
-	rows, err := r.pool.Query(ctx, `
-SELECT
-        i.id::text,
-        i.org_id::text,
-        i.email,
-        i.org_role_id::text,
-        COALESCE(oroles.code, '') AS org_role_code,
-        i.token,
-        i.expires_at,
-        i.used_at,
-        i.revoked_at,
-        i.created_by::text,
-        i.created_at
-FROM org_invitations i
-LEFT JOIN org_roles oroles ON oroles.id = i.org_role_id
-WHERE i.org_id = $1
-ORDER BY i.created_at DESC
-LIMIT $2 OFFSET $3
-`, orgID, limit, offset)
+func (r *Repo) ListInvitations(ctx context.Context, orgID *string, limit, offset int) ([]models.OrgInvitation, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_org_invitations_list($1, $2, $3)`, orgID, limit, offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
 	out := make([]models.OrgInvitation, 0, limit)
-	now := nowFn()
 	for rows.Next() {
 		var (
-			createdBy *uuid.UUID
-			item      models.OrgInvitation
+			item       models.OrgInvitation
+			emailVal   sql.NullString
+			roleCode   sql.NullString
+			usedAt     sql.NullTime
+			revokedAt  sql.NullTime
+			createdByU sql.NullString
 		)
 		if err := rows.Scan(
 			&item.ID,
 			&item.OrgID,
-			&item.Email,
+			&emailVal,
 			&item.OrgRoleID,
-			&item.OrgRoleCode,
+			&roleCode,
 			&item.Token,
 			&item.ExpiresAt,
-			&item.UsedAt,
-			&item.RevokedAt,
-			&createdBy,
+			&usedAt,
+			&revokedAt,
+			&createdByU,
 			&item.CreatedAt,
+			&item.Status,
 		); err != nil {
 			return nil, err
 		}
-		if createdBy != nil {
-			s := createdBy.String()
+		if emailVal.Valid {
+			item.Email = &emailVal.String
+		}
+		if roleCode.Valid {
+			item.OrgRoleCode = roleCode.String
+		}
+		if usedAt.Valid {
+			t := usedAt.Time
+			item.UsedAt = &t
+		}
+		if revokedAt.Valid {
+			t := revokedAt.Time
+			item.RevokedAt = &t
+		}
+		if createdByU.Valid {
+			s := createdByU.String
 			item.CreatedBy = &s
 		}
-		item.Status = invitationStatus(&item, now)
+		if item.Status == "" {
+			item.Status = invitationStatus(&item, nowFn())
+		}
 		out = append(out, item)
 	}
 	if err := rows.Err(); err != nil {
@@ -238,18 +259,137 @@ LIMIT $2 OFFSET $3
 }
 
 func (r *Repo) CancelInvitation(ctx context.Context, invitationID string) error {
-	cmd, err := r.pool.Exec(ctx, `
-UPDATE org_invitations
-SET revoked_at = NOW()
-WHERE id = $1 AND revoked_at IS NULL AND used_at IS NULL
-`, invitationID)
-	if err != nil {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_org_invitation_cancel($1)`, invitationID).Scan(&ok); err != nil {
 		return err
 	}
-	if cmd.RowsAffected() == 0 {
+	if !ok {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// ------------------------------
+// Catalogs
+// ------------------------------
+
+func (r *Repo) ListCatalog(ctx context.Context, catalog string, limit, offset int) ([]models.CatalogItem, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_catalog_list($1, $2, $3)`, catalog, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.CatalogItem, 0, limit)
+	for rows.Next() {
+		var (
+			item   models.CatalogItem
+			label  sql.NullString
+			weight sql.NullInt32
+		)
+		if err := rows.Scan(&item.ID, &item.Code, &label, &weight); err != nil {
+			return nil, err
+		}
+		if label.Valid {
+			item.Label = label.String
+		}
+		if weight.Valid {
+			w := int(weight.Int32)
+			item.Weight = &w
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreateCatalogItem(ctx context.Context, catalog, code string, label *string, weight *int) (*models.CatalogItem, error) {
+	var (
+		item models.CatalogItem
+		lbl  sql.NullString
+		wval sql.NullInt32
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_catalog_create($1, $2, $3, $4)`, catalog, code, label, weight).
+		Scan(&item.ID, &item.Code, &lbl, &wval)
+	if err != nil {
+		return nil, err
+	}
+	if lbl.Valid {
+		item.Label = lbl.String
+	}
+	if wval.Valid {
+		v := int(wval.Int32)
+		item.Weight = &v
+	}
+	return &item, nil
+}
+
+func (r *Repo) UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error) {
+	var (
+		item models.CatalogItem
+		lbl  sql.NullString
+		wval sql.NullInt32
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_catalog_update($1, $2, $3, $4, $5)`, catalog, id, code, label, weight).
+		Scan(&item.ID, &item.Code, &lbl, &wval)
+	if err != nil {
+		return nil, err
+	}
+	if lbl.Valid {
+		item.Label = lbl.String
+	}
+	if wval.Valid {
+		v := int(wval.Int32)
+		item.Weight = &v
+	}
+	return &item, nil
+}
+
+func (r *Repo) DeleteCatalogItem(ctx context.Context, catalog, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_catalog_delete($1, $2)`, catalog, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Metrics
+// ------------------------------
+
+func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
+	var (
+		avg         sql.NullFloat64
+		activeUsers int
+		activeOrgs  int
+		memberships int
+		pending     int
+		opsRaw      []byte
+	)
+	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_overview()`).
+		Scan(&avg, &activeUsers, &activeOrgs, &memberships, &pending, &opsRaw); err != nil {
+		return nil, err
+	}
+	var ops []models.OperationStat
+	if len(opsRaw) > 0 {
+		if err := json.Unmarshal(opsRaw, &ops); err != nil {
+			return nil, err
+		}
+	}
+	res := &models.MetricsOverview{
+		AvgResponseMs:       avg.Float64,
+		ActiveUsers:         activeUsers,
+		ActiveOrganizations: activeOrgs,
+		ActiveMemberships:   memberships,
+		PendingInvitations:  pending,
+		RecentOperations:    ops,
+	}
+	return res, nil
 }
 
 // ------------------------------

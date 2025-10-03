@@ -24,6 +24,34 @@ type OrgInvitation struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+type CatalogItem struct {
+	ID     string `json:"id"`
+	Code   string `json:"code"`
+	Label  string `json:"label"`
+	Weight *int   `json:"weight,omitempty"`
+}
+
+type CatalogDefinition struct {
+	Slug        string `json:"slug"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	HasWeight   bool   `json:"has_weight"`
+}
+
+type OperationStat struct {
+	Type  string `json:"type"`
+	Count int    `json:"count"`
+}
+
+type MetricsOverview struct {
+	AvgResponseMs       float64         `json:"avg_response_ms"`
+	ActiveUsers         int             `json:"active_users"`
+	ActiveOrganizations int             `json:"active_organizations"`
+	ActiveMemberships   int             `json:"active_memberships"`
+	PendingInvitations  int             `json:"pending_invitations"`
+	RecentOperations    []OperationStat `json:"recent_operations"`
+}
+
 type User struct {
 	ID        string    `json:"id"`
 	Name      string    `json:"name"`
@@ -63,4 +91,16 @@ type AuditLog struct {
 	EntityID *string        `json:"entity_id,omitempty"` // uuid -> string
 	Details  map[string]any `json:"details,omitempty"`   // JSONB
 	IP       *string        `json:"ip,omitempty"`        // inet -> string
+}
+
+type OperationCount struct {
+	Action string `json:"action"`
+	Count  int    `json:"count"`
+}
+
+type ActivityEntry struct {
+	TS     time.Time `json:"ts"`
+	Action string    `json:"action"`
+	Entity *string   `json:"entity,omitempty"`
+	UserID *string   `json:"user_id,omitempty"`
 }

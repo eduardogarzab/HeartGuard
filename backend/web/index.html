@@ -9,7 +9,6 @@
 		<link rel="stylesheet" href="./assets/css/styles.css" />
 	</head>
 	<body>
-		<!-- Topbar -->
 		<header class="topbar">
 			<div class="brand">
 				<div class="logo material-symbols-rounded">health_and_safety</div>
@@ -22,23 +21,17 @@
 			</div>
 		</header>
 
-		<!-- Subbar: entorno + auth -->
 		<div class="subbar">
 			<div class="env">Backend: <strong id="envBase"></strong></div>
-			<div class="auth" id="authArea">
-				<!-- Rellenado por app.js: Login / Usuario + Logout -->
-			</div>
+			<div class="auth" id="authArea"></div>
 		</div>
 
-		<!-- Contenedor principal -->
 		<main class="container">
-			<div id="app"><!-- Router --></div>
+			<div id="app"></div>
 		</main>
 
-		<!-- Modal -->
 		<div class="modal-root" id="modalRoot"></div>
 
-		<!-- Toasts -->
 		<div class="toast-root" id="toastRoot"></div>
 
 		<footer class="footer"><span>© HeartGuard</span> <span class="dot"></span> <span>Panel Superadmin</span></footer>

@@ -1,5 +1,5 @@
 -- =========================================================
--- HeartGuard + DDL v2.5
+-- HeartGuard + DDL v2.5 (ajustada para evitar 42804)
 -- =========================================================
 -- Ejecuta con:
 --   psql -U postgres -v dbname=heartguard -v dbuser=heartguard_app -v dbpass='dev_change_me' -f init.sql
@@ -246,6 +246,285 @@ CREATE TABLE IF NOT EXISTS org_invitations (
 CREATE INDEX IF NOT EXISTS idx_org_inv_org ON org_invitations(org_id);
 
 -- =========================================================
+-- Stored procedures: CATÁLOGOS
+-- (Forzamos tipos/orden para evitar 42804)
+-- =========================================================
+CREATE OR REPLACE FUNCTION heartguard.sp_catalog_resolve(
+  p_catalog text,
+  OUT table_name text,
+  OUT has_weight boolean)
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  has_weight := FALSE;
+  table_name := NULL;
+  CASE lower(p_catalog)
+    WHEN 'user_statuses'        THEN table_name := 'user_statuses';
+    WHEN 'signal_types'         THEN table_name := 'signal_types';
+    WHEN 'alert_channels'       THEN table_name := 'alert_channels';
+    WHEN 'alert_levels'         THEN table_name := 'alert_levels';        -- con weight
+    WHEN 'sexes'                THEN table_name := 'sexes';
+    WHEN 'platforms'            THEN table_name := 'platforms';
+    WHEN 'service_statuses'     THEN table_name := 'service_statuses';
+    WHEN 'delivery_statuses'    THEN table_name := 'delivery_statuses';
+    WHEN 'batch_export_statuses'THEN table_name := 'batch_export_statuses';
+    WHEN 'org_roles'            THEN table_name := 'org_roles';
+  END CASE;
+  IF table_name IS NULL THEN
+    RAISE EXCEPTION 'Catalogo % no soportado', p_catalog;
+  END IF;
+  IF lower(p_catalog) = 'alert_levels' THEN
+    has_weight := TRUE;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_catalog_list(
+  p_catalog text,
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE(id text, code text, label text, weight integer)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  tname text;
+  with_weight boolean;
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 200);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  SELECT table_name, has_weight INTO tname, with_weight
+  FROM heartguard.sp_catalog_resolve(p_catalog);
+
+  RETURN QUERY EXECUTE format(
+    'SELECT (id)::text, (code)::text, (label)::text, %s
+       FROM heartguard.%I
+      ORDER BY code
+      LIMIT %s OFFSET %s',
+    CASE WHEN with_weight THEN 'weight::int' ELSE 'NULL::int' END,
+    tname, safe_limit, safe_offset
+  );
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_catalog_create(
+  p_catalog text,
+  p_code text,
+  p_label text DEFAULT NULL,
+  p_weight integer DEFAULT NULL)
+RETURNS TABLE(id text, code text, label text, weight integer)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  tname text;
+  with_weight boolean;
+BEGIN
+  SELECT table_name, has_weight INTO tname, with_weight
+  FROM heartguard.sp_catalog_resolve(p_catalog);
+
+  IF with_weight THEN
+    RETURN QUERY EXECUTE format(
+      'INSERT INTO heartguard.%I (code, label, weight)
+       VALUES ($1,$2,$3)
+       RETURNING (id)::text,(code)::text,(label)::text,(weight)::int',
+      tname
+    ) USING p_code, p_label, p_weight;
+  ELSE
+    RETURN QUERY EXECUTE format(
+      'INSERT INTO heartguard.%I (code, label)
+       VALUES ($1,$2)
+       RETURNING (id)::text,(code)::text,(label)::text,NULL::int',
+      tname
+    ) USING p_code, p_label;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_catalog_update(
+  p_catalog text,
+  p_id uuid,
+  p_code text DEFAULT NULL,
+  p_label text DEFAULT NULL,
+  p_weight integer DEFAULT NULL)
+RETURNS TABLE(id text, code text, label text, weight integer)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  tname text;
+  with_weight boolean;
+BEGIN
+  SELECT table_name, has_weight INTO tname, with_weight
+  FROM heartguard.sp_catalog_resolve(p_catalog);
+
+  IF with_weight THEN
+    RETURN QUERY EXECUTE format(
+      'UPDATE heartguard.%I
+          SET code   = COALESCE($2, code),
+              label  = COALESCE($3, label),
+              weight = COALESCE($4, weight)
+        WHERE id = $1
+      RETURNING (id)::text,(code)::text,(label)::text,(weight)::int',
+      tname
+    ) USING p_id, p_code, p_label, p_weight;
+  ELSE
+    RETURN QUERY EXECUTE format(
+      'UPDATE heartguard.%I
+          SET code   = COALESCE($2, code),
+              label  = COALESCE($3, label)
+        WHERE id = $1
+      RETURNING (id)::text,(code)::text,(label)::text,NULL::int',
+      tname
+    ) USING p_id, p_code, p_label;
+  END IF;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_catalog_delete(
+  p_catalog text,
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  tname text;
+  dummy boolean;
+  rows_deleted integer;
+BEGIN
+  SELECT table_name, has_weight INTO tname, dummy
+  FROM heartguard.sp_catalog_resolve(p_catalog);
+
+  EXECUTE format('DELETE FROM heartguard.%I WHERE id = $1', tname) USING p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
+
+-- =========================================================
+-- Stored procedures: INVITACIONES (12 columnas, casts explícitos)
+-- =========================================================
+CREATE OR REPLACE FUNCTION heartguard.sp_org_invitation_create(
+  p_org_id uuid,
+  p_org_role_id uuid,
+  p_email text,
+  p_ttl_hours integer,
+  p_created_by uuid)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  email text,
+  org_role_id text,
+  org_role_code text,
+  token text,
+  expires_at timestamp,
+  used_at timestamp,
+  revoked_at timestamp,
+  created_by text,
+  created_at timestamp,
+  status text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  new_id uuid;
+  ttl integer := COALESCE(p_ttl_hours, 24);
+BEGIN
+  INSERT INTO heartguard.org_invitations
+    (org_id, email, org_role_id, token, expires_at, created_by, created_at)
+  VALUES
+    (p_org_id, p_email, p_org_role_id, gen_random_uuid()::text,
+     (NOW() + make_interval(hours => ttl))::timestamp,
+     p_created_by, NOW()::timestamp)
+  RETURNING id INTO new_id;
+
+  RETURN QUERY
+  SELECT
+    i.id::text,
+    i.org_id::text,
+    i.email::text,
+    i.org_role_id::text,
+    COALESCE(oroles.code,'')::text,
+    i.token::text,
+    i.expires_at::timestamp,
+    i.used_at::timestamp,
+    i.revoked_at::timestamp,
+    i.created_by::text,
+    i.created_at::timestamp,
+    CASE
+      WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+      WHEN i.used_at    IS NOT NULL THEN 'used'
+      WHEN i.expires_at <= NOW()     THEN 'expired'
+      ELSE 'pending'
+    END::text
+  FROM heartguard.org_invitations i
+  LEFT JOIN heartguard.org_roles oroles ON oroles.id = i.org_role_id
+  WHERE i.id = new_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_org_invitations_list(
+  p_org_id uuid DEFAULT NULL,
+  p_limit integer DEFAULT 50,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  email text,
+  org_role_id text,
+  org_role_code text,
+  token text,
+  expires_at timestamp,
+  used_at timestamp,
+  revoked_at timestamp,
+  created_by text,
+  created_at timestamp,
+  status text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 200);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    i.id::text,
+    i.org_id::text,
+    i.email::text,
+    i.org_role_id::text,
+    COALESCE(oroles.code,'')::text,
+    i.token::text,
+    i.expires_at::timestamp,
+    i.used_at::timestamp,
+    i.revoked_at::timestamp,
+    i.created_by::text,
+    i.created_at::timestamp,
+    CASE
+      WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+      WHEN i.used_at    IS NOT NULL THEN 'used'
+      WHEN i.expires_at <= NOW()     THEN 'expired'
+      ELSE 'pending'
+    END::text
+  FROM heartguard.org_invitations i
+  LEFT JOIN heartguard.org_roles oroles ON oroles.id = i.org_role_id
+  WHERE p_org_id IS NULL OR i.org_id = p_org_id
+  ORDER BY i.created_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_org_invitation_cancel(p_invitation_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  affected integer;
+BEGIN
+  UPDATE heartguard.org_invitations
+  SET revoked_at = NOW()::timestamp
+  WHERE id = p_invitation_id AND revoked_at IS NULL AND used_at IS NULL;
+  GET DIAGNOSTICS affected = ROW_COUNT;
+  RETURN affected > 0;
+END;
+$$;
+
+-- =========================================================
 -- D) Dispositivos y streams
 -- =========================================================
 CREATE TABLE IF NOT EXISTS device_types (
@@ -344,7 +623,7 @@ CREATE TABLE IF NOT EXISTS ground_truth_labels (
   patient_id           UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   event_type_id        UUID NOT NULL REFERENCES event_types(id) ON DELETE RESTRICT,
   onset                TIMESTAMP NOT NULL,
-  offset_at            TIMESTAMP,  -- <== renombrado (antes: offset)
+  offset_at            TIMESTAMP,
   annotated_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
   source               VARCHAR(40),
   note                 TEXT
@@ -462,7 +741,7 @@ CREATE TABLE IF NOT EXISTS user_locations (
   geom       geometry(Point,4326) NOT NULL,
   source     VARCHAR(40),
   accuracy_m NUMERIC(7,2),
-  UNIQUE(user_id, ts)
+  UNIQUE (user_id, ts)
 );
 CREATE INDEX IF NOT EXISTS idx_user_locations_geom_gix ON user_locations USING GIST(geom);
 CREATE INDEX IF NOT EXISTS idx_user_locations_ts ON user_locations(user_id, ts DESC);
@@ -487,6 +766,55 @@ CREATE TABLE IF NOT EXISTS service_health (
   version            VARCHAR(40)
 );
 CREATE INDEX IF NOT EXISTS idx_service_health_service_time ON service_health(service_id, checked_at DESC);
+
+-- Stored procedure para métricas del panel
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_overview()
+RETURNS TABLE (
+  avg_response_ms numeric,
+  active_users integer,
+  active_orgs integer,
+  active_memberships integer,
+  pending_invitations integer,
+  operations jsonb)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_avg numeric;
+  v_users integer;
+  v_orgs integer;
+  v_memberships integer;
+  v_pending integer;
+  v_ops jsonb;
+BEGIN
+  SELECT AVG(latency_ms) INTO v_avg
+  FROM heartguard.service_health
+  WHERE checked_at > NOW() - INTERVAL '7 days';
+
+  SELECT COUNT(*) INTO v_users FROM heartguard.users;
+  SELECT COUNT(DISTINCT org_id) INTO v_orgs FROM heartguard.user_org_membership;
+  SELECT COUNT(*) INTO v_memberships FROM heartguard.user_org_membership;
+  SELECT COUNT(*) INTO v_pending FROM heartguard.org_invitations
+    WHERE used_at IS NULL AND revoked_at IS NULL AND expires_at > NOW();
+
+  SELECT COALESCE(jsonb_agg(jsonb_build_object('type', action, 'count', cnt)), '[]'::jsonb) INTO v_ops
+  FROM (
+    SELECT action, COUNT(*) AS cnt
+    FROM heartguard.audit_logs
+    WHERE ts > NOW() - INTERVAL '30 days'
+    GROUP BY action
+    ORDER BY cnt DESC
+    LIMIT 10
+  ) AS recent_ops;
+
+  avg_response_ms := COALESCE(v_avg, 0);
+  active_users := COALESCE(v_users, 0);
+  active_orgs := COALESCE(v_orgs, 0);
+  active_memberships := COALESCE(v_memberships, 0);
+  pending_invitations := COALESCE(v_pending, 0);
+  operations := COALESCE(v_ops, '[]'::jsonb);
+  RETURN NEXT;
+END;
+$$;
 
 -- =========================================================
 -- J) Auditoría
@@ -519,7 +847,6 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
   ip_issued          INET,
   UNIQUE (user_id, token_hash)
 );
--- Sin NOW() en el predicate (VOLATILE): solo indexa los no revocados
 CREATE INDEX IF NOT EXISTS idx_refresh_not_revoked
   ON refresh_tokens(user_id) WHERE revoked_at IS NULL;
 

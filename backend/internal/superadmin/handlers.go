@@ -32,14 +32,21 @@ type Repository interface {
 	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
 	DeleteOrganization(ctx context.Context, id string) error
 
-	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttl time.Duration, createdBy *string) (*models.OrgInvitation, error)
-	ListOrgInvitations(ctx context.Context, orgID string, limit, offset int) ([]models.OrgInvitation, error)
+	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error)
+	ListInvitations(ctx context.Context, orgID *string, limit, offset int) ([]models.OrgInvitation, error)
 	ConsumeInvitation(ctx context.Context, token, userID string) error
 	CancelInvitation(ctx context.Context, invitationID string) error
 
 	AddMember(ctx context.Context, orgID, userID, orgRoleID string) error
 	RemoveMember(ctx context.Context, orgID, userID string) error
 	ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error)
+
+	ListCatalog(ctx context.Context, catalog string, limit, offset int) ([]models.CatalogItem, error)
+	CreateCatalogItem(ctx context.Context, catalog, code string, label *string, weight *int) (*models.CatalogItem, error)
+	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
+	DeleteCatalogItem(ctx context.Context, catalog, id string) error
+
+	MetricsOverview(ctx context.Context) (*models.MetricsOverview, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
@@ -233,14 +240,37 @@ func (h *Handlers) DeleteOrganization(w http.ResponseWriter, r *http.Request) {
 
 // Invitations
 
+type catalogMeta struct {
+	Label          string
+	RequiresWeight bool
+}
+
+var allowedCatalogs = map[string]catalogMeta{
+	"user_statuses":         {Label: "Estatus de usuarios"},
+	"signal_types":          {Label: "Tipos de señal"},
+	"alert_channels":        {Label: "Canales de alerta"},
+	"alert_levels":          {Label: "Niveles de alerta", RequiresWeight: true},
+	"sexes":                 {Label: "Sexos"},
+	"platforms":             {Label: "Plataformas"},
+	"service_statuses":      {Label: "Estados de servicio"},
+	"delivery_statuses":     {Label: "Estados de entrega"},
+	"batch_export_statuses": {Label: "Estados de exportación"},
+	"org_roles":             {Label: "Roles de organización"},
+}
+
+func catalogInfo(slug string) (catalogMeta, bool) {
+	meta, ok := allowedCatalogs[slug]
+	return meta, ok
+}
+
 type inviteReq struct {
+	OrgID     string  `json:"org_id" validate:"required,uuid4"`
 	OrgRoleID string  `json:"org_role_id" validate:"required,uuid4"`
 	Email     *string `json:"email" validate:"omitempty,email"`
 	TTLHours  int     `json:"ttl_hours" validate:"required,min=1,max=720"`
 }
 
 func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "id")
 	var req inviteReq
 	fields, err := decodeAndValidate(r, &req, h.validate)
 	if err != nil {
@@ -249,21 +279,24 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	inv, err := h.repo.CreateInvitation(ctx, orgID, req.OrgRoleID, req.Email, time.Duration(req.TTLHours)*time.Hour, actorPtr(r))
+	inv, err := h.repo.CreateInvitation(ctx, req.OrgID, req.OrgRoleID, req.Email, req.TTLHours, actorPtr(r))
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}
-	h.writeAudit(ctx, r, "INVITE_CREATE", "org_invitation", &inv.ID, map[string]any{"org_id": orgID})
+	h.writeAudit(ctx, r, "INVITE_CREATE", "org_invitation", &inv.ID, map[string]any{"org_id": req.OrgID})
 	writeJSON(w, 201, inv)
 }
 
-func (h *Handlers) ListOrgInvitations(w http.ResponseWriter, r *http.Request) {
-	orgID := chi.URLParam(r, "id")
+func (h *Handlers) ListInvitations(w http.ResponseWriter, r *http.Request) {
 	limit, offset := parseLimitOffset(r)
+	var orgID *string
+	if s := strings.TrimSpace(r.URL.Query().Get("org_id")); s != "" {
+		orgID = &s
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	list, err := h.repo.ListOrgInvitations(ctx, orgID, limit, offset)
+	list, err := h.repo.ListInvitations(ctx, orgID, limit, offset)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
@@ -307,6 +340,128 @@ func (h *Handlers) CancelInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeAudit(ctx, r, "INVITE_CANCEL", "org_invitation", &invitationID, nil)
 	w.WriteHeader(204)
+}
+
+// Catalogs
+
+type catalogCreateReq struct {
+	Code   string  `json:"code" validate:"required,min=1,max=60"`
+	Label  *string `json:"label" validate:"omitempty,min=1,max=160"`
+	Weight *int    `json:"weight"`
+}
+
+type catalogUpdateReq struct {
+	Code   *string `json:"code"`
+	Label  *string `json:"label"`
+	Weight *int    `json:"weight"`
+}
+
+func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {
+	catalog := chi.URLParam(r, "catalog")
+	if _, ok := catalogInfo(catalog); !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListCatalog(ctx, catalog, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateCatalogItem(w http.ResponseWriter, r *http.Request) {
+	catalog := chi.URLParam(r, "catalog")
+	meta, ok := catalogInfo(catalog)
+	if !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	var req catalogCreateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if meta.RequiresWeight && req.Weight == nil {
+		writeProblem(w, 422, "validation_error", "weight is required for this catalog", map[string]string{"weight": "required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.CreateCatalogItem(ctx, catalog, req.Code, req.Label, req.Weight)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CATALOG_CREATE", "catalog_item", &item.ID, map[string]any{"catalog": catalog, "code": item.Code})
+	writeJSON(w, 201, item)
+}
+
+func (h *Handlers) UpdateCatalogItem(w http.ResponseWriter, r *http.Request) {
+	catalog := chi.URLParam(r, "catalog")
+	if _, ok := catalogInfo(catalog); !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	var req catalogUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.UpdateCatalogItem(ctx, catalog, id, req.Code, req.Label, req.Weight)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "catalog item not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CATALOG_UPDATE", "catalog_item", &item.ID, map[string]any{"catalog": catalog})
+	writeJSON(w, 200, item)
+}
+
+func (h *Handlers) DeleteCatalogItem(w http.ResponseWriter, r *http.Request) {
+	catalog := chi.URLParam(r, "catalog")
+	if _, ok := catalogInfo(catalog); !ok {
+		writeProblem(w, 404, "not_found", "catalog not found", nil)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCatalogItem(ctx, catalog, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "catalog item not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CATALOG_DELETE", "catalog_item", &id, map[string]any{"catalog": catalog})
+	w.WriteHeader(204)
+}
+
+// Metrics
+
+func (h *Handlers) MetricsOverview(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	data, err := h.repo.MetricsOverview(ctx)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, data)
 }
 
 // Memberships
