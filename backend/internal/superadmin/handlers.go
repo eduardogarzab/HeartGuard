@@ -43,7 +43,7 @@ type Repository interface {
 	ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error)
 
 	ListCatalog(ctx context.Context, catalog string, limit, offset int) ([]models.CatalogItem, error)
-	CreateCatalogItem(ctx context.Context, catalog, code string, label *string, weight *int) (*models.CatalogItem, error)
+	CreateCatalogItem(ctx context.Context, catalog, code, label string, weight *int) (*models.CatalogItem, error)
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
@@ -355,9 +355,9 @@ func (h *Handlers) CancelInvitation(w http.ResponseWriter, r *http.Request) {
 // Catalogs
 
 type catalogCreateReq struct {
-	Code   string  `json:"code" validate:"required,min=1,max=60"`
-	Label  *string `json:"label" validate:"omitempty,min=1,max=160"`
-	Weight *int    `json:"weight"`
+	Code   string `json:"code" validate:"required,min=1,max=60"`
+	Label  string `json:"label" validate:"required,min=1,max=160"`
+	Weight *int   `json:"weight"`
 }
 
 type catalogUpdateReq struct {
@@ -400,9 +400,19 @@ func (h *Handlers) CreateCatalogItem(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 422, "validation_error", "weight is required for this catalog", map[string]string{"weight": "required"})
 		return
 	}
+	req.Code = strings.TrimSpace(req.Code)
+	if req.Code == "" {
+		writeProblem(w, 422, "validation_error", "code is required", map[string]string{"code": "required"})
+		return
+	}
+	label := strings.TrimSpace(req.Label)
+	if label == "" {
+		writeProblem(w, 422, "validation_error", "label is required", map[string]string{"label": "required"})
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	item, err := h.repo.CreateCatalogItem(ctx, catalog, req.Code, req.Label, req.Weight)
+	item, err := h.repo.CreateCatalogItem(ctx, catalog, req.Code, label, req.Weight)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
@@ -427,7 +437,25 @@ func (h *Handlers) UpdateCatalogItem(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	item, err := h.repo.UpdateCatalogItem(ctx, catalog, id, req.Code, req.Label, req.Weight)
+	var trimmedLabel *string
+	if req.Label != nil {
+		val := strings.TrimSpace(*req.Label)
+		if val == "" {
+			writeProblem(w, 422, "validation_error", "label cannot be empty", map[string]string{"label": "required"})
+			return
+		}
+		trimmedLabel = &val
+	}
+	var trimmedCode *string
+	if req.Code != nil {
+		val := strings.TrimSpace(*req.Code)
+		if val == "" {
+			writeProblem(w, 422, "validation_error", "code cannot be empty", map[string]string{"code": "required"})
+			return
+		}
+		trimmedCode = &val
+	}
+	item, err := h.repo.UpdateCatalogItem(ctx, catalog, id, trimmedCode, trimmedLabel, req.Weight)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			writeProblem(w, 404, "not_found", "catalog item not found", nil)

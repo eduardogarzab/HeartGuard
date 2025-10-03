@@ -64,26 +64,26 @@ ALTER DATABASE :dbname SET idle_in_transaction_session_timeout = '15s';
 CREATE TABLE IF NOT EXISTS user_statuses (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS signal_types (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS alert_channels (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS alert_levels (
   id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code   VARCHAR(40) NOT NULL UNIQUE,
   weight INT NOT NULL,
-  label  VARCHAR(80)
+  label  VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS sexes (
@@ -95,26 +95,35 @@ CREATE TABLE IF NOT EXISTS sexes (
 CREATE TABLE IF NOT EXISTS platforms (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS service_statuses (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS delivery_statuses (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS batch_export_statuses (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
+
+ALTER TABLE IF EXISTS user_statuses ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS signal_types ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS alert_channels ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS alert_levels ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS platforms ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS service_statuses ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS delivery_statuses ALTER COLUMN label SET NOT NULL;
+ALTER TABLE IF EXISTS batch_export_statuses ALTER COLUMN label SET NOT NULL;
 
 -- =========================================================
 -- B) Seguridad global (RBAC) + Multi-tenant
@@ -167,8 +176,10 @@ CREATE TABLE IF NOT EXISTS organizations (
 CREATE TABLE IF NOT EXISTS org_roles (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
+
+ALTER TABLE IF EXISTS org_roles ALTER COLUMN label SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS user_org_membership (
   org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -217,8 +228,10 @@ CREATE TABLE IF NOT EXISTS patient_care_team (
 CREATE TABLE IF NOT EXISTS caregiver_relationship_types (
   id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80)
+  label VARCHAR(80) NOT NULL
 );
+
+ALTER TABLE IF EXISTS caregiver_relationship_types ALTER COLUMN label SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS caregiver_patient (
   patient_id  UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
@@ -317,9 +330,15 @@ AS $$
 DECLARE
   tname text;
   with_weight boolean;
+  label_clean text;
 BEGIN
   SELECT table_name, has_weight INTO tname, with_weight
   FROM heartguard.sp_catalog_resolve(p_catalog);
+
+  IF p_label IS NULL OR btrim(p_label) = '' THEN
+    RAISE EXCEPTION 'Label requerido' USING ERRCODE = '23514';
+  END IF;
+  label_clean := btrim(p_label);
 
   IF with_weight THEN
     RETURN QUERY EXECUTE format(
@@ -327,14 +346,14 @@ BEGIN
        VALUES ($1,$2,$3)
        RETURNING (id)::text,(code)::text,(label)::text,(weight)::int',
       tname
-    ) USING p_code, p_label, p_weight;
+    ) USING p_code, label_clean, p_weight;
   ELSE
     RETURN QUERY EXECUTE format(
       'INSERT INTO heartguard.%I (code, label)
        VALUES ($1,$2)
        RETURNING (id)::text,(code)::text,(label)::text,NULL::int',
       tname
-    ) USING p_code, p_label;
+    ) USING p_code, label_clean;
   END IF;
 END;
 $$;
@@ -351,9 +370,17 @@ AS $$
 DECLARE
   tname text;
   with_weight boolean;
+  label_clean text;
 BEGIN
   SELECT table_name, has_weight INTO tname, with_weight
   FROM heartguard.sp_catalog_resolve(p_catalog);
+
+  IF p_label IS NOT NULL THEN
+    label_clean := btrim(p_label);
+    IF label_clean = '' THEN
+      RAISE EXCEPTION 'Label requerido' USING ERRCODE = '23514';
+    END IF;
+  END IF;
 
   IF with_weight THEN
     RETURN QUERY EXECUTE format(
@@ -364,7 +391,7 @@ BEGIN
         WHERE id = $1
       RETURNING (id)::text,(code)::text,(label)::text,(weight)::int',
       tname
-    ) USING p_id, p_code, p_label, p_weight;
+    ) USING p_id, p_code, label_clean, p_weight;
   ELSE
     RETURN QUERY EXECUTE format(
       'UPDATE heartguard.%I
@@ -373,7 +400,7 @@ BEGIN
         WHERE id = $1
       RETURNING (id)::text,(code)::text,(label)::text,NULL::int',
       tname
-    ) USING p_id, p_code, p_label;
+    ) USING p_id, p_code, label_clean;
   END IF;
 END;
 $$;

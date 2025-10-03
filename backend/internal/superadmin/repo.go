@@ -313,7 +313,7 @@ func (r *Repo) ListCatalog(ctx context.Context, catalog string, limit, offset in
 	return out, nil
 }
 
-func (r *Repo) CreateCatalogItem(ctx context.Context, catalog, code string, label *string, weight *int) (*models.CatalogItem, error) {
+func (r *Repo) CreateCatalogItem(ctx context.Context, catalog, code, label string, weight *int) (*models.CatalogItem, error) {
 	var (
 		item models.CatalogItem
 		lbl  sql.NullString
