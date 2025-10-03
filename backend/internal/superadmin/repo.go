@@ -146,8 +146,16 @@ func (r *Repo) CreateInvitation(ctx context.Context, orgID, orgRoleID string, em
 		revokedAt  sql.NullTime
 		createdByU sql.NullString
 	)
+	roleID := orgRoleID
+	if _, err := uuid.Parse(orgRoleID); err != nil {
+		var resolved uuid.UUID
+		if err := r.pool.QueryRow(ctx, `SELECT id FROM heartguard.org_roles WHERE code=$1`, orgRoleID).Scan(&resolved); err != nil {
+			return nil, fmt.Errorf("org role not found: %w", err)
+		}
+		roleID = resolved.String()
+	}
 	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_org_invitation_create($1, $2, $3, $4, $5)`,
-		orgID, orgRoleID, email, ttlHours, createdBy).
+		orgID, roleID, email, ttlHours, createdBy).
 		Scan(&m.ID, &m.OrgID, &emailVal, &m.OrgRoleID, &roleCode, &m.Token, &m.ExpiresAt, &usedAt, &revokedAt, &createdByU, &m.CreatedAt, &m.Status)
 	if err != nil {
 		return nil, err

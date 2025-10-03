@@ -426,13 +426,13 @@ DECLARE
   new_id uuid;
   ttl integer := COALESCE(p_ttl_hours, 24);
 BEGIN
-  INSERT INTO heartguard.org_invitations
+  INSERT INTO heartguard.org_invitations AS inv
     (org_id, email, org_role_id, token, expires_at, created_by, created_at)
   VALUES
     (p_org_id, p_email, p_org_role_id, gen_random_uuid()::text,
      (NOW() + make_interval(hours => ttl))::timestamp,
      p_created_by, NOW()::timestamp)
-  RETURNING id INTO new_id;
+  RETURNING inv.id INTO new_id;
 
   RETURN QUERY
   SELECT

@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
 	"heartguard-superadmin/internal/audit"
@@ -281,6 +282,15 @@ func (h *Handlers) CreateInvitation(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	inv, err := h.repo.CreateInvitation(ctx, req.OrgID, req.OrgRoleID, req.Email, req.TTLHours, actorPtr(r))
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "org role not found", nil)
+			return
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+			return
+		}
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return
 	}

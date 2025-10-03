@@ -1,5 +1,5 @@
 # =========================
-# HeartGuard Monorepo Makefile (DB + Backend)
+# HeartGuard Makefile (DB + Backend)
 # =========================
 
 APP := superadmin-api
@@ -16,18 +16,20 @@ export PGPASSWORD := $(PGSUPER_PASS)
 # DSN de app (para health/psql)
 DB_URL := postgres://$(DBUSER):$(DBPASS)@$(PGHOST):$(PGPORT)/$(DBNAME)?sslmode=disable
 
-.PHONY: help up down logs \
+.PHONY: help up down logs compose-wait \
         dev run build tidy lint test \
-        db-url db-init db-seed db-reset db-drop db-health db-psql
+        db-url db-init db-seed db-reset db-drop db-health db-psql \
+        reset-all
 
 help:
 	@echo "Targets:"
 	@echo "  up / down / logs"
 	@echo "  dev / run / build / tidy / lint / test (backend dentro de ./backend)"
 	@echo "  db-init / db-seed / db-health / db-reset / db-psql"
+	@echo "  reset-all (baja servicios, recrea volúmenes, espera y re-inicializa DB)"
 
 # =========================
-# Docker (Postgres service)
+# Docker (Compose services)
 # =========================
 up:
 	@echo ">> docker compose up -d"
@@ -36,10 +38,36 @@ up:
 down:
 	@echo ">> docker compose down"
 	docker compose down
-
 logs:
 	@echo ">> docker compose logs -f postgres"
 	docker compose logs -f postgres
+
+# Opcionales: logs de Redis o ambos
+logs-redis:
+	@echo ">> docker compose logs -f redis"
+	docker compose logs -f redis
+
+logs-all:
+	@echo ">> docker compose logs -f"
+	docker compose logs -f
+
+# Espera a Postgres: usa 'docker compose wait' si está disponible;
+# si no, fallback con pg_isready dentro del contenedor.
+compose-wait:
+	@set -e; \
+	if docker compose help 2>/dev/null | grep -q '\bwait\b'; then \
+	  echo ">> docker compose wait postgres redis"; \
+	  docker compose wait postgres redis; \
+	else \
+	  echo ">> Esperando a Postgres con pg_isready dentro del contenedor..."; \
+	  until docker compose exec -T postgres pg_isready -U "$(PGSUPER)" -d postgres >/dev/null 2>&1; do \
+	    echo "   ..."; sleep 1; \
+	  done; \
+	  echo ">> Esperando a Redis con redis-cli PING..."; \
+	  until docker compose exec -T redis sh -lc 'redis-cli PING 2>/dev/null | grep -q PONG'; do \
+	    echo "   ..."; sleep 1; \
+	  done; \
+	fi
 
 # =========================
 # Backend (Go) - ejecuta SIEMPRE dentro de ./backend
@@ -84,11 +112,16 @@ db-url:
 
 db-init:
 	@echo "== init.sql =="
-	psql -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) -v dbname=$(DBNAME) -v dbuser=$(DBUSER) -v dbpass='$(DBPASS)' -f - < db/init.sql
+	psql -v ON_ERROR_STOP=1 \
+	     -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) \
+	     -v dbname=$(DBNAME) -v dbuser=$(DBUSER) -v dbpass='$(DBPASS)' \
+	     -f - < db/init.sql
 
 db-seed:
 	@echo "== seed.sql =="
-	psql -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) -d $(DBNAME) -f - < db/seed.sql
+	psql -v ON_ERROR_STOP=1 \
+	     -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) -d $(DBNAME) \
+	     -f - < db/seed.sql
 
 db-reset: db-drop db-init db-seed
 
@@ -116,15 +149,17 @@ reset-all:
 	@echo ">> Bajando servicios..."
 	docker compose down -v --remove-orphans
 
-	@echo ">> Borrando volúmenes (Postgres y Redis)..."
-	-docker volume rm heartguard_postgres_data || true
-	-docker volume rm heartguard-redis || true
+	@echo ">> Borrando volúmenes (Postgres)..."
+	- docker volume rm heartguard_postgres_data 2>/dev/null || true
 
 	@echo ">> Levantando servicios limpios..."
 	docker compose up -d
 
+	@echo ">> Esperando a Postgres..."
+	@$(MAKE) --no-print-directory compose-wait
+
 	@echo ">> Re-inicializando DB..."
-	make db-init
-	make db-seed
+	@$(MAKE) --no-print-directory db-init
+	@$(MAKE) --no-print-directory db-seed
 
 	@echo ">> Reset completo OK"
