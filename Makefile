@@ -16,7 +16,7 @@ export PGPASSWORD := $(PGSUPER_PASS)
 # DSN de app (para health/psql)
 DB_URL := postgres://$(DBUSER):$(DBPASS)@$(PGHOST):$(PGPORT)/$(DBNAME)?sslmode=disable
 
-.PHONY: help up down logs compose-wait \
+.PHONY: help up down logs compose-wait db-wait \
         dev run build tidy lint test \
         db-url db-init db-seed db-reset db-drop db-health db-psql \
         reset-all
@@ -53,20 +53,55 @@ logs-all:
 
 # Espera a Postgres: usa 'docker compose wait' si está disponible;
 # si no, fallback con pg_isready dentro del contenedor.
+WAIT_TIMEOUT ?= 60
+WAIT_REDIS ?= 1
+
 compose-wait:
 	@set -e; \
-	if docker compose help 2>/dev/null | grep -q '\bwait\b'; then \
-	  echo ">> docker compose wait postgres redis"; \
-	  docker compose wait postgres redis; \
+	echo ">> Esperando a Postgres (timeout $(WAIT_TIMEOUT)s)..."; \
+	for i in $$(seq 1 $(WAIT_TIMEOUT)); do \
+	  if docker compose exec -T postgres pg_isready -U "$(PGSUPER)" -d postgres >/dev/null 2>&1; then \
+	    echo "   Postgres listo"; \
+	    break; \
+	  fi; \
+	  if [ $$i -eq $(WAIT_TIMEOUT) ]; then \
+	    echo "!! Postgres no quedó listo a tiempo"; \
+	    exit 1; \
+	  fi; \
+	  sleep 1; \
+	done; \
+	if [ "$(WAIT_REDIS)" = "1" ]; then \
+	  echo ">> Esperando a Redis (timeout $(WAIT_TIMEOUT)s)..."; \
+	  for j in $$(seq 1 $(WAIT_TIMEOUT)); do \
+	    if docker compose exec -T redis sh -lc 'redis-cli PING >/dev/null 2>&1'; then \
+	      echo "   Redis listo"; \
+	      break; \
+	    fi; \
+	    if [ $$j -eq $(WAIT_TIMEOUT) ]; then \
+	      echo "!! Redis no quedó listo a tiempo"; \
+	      exit 1; \
+	    fi; \
+	    sleep 1; \
+	  done; \
 	else \
-	  echo ">> Esperando a Postgres con pg_isready dentro del contenedor..."; \
-	  until docker compose exec -T postgres pg_isready -U "$(PGSUPER)" -d postgres >/dev/null 2>&1; do \
-	    echo "   ..."; sleep 1; \
-	  done; \
-	  echo ">> Esperando a Redis con redis-cli PING..."; \
-	  until docker compose exec -T redis sh -lc 'redis-cli PING 2>/dev/null | grep -q PONG'; do \
-	    echo "   ..."; sleep 1; \
-	  done; \
+	  echo ">> Saltando espera de Redis (WAIT_REDIS=$(WAIT_REDIS))"; \
+	fi
+
+db-wait:
+	@set -e; \
+	printf ">> Verificando Postgres tras reinicio (timeout %ss)...\n" "$(WAIT_TIMEOUT)"; \
+	ok=0; \
+	for i in $$(seq 1 $(WAIT_TIMEOUT)); do \
+	  if psql -U "$(PGSUPER)" -h "$(PGHOST)" -p "$(PGPORT)" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then \
+	    echo "   Postgres aceptando conexiones"; \
+	    ok=1; \
+	    break; \
+	  fi; \
+	  sleep 1; \
+	done; \
+	if [ $$ok -ne 1 ]; then \
+	  echo "!! Postgres no respondió a tiempo tras el reinicio"; \
+	  exit 1; \
 	fi
 
 # =========================
@@ -157,6 +192,7 @@ reset-all:
 
 	@echo ">> Esperando a Postgres..."
 	@$(MAKE) --no-print-directory compose-wait
+	@$(MAKE) --no-print-directory db-wait
 
 	@echo ">> Re-inicializando DB..."
 	@$(MAKE) --no-print-directory db-init
