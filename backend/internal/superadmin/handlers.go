@@ -48,6 +48,9 @@ type Repository interface {
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
 	MetricsOverview(ctx context.Context) (*models.MetricsOverview, error)
+	MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error)
+	MetricsUserStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	MetricsInvitationBreakdown(ctx context.Context) ([]models.InvitationBreakdown, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
@@ -502,6 +505,40 @@ func (h *Handlers) MetricsOverview(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, data)
 }
 
+func (h *Handlers) MetricsRecentActivity(w http.ResponseWriter, r *http.Request) {
+	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.MetricsRecentActivity(ctx, limit)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) MetricsUserStatusBreakdown(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.MetricsUserStatusBreakdown(ctx)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) MetricsInvitationBreakdown(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.MetricsInvitationBreakdown(ctx)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
 // Memberships
 
 type addMemberReq struct {
@@ -523,7 +560,7 @@ func (h *Handlers) AddMember(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}
-	h.writeAudit(ctx, r, "MEMBER_ADD", "membership", nil, map[string]any{"org_id": orgID, "user_id": req.UserID})
+	h.writeAudit(ctx, r, "MEMBER_ADD", "membership", &req.UserID, map[string]any{"org_id": orgID, "user_id": req.UserID})
 	w.WriteHeader(204)
 }
 
@@ -536,7 +573,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		writeProblem(w, 404, "not_found", "membership not found", nil)
 		return
 	}
-	h.writeAudit(ctx, r, "MEMBER_REMOVE", "membership", nil, map[string]any{"org_id": orgID, "user_id": userID})
+	h.writeAudit(ctx, r, "MEMBER_REMOVE", "membership", &userID, map[string]any{"org_id": orgID, "user_id": userID})
 	w.WriteHeader(204)
 }
 

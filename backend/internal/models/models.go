@@ -43,6 +43,18 @@ type OperationStat struct {
 	Count int    `json:"count"`
 }
 
+type StatusBreakdown struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+	Count int    `json:"count"`
+}
+
+type InvitationBreakdown struct {
+	Status string `json:"status"`
+	Label  string `json:"label"`
+	Count  int    `json:"count"`
+}
+
 type MetricsOverview struct {
 	AvgResponseMs       float64         `json:"avg_response_ms"`
 	ActiveUsers         int             `json:"active_users"`
@@ -53,11 +65,12 @@ type MetricsOverview struct {
 }
 
 type User struct {
-	ID        string    `json:"id"`
-	Name      string    `json:"name"`
-	Email     string    `json:"email"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID          string           `json:"id"`
+	Name        string           `json:"name"`
+	Email       string           `json:"email"`
+	Status      string           `json:"status"`
+	CreatedAt   time.Time        `json:"created_at"`
+	Memberships []UserMembership `json:"memberships"`
 }
 
 type APIKey struct {
@@ -82,6 +95,15 @@ type Membership struct {
 	JoinedAt     time.Time `json:"joined_at"`
 }
 
+type UserMembership struct {
+	OrgID        string     `json:"org_id"`
+	OrgCode      string     `json:"org_code"`
+	OrgName      string     `json:"org_name"`
+	OrgRoleCode  string     `json:"org_role_code"`
+	OrgRoleLabel string     `json:"org_role_label"`
+	JoinedAt     *time.Time `json:"joined_at,omitempty"`
+}
+
 type AuditLog struct {
 	ID       string         `json:"id"`
 	Action   string         `json:"action"`
@@ -99,8 +121,10 @@ type OperationCount struct {
 }
 
 type ActivityEntry struct {
-	TS     time.Time `json:"ts"`
-	Action string    `json:"action"`
-	Entity *string   `json:"entity,omitempty"`
-	UserID *string   `json:"user_id,omitempty"`
+	TS         time.Time         `json:"ts"`
+	Action     string            `json:"action"`
+	Entity     *string           `json:"entity,omitempty"`
+	UserID     *string           `json:"user_id,omitempty"`
+	ActorEmail *string           `json:"actor_email,omitempty"`
+	Details    map[string]any    `json:"details,omitempty"`
 }

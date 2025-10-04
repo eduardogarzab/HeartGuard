@@ -161,3 +161,184 @@ ON CONFLICT DO NOTHING;
 -- Organización demo
 INSERT INTO organizations(code,name) VALUES ('FAM-001','Familia García')
 ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO organizations(code,name) VALUES
+  ('CLIN-001','Clínica Central'),
+  ('OPS-001','Servicios Operativos HG')
+ON CONFLICT (code) DO NOTHING;
+
+-- Usuarios adicionales para métricas (password demo: Demo#2025)
+INSERT INTO users (name, email, password_hash, user_status_id, two_factor_enabled, created_at)
+VALUES
+  ('Dra. Ana Ruiz','ana.ruiz@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='active'), TRUE, NOW() - INTERVAL '90 days'),
+  ('Martín López','martin.ops@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='active'), FALSE, NOW() - INTERVAL '60 days'),
+  ('Sofía Care','sofia.care@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='pending'), FALSE, NOW() - INTERVAL '15 days'),
+  ('Carlos Vega','carlos.vega@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='blocked'), FALSE, NOW() - INTERVAL '120 days')
+ON CONFLICT (email) DO NOTHING;
+
+-- Asignar roles globales
+INSERT INTO user_role(user_id, role_id)
+SELECT u.id, r.id
+FROM users u
+JOIN roles r ON r.name = 'clinician'
+WHERE u.email = 'ana.ruiz@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO user_role(user_id, role_id)
+SELECT u.id, r.id
+FROM users u
+JOIN roles r ON r.name = 'ops'
+WHERE u.email = 'martin.ops@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO user_role(user_id, role_id)
+SELECT u.id, r.id
+FROM users u
+JOIN roles r ON r.name = 'caregiver'
+WHERE u.email = 'sofia.care@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+-- Membresías por organización
+INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
+SELECT o.id, u.id, r.id, NOW() - INTERVAL '60 days'
+FROM organizations o, users u, org_roles r
+WHERE o.code='FAM-001' AND u.email='ana.ruiz@heartguard.com' AND r.code='org_admin'
+ON CONFLICT (org_id, user_id) DO NOTHING;
+
+INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
+SELECT o.id, u.id, r.id, NOW() - INTERVAL '45 days'
+FROM organizations o, users u, org_roles r
+WHERE o.code='FAM-001' AND u.email='martin.ops@heartguard.com' AND r.code='org_user'
+ON CONFLICT (org_id, user_id) DO NOTHING;
+
+INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
+SELECT o.id, u.id, r.id, NOW() - INTERVAL '20 days'
+FROM organizations o, users u, org_roles r
+WHERE o.code='CLIN-001' AND u.email='sofia.care@heartguard.com' AND r.code='viewer'
+ON CONFLICT (org_id, user_id) DO NOTHING;
+
+-- Invitaciones demo (pendiente, usada, revocada)
+INSERT INTO org_invitations (org_id, email, org_role_id, token, expires_at, used_at, revoked_at, created_by, created_at)
+VALUES
+  (
+    (SELECT id FROM organizations WHERE code='FAM-001'),
+    'coordinador@heartguard.com',
+    (SELECT id FROM org_roles WHERE code='org_admin'),
+    'INVITE-DEMO-001',
+    NOW() + INTERVAL '7 days',
+    NULL,
+    NULL,
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    NOW() - INTERVAL '2 days'
+  ),
+  (
+    (SELECT id FROM organizations WHERE code='FAM-001'),
+    'analista@heartguard.com',
+    (SELECT id FROM org_roles WHERE code='org_user'),
+    'INVITE-DEMO-002',
+    NOW() - INTERVAL '10 days',
+    NOW() - INTERVAL '9 days',
+    NULL,
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    NOW() - INTERVAL '12 days'
+  ),
+  (
+    (SELECT id FROM organizations WHERE code='CLIN-001'),
+    'visitante@heartguard.com',
+    (SELECT id FROM org_roles WHERE code='viewer'),
+    'INVITE-DEMO-003',
+    NOW() + INTERVAL '14 days',
+    NULL,
+    NOW() - INTERVAL '3 days',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    NOW() - INTERVAL '5 days'
+  )
+ON CONFLICT (token) DO NOTHING;
+
+-- Servicios y health checks
+INSERT INTO services(name, url, description) VALUES
+  ('superadmin-api','https://admin.heartguard.local','API Superadmin'),
+  ('streaming-hub','https://stream.heartguard.local','Canal de telemetría')
+ON CONFLICT (name) DO NOTHING;
+
+INSERT INTO service_health (id, service_id, checked_at, service_status_id, latency_ms, version)
+SELECT '00000000-0000-0000-0000-00000000A101'::uuid,
+       (SELECT id FROM services WHERE name='superadmin-api'),
+       NOW() - INTERVAL '2 days',
+       (SELECT id FROM service_statuses WHERE code='up'),
+       215,
+       '1.8.4'
+WHERE NOT EXISTS (SELECT 1 FROM service_health WHERE id='00000000-0000-0000-0000-00000000A101'::uuid);
+
+INSERT INTO service_health (id, service_id, checked_at, service_status_id, latency_ms, version)
+SELECT '00000000-0000-0000-0000-00000000A102'::uuid,
+       (SELECT id FROM services WHERE name='superadmin-api'),
+       NOW() - INTERVAL '6 hours',
+       (SELECT id FROM service_statuses WHERE code='degraded'),
+       380,
+       '1.8.5'
+WHERE NOT EXISTS (SELECT 1 FROM service_health WHERE id='00000000-0000-0000-0000-00000000A102'::uuid);
+
+INSERT INTO service_health (id, service_id, checked_at, service_status_id, latency_ms, version)
+SELECT '00000000-0000-0000-0000-00000000A103'::uuid,
+       (SELECT id FROM services WHERE name='streaming-hub'),
+       NOW() - INTERVAL '1 day',
+       (SELECT id FROM service_statuses WHERE code='up'),
+       180,
+       '2.4.1'
+WHERE NOT EXISTS (SELECT 1 FROM service_health WHERE id='00000000-0000-0000-0000-00000000A103'::uuid);
+
+-- Auditoría demo (últimos 30 días)
+INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip, details)
+VALUES
+  (
+    '00000000-0000-0000-0000-00000000B101',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    'ORG_CREATE',
+    'organization',
+    (SELECT id FROM organizations WHERE code='CLIN-001'),
+    NOW() - INTERVAL '6 days',
+    '10.0.0.10',
+    '{"code":"CLIN-001"}'::jsonb
+  ),
+  (
+    '00000000-0000-0000-0000-00000000B102',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    'INVITE_CREATE',
+    'org_invitation',
+    (SELECT id FROM org_invitations WHERE token='INVITE-DEMO-001'),
+    NOW() - INTERVAL '5 days',
+    '10.0.0.10',
+    '{"token":"INVITE-DEMO-001"}'::jsonb
+  ),
+  (
+    '00000000-0000-0000-0000-00000000B103',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    'MEMBER_ADD',
+    'membership',
+    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+    NOW() - INTERVAL '3 days',
+    '10.0.0.10',
+    '{"org":"FAM-001","user":"ana.ruiz@heartguard.com"}'::jsonb
+  ),
+  (
+    '00000000-0000-0000-0000-00000000B104',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    'USER_STATUS_UPDATE',
+    'user',
+    (SELECT id FROM users WHERE email='carlos.vega@heartguard.com'),
+    NOW() - INTERVAL '1 day',
+    '10.0.0.11',
+    '{"email":"carlos.vega@heartguard.com","status":"blocked"}'::jsonb
+  ),
+  (
+    '00000000-0000-0000-0000-00000000B105',
+    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+    'INVITE_CANCEL',
+    'org_invitation',
+    (SELECT id FROM org_invitations WHERE token='INVITE-DEMO-003'),
+    NOW() - INTERVAL '2 days',
+    '10.0.0.12',
+    '{"token":"INVITE-DEMO-003"}'::jsonb
+  )
+ON CONFLICT (id) DO NOTHING;

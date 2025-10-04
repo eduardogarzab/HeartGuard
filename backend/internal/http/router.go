@@ -60,6 +60,9 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, 
 		})
 
 		s.Get("/metrics/overview", h.MetricsOverview)
+		s.Get("/metrics/activity", h.MetricsRecentActivity)
+		s.Get("/metrics/users/status-breakdown", h.MetricsUserStatusBreakdown)
+		s.Get("/metrics/invitations/breakdown", h.MetricsInvitationBreakdown)
 		s.Get("/users", h.SearchUsers)
 		s.Patch("/users/{id}/status", h.UpdateUserStatus)
 		s.Post("/api-keys", h.CreateAPIKey)

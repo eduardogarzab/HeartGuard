@@ -843,6 +843,90 @@ BEGIN
 END;
 $$;
 
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_recent_activity(p_limit integer DEFAULT 8)
+RETURNS TABLE (
+  ts timestamp,
+  action text,
+  entity text,
+  actor_email text,
+  details jsonb)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 50);
+BEGIN
+  RETURN QUERY
+  SELECT
+    a.ts,
+    a.action::text,
+    a.entity::text,
+    u.email::text,
+    a.details
+  FROM heartguard.audit_logs a
+  LEFT JOIN heartguard.users u ON u.id = a.user_id
+  ORDER BY a.ts DESC
+  LIMIT safe_limit;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_user_status_breakdown()
+RETURNS TABLE (
+  status_code text,
+  status_label text,
+  total integer)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    us.code::text,
+    us.label::text,
+    COUNT(u.*)::integer AS total
+  FROM heartguard.user_statuses us
+  LEFT JOIN heartguard.users u ON u.user_status_id = us.id
+  GROUP BY us.code, us.label
+  ORDER BY total DESC, us.label;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_invitation_breakdown()
+RETURNS TABLE (
+  status text,
+  label text,
+  total integer)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  WITH status_map AS (
+    SELECT
+      CASE
+        WHEN inv.revoked_at IS NOT NULL THEN 'revoked'
+        WHEN inv.used_at IS NOT NULL THEN 'used'
+        WHEN inv.expires_at < NOW() THEN 'expired'
+        ELSE 'pending'
+      END AS status
+    FROM heartguard.org_invitations inv
+  ), aggregated AS (
+    SELECT sm.status AS status_value, COUNT(*)::integer AS total
+    FROM status_map sm
+    GROUP BY sm.status
+  )
+  SELECT
+    s.status_value AS status,
+    CASE s.status_value
+      WHEN 'pending' THEN 'Pendientes'
+      WHEN 'used' THEN 'Utilizadas'
+      WHEN 'expired' THEN 'Expiradas'
+      WHEN 'revoked' THEN 'Revocadas'
+      ELSE INITCAP(s.status_value)
+    END AS label,
+    s.total
+  FROM aggregated s
+  ORDER BY s.total DESC;
+END;
+$$;
+
 -- =========================================================
 -- J) Auditoría
 -- =========================================================

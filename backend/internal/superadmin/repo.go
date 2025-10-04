@@ -400,6 +400,93 @@ func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, er
 	return res, nil
 }
 
+func (r *Repo) MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error) {
+	if limit <= 0 {
+		limit = 8
+	} else if limit > 50 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_recent_activity($1)`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.ActivityEntry, 0, limit)
+	for rows.Next() {
+		var (
+			item       models.ActivityEntry
+			entity     sql.NullString
+			actorEmail sql.NullString
+			detailsRaw []byte
+		)
+		if err := rows.Scan(&item.TS, &item.Action, &entity, &actorEmail, &detailsRaw); err != nil {
+			return nil, err
+		}
+		if entity.Valid {
+			s := entity.String
+			item.Entity = &s
+		}
+		if actorEmail.Valid {
+			s := actorEmail.String
+			item.ActorEmail = &s
+		}
+		if len(detailsRaw) > 0 {
+			var details map[string]any
+			if err := json.Unmarshal(detailsRaw, &details); err == nil {
+				item.Details = details
+			}
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) MetricsUserStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_user_status_breakdown()`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.StatusBreakdown, 0, 8)
+	for rows.Next() {
+		var item models.StatusBreakdown
+		if err := rows.Scan(&item.Code, &item.Label, &item.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) MetricsInvitationBreakdown(ctx context.Context) ([]models.InvitationBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_invitation_breakdown()`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.InvitationBreakdown, 0, 4)
+	for rows.Next() {
+		var item models.InvitationBreakdown
+		if err := rows.Scan(&item.Status, &item.Label, &item.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ------------------------------
 // Memberships
 // ------------------------------
@@ -474,10 +561,32 @@ LIMIT $2 OFFSET $3
 // ------------------------------
 func (r *Repo) SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT u.id, u.name, u.email, us.code AS status, u.created_at
+SELECT
+	u.id,
+	u.name,
+	u.email,
+	us.code AS status,
+	u.created_at,
+	COALESCE(
+		jsonb_agg(
+			jsonb_build_object(
+				'org_id', o.id,
+				'org_code', o.code,
+				'org_name', o.name,
+				'org_role_code', orl.code,
+				'org_role_label', orl.label,
+				'joined_at', to_char(mum.joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+			)
+		) FILTER (WHERE o.id IS NOT NULL),
+		'[]'::jsonb
+	) AS memberships
 FROM users u
 JOIN user_statuses us ON us.id = u.user_status_id
+LEFT JOIN user_org_membership mum ON mum.user_id = u.id
+LEFT JOIN organizations o ON o.id = mum.org_id
+LEFT JOIN org_roles orl ON orl.id = mum.org_role_id
 WHERE ($1 = '' OR u.email ILIKE '%'||$1||'%' OR u.name ILIKE '%'||$1||'%')
+GROUP BY u.id, u.name, u.email, us.code, u.created_at
 ORDER BY u.created_at DESC
 LIMIT $2 OFFSET $3
 `, q, limit, offset)
@@ -488,9 +597,17 @@ LIMIT $2 OFFSET $3
 
 	var out []models.User
 	for rows.Next() {
-		var m models.User
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &m.CreatedAt); err != nil {
+		var (
+			m             models.User
+			membershipsRaw []byte
+		)
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &m.CreatedAt, &membershipsRaw); err != nil {
 			return nil, err
+		}
+		if len(membershipsRaw) > 0 {
+			if err := json.Unmarshal(membershipsRaw, &m.Memberships); err != nil {
+				return nil, err
+			}
 		}
 		out = append(out, m)
 	}

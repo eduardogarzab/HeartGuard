@@ -1,18 +1,26 @@
 :root {
-	--bg: #0b0f14;
-	--bg-elev: #121822;
-	--panel: #0f1621;
-	--surface: #141b26;
-	--text: #e9eef6;
-	--muted: #9fb0c9;
-	--primary: #3aa0ff;
-	--primary-2: #2f85d0;
+	--bg: #05070d;
+	--bg-elev: #10182a;
+	--panel: #182239;
+	--surface: #0b1322;
+	--text: #f3f6ff;
+	--muted: #a4b8d6;
+	--primary: #4dabff;
+	--primary-2: #2c6fd0;
 	--success: #2ecb70;
 	--warn: #f5a524;
 	--danger: #ff5a5f;
-	--shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+	--shadow: 0 16px 42px rgba(3, 6, 12, 0.55);
 	--radius: 14px;
-	--ring: 0 0 0 2px rgba(58, 160, 255, 0.25);
+	--ring: 0 0 0 2px rgba(77, 171, 255, 0.28);
+	--panel-border: rgba(102, 126, 170, 0.18);
+	--tile-border: rgba(77, 171, 255, 0.28);
+	--tile-bg-start: rgba(30, 44, 68, 0.92);
+	--tile-bg-end: rgba(11, 20, 36, 0.96);
+	--panel-bg-start: rgba(26, 37, 60, 0.94);
+	--panel-bg-end: rgba(11, 18, 33, 0.94);
+	--tile-title: #f8fbff;
+	--tile-desc: rgba(168, 188, 218, 0.9);
 }
 
 html[data-theme="light"] {
@@ -27,8 +35,16 @@ html[data-theme="light"] {
 	--success: #12a150;
 	--warn: #c57e0d;
 	--danger: #d62839;
-	--shadow: 0 10px 30px rgba(24, 36, 64, 0.15);
+	--shadow: 0 12px 32px rgba(24, 36, 64, 0.15);
 	--ring: 0 0 0 2px rgba(10, 132, 255, 0.18);
+	--panel-border: rgba(17, 28, 53, 0.08);
+	--tile-border: rgba(10, 132, 255, 0.16);
+	--tile-bg-start: rgba(255, 255, 255, 0.98);
+	--tile-bg-end: rgba(247, 249, 252, 0.98);
+	--panel-bg-start: rgba(255, 255, 255, 1);
+	--panel-bg-end: rgba(247, 249, 252, 1);
+	--tile-title: #10203b;
+	--tile-desc: #5c6e89;
 }
 
 * {
@@ -43,6 +59,9 @@ body {
 	font-family: "Inter", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
 	background: linear-gradient(180deg, var(--bg) 0%, var(--surface) 100%);
 	color: var(--text);
+	display: flex;
+	flex-direction: column;
+	min-height: 100vh;
 }
 
 /* Topbar */
@@ -66,7 +85,7 @@ body {
 .logo {
 	font-size: 26px;
 	color: var(--primary);
-	background: rgba(58, 160, 255, 0.1);
+	background: rgba(77, 171, 255, 0.18);
 	border-radius: 10px;
 	padding: 6px;
 }
@@ -145,6 +164,21 @@ body {
 .btn.ghost:hover {
 	background: rgba(255, 255, 255, 0.05);
 }
+.btn.ghost.accent {
+	border-color: rgba(77, 171, 255, 0.45);
+	background: rgba(77, 171, 255, 0.12);
+	color: var(--primary);
+}
+html[data-theme="light"] .btn.ghost.accent {
+	border-color: rgba(10, 132, 255, 0.28);
+	background: rgba(10, 132, 255, 0.12);
+}
+.btn.ghost.accent:hover {
+	background: rgba(77, 171, 255, 0.2);
+}
+html[data-theme="light"] .btn.ghost.accent:hover {
+	background: rgba(10, 132, 255, 0.18);
+}
 .btn.warn {
 	background: var(--warn);
 }
@@ -204,6 +238,28 @@ body {
 	padding: 22px;
 	max-width: 1400px;
 	margin: 0 auto;
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	box-sizing: border-box;
+	overflow: auto;
+	min-height: 0;
+}
+
+body.metrics-mode {
+	overflow: hidden;
+}
+
+body.metrics-mode .container {
+	overflow: hidden;
+}
+
+#app {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
 }
 
 /* Tiles grid (home) */
@@ -217,8 +273,8 @@ body {
 	min-height: 140px;
 	padding: 18px;
 	border-radius: var(--radius);
-	background: linear-gradient(180deg, var(--bg-elev), var(--panel));
-	border: 1px solid rgba(255, 255, 255, 0.06);
+	background: linear-gradient(150deg, var(--tile-bg-start), var(--tile-bg-end));
+	border: 1px solid var(--tile-border);
 	box-shadow: var(--shadow);
 	display: flex;
 	flex-direction: column;
@@ -228,28 +284,31 @@ body {
 }
 .tile:hover {
 	transform: translateY(-2px);
-	box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+	box-shadow: 0 18px 46px rgba(18, 29, 48, 0.55);
 }
 .tile .icon {
 	font-size: 34px;
 	color: var(--primary);
+	text-shadow: 0 0 18px rgba(77, 171, 255, 0.35);
 }
 .tile .title {
 	font-weight: 700;
 	font-size: 16px;
+	color: var(--tile-title);
+	letter-spacing: 0.3px;
 }
 .tile .desc {
-	color: var(--muted);
+	color: var(--tile-desc);
 	font-size: 13px;
-	line-height: 1.4;
+	line-height: 1.45;
 }
 
 /* Panels */
 .panel {
 	padding: 18px;
 	border-radius: var(--radius);
-	background: linear-gradient(180deg, var(--bg-elev), var(--panel));
-	border: 1px solid rgba(255, 255, 255, 0.06);
+	background: linear-gradient(155deg, var(--panel-bg-start), var(--panel-bg-end));
+	border: 1px solid var(--panel-border);
 	box-shadow: var(--shadow);
 }
 .panel-header {
@@ -263,6 +322,8 @@ body {
 	align-items: center;
 	gap: 10px;
 	font-weight: 700;
+	color: var(--tile-title);
+	text-shadow: 0 2px 12px rgba(8, 13, 24, 0.55);
 }
 .panel-title .material-symbols-rounded {
 	color: var(--primary);
@@ -477,6 +538,10 @@ textarea:focus {
 	color: var(--muted);
 }
 
+.muted {
+	color: var(--muted);
+}
+
 /* Table */
 .table {
 	width: 100%;
@@ -504,6 +569,23 @@ textarea:focus {
 }
 .table-wrap .table {
 	min-width: 100%;
+}
+.table-memberships {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.table-membership {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+.table-membership-org {
+	font-weight: 600;
+}
+.table-membership-role {
+	font-size: 12px;
+	color: var(--muted);
 }
 .badge {
 	display: inline-flex;
@@ -586,18 +668,18 @@ textarea:focus {
 
 .metric-cards {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-	gap: 16px;
+	grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+	gap: 12px;
 }
 .metric-card {
 	background: linear-gradient(180deg, var(--surface), var(--panel));
 	border: 1px solid rgba(255, 255, 255, 0.06);
 	border-radius: 14px;
-	padding: 16px;
+	padding: 14px;
 	box-shadow: var(--shadow);
 	display: flex;
 	flex-direction: column;
-	gap: 8px;
+	gap: 6px;
 }
 .metric-card-header {
 	display: flex;
@@ -610,22 +692,267 @@ textarea:focus {
 	color: var(--primary);
 }
 .metric-value {
-	font-size: 28px;
+	font-size: 24px;
 	font-weight: 700;
 }
 .metric-foot {
 	font-size: 12px;
 	color: var(--muted);
 }
-.metrics-body {
+.metrics-panel {
 	display: flex;
 	flex-direction: column;
-	gap: 18px;
+	gap: 16px;
+	flex: 1;
+	min-height: 0;
 }
+
+.metrics-dashboard {
+	flex: 1;
+	min-height: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.metrics-update-flag {
+	align-self: flex-start;
+}
+
 .metrics-grid {
+	flex: 1;
+	min-height: 0;
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-	gap: 18px;
+	grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+	gap: 16px;
+	align-items: stretch;
+}
+
+.metrics-grid.wide {
+	grid-template-columns: minmax(0, 1.8fr) minmax(0, 1fr);
+}
+
+.metrics-column {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+	min-height: 0;
+}
+
+.metrics-column.narrow {
+	min-width: 0;
+	overflow: hidden;
+}
+
+#metricsChartsColumn {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	grid-template-rows: repeat(2, minmax(0, 1fr));
+	gap: 16px;
+	flex: 1;
+	min-height: 0;
+}
+
+.chart-card {
+	position: relative;
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0));
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 16px;
+	padding: 16px;
+	box-shadow: var(--shadow);
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	min-height: 0;
+	height: 100%;
+	overflow: hidden;
+}
+
+#metricsChartsColumn .chart-card {
+	height: 100%;
+}
+
+.chart-card header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.chart-card header h3 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.chart-card header span {
+	font-size: 12px;
+	color: var(--muted);
+}
+
+.chart-card canvas {
+	flex: 1;
+	width: 100% !important;
+	height: 100% !important;
+	min-height: 0;
+}
+
+#metricsOpsCard {
+	grid-column: 1 / -1;
+	grid-row: 1 / 2;
+}
+
+#metricsStatusCard {
+	grid-column: 1 / 2;
+	grid-row: 2 / 3;
+}
+
+#metricsInvitesCard {
+	grid-column: 2 / 3;
+	grid-row: 2 / 3;
+}
+
+.metrics-activity {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), rgba(255, 255, 255, 0));
+	border: 1px solid rgba(255, 255, 255, 0.06);
+	border-radius: 16px;
+	padding: 16px;
+	box-shadow: var(--shadow);
+	flex: 1;
+	min-height: 0;
+	overflow: hidden;
+}
+
+.metrics-activity header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+}
+
+.metrics-activity header h3 {
+	margin: 0;
+	font-size: 16px;
+	font-weight: 600;
+}
+
+.activity-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: 12px;
+	flex: 1;
+	min-height: 0;
+	overflow: auto;
+	padding-right: 6px;
+}
+.activity-item {
+	display: grid;
+	grid-template-columns: auto 1fr;
+	gap: 10px 14px;
+	align-items: start;
+	padding-bottom: 12px;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.activity-item:last-child {
+	border-bottom: none;
+	padding-bottom: 0;
+}
+.activity-icon {
+	width: 42px;
+	height: 42px;
+	border-radius: 12px;
+	background: rgba(58, 160, 255, 0.18);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--primary);
+	box-shadow: 0 10px 24px rgba(58, 160, 255, 0.18);
+}
+.activity-meta {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+.activity-meta strong {
+	font-weight: 600;
+}
+.activity-meta span {
+	font-size: 12px;
+	color: var(--muted);
+}
+.activity-meta .chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+.chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 8px;
+	border-radius: 999px;
+	background: rgba(255, 255, 255, 0.08);
+	font-size: 11px;
+	color: var(--muted);
+}
+.chip.primary {
+	background: rgba(58, 160, 255, 0.15);
+	color: var(--text);
+}
+.metrics-timestamp {
+	font-size: 12px;
+	color: var(--muted);
+}
+.metrics-empty {
+	text-align: center;
+	padding: 18px;
+	color: var(--muted);
+	font-size: 13px;
+}
+.metrics-update-flag {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 12px;
+	color: var(--muted);
+}
+.metrics-update-flag .material-symbols-rounded {
+	font-size: 16px;
+	color: var(--primary);
+}
+.kpi-card.spark {
+	position: relative;
+	overflow: hidden;
+}
+.kpi-card.spark canvas {
+	position: absolute;
+	bottom: -16px;
+	left: 0;
+	width: 100%;
+	height: 110px;
+	opacity: 0.32;
+}
+@media (max-width: 1180px) {
+	.metrics-grid,
+	.metrics-grid.wide {
+		grid-template-columns: 1fr;
+	}
+	.metrics-column.narrow {
+		order: -1;
+	}
+	#metricsChartsColumn {
+		grid-template-columns: 1fr;
+		grid-template-rows: repeat(3, minmax(0, 1fr));
+	}
+	#metricsOpsCard,
+	#metricsStatusCard,
+	#metricsInvitesCard {
+		grid-column: 1;
+		grid-row: auto;
+	}
 }
 .metric-section {
 	background: linear-gradient(180deg, var(--surface), var(--panel));
