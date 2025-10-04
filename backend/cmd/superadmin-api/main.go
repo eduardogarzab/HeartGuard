@@ -40,7 +40,7 @@ func main() {
 	defer func() { _ = rdb.Close() }()
 
 	// Repo + handlers
-	repo := superadmin.NewRepo(pool)
+	repo := superadmin.NewRepo(pool, rdb)
 	handlers := superadmin.NewHandlers(repo, logger)
 
 	// Router

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"heartguard-superadmin/internal/models"
 )
 
@@ -29,14 +31,15 @@ type pgPool interface {
 type Repo struct {
 	pool      pgPool
 	auditPool *pgxpool.Pool
+	redis     *redis.Client
 }
 
-func NewRepo(pool *pgxpool.Pool) *Repo {
-	return &Repo{pool: pool, auditPool: pool}
+func NewRepo(pool *pgxpool.Pool, redis *redis.Client) *Repo {
+	return &Repo{pool: pool, auditPool: pool, redis: redis}
 }
 
 // NewRepoWithPool allows injecting a custom pgx pool implementation (tests).
-func NewRepoWithPool(pool pgPool) *Repo { return &Repo{pool: pool} }
+func NewRepoWithPool(pool pgPool, redis *redis.Client) *Repo { return &Repo{pool: pool, redis: redis} }
 
 func (r *Repo) AuditPool() *pgxpool.Pool { return r.auditPool }
 
@@ -874,25 +877,61 @@ SELECT EXISTS (
 	return ok, err
 }
 
+func refreshTokenKey(hash string) string {
+	return "rt:" + hash
+}
+
 func (r *Repo) IssueRefreshToken(ctx context.Context, userID, tokenHash string, ttl time.Duration) error {
 	_, err := r.pool.Exec(ctx, `
 INSERT INTO refresh_tokens (user_id, token_hash, issued_at, expires_at)
 VALUES ($1, $2, NOW(), NOW() + make_interval(secs => $3))
 ON CONFLICT (user_id, token_hash) DO NOTHING
 `, userID, tokenHash, int64(ttl.Seconds()))
-	return err
+	if err != nil {
+		return err
+	}
+	if r.redis == nil || ttl <= 0 {
+		return nil
+	}
+	if rErr := r.redis.Set(ctx, refreshTokenKey(tokenHash), userID, ttl).Err(); rErr != nil {
+		log.Printf("redis set refresh token (issue): %v", rErr)
+	}
+	return nil
 }
 
 func (r *Repo) ValidateRefreshToken(ctx context.Context, raw string) (string, error) {
 	sum := sha256.Sum256([]byte(raw))
 	hash := hex.EncodeToString(sum[:])
-	var uid string
+	key := refreshTokenKey(hash)
+	if r.redis != nil {
+		uid, err := r.redis.Get(ctx, key).Result()
+		if err == nil {
+			return uid, nil
+		}
+		if !errors.Is(err, redis.Nil) {
+			log.Printf("redis get refresh token: %v", err)
+		}
+	}
+	var (
+		uid       string
+		expiresAt time.Time
+	)
 	err := r.pool.QueryRow(ctx, `
-SELECT user_id::text
+SELECT user_id::text, expires_at
 FROM refresh_tokens
 WHERE token_hash = $1 AND revoked_at IS NULL AND expires_at > NOW()
-`, hash).Scan(&uid)
-	return uid, err
+`, hash).Scan(&uid, &expiresAt)
+	if err != nil {
+		return "", err
+	}
+	if r.redis != nil {
+		if ttl := time.Until(expiresAt); ttl > 0 {
+			if rErr := r.redis.Set(ctx, key, uid, ttl).Err(); rErr != nil {
+				log.Printf("redis set refresh token (validate): %v", rErr)
+			}
+		}
+	}
+	return uid, nil
 }
 
 func (r *Repo) RevokeRefreshToken(ctx context.Context, raw string) error {
@@ -903,7 +942,15 @@ UPDATE refresh_tokens
 SET revoked_at = NOW()
 WHERE token_hash = $1 AND revoked_at IS NULL
 `, hash)
-	return err
+	if err != nil {
+		return err
+	}
+	if r.redis != nil {
+		if rErr := r.redis.Del(ctx, refreshTokenKey(hash)).Err(); rErr != nil {
+			log.Printf("redis del refresh token: %v", rErr)
+		}
+	}
+	return nil
 }
 
 // ------------------------------
