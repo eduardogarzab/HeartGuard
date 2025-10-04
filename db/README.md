@@ -1,78 +1,133 @@
 # HeartGuard Database (PostgreSQL + PostGIS)
 
-## Descripción
+Esquema relacional que soporta la plataforma HeartGuard: catálogos configurables, RBAC, auditoría, métricas y objetos clínicos básicos. Todo el ciclo de vida (creación, seeds y health checks) se orquesta con el `Makefile` raíz.
 
-Módulo de base de datos para HeartGuard que define el esquema principal, catálogos, roles, usuarios, seeds y extensiones necesarias para el sistema de monitoreo y alertas.
+## Stack y extensiones
 
----
+-   PostgreSQL 14+
+-   PostGIS (`CREATE EXTENSION ... SCHEMA heartguard`)
+-   pgcrypto (UUID, `gen_random_uuid`, `crypt`)
+-   Docker opcional (`docker-compose.yml` expone el contenedor `postgis/postgis:14-3.2`)
 
-## Tecnologías
-
--   **PostgreSQL 14+**
--   **PostGIS**
--   **pgcrypto** (UUIDs y bcrypt para hashes)
--   **Docker** (opcional para desarrollo)
-
----
-
-## Estructura
+## Estructura de archivos
 
 ```
 db/
-├── init.sql        # Creación de esquema, extensiones, roles y tablas
-├── seed.sql        # Datos iniciales (catálogos, roles, permisos, superadmin demo)
-└── migrations/     # Directorio opcional para futuras migraciones
+├── init.sql   # Crea schema heartguard, roles, tablas, funciones
+├── seed.sql   # Llena catálogos, roles, usuarios demo, auditoría, métricas
+└── README.md  # Este documento
 ```
 
----
+> El directorio `migrations/` queda reservado para futuras migraciones (aún no requerido).
 
-## Requisitos
+## Configuración desde `.env`
 
--   Docker + Docker Compose
--   Make
--   psql (opcional fuera de Docker)
+| Variable            | Uso                                         |
+| ------------------- | ------------------------------------------- |
+| `PGSUPER`           | Superusuario (por defecto `postgres`).      |
+| `PGSUPER_PASS`      | Contraseña del superusuario.                |
+| `PGHOST` / `PGPORT` | Host/puerto (en Docker: `127.0.0.1:5432`).  |
+| `DBNAME`            | Nombre de la base destino (`heartguard`).   |
+| `DBUSER`/`DBPASS`   | Rol de aplicación (`heartguard_app`).       |
+| `DATABASE_URL`      | DSN usado por el backend y comandos `db-*`. |
 
----
+El `Makefile` exporta automáticamente los valores al cargar `.env`.
 
-## Variables de entorno
+## Ciclo de vida
 
-Ver archivo `.env`:
+| Paso | Comando          | Descripción                                                                                         |
+| ---- | ---------------- | --------------------------------------------------------------------------------------------------- |
+| 1    | `make up`        | Levanta Postgres/Redis vía Docker Compose.                                                          |
+| 2    | `make db-init`   | Ejecuta `init.sql`: crea esquema, roles y funciones.                                                |
+| 3    | `make db-seed`   | Aplica `seed.sql`: catálogos, usuarios demo, invitaciones, métricas.                                |
+| 4    | `make db-health` | Queries de validación (`SELECT postgis_version()`, conteos de catálogos, existencia de superadmin). |
+| 5    | `make db-psql`   | Acceso interactivo usando `DATABASE_URL`.                                                           |
+| -    | `make db-reset`  | Equivalente a `dropdb` + init + seed.                                                               |
+| -    | `make reset-all` | Baja contenedores, borra volúmenes y reconstruye todo.                                              |
 
--   `PGSUPER`, `PGSUPER_PASS`, `PGHOST`, `PGPORT`
--   `DBNAME`, `DBUSER`, `DBPASS`
--   `DATABASE_URL` (cadena completa)
+## Componentes del esquema
 
----
+### Catálogos parametrizables
 
-## Comandos principales (`Makefile`)
+Tablas como `user_statuses`, `alert_channels`, `alert_levels`, `service_statuses`, `org_roles`, etc. Se gestionan vía los endpoints `/v1/superadmin/catalogs/*`. Las funciones `heartguard.sp_catalog_*` estandarizan CRUD y evitan el uso de enums fijos.
 
-| Comando          | Descripción                                                |
-| ---------------- | ---------------------------------------------------------- |
-| `make db-init`   | Inicializar la base de datos                               |
-| `make db-seed`   | Cargar datos iniciales (catálogos, roles, superadmin demo) |
-| `make db-health` | Verificar estado (healthcheck básico y conteos)            |
-| `make db-reset`  | Resetear base de datos                                     |
-| `make db-psql`   | Abrir cliente interactivo                                  |
+### Seguridad y multi-tenant
 
----
+-   `roles`, `permissions`, `role_permission`
+-   `users`, `user_role`
+-   `organizations`, `org_roles`, `user_org_membership`
+-   Refresh tokens (`refresh_tokens`) y API keys (`api_keys`, `api_key_permission`)
 
-## Usuario Superadmin de Demo
+### Dominio clínico demo
 
-Se incluye automáticamente al ejecutar el seed:
+Incluye entidades base (`patients`, `care_teams`, `caregiver_patient`, `alert_types`, `event_types`) útiles para métricas y vistas futuras.
 
--   **Email:** `admin@heartguard.com`
--   **Password:** `Admin#2025`
--   **Rol:** `superadmin`
--   **Estado:** `activo`
+### Auditoría y métricas
 
-La contraseña se genera en cada seed con pgcrypto/bcrypt para garantizar acceso estable en entornos de demo.
+-   `audit_logs` almacena eventos generados por el backend (`ORG_CREATE`, `APIKEY_CREATE`, etc.).
+-   Procedimientos `sp_metrics_*` devuelven agregados para el dashboard (overview, actividad reciente, breakdowns).
 
----
+## Seeds incluidos
 
-## Notas
+`seed.sql` crea un entorno demo completo:
 
--   No usar este usuario en producción (solo para demo).
--   Para cambiar credenciales en producción, ajustar `seed.sql`.
--   PostGIS es requerido aunque algunas tablas iniciales no lo usen (compatibilidad futura).
--   Los catálogos y roles utilizan `ON CONFLICT` para seeds idempotentes.
--   Las entradas de catálogos deben incluir `label` (obligatorio) porque es lo que se muestra en los selectores de la app.
+-   Usuario superadmin (`admin@heartguard.com` / `Admin#2025`).
+-   Organizaciones (`FAM-001`, `CLIN-001`, `OPS-001`).
+-   Usuarios adicionales con distintos roles globales y estados (`active`, `pending`, `blocked`).
+-   Invitaciones demo en varios estados (pendiente, usada, revocada).
+-   Servicios y health checks históricos.
+-   Auditoría de los últimos días.
+
+La semilla es idempotente: usa `ON CONFLICT DO NOTHING` o actualizaciones para asegurar que re-ejecutar `make db-seed` mantenga la coherencia.
+
+## Consultas útiles
+
+```sql
+-- Catálogo de roles de organización
+SELECT code, label FROM heartguard.org_roles ORDER BY code;
+
+-- Usuarios y roles globales
+SELECT u.email, r.name
+FROM users u
+JOIN user_role ur ON ur.user_id = u.id
+JOIN roles r ON r.id = ur.role_id;
+
+-- Auditoría reciente
+SELECT action, entity, ts FROM audit_logs ORDER BY ts DESC LIMIT 20;
+
+-- Tokens de invitación pendientes
+SELECT token, expires_at FROM org_invitations WHERE used_at IS NULL AND revoked_at IS NULL;
+```
+
+## Health check
+
+`make db-health` ejecuta:
+
+-   `SELECT 1` (ping general).
+-   `SHOW search_path` (debe incluir `heartguard`).
+-   `SELECT postgis_version();` (verifica extensión).
+-   Conteos de catálogos (`roles`, `permissions`, `user_statuses`, `alert_levels`).
+-   Verificación del usuario `admin@heartguard.com`.
+
+Si alguna consulta falla, el comando devuelve un error (`ON_ERROR_STOP=1`).
+
+## Usuario superadmin demo
+
+-   Email: `admin@heartguard.com`
+-   Password: `Admin#2025`
+-   Rol global: `superadmin`
+
+Se crea/actualiza en cada seed. Modifica la sección correspondiente de `seed.sql` para cambiar credenciales en PRODUCCIÓN.
+
+## Buenas prácticas
+
+-   Mantén `.env` fuera de control de versiones; usa `.env.example` como referencia.
+-   Para integraciones CI/CD, considera dividir `init.sql` en migraciones incrementales.
+-   PostGIS está habilitado desde el inicio para evitar migraciones posteriores aunque no todas las tablas lo utilicen aún.
+-   Controla los tiempos de espera (`statement_timeout`, `idle_in_transaction_session_timeout`) que `init.sql` establece al final del script.
+
+## Problemas comunes
+
+-   **`permission denied` al ejecutar seeds:** confirma que `PGSUPER` tenga privilegios sobre la base o reconstruye con `make reset-all`.
+-   **`sp_catalog_resolve` arroja excepción:** el catálogo no existe; revisa la lista soportada en `init.sql`.
+-   **`postgis_version()` falla:** reinstala extensión dentro del contenedor: `docker compose exec postgres psql -c 'CREATE EXTENSION postgis;'`.

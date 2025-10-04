@@ -1,145 +1,127 @@
 # HeartGuard
 
-## Descripción
+Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositorio combina infraestructura Docker para la base de datos, una API de superadministración escrita en Go y un panel web estático servido por el mismo backend.
 
-Proyecto de demo: plataforma de monitoreo y alertas de riesgo cardiovascular.
+## Vista general
 
-Este monorepo contiene:
-
--   **Base de datos:** PostgreSQL + PostGIS
--   **Backend Superadmin:** Go (sirve también el panel web HTML/CSS/JS)
--   **Redis:** sesiones, refresh tokens y ratelimiting
+-   **Repositorio monolítico:** servicios de datos (`db/`), backend (`backend/`) y assets web (`web/`).
+-   **Base de datos:** PostgreSQL 14 + PostGIS, esquema y seeds listos para demos.
+-   **Backend:** API REST + panel estático construido en Go 1.22, autenticación JWT y rate limiting en Redis.
+-   **Infra local:** `docker-compose` provee Postgres y Redis; el backend corre con `make dev`.
 
 ## Estructura
 
--   `db/` — SQL de inicialización y semillas
--   `backend/` — Superadmin API en Go + panel web
--   `docker-compose.yml` — Postgres + Redis para desarrollo
--   `Makefile` — Comandos DB + backend (unificado)
--   `.env.example` — Variables de entorno de ejemplo
--   `.env` — Copia editable (**NO subir a git**)
+-   `db/` — scripts de inicialización (`init.sql`), seeds (`seed.sql`) y notas de operación.
+-   `backend/` — API REST de superadministración + servidor de archivos estáticos bajo `/web`.
+-   `web/` — HTML/CSS/JS que consume la API (servido por el backend).
+-   `docker-compose.yml` — Postgres + Redis para desarrollo.
+-   `Makefile` — wrappers para migraciones, seeds y tareas de Go.
+-   `.env.example` — plantilla con todas las variables necesarias para clonar el entorno.
 
-## Requisitos
+## Requisitos previos
 
--   Docker + Docker Compose
--   Make
--   Go 1.22+
--   (Opcional) psql y jq
+-   Docker y Docker Compose v2.
+-   GNU Make.
+-   Go `1.22+` (para compilar/ejecutar el backend localmente).
+-   Opcional: `psql`, `openssl`, `curl`, `jq`.
 
-## Variables de entorno (principales)
+## Variables de entorno
 
-**Base de datos:**
+Duplica `.env.example` a `.env` y ajusta según tu entorno.
 
--   `PGSUPER`, `PGSUPER_PASS`, `PGHOST`, `PGPORT`
--   `DBNAME`, `DBUSER`, `DBPASS`
--   `DATABASE_URL`
+| Categoría             | Claves                                                | Comentarios                                                                |
+| --------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
+| Postgres (superuser)  | `PGSUPER`, `PGSUPER_PASS`, `PGHOST`, `PGPORT`         | Usados por `make db-*` para crear la base.                                 |
+| Postgres (app)        | `DBNAME`, `DBUSER`, `DBPASS`, `DATABASE_URL`          | `DATABASE_URL` se utiliza tanto por el backend como por scripts de health. |
+| Backend/HTTP          | `ENV`, `HTTP_ADDR`                                    | `ENV` admite `dev` o `prod`; el valor controla logging.                    |
+| Auth JWT              | `JWT_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | El secreto debe tener ≥32 bytes en producción.                             |
+| Redis & Rate limiting | `REDIS_URL`, `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`     | Redis es obligatorio: refresh tokens y rate limiting por IP/endpoint.      |
 
-**Backend / Auth / Redis:**
+## Puesta en marcha
 
--   `ENV` (`dev`|`prod`)
--   `HTTP_ADDR` (ej: `:8080`)
--   `JWT_SECRET`
--   `ACCESS_TOKEN_TTL` (ej: `15m`)
--   `REFRESH_TOKEN_TTL` (ej: `720h`)
--   `REDIS_URL` (ej: `redis://localhost:6379/0`)
--   `RATE_LIMIT_RPS` (ej: `10`)
--   `RATE_LIMIT_BURST` (ej: `20`)
-
-> **Nota:** La autenticación demo fue eliminada. Ya no se usa `X-Demo-Superadmin` ni tokens fijos.
-
-## Pasos desde cero
-
-1. **Variables:**
+1. **Preparar variables:**
     ```sh
     cp .env.example .env
-    nano .env
+    # edita con tus credenciales
     ```
-2. **Levantar servicios (Postgres + Redis):**
+2. **Arrancar Postgres + Redis:**
     ```sh
     make up
     ```
-3. **Inicializar DB:**
+3. **Esperar servicios y crear esquema:**
     ```sh
+    make compose-wait     # opcional, espera a Postgres/Redis dentro de Docker
     make db-init
     make db-seed
     make db-health
     ```
-4. **Ejecutar backend:**
+4. **Instalar dependencias Go y correr modo dev:**
     ```sh
-    make tidy # instala dependencias Go (solo primera vez)
+    make tidy             # solo la primera vez
     make dev
     ```
-5. **Probar health:**
+5. **Smoke tests manuales:**
     ```sh
     curl -i http://localhost:8080/healthz
-    ```
-6. **Abrir el panel web:**
-    ```
-    http://localhost:8080/
-    ```
-    Inicia sesión con un usuario real de la tabla `users`.
-
-## Flujo de autenticación (con curl)
-
-1. **Login:**
-
-    ```sh
     curl -s -X POST http://localhost:8080/v1/auth/login \
       -H "Content-Type: application/json" \
       -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
     ```
+6. **Panel web:** abre <http://localhost:8080/> y autentícate con usuarios de la tabla `users`.
 
-    ```sh
-    ACCESS_TOKEN="pega_access_token"
-    REFRESH_TOKEN="pega_refresh_token"
-    ```
+> La autenticación demo anterior (`X-Demo-Superadmin`) fue eliminada. Todo pasa por `/v1/auth/login` y JWT estándar.
 
-2. **Rutas protegidas (ejemplo listar orgs):**
+## Comandos clave del `Makefile`
 
-    ```sh
-    curl -s http://localhost:8080/v1/superadmin/organizations \
-      -H "Authorization: Bearer $ACCESS_TOKEN"
-    ```
+| Comando              | Acción                                                                         |
+| -------------------- | ------------------------------------------------------------------------------ |
+| `make up` / `down`   | Levanta o detiene los contenedores de Postgres y Redis.                        |
+| `make logs`          | Sigue los logs de Postgres (`logs-redis`, `logs-all` disponibles).             |
+| `make compose-wait`  | Espera a que Postgres/Redis estén listos (usa `pg_isready` y `redis-cli`).     |
+| `make db-init`       | Ejecuta `db/init.sql` con el superusuario configurado.                         |
+| `make db-seed`       | Ejecuta `db/seed.sql` con datos demo.                                          |
+| `make db-health`     | Checks rápidos: ping, `search_path`, conteos de catálogos.                     |
+| `make db-reset`      | Dropea y reconstruye la base (usa `db-drop`, `db-init`, `db-seed`).            |
+| `make tidy`          | `go mod tidy` dentro de `backend/`.                                            |
+| `make dev`           | Ejecuta `go run ./cmd/superadmin-api` con variables leídas de `.env`.          |
+| `make lint` / `test` | `go vet` y `go test ./...` respectivamente.                                    |
+| `make reset-all`     | Detiene contenedores, borra volúmenes, vuelve a levantar y re-inicializa todo. |
 
-3. **Refresh de access:**
+## API y panel web
 
-    ```sh
-    curl -s -X POST http://localhost:8080/v1/auth/refresh \
-      -H "Content-Type: application/json" \
-      -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
-    ```
+La documentación detallada de endpoints vive en `backend/README.md`. Resumen:
 
-4. **Logout (revoca refresh):**
-    ```sh
-    curl -s -X POST http://localhost:8080/v1/auth/logout \
-      -H "Content-Type: application/json" \
-      -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}" -i
-    ```
+-   Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`).
+-   Rutas públicas: `/healthz`, `/v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/logout`.
+-   Rutas protegidas (`Authorization: Bearer <token>` y rol superadmin): `/v1/superadmin/**`.
+-   Rate limiting: ventana de 1s con `RATE_LIMIT_RPS + RATE_LIMIT_BURST` por IP/método/path; encabezados `X-RateLimit-*` expuestos.
 
-## Comandos útiles (`Makefile`)
+## Base de datos
 
--   `make up` / `down` / `logs` → controla Docker (Postgres/Redis)
--   `make db-init` / `db-seed` / `db-reset` / `db-health` / `db-psql`
--   `make tidy` / `dev` / `run` / `build` → backend Go
--   `make reset-all` → limpia todo (Postgres, Redis, volúmenes, DB)
+`db/` contiene todo lo necesario para reconstruir la BD:
+
+-   `init.sql` crea el esquema `heartguard`, catálogos (reemplazando ENUMs) y tablas de RBAC, pacientes, invitaciones y auditoría.
+-   `seed.sql` llena catálogos, inserta usuarios demo (incluye superadmin `admin@heartguard.com / Admin#2025`), organizaciones, invitaciones, servicios y logs.
+-   `db/README.md` amplía sobre la estructura, roles y comandos avanzados.
+
+## Testing y validaciones
+
+-   `make test` ejecuta la suite de Go (`go test ./...`).
+-   `make lint` corre `go vet`.
+-   Para validar la conexión a la base, usa `make db-health` o `make db-psql`.
 
 ## Troubleshooting
 
--   **"DATABASE_URL is required":**
+-   **`DATABASE_URL is required` (al correr el backend):** exporta las variables de `.env` en la shell actual.
     ```sh
     export $(grep -v '^#' .env | xargs)
     ```
--   **"missing go.sum entry":**
-    ```sh
-    make tidy
-    ```
--   **Puerto 5432 ocupado:**
-    Cambia el mapeo en `docker-compose.yml` y actualiza `PGPORT`/`DATABASE_URL` en `.env`
--   **Ver logs de Postgres:**
-    ```sh
-    make logs
-    ```
--   **Generar raw_key (>= 32 chars):**
-    ```sh
-    openssl rand -hex 32
-    ```
+-   **Dependencias Go faltantes:** `make tidy` regenerará `go.sum`.
+-   **Puerto 5432 ocupado:** ajusta el mapeo `5432:5432` en `docker-compose.yml` y las variables `PGPORT`/`DATABASE_URL`.
+-   **Regenerar API key demo:** usa `openssl rand -hex 32` y pega el valor en `POST /v1/superadmin/api-keys`.
+-   **Redis no responde:** revisa `make logs-redis` y confirma que `REDIS_URL` use el puerto correcto (`6379`).
+
+## Próximos pasos sugeridos
+
+-   Revisa `backend/README.md` para flujos de autenticación, endpoints y estructuras de respuesta.
+-   Consulta `db/README.md` si necesitas extender el esquema o ajustar seeds para nuevos catálogos.

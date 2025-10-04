@@ -1,176 +1,186 @@
-# HeartGuard Superadmin API (Go)
+# HeartGuard Superadmin API
 
-## Descripción
+Servicio escrito en Go que expone el panel administrativo y la API de superadministración de HeartGuard. Autentica con JWT (access/refresh), aplica rate limiting con Redis y persiste datos en PostgreSQL/PostGIS.
 
-API de superadministración para HeartGuard: gestiona organizaciones, invitaciones, membresías, usuarios, API keys y auditoría.
+## Stack
 
--   **Autenticación real** con JWT (access + refresh).
--   **Redis** utilizado para refresh tokens y rate limiting.
--   **Panel web** (HTML/CSS/JS) servido directamente desde el backend.
+-   Go 1.22 (`chi` como router HTTP, `zap` para logging, `pgx` para Postgres y `go-redis` para Redis).
+-   Redis para cachear refresh tokens, listas de revocación (`jwt:deny:*`) y rate limiting per-IP.
+-   PostgreSQL 14 + PostGIS (`heartguard` schema).
+-   Archivos estáticos en `web/` servidos desde el mismo binario.
 
-## Requisitos
+## Requisitos y configuración
 
--   Go `1.22+`
--   PostgreSQL `14+` (inicializada con `db/init.sql` y `db/seed.sql`)
--   Redis (se levanta vía Docker Compose)
--   Variables configuradas en `.env` (ver `.env.example` y README raíz)
+| Variable            | Descripción                                                                     |
+| ------------------- | ------------------------------------------------------------------------------- |
+| `DATABASE_URL`      | DSN completo (usa `sslmode=disable` en local).                                  |
+| `HTTP_ADDR`         | Address:port que escucha el servidor (ej. `:8080`).                             |
+| `ENV`               | `dev` → logging verboso con `zap.NewDevelopment`, `prod` → `zap.NewProduction`. |
+| `JWT_SECRET`        | Clave simétrica (≥32 bytes recomendados).                                       |
+| `ACCESS_TOKEN_TTL`  | Duración del access token (`15m` por defecto).                                  |
+| `REFRESH_TOKEN_TTL` | Duración del refresh token (`720h` por defecto).                                |
+| `REDIS_URL`         | DSN `redis://host:port/db`.                                                     |
+| `RATE_LIMIT_RPS`    | Requests por segundo permitidos antes de aplicar burst.                         |
+| `RATE_LIMIT_BURST`  | Créditos extra por segundo.                                                     |
 
-## Variables principales
+Todas las variables se cargan en `config.Load()`. El proceso aborta si `DATABASE_URL`, `JWT_SECRET` o `REDIS_URL` están vacíos.
 
--   `DATABASE_URL`
--   `HTTP_ADDR`
--   `JWT_SECRET`
--   `ACCESS_TOKEN_TTL` (ej: `15m`)
--   `REFRESH_TOKEN_TTL` (ej: `720h`)
--   `REDIS_URL` (ej: `redis://localhost:6379/0`)
--   `RATE_LIMIT_RPS` / `RATE_LIMIT_BURST`
-
-## Setup rápido
+## Ejecutar en local
 
 ```sh
 cp .env.example .env
-nano .env
-make up         # levanta Postgres + Redis
+make up             # Postgres + Redis
 make db-init
 make db-seed
 make tidy
-make dev
+make dev            # go run ./cmd/superadmin-api
 ```
 
-**Reset completo** (Postgres + Redis + volúmenes + DB + datos seed):
+Comandos adicionales:
+
+-   `make lint` → `go vet ./...`
+-   `make test` → `go test ./...`
+-   `make build` → binario Linux (`GOOS=linux`, `GOARCH=amd64`).
+-   `make reset-all` → reinicia contenedores, volúmenes y re-ejecuta init/seed.
+
+## Health & observabilidad
+
+-   `GET /healthz` responde `200 OK` cuando `Repo.Ping` contra Postgres tiene éxito.
+-   Logging estructurado (JSON en prod) via `zap`. El logger se inyecta en handlers y auditoría.
+-   Rate limiting: middleware calcula `rps + burst` por IP/método/path; devuelve `429` y encabezados `Retry-After`, `X-RateLimit-*`.
+
+## Autenticación y sesiones
+
+1. **Login** `POST /v1/auth/login`
+
+    - Body `{"email":"admin@heartguard.com","password":"Admin#2025"}`.
+    - Respuesta `200` ⇒ `{access_token, refresh_token, user}`.
+    - Passwords comparados con bcrypt (`pgcrypto` los genera en los seeds).
+
+2. **Uso del token**
+
+    - Encabezado requerido: `Authorization: Bearer <access_token>`.
+    - Middleware `RequireSuperadmin` valida JWT, revisa deny-list en Redis y confirma rol `superadmin` en Postgres.
+
+3. **Rotación** `POST /v1/auth/refresh`
+
+    - Requiere `{"refresh_token":"..."}`.
+    - Revoca el refresh anterior, emite uno nuevo (rotación obligatoria) y un nuevo access token.
+
+4. **Logout** `POST /v1/auth/logout`
+    - Revoca el refresh token recibido (y lo borra de Redis).
+
+Redis se usa como caché de tokens (`rt:<sha256>`) pero el origen de verdad es la tabla `refresh_tokens` en Postgres.
+
+## Referencia de endpoints
+
+Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`). Los cuerpos usan JSON y `Content-Type: application/json`.
+
+### Autenticación
+
+| Método | Ruta               | Descripción                                            | Request body                      | Respuesta                                                                       |
+| ------ | ------------------ | ------------------------------------------------------ | --------------------------------- | ------------------------------------------------------------------------------- |
+| `POST` | `/v1/auth/login`   | Autentica por email/password (usuarios no bloqueados). | `{ "email": "", "password": "" }` | `200` ⇒ `{ access_token, refresh_token, user }`; `401` ⇒ `invalid_credentials`. |
+| `POST` | `/v1/auth/refresh` | Rota refresh token y devuelve nuevo par de tokens.     | `{ "refresh_token": "" }`         | `200` ⇒ `{ access_token, refresh_token }`; `401` ⇒ `invalid_token`.             |
+| `POST` | `/v1/auth/logout`  | Revoca refresh token activo.                           | `{ "refresh_token": "" }`         | `204 No Content`; `400` ⇒ `invalid_token`.                                      |
+
+### Organizaciones y membresías
+
+| Método   | Ruta                                                 | Descripción                        | Notas                                                                            |
+| -------- | ---------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------- |
+| `POST`   | `/v1/superadmin/organizations`                       | Crea organización.                 | Body `{code (uppercase,2-60), name (3-160)}`. Devuelve `201` con `Organization`. |
+| `GET`    | `/v1/superadmin/organizations`                       | Lista organizaciones (orden desc). | Query `limit` (1-200), `offset`.                                                 |
+| `GET`    | `/v1/superadmin/organizations/{id}`                  | Obtiene detalle.                   | `404` si no existe.                                                              |
+| `PATCH`  | `/v1/superadmin/organizations/{id}`                  | Actualiza code/name.               | Body parcial `{code?, name?}`.                                                   |
+| `DELETE` | `/v1/superadmin/organizations/{id}`                  | Elimina organización.              | `204` o `404`.                                                                   |
+| `GET`    | `/v1/superadmin/organizations/{id}/members`          | Lista miembros y roles.            | `limit/offset` soportados.                                                       |
+| `POST`   | `/v1/superadmin/organizations/{id}/members`          | Añade miembro con rol.             | Body `{user_id uuid, org_role_id uuid}`. `204` en éxito.                         |
+| `DELETE` | `/v1/superadmin/organizations/{id}/members/{userId}` | Remueve miembro.                   | `204` o `404`.                                                                   |
+
+### Invitaciones
+
+| Método   | Ruta                                         | Descripción                                   | Notas                                                                                                |
+| -------- | -------------------------------------------- | --------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET`    | `/v1/superadmin/invitations`                 | Lista invitaciones (estado calculado).        | Query opcional `org_id`, `limit`, `offset`.                                                          |
+| `POST`   | `/v1/superadmin/invitations`                 | Crea invitación y token.                      | Body `{org_id uuid, org_role_id uuid/code, email?, ttl_hours (1-720)}`. Devuelve `201` con detalles. |
+| `POST`   | `/v1/superadmin/invitations/{token}/consume` | Marca invitación como usada y crea membresía. | Body `{user_id uuid}`. `204` o `400 invalid_token`.                                                  |
+| `DELETE` | `/v1/superadmin/invitations/{id}`            | Revoca invitación.                            | `204` o `404`.                                                                                       |
+
+### Catálogos
+
+`catalog` admite: `user_statuses`, `signal_types`, `alert_channels`, `alert_levels`, `sexes`, `platforms`, `service_statuses`, `delivery_statuses`, `batch_export_statuses`, `org_roles`.
+
+| Método   | Ruta                                     | Descripción                                                               |
+| -------- | ---------------------------------------- | ------------------------------------------------------------------------- |
+| `GET`    | `/v1/superadmin/catalogs/{catalog}`      | Lista items (`limit/offset`).                                             |
+| `POST`   | `/v1/superadmin/catalogs/{catalog}`      | Crea item (`code`, `label`, `weight?`). `alert_levels` requiere `weight`. |
+| `PATCH`  | `/v1/superadmin/catalogs/{catalog}/{id}` | Actualiza campos indicados.                                               |
+| `DELETE` | `/v1/superadmin/catalogs/{catalog}/{id}` | Elimina item.                                                             |
+
+### Métricas y búsqueda
+
+| Método  | Ruta                                            | Descripción                                                           |
+| ------- | ----------------------------------------------- | --------------------------------------------------------------------- |
+| `GET`   | `/v1/superadmin/metrics/overview`               | Resumen de usuarios, organizaciones, invitaciones, etc.               |
+| `GET`   | `/v1/superadmin/metrics/activity`               | Últimas acciones (`limit` 1-50, default 8).                           |
+| `GET`   | `/v1/superadmin/metrics/users/status-breakdown` | Conteo por status de usuario.                                         |
+| `GET`   | `/v1/superadmin/metrics/invitations/breakdown`  | Conteo por estado de invitaciones.                                    |
+| `GET`   | `/v1/superadmin/users`                          | Búsqueda simple (`q` en email/nombre). Retorna memberships embebidos. |
+| `PATCH` | `/v1/superadmin/users/{id}/status`              | Cambia status (`active`, `blocked`, `pending`).                       |
+
+### API Keys
+
+| Método   | Ruta                                       | Descripción                                                                                                                                |
+| -------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `POST`   | `/v1/superadmin/api-keys`                  | Crea API key. Body `{label, raw_key (≥24 chars), expires_at?, owner_user_id?}`; calcula hash SHA-256 del `raw_key`. Devuelve `{id, hash}`. |
+| `POST`   | `/v1/superadmin/api-keys/{id}/permissions` | Reemplaza permisos asociados. Body `{permissions: [code]}`.                                                                                |
+| `DELETE` | `/v1/superadmin/api-keys/{id}`             | Revoca (marca `revoked_at`).                                                                                                               |
+| `GET`    | `/v1/superadmin/api-keys`                  | Lista API keys (`active_only` bool, `limit`, `offset`).                                                                                    |
+
+### Auditoría
+
+| Método | Ruta                        | Descripción                                                                                 |
+| ------ | --------------------------- | ------------------------------------------------------------------------------------------- |
+| `GET`  | `/v1/superadmin/audit-logs` | Lista logs ordenados desc. Filtros: `from` y/o `to` (RFC3339), `action`, `limit`, `offset`. |
+
+## Secuencia recomendada (smoke test)
 
 ```sh
-make reset-all
+ACCESS_TOKEN=$(curl -s -X POST http://localhost:8080/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@heartguard.com","password":"Admin#2025"}' \
+  | jq -r '.access_token')
+
+curl -s http://localhost:8080/v1/superadmin/organizations \
+  -H "Authorization: Bearer $ACCESS_TOKEN"
+
+RAW=$(openssl rand -hex 32)
+curl -s -X POST http://localhost:8080/v1/superadmin/api-keys \
+  -H "Authorization: Bearer $ACCESS_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d "{\"label\":\"demo\",\"raw_key\":\"$RAW\"}"
 ```
 
-## Health check
+## Manejador de errores
 
-```sh
-curl -i http://localhost:8080/healthz
-```
+-   Errores se devuelven como `{"code":"","message":"","fields":{}}`.
+-   Códigos comunes: `bad_request`, `validation_error`, `db_error`, `not_found`, `invalid_token`.
+-   Validaciones usan `go-playground/validator` con mensajes por campo (mapa `fields`).
 
-## Panel web
+## Auditoría integrada
 
--   **URL:** [http://localhost:8080/](http://localhost:8080/)
--   Login contra `/v1/auth/login`
--   Uso de Bearer en `/v1/superadmin/*`
--   Refresh automático en expiración
--   Logout revoca el refresh token
+-   Cada mutación exitosa registra eventos en `audit_logs` vía `audit.Write`.
+-   Eventos incluyen `actor_user_id`, `client_ip` (según `X-Forwarded-For`), acción (`ORG_CREATE`, `APIKEY_CREATE`, etc.) y detalles relevantes.
 
-## Autenticación
+## Pruebas y mantenimiento
 
-**Login:**
+-   `go test ./...` cubre repositorio y lógica auxiliar.
+-   Inyección de dependencias (`NewRepoWithPool`) facilita tests unitarios.
+-   Para depurar consultas, habilita logs de Postgres y usa `db-psql`.
 
-```http
-POST /v1/auth/login
-Body: {"email":"...","password":"..."}
-Respuesta: access_token, refresh_token, user
-```
+## FAQs
 
-**Refresh:**
-
-```http
-POST /v1/auth/refresh
-Body: {"refresh_token":"..."}
-Respuesta: access_token, refresh_token (rotados)
-```
-
--   Los refresh tokens se cachean con Redis usando "read-through" y "write-through". Si Redis no está disponible, la API cae automáticamente a PostgreSQL.
-
-**Logout:**
-
-```http
-POST /v1/auth/logout
-Body: {"refresh_token":"..."}
-Respuesta: 204 No Content
-```
-
-## Protección de rutas
-
-Todas las rutas bajo `/v1/superadmin` requieren:
-
-```
-Authorization: Bearer <access_token>
-```
-
-## Endpoints principales
-
--   **Organizaciones:** CRUD
--   **Invitaciones:** crear / consumir
--   **Miembros:** añadir / eliminar
--   **Usuarios:** listar / cambiar status
--   **API keys:** crear / asignar permisos / revocar / listar
--   **Auditoría:** listar logs (filtros: from, to, action)
-
-## Smoke test
-
-1. **Login:**
-
-    ```sh
-    curl -s -X POST http://localhost:8080/v1/auth/login \
-      -H "Content-Type: application/json" \
-      -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
-    ```
-
-    Guarda los tokens:
-
-    ```sh
-    ACCESS_TOKEN="..."
-    REFRESH_TOKEN="..."
-    ```
-
-2. **Listar organizaciones:**
-
-    ```sh
-    curl -s http://localhost:8080/v1/superadmin/organizations \
-      -H "Authorization: Bearer $ACCESS_TOKEN"
-    ```
-
-3. **Crear organización:**
-
-    ```sh
-    curl -s -X POST http://localhost:8080/v1/superadmin/organizations \
-      -H "Authorization: Bearer $ACCESS_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d '{"code":"FAM-TEST","name":"Familia Test"}'
-    ```
-
-4. **Auditoría:**
-
-    ```sh
-    curl -s http://localhost:8080/v1/superadmin/audit-logs \
-      -H "Authorization: Bearer $ACCESS_TOKEN"
-    ```
-
-5. **Crear API key:**
-
-    ```sh
-    RAW=$(openssl rand -hex 32)
-    curl -s -X POST http://localhost:8080/v1/superadmin/api-keys \
-      -H "Authorization: Bearer $ACCESS_TOKEN" \
-      -H "Content-Type: application/json" \
-      -d "{\"label\":\"demo\",\"raw_key\":\"$RAW\"}"
-    ```
-
-6. **Refresh:**
-
-    ```sh
-    curl -s -X POST http://localhost:8080/v1/auth/refresh \
-      -H "Content-Type: application/json" \
-      -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}"
-    ```
-
-7. **Logout:**
-    ```sh
-    curl -s -X POST http://localhost:8080/v1/auth/logout \
-      -H "Content-Type: application/json" \
-      -d "{\"refresh_token\":\"$REFRESH_TOKEN\"}" -i
-    ```
-
-## Troubleshooting
-
--   `invalid_credentials` → revisar email/password y que el usuario no esté bloqueado
--   `invalid token` en refresh/logout → token expirado o revocado
--   `DATABASE_URL is required` → `export $(grep -v '^#' .env | xargs)`
--   Dependencias Go → `make tidy`
--   Instalar jq en Ubuntu → `sudo apt install jq`
+-   **`invalid_credentials`**: password incorrecto o usuario con status `blocked`.
+-   **`invalid_token` en refresh/logout**: token expirado/rotado o ya revocado.
+-   **`DATABASE_URL is required`**: exporta variables antes de correr `make dev`.
+-   **`pq: catalogo no soportado`**: valida el slug enviado contra la lista de `catalogInfo`.
