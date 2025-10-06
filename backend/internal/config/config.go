@@ -59,12 +59,16 @@ func Load() (*Config, error) {
 }
 
 func getenv(k, def string) string {
-	if v := os.Getenv(k); v != "" { return v }
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
 	return def
 }
 
 func atoi(s string) (int, error) {
 	n, err := strconv.Atoi(s)
-	if err != nil { return 0, err }
+	if err != nil {
+		return 0, err
+	}
 	return n, nil
 }

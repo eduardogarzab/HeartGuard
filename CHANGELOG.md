@@ -4,7 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
--   Work in progress for upcoming features.
+### Changed
+
+-   Backend HTTP server ahora acepta únicamente conexiones desde localhost, bloqueando cualquier acceso remoto.
+-   Documentación y `.env.example` actualizados para reflejar el backend de administración cerrado.
 
 ## [0.2.0] - 2025-09-28
 

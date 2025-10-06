@@ -6,7 +6,7 @@ Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositori
 
 -   **Repositorio monolítico:** servicios de datos (`db/`), backend (`backend/`) y assets web (`web/`).
 -   **Base de datos:** PostgreSQL 14 + PostGIS, esquema y seeds listos para demos.
--   **Backend:** API REST + panel estático construido en Go 1.22, autenticación JWT y rate limiting en Redis.
+-   **Backend:** Panel administrativo cerrado (Go 1.22) con autenticación JWT y rate limiting en Redis, accesible únicamente desde localhost.
 -   **Infra local:** `docker-compose` provee Postgres y Redis; el backend corre con `make dev`.
 
 ## Estructura
@@ -60,13 +60,13 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
     make tidy             # solo la primera vez
     make dev
     ```
-5. **Smoke tests manuales:**
-    ```sh
+5. **Smoke tests manuales (ejecutados desde localhost):**
+   `sh
     curl -i http://localhost:8080/healthz
     curl -s -X POST http://localhost:8080/v1/auth/login \
-      -H "Content-Type: application/json" \
-      -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
-    ```
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
+    `
 6. **Panel web:** abre <http://localhost:8080/> y autentícate con usuarios de la tabla `users`.
 
 > La autenticación demo anterior (`X-Demo-Superadmin`) fue eliminada. Todo pasa por `/v1/auth/login` y JWT estándar.
@@ -89,12 +89,13 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 
 ## API y panel web
 
-La documentación detallada de endpoints vive en `backend/README.md`. Resumen:
+La documentación detallada de endpoints vive en `backend/README.md`, pero recuerda que ahora el backend sólo responde a peticiones hechas desde la propia máquina (`localhost`). Resumen:
 
 -   Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`).
--   Rutas públicas: `/healthz`, `/v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/logout`.
+-   Rutas públicas: `/healthz`, `/v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/logout`; todas requieren provenir de `127.0.0.1` o `::1`.
 -   Rutas protegidas (`Authorization: Bearer <token>` y rol superadmin): `/v1/superadmin/**`.
 -   Rate limiting: ventana de 1s con `RATE_LIMIT_RPS + RATE_LIMIT_BURST` por IP/método/path; encabezados `X-RateLimit-*` expuestos.
+-   Acceso restringido: el servidor rechaza cualquier origen que no sea localhost, evitando exposición pública accidental.
 
 ## Base de datos
 

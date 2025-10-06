@@ -74,7 +74,7 @@ Redis se usa como caché de tokens (`rt:<sha256>`) pero el origen de verdad es l
 
 ## Referencia de endpoints
 
-Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`). Los cuerpos usan JSON y `Content-Type: application/json`.
+Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`). Los cuerpos usan JSON y `Content-Type: application/json`. Todas las rutas sólo responden a peticiones realizadas desde localhost.
 
 ### Autenticación
 
@@ -146,6 +146,7 @@ Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`). Los cuerpos us
 ## Secuencia recomendada (smoke test)
 
 ```sh
+# Ejecuta estos comandos únicamente desde la misma máquina (localhost).
 ACCESS_TOKEN=$(curl -s -X POST http://localhost:8080/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@heartguard.com","password":"Admin#2025"}' \

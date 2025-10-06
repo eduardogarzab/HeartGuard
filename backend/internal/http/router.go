@@ -16,6 +16,7 @@ import (
 
 func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, rdb *redis.Client, h *superadmin.Handlers) http.Handler {
 	r := chi.NewRouter()
+	r.Use(authmw.LoopbackOnly(logger))
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(authmw.RateLimit(rdb, cfg.RateLimitRPS, cfg.RateLimitBurst))
 
