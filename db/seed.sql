@@ -54,6 +54,10 @@ INSERT INTO roles(name, description) VALUES
   ('ops','Operations/DevOps')
 ON CONFLICT (name) DO NOTHING;
 
+INSERT INTO system_settings (id, brand_name, support_email, primary_color, secondary_color, logo_url, contact_phone, default_locale, default_timezone, maintenance_mode, maintenance_message)
+VALUES (1, 'HeartGuard', 'support@heartguard.com', '#0ea5e9', '#1e293b', NULL, '+52 55 1234 5678', 'es-MX', 'America/Mexico_City', FALSE, NULL)
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO permissions(code, description) VALUES
   ('alerts.read','Ver alertas'),
   ('alerts.manage','Atender/cerrar alertas'),
@@ -130,6 +134,22 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO caregiver_relationship_types(code,label) VALUES
  ('parent','Padre/Madre'),('spouse','Esposo/a'),('sibling','Hermano/a'),
  ('child','Hijo/a'),('friend','Amigo/a')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO content_categories(code,label,color) VALUES
+  ('clinical_guides','Guías clínicas','#38bdf8'),
+  ('alert_protocols','Protocolos de alerta','#f97316'),
+  ('faq','Preguntas frecuentes','#22d3ee'),
+  ('education','Educación','#a855f7'),
+  ('communications','Comunicaciones','#f43f5e')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO content_statuses(code,label,weight) VALUES
+  ('draft','Borrador',10),
+  ('in_review','En revisión',20),
+  ('scheduled','Programado',30),
+  ('published','Publicado',40),
+  ('archived','Archivado',50)
 ON CONFLICT (code) DO NOTHING;
 
 -- =========================================================
@@ -287,6 +307,129 @@ SELECT '00000000-0000-0000-0000-00000000A103'::uuid,
        180,
        '2.4.1'
 WHERE NOT EXISTS (SELECT 1 FROM service_health WHERE id='00000000-0000-0000-0000-00000000A103'::uuid);
+
+-- Contenido editorial demo
+INSERT INTO content_items (id, title, category_id, status_id, author_user_id, summary, created_at, updated_at, published_at)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000101',
+    'Guía rápida de monitoreo post-operatorio',
+    (SELECT id FROM content_categories WHERE code='clinical_guides'),
+    (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+    'Checklist actualizado para pacientes en recuperación cardiovascular.',
+    NOW() - INTERVAL '330 days',
+    NOW() - INTERVAL '200 days',
+    NOW() - INTERVAL '327 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000102',
+    'Protocolos de triage cardiaco',
+    (SELECT id FROM content_categories WHERE code='alert_protocols'),
+    (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+    'Flujo para escalar alertas críticas en menos de cinco minutos.',
+    NOW() - INTERVAL '270 days',
+    NOW() - INTERVAL '40 days',
+    NOW() - INTERVAL '266 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000103',
+    'Preguntas frecuentes sobre telemetría domiciliaria',
+    (SELECT id FROM content_categories WHERE code='faq'),
+    (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
+    'Respuestas rápidas para cuidadores sobre dispositivos y soporte.',
+    NOW() - INTERVAL '210 days',
+    NOW() - INTERVAL '25 days',
+    NOW() - INTERVAL '205 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000104',
+    'Boletín educativo: manejo de hipertensión',
+    (SELECT id FROM content_categories WHERE code='education'),
+    (SELECT id FROM content_statuses WHERE code='scheduled'),
+    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+    'Campaña educativa para pacientes con seguimiento remoto.',
+    NOW() - INTERVAL '150 days',
+    NOW() - INTERVAL '7 days',
+    NOW() + INTERVAL '12 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000105',
+    'Script de seguimiento telefónico',
+    (SELECT id FROM content_categories WHERE code='communications'),
+    (SELECT id FROM content_statuses WHERE code='in_review'),
+    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+    'Guion para llamadas de verificación después de eventos de riesgo.',
+    NOW() - INTERVAL '110 days',
+    NOW() - INTERVAL '12 days',
+    NULL
+  ),
+  (
+    '00000000-0000-0000-0000-000000000106',
+    'Protocolo de cierre de alertas',
+    (SELECT id FROM content_categories WHERE code='alert_protocols'),
+    (SELECT id FROM content_statuses WHERE code='archived'),
+    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+    'Procedimiento histórico para cerrar alertas tras verificación manual.',
+    NOW() - INTERVAL '380 days',
+    NOW() - INTERVAL '320 days',
+    NOW() - INTERVAL '376 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000107',
+    'Guía de configuración para nuevos dispositivos',
+    (SELECT id FROM content_categories WHERE code='clinical_guides'),
+    (SELECT id FROM content_statuses WHERE code='draft'),
+    (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
+    'Procedimiento paso a paso para instalar sensores domiciliarios.',
+    NOW() - INTERVAL '45 days',
+    NOW() - INTERVAL '5 days',
+    NULL
+  ),
+  (
+    '00000000-0000-0000-0000-000000000108',
+    'Resumen semanal de incidencias',
+    (SELECT id FROM content_categories WHERE code='communications'),
+    (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+    'Resumen ejecutivo con insights del monitoreo semanal.',
+    NOW() - INTERVAL '20 days',
+    NOW() - INTERVAL '2 days',
+    NOW() - INTERVAL '18 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000109',
+    'Checklist pre-implante para dispositivos implantables',
+    (SELECT id FROM content_categories WHERE code='clinical_guides'),
+    (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+    'Evaluación previa a la implantación de sensores cardíacos.',
+    NOW() - INTERVAL '420 days',
+    NOW() - INTERVAL '260 days',
+    NOW() - INTERVAL '415 days'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO content_updates (id, content_id, editor_user_id, change_type, note, created_at)
+VALUES
+  ('00000000-0000-0000-0000-000000000201', '00000000-0000-0000-0000-000000000101', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'review', 'Se actualizó tabla de signos vitales.', NOW() - INTERVAL '320 days'),
+  ('00000000-0000-0000-0000-000000000202', '00000000-0000-0000-0000-000000000101', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'edit', 'Se añadió checklist quirúrgico.', NOW() - INTERVAL '210 days'),
+  ('00000000-0000-0000-0000-000000000203', '00000000-0000-0000-0000-000000000102', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Se incorporaron tiempos objetivo de respuesta.', NOW() - INTERVAL '60 days'),
+  ('00000000-0000-0000-0000-000000000204', '00000000-0000-0000-0000-000000000102', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'review', 'Validación operativa.', NOW() - INTERVAL '35 days'),
+  ('00000000-0000-0000-0000-000000000205', '00000000-0000-0000-0000-000000000103', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'edit', 'Se añadieron preguntas sobre conectividad.', NOW() - INTERVAL '120 days'),
+  ('00000000-0000-0000-0000-000000000206', '00000000-0000-0000-0000-000000000103', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'review', 'Clarificación sobre soporte técnico.', NOW() - INTERVAL '20 days'),
+  ('00000000-0000-0000-0000-000000000207', '00000000-0000-0000-0000-000000000104', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'edit', 'Actualización de gráficos de presión arterial.', NOW() - INTERVAL '30 days'),
+  ('00000000-0000-0000-0000-000000000208', '00000000-0000-0000-0000-000000000104', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'review', 'Se programó envío a pacientes.', NOW() - INTERVAL '5 days'),
+  ('00000000-0000-0000-0000-000000000209', '00000000-0000-0000-0000-000000000105', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Ajuste de tiempos de seguimiento.', NOW() - INTERVAL '28 days'),
+  ('00000000-0000-0000-0000-00000000020A', '00000000-0000-0000-0000-000000000105', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'review', 'Retroalimentación de calidad.', NOW() - INTERVAL '10 days'),
+  ('00000000-0000-0000-0000-00000000020B', '00000000-0000-0000-0000-000000000107', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'edit', 'Se añadió sección de calibración.', NOW() - INTERVAL '18 days'),
+  ('00000000-0000-0000-0000-00000000020C', '00000000-0000-0000-0000-000000000107', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'review', 'Checklist técnico.', NOW() - INTERVAL '6 days'),
+  ('00000000-0000-0000-0000-00000000020D', '00000000-0000-0000-0000-000000000108', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Consolidación de nuevos KPIs semanales.', NOW() - INTERVAL '15 days'),
+  ('00000000-0000-0000-0000-00000000020E', '00000000-0000-0000-0000-000000000108', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'review', 'Validación médica de cifras clave.', NOW() - INTERVAL '7 days'),
+  ('00000000-0000-0000-0000-00000000020F', '00000000-0000-0000-0000-000000000108', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Ajuste en narrativa ejecutiva.', NOW() - INTERVAL '2 days')
+ON CONFLICT (id) DO NOTHING;
 
 -- Auditoría demo (últimos 30 días)
 INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip, details)

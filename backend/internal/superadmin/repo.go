@@ -32,6 +32,7 @@ type Repo struct {
 	pool      pgPool
 	auditPool *pgxpool.Pool
 	redis     *redis.Client
+
 }
 
 func NewRepo(pool *pgxpool.Pool, redis *redis.Client) *Repo {
@@ -490,6 +491,321 @@ func (r *Repo) MetricsInvitationBreakdown(ctx context.Context) ([]models.Invitat
 	return out, nil
 }
 
+func (r *Repo) MetricsContentSnapshot(ctx context.Context) (*models.ContentMetrics, error) {
+	var (
+		totalsRaw     []byte
+		monthlyRaw    []byte
+		categoriasRaw []byte
+		statusRaw     []byte
+		roleRaw       []byte
+		cumulativeRaw []byte
+		topAuthorsRaw []byte
+		heatmapRaw    []byte
+	)
+	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_content_snapshot()`).
+		Scan(&totalsRaw, &monthlyRaw, &categoriasRaw, &statusRaw, &roleRaw, &cumulativeRaw, &topAuthorsRaw, &heatmapRaw); err != nil {
+		return nil, err
+	}
+	metrics := &models.ContentMetrics{}
+	if len(totalsRaw) > 0 {
+		if err := json.Unmarshal(totalsRaw, &metrics.Totals); err != nil {
+			return nil, err
+		}
+	}
+	if len(monthlyRaw) > 0 {
+		if err := json.Unmarshal(monthlyRaw, &metrics.Monthly); err != nil {
+			return nil, err
+		}
+	}
+	if len(categoriasRaw) > 0 {
+		if err := json.Unmarshal(categoriasRaw, &metrics.Categories); err != nil {
+			return nil, err
+		}
+	}
+	if len(statusRaw) > 0 {
+		if err := json.Unmarshal(statusRaw, &metrics.StatusTrends); err != nil {
+			return nil, err
+		}
+	}
+	if len(roleRaw) > 0 {
+		if err := json.Unmarshal(roleRaw, &metrics.RoleActivity); err != nil {
+			return nil, err
+		}
+	}
+	if len(cumulativeRaw) > 0 {
+		if err := json.Unmarshal(cumulativeRaw, &metrics.Cumulative); err != nil {
+			return nil, err
+		}
+	}
+	if len(topAuthorsRaw) > 0 {
+		if err := json.Unmarshal(topAuthorsRaw, &metrics.TopAuthors); err != nil {
+			return nil, err
+		}
+	}
+	if len(heatmapRaw) > 0 {
+		if err := json.Unmarshal(heatmapRaw, &metrics.UpdateHeatmap); err != nil {
+			return nil, err
+		}
+	}
+	if metrics.Monthly == nil {
+		metrics.Monthly = make([]models.ContentMonthlyPoint, 0)
+	}
+	if metrics.Categories == nil {
+		metrics.Categories = make([]models.ContentCategorySlice, 0)
+	}
+	if metrics.StatusTrends == nil {
+		metrics.StatusTrends = make([]models.ContentStatusTrend, 0)
+	}
+	if metrics.RoleActivity == nil {
+		metrics.RoleActivity = make([]models.ContentRoleActivity, 0)
+	}
+	if metrics.Cumulative == nil {
+		metrics.Cumulative = make([]models.ContentCumulativePoint, 0)
+	}
+	if metrics.TopAuthors == nil {
+		metrics.TopAuthors = make([]models.ContentTopAuthor, 0)
+	}
+	if metrics.UpdateHeatmap == nil {
+		metrics.UpdateHeatmap = make([]models.ContentUpdateHeatmapPoint, 0)
+	}
+	return metrics, nil
+}
+
+func (r *Repo) MetricsContentReport(ctx context.Context, filters models.ContentReportFilters) (*models.ContentReportResult, error) {
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 500 {
+		limit = 500
+	}
+	offset := filters.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_content_report($1, $2, $3, $4, $5, $6, $7)`,
+		filters.From,
+		filters.To,
+		filters.Status,
+		filters.Category,
+		filters.Search,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := &models.ContentReportResult{
+		Rows:   make([]models.ContentReportRow, 0, limit),
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	for rows.Next() {
+		var (
+			row          models.ContentReportRow
+			authorName   sql.NullString
+			authorEmail  sql.NullString
+			publishedAt  sql.NullTime
+			lastUpdateAt sql.NullTime
+			lastEditor   sql.NullString
+			totalCount   int
+		)
+		if err := rows.Scan(
+			&row.ID,
+			&row.Title,
+			&row.StatusCode,
+			&row.StatusLabel,
+			&row.CategoryCode,
+			&row.CategoryLabel,
+			&authorName,
+			&authorEmail,
+			&publishedAt,
+			&row.UpdatedAt,
+			&lastUpdateAt,
+			&lastEditor,
+			&row.Updates30d,
+			&totalCount,
+		); err != nil {
+			return nil, err
+		}
+		if authorName.Valid {
+			s := authorName.String
+			row.AuthorName = &s
+		}
+		if authorEmail.Valid {
+			s := authorEmail.String
+			row.AuthorEmail = &s
+		}
+		if publishedAt.Valid {
+			t := publishedAt.Time
+			row.PublishedAt = &t
+		}
+		if lastUpdateAt.Valid {
+			t := lastUpdateAt.Time
+			row.LastUpdateAt = &t
+		}
+		if lastEditor.Valid {
+			s := lastEditor.String
+			row.LastEditorName = &s
+		}
+		result.Rows = append(result.Rows, row)
+		result.Total = totalCount
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *Repo) MetricsOperationsReport(ctx context.Context, filters models.OperationsReportFilters) (*models.OperationsReportResult, error) {
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 500 {
+		limit = 500
+	}
+	offset := filters.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_operations_report($1, $2, $3, $4, $5)`,
+		filters.From,
+		filters.To,
+		filters.Action,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := &models.OperationsReportResult{
+		Rows:   make([]models.OperationsReportRow, 0, limit),
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	for rows.Next() {
+		var (
+			row        models.OperationsReportRow
+			firstEvent sql.NullTime
+			lastEvent  sql.NullTime
+			totalCount int
+		)
+		if err := rows.Scan(
+			&row.Action,
+			&row.TotalEvents,
+			&row.UniqueUsers,
+			&row.UniqueEntities,
+			&firstEvent,
+			&lastEvent,
+			&totalCount,
+		); err != nil {
+			return nil, err
+		}
+		if firstEvent.Valid {
+			t := firstEvent.Time
+			row.FirstEvent = &t
+		}
+		if lastEvent.Valid {
+			t := lastEvent.Time
+			row.LastEvent = &t
+		}
+		result.Rows = append(result.Rows, row)
+		result.Total = totalCount
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (r *Repo) MetricsUserActivityReport(ctx context.Context, filters models.UserActivityReportFilters) (*models.UserActivityReportResult, error) {
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 500 {
+		limit = 500
+	}
+	offset := filters.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_users_report($1, $2, $3, $4, $5, $6)`,
+		filters.From,
+		filters.To,
+		filters.Status,
+		filters.Search,
+		limit,
+		offset,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := &models.UserActivityReportResult{
+		Rows:   make([]models.UserActivityReportRow, 0, limit),
+		Limit:  limit,
+		Offset: offset,
+	}
+
+	for rows.Next() {
+		var (
+			row          models.UserActivityReportRow
+			statusCode   sql.NullString
+			statusLabel  sql.NullString
+			firstAction  sql.NullTime
+			lastAction   sql.NullTime
+			totalCount   int
+		)
+		if err := rows.Scan(
+			&row.ID,
+			&row.Name,
+			&row.Email,
+			&statusCode,
+			&statusLabel,
+			&row.CreatedAt,
+			&firstAction,
+			&lastAction,
+			&row.ActionsCount,
+			&row.DistinctActions,
+			&row.Organizations,
+			&totalCount,
+		); err != nil {
+			return nil, err
+		}
+		if statusCode.Valid {
+			row.StatusCode = statusCode.String
+		}
+		if statusLabel.Valid {
+			row.StatusLabel = statusLabel.String
+		} else {
+			row.StatusLabel = row.StatusCode
+		}
+		if firstAction.Valid {
+			t := firstAction.Time
+			row.FirstAction = &t
+		}
+		if lastAction.Valid {
+			t := lastAction.Time
+			row.LastAction = &t
+		}
+		result.Rows = append(result.Rows, row)
+		result.Total = totalCount
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
 // ------------------------------
 // Memberships
 // ------------------------------
@@ -582,12 +898,23 @@ SELECT
 			)
 		) FILTER (WHERE o.id IS NOT NULL),
 		'[]'::jsonb
-	) AS memberships
+	) AS memberships,
+	COALESCE(
+		jsonb_agg(DISTINCT jsonb_build_object(
+			'role_id', gr.id,
+			'role_name', gr.name,
+			'description', gr.description,
+			'assigned_at', to_char(ur.assigned_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+		)) FILTER (WHERE gr.id IS NOT NULL),
+		'[]'::jsonb
+	) AS roles
 FROM users u
 JOIN user_statuses us ON us.id = u.user_status_id
 LEFT JOIN user_org_membership mum ON mum.user_id = u.id
 LEFT JOIN organizations o ON o.id = mum.org_id
 LEFT JOIN org_roles orl ON orl.id = mum.org_role_id
+LEFT JOIN user_role ur ON ur.user_id = u.id
+LEFT JOIN roles gr ON gr.id = ur.role_id
 WHERE ($1 = '' OR u.email ILIKE '%'||$1||'%' OR u.name ILIKE '%'||$1||'%')
 GROUP BY u.id, u.name, u.email, us.code, u.created_at
 ORDER BY u.created_at DESC
@@ -603,12 +930,18 @@ LIMIT $2 OFFSET $3
 		var (
 			m             models.User
 			membershipsRaw []byte
+			rolesRaw       []byte
 		)
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &m.CreatedAt, &membershipsRaw); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &m.CreatedAt, &membershipsRaw, &rolesRaw); err != nil {
 			return nil, err
 		}
 		if len(membershipsRaw) > 0 {
 			if err := json.Unmarshal(membershipsRaw, &m.Memberships); err != nil {
+				return nil, err
+			}
+		}
+		if len(rolesRaw) > 0 {
+			if err := json.Unmarshal(rolesRaw, &m.Roles); err != nil {
 				return nil, err
 			}
 		}
@@ -624,6 +957,387 @@ SET user_status_id = (SELECT id FROM user_statuses WHERE code=$2)
 WHERE id=$1
 `, userID, userStatusCode)
 	return err
+}
+
+// ------------------------------
+// Roles
+// ------------------------------
+
+func (r *Repo) ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id::text, name, description, created_at
+FROM roles
+ORDER BY created_at DESC
+LIMIT $1 OFFSET $2
+`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Role, 0, limit)
+	for rows.Next() {
+		var (
+			item models.Role
+			desc sql.NullString
+		)
+		if err := rows.Scan(&item.ID, &item.Name, &desc, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			s := desc.String
+			item.Description = &s
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreateRole(ctx context.Context, name string, description *string) (*models.Role, error) {
+	var (
+		item models.Role
+		desc sql.NullString
+	)
+	var descParam any
+	if description != nil {
+		descParam = *description
+	}
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO roles (name, description)
+VALUES ($1, NULLIF($2, ''))
+RETURNING id::text, name, description, created_at
+`, name, descParam).Scan(&item.ID, &item.Name, &desc, &item.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		s := desc.String
+		item.Description = &s
+	}
+	return &item, nil
+}
+
+func (r *Repo) UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error) {
+	setClauses := make([]string, 0, 2)
+	args := make([]any, 0, 3)
+	idx := 2
+	if name != nil {
+		setClauses = append(setClauses, fmt.Sprintf("name = $%d", idx))
+		args = append(args, *name)
+		idx++
+	}
+	if description != nil {
+		setClauses = append(setClauses, fmt.Sprintf("description = NULLIF($%d, '')", idx))
+		args = append(args, *description)
+		idx++
+	}
+	if len(setClauses) == 0 {
+		var (
+			item models.Role
+			desc sql.NullString
+		)
+		err := r.pool.QueryRow(ctx, `SELECT id::text, name, description, created_at FROM roles WHERE id = $1`, id).
+			Scan(&item.ID, &item.Name, &desc, &item.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			s := desc.String
+			item.Description = &s
+		}
+		return &item, nil
+	}
+	args = append([]any{id}, args...)
+	query := fmt.Sprintf(`
+UPDATE roles
+SET %s
+WHERE id = $1
+RETURNING id::text, name, description, created_at
+`, strings.Join(setClauses, ", "))
+	var (
+		item models.Role
+		desc sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, query, args...).Scan(&item.ID, &item.Name, &desc, &item.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		s := desc.String
+		item.Description = &s
+	}
+	return &item, nil
+}
+
+func (r *Repo) DeleteRole(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM roles WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListUserRoles(ctx context.Context, userID string) ([]models.UserRole, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT r.id::text, r.name, r.description, ur.assigned_at
+FROM user_role ur
+JOIN roles r ON r.id = ur.role_id
+WHERE ur.user_id = $1
+ORDER BY ur.assigned_at DESC
+`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.UserRole, 0, 4)
+	for rows.Next() {
+		var (
+			item models.UserRole
+			desc sql.NullString
+			assigned time.Time
+		)
+		if err := rows.Scan(&item.RoleID, &item.RoleName, &desc, &assigned); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			s := desc.String
+			item.Description = &s
+		}
+		assignedCopy := assigned
+		item.AssignedAt = &assignedCopy
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error) {
+	var (
+		item models.UserRole
+		desc sql.NullString
+		assigned time.Time
+	)
+	err := r.pool.QueryRow(ctx, `
+WITH upsert AS (
+	INSERT INTO user_role (user_id, role_id, assigned_at)
+	VALUES ($1, $2, NOW())
+	ON CONFLICT (user_id, role_id) DO UPDATE SET assigned_at = EXCLUDED.assigned_at
+	RETURNING role_id, assigned_at
+)
+SELECT r.id::text, r.name, r.description, u.assigned_at
+FROM upsert u
+JOIN roles r ON r.id = u.role_id
+`, userID, roleID).Scan(&item.RoleID, &item.RoleName, &desc, &assigned)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		s := desc.String
+		item.Description = &s
+	}
+	assignedCopy := assigned
+	item.AssignedAt = &assignedCopy
+	return &item, nil
+}
+
+func (r *Repo) RemoveRoleFromUser(ctx context.Context, userID, roleID string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM user_role WHERE user_id = $1 AND role_id = $2`, userID, roleID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// System settings
+// ------------------------------
+
+func (r *Repo) GetSystemSettings(ctx context.Context) (*models.SystemSettings, error) {
+	var (
+		settings models.SystemSettings
+		secondary sql.NullString
+		logo      sql.NullString
+		phone     sql.NullString
+		message   sql.NullString
+		updatedBy sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+SELECT
+  brand_name,
+  support_email,
+  primary_color,
+  secondary_color,
+  logo_url,
+  contact_phone,
+  default_locale,
+  default_timezone,
+  maintenance_mode,
+  maintenance_message,
+  updated_at,
+  updated_by::text
+FROM system_settings
+WHERE id = 1
+`).Scan(
+		&settings.BrandName,
+		&settings.SupportEmail,
+		&settings.PrimaryColor,
+		&secondary,
+		&logo,
+		&phone,
+		&settings.DefaultLocale,
+		&settings.DefaultTimezone,
+		&settings.MaintenanceMode,
+		&message,
+		&settings.UpdatedAt,
+		&updatedBy,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if secondary.Valid {
+		s := secondary.String
+		settings.SecondaryColor = &s
+	}
+	if logo.Valid {
+		s := logo.String
+		settings.LogoURL = &s
+	}
+	if phone.Valid {
+		s := phone.String
+		settings.ContactPhone = &s
+	}
+	if message.Valid {
+		s := message.String
+		settings.MaintenanceMessage = &s
+	}
+	if updatedBy.Valid {
+		s := updatedBy.String
+		settings.UpdatedBy = &s
+	}
+	return &settings, nil
+}
+
+func (r *Repo) UpdateSystemSettings(ctx context.Context, payload models.SystemSettingsInput, updatedBy *string) (*models.SystemSettings, error) {
+	var (
+		secondary interface{}
+		logo      interface{}
+		phone     interface{}
+		message   interface{}
+	)
+	if payload.SecondaryColor != nil {
+		secondary = *payload.SecondaryColor
+	}
+	if payload.LogoURL != nil {
+		logo = *payload.LogoURL
+	}
+	if payload.ContactPhone != nil {
+		phone = *payload.ContactPhone
+	}
+	if payload.MaintenanceMessage != nil {
+		message = *payload.MaintenanceMessage
+	}
+	var actor interface{}
+	if updatedBy != nil {
+		actor = *updatedBy
+	}
+	var (
+		updated       models.SystemSettings
+		outSecondary  sql.NullString
+		outLogo       sql.NullString
+		outPhone      sql.NullString
+		outMessage    sql.NullString
+		outUpdatedBy  sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+UPDATE system_settings SET
+  brand_name = $1,
+  support_email = $2,
+  primary_color = $3,
+  secondary_color = $4,
+  logo_url = $5,
+  contact_phone = $6,
+  default_locale = $7,
+  default_timezone = $8,
+  maintenance_mode = $9,
+  maintenance_message = $10,
+  updated_at = NOW(),
+  updated_by = $11
+WHERE id = 1
+RETURNING
+  brand_name,
+  support_email,
+  primary_color,
+  secondary_color,
+  logo_url,
+  contact_phone,
+  default_locale,
+  default_timezone,
+  maintenance_mode,
+  maintenance_message,
+  updated_at,
+  updated_by::text
+`,
+		payload.BrandName,
+		payload.SupportEmail,
+		payload.PrimaryColor,
+		secondary,
+		logo,
+		phone,
+		payload.DefaultLocale,
+		payload.DefaultTimezone,
+		payload.MaintenanceMode,
+		message,
+		actor,
+	).Scan(
+		&updated.BrandName,
+		&updated.SupportEmail,
+		&updated.PrimaryColor,
+		&outSecondary,
+		&outLogo,
+		&outPhone,
+		&updated.DefaultLocale,
+		&updated.DefaultTimezone,
+		&updated.MaintenanceMode,
+		&outMessage,
+		&updated.UpdatedAt,
+		&outUpdatedBy,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if outSecondary.Valid {
+		s := outSecondary.String
+		updated.SecondaryColor = &s
+	}
+	if outLogo.Valid {
+		s := outLogo.String
+		updated.LogoURL = &s
+	}
+	if outPhone.Valid {
+		s := outPhone.String
+		updated.ContactPhone = &s
+	}
+	if outMessage.Valid {
+		s := outMessage.String
+		updated.MaintenanceMessage = &s
+	}
+	if outUpdatedBy.Valid {
+		s := outUpdatedBy.String
+		updated.UpdatedBy = &s
+	}
+	return &updated, nil
 }
 
 // ------------------------------

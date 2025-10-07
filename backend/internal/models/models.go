@@ -64,6 +64,166 @@ type MetricsOverview struct {
 	RecentOperations    []OperationStat `json:"recent_operations"`
 }
 
+type ContentTotals struct {
+	Total                 int     `json:"total"`
+	Published             int     `json:"published"`
+	Drafts                int     `json:"drafts"`
+	InReview              int     `json:"in_review"`
+	Scheduled             int     `json:"scheduled"`
+	Archived              int     `json:"archived"`
+	Stale                 int     `json:"stale"`
+	ActiveAuthors         int     `json:"active_authors"`
+	UpdatesLast30Days     int     `json:"updates_last_30_days"`
+	AvgUpdateIntervalDays float64 `json:"avg_update_interval_days"`
+}
+
+type ContentMonthlyPoint struct {
+	Period    string `json:"period"`
+	Total     int    `json:"total"`
+	Published int    `json:"published"`
+	Drafts    int    `json:"drafts"`
+}
+
+type ContentCategorySlice struct {
+	Category string `json:"category"`
+	Label    string `json:"label"`
+	Count    int    `json:"count"`
+}
+
+type ContentStatusTrend struct {
+	Period string `json:"period"`
+	Status string `json:"status"`
+	Count  int    `json:"count"`
+}
+
+type ContentRoleActivity struct {
+	Role  string `json:"role"`
+	Count int    `json:"count"`
+}
+
+type ContentCumulativePoint struct {
+	Period string `json:"period"`
+	Count  int    `json:"count"`
+}
+
+type ContentTopAuthor struct {
+	UserID        string  `json:"user_id"`
+	Name          string  `json:"name"`
+	Email         *string `json:"email,omitempty"`
+	Published     int     `json:"published"`
+	LastPublished *string `json:"last_published,omitempty"`
+}
+
+type ContentUpdateHeatmapPoint struct {
+	Date  string `json:"date"`
+	Count int    `json:"count"`
+}
+
+type ContentMetrics struct {
+	Totals       ContentTotals                `json:"totals"`
+	Monthly      []ContentMonthlyPoint        `json:"monthly"`
+	Categories   []ContentCategorySlice       `json:"categories"`
+	StatusTrends []ContentStatusTrend         `json:"status_trends"`
+	RoleActivity []ContentRoleActivity        `json:"role_activity"`
+	Cumulative   []ContentCumulativePoint     `json:"cumulative"`
+	TopAuthors   []ContentTopAuthor           `json:"top_authors"`
+	UpdateHeatmap []ContentUpdateHeatmapPoint `json:"update_heatmap"`
+}
+
+type ContentReportFilters struct {
+	From      *time.Time `json:"from,omitempty"`
+	To        *time.Time `json:"to,omitempty"`
+	Status    *string    `json:"status,omitempty"`
+	Category  *string    `json:"category,omitempty"`
+	Search    *string    `json:"search,omitempty"`
+	Sort      string     `json:"sort,omitempty"`
+	Direction string     `json:"direction,omitempty"`
+	Limit     int        `json:"limit"`
+	Offset    int        `json:"offset"`
+}
+
+type ContentReportRow struct {
+	ID              string     `json:"id"`
+	Title           string     `json:"title"`
+	StatusCode      string     `json:"status_code"`
+	StatusLabel     string     `json:"status_label"`
+	CategoryCode    string     `json:"category_code"`
+	CategoryLabel   string     `json:"category_label"`
+	AuthorName      *string    `json:"author_name,omitempty"`
+	AuthorEmail     *string    `json:"author_email,omitempty"`
+	PublishedAt     *time.Time `json:"published_at,omitempty"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	LastUpdateAt    *time.Time `json:"last_update_at,omitempty"`
+	LastEditorName  *string    `json:"last_editor_name,omitempty"`
+	Updates30d      int        `json:"updates_30d"`
+}
+
+type ContentReportResult struct {
+	Rows   []ContentReportRow `json:"rows"`
+	Total  int                `json:"total"`
+	Limit  int                `json:"limit"`
+	Offset int                `json:"offset"`
+}
+
+type OperationsReportFilters struct {
+	From   *time.Time `json:"from,omitempty"`
+	To     *time.Time `json:"to,omitempty"`
+	Action *string    `json:"action,omitempty"`
+	Limit  int        `json:"limit"`
+	Offset int        `json:"offset"`
+}
+
+type OperationsReportRow struct {
+	Action         string     `json:"action"`
+	ActionLabel    string     `json:"action_label"`
+	TotalEvents    int        `json:"total_events"`
+	UniqueUsers    int        `json:"unique_users"`
+	UniqueEntities int        `json:"unique_entities"`
+	FirstEvent     *time.Time `json:"first_event,omitempty"`
+	LastEvent      *time.Time `json:"last_event,omitempty"`
+	AvgPerDay      float64    `json:"avg_per_day"`
+}
+
+type OperationsReportResult struct {
+	Rows       []OperationsReportRow `json:"rows"`
+	Total      int                   `json:"total"`
+	Limit      int                   `json:"limit"`
+	Offset     int                   `json:"offset"`
+	PeriodDays int                   `json:"period_days"`
+}
+
+type UserActivityReportFilters struct {
+	From   *time.Time `json:"from,omitempty"`
+	To     *time.Time `json:"to,omitempty"`
+	Status *string    `json:"status,omitempty"`
+	Search *string    `json:"search,omitempty"`
+	Limit  int        `json:"limit"`
+	Offset int        `json:"offset"`
+}
+
+type UserActivityReportRow struct {
+	ID               string     `json:"id"`
+	Name             string     `json:"name"`
+	Email            string     `json:"email"`
+	StatusCode       string     `json:"status_code"`
+	StatusLabel      string     `json:"status_label"`
+	CreatedAt        time.Time  `json:"created_at"`
+	FirstAction      *time.Time `json:"first_action,omitempty"`
+	LastAction       *time.Time `json:"last_action,omitempty"`
+	ActionsCount     int        `json:"actions_count"`
+	DistinctActions  int        `json:"distinct_actions"`
+	Organizations    int        `json:"organizations"`
+	AvgActionsPerDay float64    `json:"avg_actions_per_day"`
+}
+
+type UserActivityReportResult struct {
+	Rows       []UserActivityReportRow `json:"rows"`
+	Total      int                     `json:"total"`
+	Limit      int                     `json:"limit"`
+	Offset     int                     `json:"offset"`
+	PeriodDays int                     `json:"period_days"`
+}
+
 type User struct {
 	ID          string           `json:"id"`
 	Name        string           `json:"name"`
@@ -71,6 +231,22 @@ type User struct {
 	Status      string           `json:"status"`
 	CreatedAt   time.Time        `json:"created_at"`
 	Memberships []UserMembership `json:"memberships"`
+	Roles       []UserRole       `json:"roles"`
+}
+
+type Role struct {
+	ID          string     `json:"id"`
+	Name        string     `json:"name"`
+	Description *string    `json:"description,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	Permissions []string   `json:"permissions,omitempty"`
+}
+
+type UserRole struct {
+	RoleID      string     `json:"role_id"`
+	RoleName    string     `json:"role_name"`
+	Description *string    `json:"description,omitempty"`
+	AssignedAt  *time.Time `json:"assigned_at,omitempty"`
 }
 
 type APIKey struct {
@@ -127,4 +303,32 @@ type ActivityEntry struct {
 	UserID     *string           `json:"user_id,omitempty"`
 	ActorEmail *string           `json:"actor_email,omitempty"`
 	Details    map[string]any    `json:"details,omitempty"`
+}
+
+type SystemSettings struct {
+	BrandName          string     `json:"brand_name"`
+	SupportEmail       string     `json:"support_email"`
+	PrimaryColor       string     `json:"primary_color"`
+	SecondaryColor     *string    `json:"secondary_color,omitempty"`
+	LogoURL            *string    `json:"logo_url,omitempty"`
+	ContactPhone       *string    `json:"contact_phone,omitempty"`
+	DefaultLocale      string     `json:"default_locale"`
+	DefaultTimezone    string     `json:"default_timezone"`
+	MaintenanceMode    bool       `json:"maintenance_mode"`
+	MaintenanceMessage *string    `json:"maintenance_message,omitempty"`
+	UpdatedAt          time.Time  `json:"updated_at"`
+	UpdatedBy          *string    `json:"updated_by,omitempty"`
+}
+
+type SystemSettingsInput struct {
+	BrandName          string  `json:"brand_name"`
+	SupportEmail       string  `json:"support_email"`
+	PrimaryColor       string  `json:"primary_color"`
+	SecondaryColor     *string `json:"secondary_color,omitempty"`
+	LogoURL            *string `json:"logo_url,omitempty"`
+	ContactPhone       *string `json:"contact_phone,omitempty"`
+	DefaultLocale      string  `json:"default_locale"`
+	DefaultTimezone    string  `json:"default_timezone"`
+	MaintenanceMode    bool    `json:"maintenance_mode"`
+	MaintenanceMessage *string `json:"maintenance_message,omitempty"`
 }

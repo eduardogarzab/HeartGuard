@@ -39,37 +39,42 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 
 ## Puesta en marcha
 
-1. **Preparar variables:**
+1. **Clonar el repositorio:**
+    ```sh
+    git clone https://github.com/eduardogarzab/HeartGuard.git
+    cd HeartGuard
+    ```
+2. **Preparar variables:**
     ```sh
     cp .env.example .env
     # edita con tus credenciales
     ```
-2. **Arrancar Postgres + Redis:**
+3. **Arrancar Postgres + Redis:**
     ```sh
     make up
     ```
-3. **Esperar servicios y crear esquema:**
+4. **Esperar servicios y crear esquema:**
     ```sh
     make compose-wait     # opcional, espera a Postgres/Redis dentro de Docker
     make db-init
     make db-seed
     make db-health
     ```
-4. **Instalar dependencias Go y correr modo dev:**
+5. **Instalar dependencias Go y correr modo dev:**
     ```sh
     make tidy             # solo la primera vez
     make dev
     ```
-5. **Smoke tests manuales (ejecutados desde localhost):**
+6. **Smoke tests manuales (ejecutados desde localhost):**
    `sh
-    curl -i http://localhost:8080/healthz
-    curl -s -X POST http://localhost:8080/v1/auth/login \
-        -H "Content-Type: application/json" \
-        -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
-    `
-6. **Panel web:** abre <http://localhost:8080/> y autentícate con usuarios de la tabla `users`.
+ curl -i http://localhost:8080/healthz
+ curl -s -X POST http://localhost:8080/v1/auth/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
+ `
+7. **Panel web:** abre <http://localhost:8080/> y autentícate con usuarios de la tabla `users`.
 
-> La autenticación demo anterior (`X-Demo-Superadmin`) fue eliminada. Todo pasa por `/v1/auth/login` y JWT estándar.
+* En caso de ejecutarlo en una VM remota, usa `ssh -L 8080:localhost:8080 usuario@ip_de_la_vm` para tunelizar el puerto.
 
 ## Comandos clave del `Makefile`
 

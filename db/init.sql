@@ -166,6 +166,22 @@ CREATE TABLE IF NOT EXISTS user_role (
   PRIMARY KEY(user_id, role_id)
 );
 
+CREATE TABLE IF NOT EXISTS system_settings (
+  id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  brand_name TEXT NOT NULL DEFAULT 'HeartGuard',
+  support_email TEXT NOT NULL DEFAULT 'support@example.com',
+  primary_color VARCHAR(16) NOT NULL DEFAULT '#0ea5e9',
+  secondary_color VARCHAR(16),
+  logo_url TEXT,
+  contact_phone TEXT,
+  default_locale VARCHAR(16) NOT NULL DEFAULT 'es-MX',
+  default_timezone VARCHAR(64) NOT NULL DEFAULT 'America/Mexico_City',
+  maintenance_mode BOOLEAN NOT NULL DEFAULT FALSE,
+  maintenance_message TEXT,
+  updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_by UUID REFERENCES users(id) ON DELETE SET NULL
+);
+
 CREATE TABLE IF NOT EXISTS organizations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code        VARCHAR(60) NOT NULL UNIQUE,
@@ -282,6 +298,8 @@ BEGIN
     WHEN 'delivery_statuses'    THEN table_name := 'delivery_statuses';
     WHEN 'batch_export_statuses'THEN table_name := 'batch_export_statuses';
     WHEN 'org_roles'            THEN table_name := 'org_roles';
+      WHEN 'content_categories'   THEN table_name := 'content_categories';
+      WHEN 'content_statuses'     THEN table_name := 'content_statuses';
   END CASE;
   IF table_name IS NULL THEN
     RAISE EXCEPTION 'Catalogo % no soportado', p_catalog;
@@ -794,6 +812,66 @@ CREATE TABLE IF NOT EXISTS service_health (
 );
 CREATE INDEX IF NOT EXISTS idx_service_health_service_time ON service_health(service_id, checked_at DESC);
 
+-- =========================================================
+-- Contenido editorial para panel (knowledge base)
+-- =========================================================
+CREATE TABLE IF NOT EXISTS content_categories (
+  id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code  VARCHAR(60) NOT NULL UNIQUE,
+  label VARCHAR(120) NOT NULL,
+  color VARCHAR(16)
+);
+
+CREATE TABLE IF NOT EXISTS content_statuses (
+  id     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code   VARCHAR(40) NOT NULL UNIQUE,
+  label  VARCHAR(80) NOT NULL,
+  weight INT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS content_items (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  title           TEXT NOT NULL,
+  category_id     UUID NOT NULL REFERENCES content_categories(id) ON DELETE RESTRICT,
+  status_id       UUID NOT NULL REFERENCES content_statuses(id) ON DELETE RESTRICT,
+  author_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
+  summary         TEXT,
+  created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
+  published_at    TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_content_items_category ON content_items(category_id);
+CREATE INDEX IF NOT EXISTS idx_content_items_status ON content_items(status_id);
+CREATE INDEX IF NOT EXISTS idx_content_items_author ON content_items(author_user_id);
+CREATE INDEX IF NOT EXISTS idx_content_items_created_at ON content_items(created_at DESC);
+
+CREATE TABLE IF NOT EXISTS content_updates (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content_id     UUID NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+  editor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  change_type    VARCHAR(40) NOT NULL,
+  note           TEXT,
+  created_at     TIMESTAMP NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_content_updates_content ON content_updates(content_id);
+CREATE INDEX IF NOT EXISTS idx_content_updates_created_at ON content_updates(created_at DESC);
+
+CREATE OR REPLACE FUNCTION touch_content_item()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE content_items
+     SET updated_at = NEW.created_at
+   WHERE id = NEW.content_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_content_updates_touch ON content_updates;
+CREATE TRIGGER trg_content_updates_touch
+AFTER INSERT ON content_updates
+FOR EACH ROW
+EXECUTE FUNCTION touch_content_item();
+
 -- Stored procedure para métricas del panel
 CREATE OR REPLACE FUNCTION heartguard.sp_metrics_overview()
 RETURNS TABLE (
@@ -924,6 +1002,523 @@ BEGIN
     s.total
   FROM aggregated s
   ORDER BY s.total DESC;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_content_snapshot()
+RETURNS TABLE (
+  totals jsonb,
+  monthly jsonb,
+  categories jsonb,
+  status_trends jsonb,
+  role_activity jsonb,
+  cumulative jsonb,
+  top_authors jsonb,
+  update_heatmap jsonb)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_totals jsonb := '{}'::jsonb;
+  v_monthly jsonb := '[]'::jsonb;
+  v_categories jsonb := '[]'::jsonb;
+  v_status_trends jsonb := '[]'::jsonb;
+  v_role_activity jsonb := '[]'::jsonb;
+  v_cumulative jsonb := '[]'::jsonb;
+  v_top_authors jsonb := '[]'::jsonb;
+  v_heatmap jsonb := '[]'::jsonb;
+BEGIN
+  WITH base AS (
+    SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE cs.code = 'published') AS published,
+      COUNT(*) FILTER (WHERE cs.code = 'draft') AS drafts,
+      COUNT(*) FILTER (WHERE cs.code = 'in_review') AS in_review,
+      COUNT(*) FILTER (WHERE cs.code = 'scheduled') AS scheduled,
+      COUNT(*) FILTER (WHERE cs.code = 'archived') AS archived,
+      COUNT(*) FILTER (WHERE ci.updated_at < NOW() - INTERVAL '45 days') AS stale
+    FROM heartguard.content_items ci
+    LEFT JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
+  ),
+  recent_updates AS (
+    SELECT COUNT(*) AS updates_last_30_days
+    FROM heartguard.content_updates cu
+    WHERE cu.created_at >= NOW() - INTERVAL '30 days'
+  ),
+  update_intervals AS (
+    SELECT
+      EXTRACT(EPOCH FROM (created_at - LAG(created_at) OVER (PARTITION BY content_id ORDER BY created_at))) / 86400.0 AS diff_days
+    FROM heartguard.content_updates
+    WHERE created_at >= NOW() - INTERVAL '180 days'
+  ),
+  active_authors AS (
+    SELECT COUNT(DISTINCT user_id) AS total_authors
+    FROM (
+      SELECT ci.author_user_id AS user_id
+      FROM heartguard.content_items ci
+      WHERE ci.author_user_id IS NOT NULL
+        AND ci.updated_at >= NOW() - INTERVAL '90 days'
+      UNION ALL
+      SELECT cu.editor_user_id AS user_id
+      FROM heartguard.content_updates cu
+      WHERE cu.editor_user_id IS NOT NULL
+        AND cu.created_at >= NOW() - INTERVAL '90 days'
+    ) all_authors
+  )
+  SELECT jsonb_build_object(
+           'total', COALESCE(b.total, 0),
+           'published', COALESCE(b.published, 0),
+           'drafts', COALESCE(b.drafts, 0),
+           'in_review', COALESCE(b.in_review, 0),
+           'scheduled', COALESCE(b.scheduled, 0),
+           'archived', COALESCE(b.archived, 0),
+           'stale', COALESCE(b.stale, 0),
+           'active_authors', COALESCE(aa.total_authors, 0),
+           'updates_last_30_days', COALESCE(ru.updates_last_30_days, 0),
+           'avg_update_interval_days', COALESCE((SELECT AVG(diff_days) FROM update_intervals WHERE diff_days IS NOT NULL AND diff_days >= 0), 0)
+         )
+  INTO v_totals
+  FROM base b
+  CROSS JOIN recent_updates ru
+  CROSS JOIN active_authors aa;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'period', to_char(month_bucket, 'YYYY-MM'),
+             'total', total_count,
+             'published', published_count,
+             'drafts', draft_count
+           )
+           ORDER BY month_bucket
+         ), '[]'::jsonb)
+    INTO v_monthly
+  FROM (
+    SELECT
+      date_trunc('month', ci.created_at) AS month_bucket,
+      COUNT(*) AS total_count,
+      COUNT(*) FILTER (WHERE cs.code = 'published') AS published_count,
+      COUNT(*) FILTER (WHERE cs.code IN ('draft', 'in_review')) AS draft_count
+    FROM heartguard.content_items ci
+    LEFT JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
+    WHERE ci.created_at >= NOW() - INTERVAL '12 months'
+    GROUP BY month_bucket
+    ORDER BY month_bucket
+  ) monthly_stats;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'category', category_stats.code,
+             'label', category_stats.label,
+             'count', category_stats.category_count
+           )
+           ORDER BY category_stats.category_count DESC, category_stats.label
+         ), '[]'::jsonb)
+    INTO v_categories
+  FROM (
+    SELECT
+      cc.code,
+      cc.label,
+      COUNT(*) AS category_count
+    FROM heartguard.content_items ci
+    JOIN heartguard.content_categories cc ON cc.id = ci.category_id
+    GROUP BY cc.code, cc.label
+  ) category_stats;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'period', to_char(period_bucket, 'YYYY-MM'),
+             'status', status_code,
+             'count', status_count
+           )
+           ORDER BY period_bucket, status_code
+         ), '[]'::jsonb)
+    INTO v_status_trends
+  FROM (
+    SELECT
+      date_trunc('month', COALESCE(ci.published_at, ci.updated_at)) AS period_bucket,
+      cs.code AS status_code,
+      COUNT(*) AS status_count
+    FROM heartguard.content_items ci
+    JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
+    WHERE COALESCE(ci.published_at, ci.updated_at) >= NOW() - INTERVAL '12 months'
+    GROUP BY period_bucket, cs.code
+  ) status_stats;
+
+  WITH recent_editor_activity AS (
+    SELECT cu.editor_user_id, cu.created_at
+    FROM heartguard.content_updates cu
+    WHERE cu.editor_user_id IS NOT NULL
+      AND cu.created_at >= NOW() - INTERVAL '90 days'
+  ), role_map AS (
+    SELECT ur.user_id, MIN(r.name) AS role_name
+    FROM heartguard.user_role ur
+    JOIN heartguard.roles r ON r.id = ur.role_id
+    GROUP BY ur.user_id
+  )
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'role', role_name,
+             'count', role_count
+           )
+           ORDER BY role_count DESC, role_name
+         ), '[]'::jsonb)
+    INTO v_role_activity
+  FROM (
+    SELECT
+      COALESCE(rm.role_name, 'Sin rol asignado') AS role_name,
+      COUNT(*) AS role_count
+    FROM recent_editor_activity rea
+    LEFT JOIN role_map rm ON rm.user_id = rea.editor_user_id
+    GROUP BY COALESCE(rm.role_name, 'Sin rol asignado')
+  ) role_stats;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'period', to_char(period_bucket, 'YYYY-MM'),
+             'count', cumulative_count
+           )
+           ORDER BY period_bucket
+         ), '[]'::jsonb)
+    INTO v_cumulative
+  FROM (
+    SELECT
+      period_bucket,
+      SUM(monthly_count) OVER (ORDER BY period_bucket) AS cumulative_count
+    FROM (
+      SELECT
+        date_trunc('month', COALESCE(ci.published_at, ci.created_at)) AS period_bucket,
+        COUNT(*) AS monthly_count
+      FROM heartguard.content_items ci
+      JOIN heartguard.content_statuses cs ON cs.id = ci.status_id AND cs.code = 'published'
+      WHERE COALESCE(ci.published_at, ci.created_at) >= NOW() - INTERVAL '18 months'
+      GROUP BY period_bucket
+      ORDER BY period_bucket
+    ) published_monthly
+  ) cumulative_stats;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'user_id', author_user_id,
+             'name', COALESCE(author_name, 'Sin autor'),
+             'email', author_email,
+             'published', published_count,
+             'last_published', CASE WHEN last_published_at IS NULL THEN NULL ELSE to_char(last_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') END
+           )
+           ORDER BY published_count DESC, last_published_at DESC
+         ), '[]'::jsonb)
+    INTO v_top_authors
+  FROM (
+    SELECT
+      ag.author_user_id::text AS author_user_id,
+      u.name AS author_name,
+      u.email AS author_email,
+      ag.published_count,
+      ag.last_published_at
+    FROM (
+      SELECT
+        ci.author_user_id,
+        COUNT(*) AS published_count,
+        MAX(COALESCE(ci.published_at, ci.updated_at)) AS last_published_at
+      FROM heartguard.content_items ci
+      JOIN heartguard.content_statuses cs ON cs.id = ci.status_id AND cs.code = 'published'
+      WHERE ci.author_user_id IS NOT NULL
+        AND COALESCE(ci.published_at, ci.updated_at) >= NOW() - INTERVAL '180 days'
+      GROUP BY ci.author_user_id
+      ORDER BY COUNT(*) DESC, MAX(COALESCE(ci.published_at, ci.updated_at)) DESC
+      LIMIT 6
+    ) ag
+    LEFT JOIN heartguard.users u ON u.id = ag.author_user_id
+  ) author_stats;
+
+  SELECT COALESCE(jsonb_agg(
+           jsonb_build_object(
+             'date', to_char(day_bucket, 'YYYY-MM-DD'),
+             'count', update_count
+           )
+           ORDER BY day_bucket
+         ), '[]'::jsonb)
+    INTO v_heatmap
+  FROM (
+    SELECT
+      date_trunc('day', cu.created_at) AS day_bucket,
+      COUNT(*) AS update_count
+    FROM heartguard.content_updates cu
+    WHERE cu.created_at >= NOW() - INTERVAL '30 days'
+    GROUP BY day_bucket
+    ORDER BY day_bucket
+  ) heatmap_stats;
+
+  totals := COALESCE(v_totals, '{}'::jsonb);
+  monthly := COALESCE(v_monthly, '[]'::jsonb);
+  categories := COALESCE(v_categories, '[]'::jsonb);
+  status_trends := COALESCE(v_status_trends, '[]'::jsonb);
+  role_activity := COALESCE(v_role_activity, '[]'::jsonb);
+  cumulative := COALESCE(v_cumulative, '[]'::jsonb);
+  top_authors := COALESCE(v_top_authors, '[]'::jsonb);
+  update_heatmap := COALESCE(v_heatmap, '[]'::jsonb);
+  RETURN NEXT;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_content_report(
+  p_from DATE DEFAULT NULL,
+  p_to DATE DEFAULT NULL,
+  p_status TEXT DEFAULT NULL,
+  p_category TEXT DEFAULT NULL,
+  p_search TEXT DEFAULT NULL,
+  p_limit INTEGER DEFAULT 100,
+  p_offset INTEGER DEFAULT 0)
+RETURNS TABLE (
+  content_id UUID,
+  title TEXT,
+  status_code TEXT,
+  status_label TEXT,
+  category_code TEXT,
+  category_label TEXT,
+  author_name TEXT,
+  author_email TEXT,
+  published_at TIMESTAMP,
+  updated_at TIMESTAMP,
+  last_update_at TIMESTAMP,
+  last_editor_name TEXT,
+  updates_30d INTEGER,
+  total_count INTEGER)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+  from_ts TIMESTAMP;
+  to_ts TIMESTAMP;
+BEGIN
+  IF p_from IS NOT NULL THEN
+    from_ts := date_trunc('day', p_from);
+  END IF;
+  IF p_to IS NOT NULL THEN
+    to_ts := date_trunc('day', p_to) + INTERVAL '1 day';
+  END IF;
+
+  RETURN QUERY
+  WITH filtered AS (
+    SELECT
+      ci.id,
+      ci.title,
+      cs.code AS status_code,
+      cs.label AS status_label,
+      cc.code AS category_code,
+      cc.label AS category_label,
+      au.name AS author_name,
+      au.email AS author_email,
+      ci.published_at,
+      ci.updated_at,
+      ci.summary
+    FROM heartguard.content_items ci
+    JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
+    JOIN heartguard.content_categories cc ON cc.id = ci.category_id
+    LEFT JOIN heartguard.users au ON au.id = ci.author_user_id
+    WHERE (from_ts IS NULL OR COALESCE(ci.published_at, ci.created_at) >= from_ts)
+      AND (to_ts IS NULL OR COALESCE(ci.published_at, ci.created_at) < to_ts)
+      AND (p_status IS NULL OR cs.code = p_status)
+      AND (p_category IS NULL OR cc.code = p_category)
+      AND (
+        p_search IS NULL OR p_search = ''
+        OR ci.title ILIKE '%' || p_search || '%'
+        OR COALESCE(ci.summary, '') ILIKE '%' || p_search || '%'
+      )
+  )
+  SELECT
+    f.id::uuid,
+    f.title::text,
+    f.status_code::text,
+    f.status_label::text,
+    f.category_code::text,
+    f.category_label::text,
+    f.author_name::text,
+    f.author_email::text,
+    f.published_at,
+    f.updated_at,
+    lu.last_update_at,
+    lu.last_editor_name::text,
+    COALESCE(uc.updates_30d, 0)::integer AS updates_30d,
+    COUNT(*) OVER()::integer AS total_count
+  FROM filtered f
+  LEFT JOIN LATERAL (
+    SELECT
+      cu.created_at AS last_update_at,
+      u.name AS last_editor_name
+    FROM heartguard.content_updates cu
+    LEFT JOIN heartguard.users u ON u.id = cu.editor_user_id
+    WHERE cu.content_id = f.id
+    ORDER BY cu.created_at DESC
+    LIMIT 1
+  ) lu ON true
+  LEFT JOIN LATERAL (
+    SELECT COUNT(*)::integer AS updates_30d
+    FROM heartguard.content_updates cu
+    WHERE cu.content_id = f.id
+      AND cu.created_at >= NOW() - INTERVAL '30 days'
+  ) uc ON true
+  ORDER BY
+    COALESCE(f.published_at, f.updated_at) DESC,
+    lower(f.title)
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_operations_report(
+  p_from DATE DEFAULT NULL,
+  p_to DATE DEFAULT NULL,
+  p_action TEXT DEFAULT NULL,
+  p_limit INTEGER DEFAULT 100,
+  p_offset INTEGER DEFAULT 0)
+RETURNS TABLE (
+  action TEXT,
+  total_events INTEGER,
+  unique_users INTEGER,
+  unique_entities INTEGER,
+  first_event TIMESTAMP,
+  last_event TIMESTAMP,
+  total_count INTEGER)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+  from_ts TIMESTAMP;
+  to_ts TIMESTAMP;
+  action_filter TEXT := NULLIF(p_action, '');
+BEGIN
+  IF p_from IS NOT NULL THEN
+    from_ts := date_trunc('day', p_from);
+  END IF;
+  IF p_to IS NOT NULL THEN
+    to_ts := date_trunc('day', p_to) + INTERVAL '1 day';
+  END IF;
+
+  RETURN QUERY
+  WITH filtered AS (
+    SELECT
+      a.action,
+      a.ts,
+      a.user_id,
+      a.entity_id
+    FROM heartguard.audit_logs a
+    WHERE (from_ts IS NULL OR a.ts >= from_ts)
+      AND (to_ts IS NULL OR a.ts < to_ts)
+      AND (action_filter IS NULL OR a.action = action_filter)
+  )
+  SELECT
+    f.action::text,
+    COUNT(*)::integer AS total_events,
+    COUNT(DISTINCT f.user_id)::integer AS unique_users,
+    COUNT(DISTINCT f.entity_id)::integer AS unique_entities,
+    MIN(f.ts) AS first_event,
+    MAX(f.ts) AS last_event,
+    COUNT(*) OVER()::integer AS total_count
+  FROM filtered f
+  GROUP BY f.action
+  ORDER BY total_events DESC, f.action
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_users_report(
+  p_from DATE DEFAULT NULL,
+  p_to DATE DEFAULT NULL,
+  p_status TEXT DEFAULT NULL,
+  p_search TEXT DEFAULT NULL,
+  p_limit INTEGER DEFAULT 100,
+  p_offset INTEGER DEFAULT 0)
+RETURNS TABLE (
+  user_id UUID,
+  name TEXT,
+  email TEXT,
+  status_code TEXT,
+  status_label TEXT,
+  created_at TIMESTAMP,
+  first_action TIMESTAMP,
+  last_action TIMESTAMP,
+  actions_count INTEGER,
+  distinct_actions INTEGER,
+  org_memberships INTEGER,
+  total_count INTEGER)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+  from_ts TIMESTAMP;
+  to_ts TIMESTAMP;
+  status_filter TEXT := NULLIF(p_status, '');
+  search_filter TEXT := NULLIF(p_search, '');
+BEGIN
+  IF p_from IS NOT NULL THEN
+    from_ts := date_trunc('day', p_from);
+  END IF;
+  IF p_to IS NOT NULL THEN
+    to_ts := date_trunc('day', p_to) + INTERVAL '1 day';
+  END IF;
+
+  RETURN QUERY
+  WITH logs AS (
+    SELECT
+      a.user_id,
+      a.action,
+      a.ts
+    FROM heartguard.audit_logs a
+    WHERE a.user_id IS NOT NULL
+      AND (from_ts IS NULL OR a.ts >= from_ts)
+      AND (to_ts IS NULL OR a.ts < to_ts)
+  ),
+  aggregated AS (
+    SELECT
+      l.user_id,
+      COUNT(*)::integer AS actions_count,
+      COUNT(DISTINCT l.action)::integer AS distinct_actions,
+      MIN(l.ts) AS first_action,
+      MAX(l.ts) AS last_action
+    FROM logs l
+    GROUP BY l.user_id
+  ),
+  candidates AS (
+    SELECT u.id
+    FROM heartguard.users u
+    WHERE (from_ts IS NULL OR u.created_at >= from_ts)
+      AND (to_ts IS NULL OR u.created_at < to_ts)
+    UNION
+    SELECT agg.user_id
+    FROM aggregated agg
+  ),
+  memberships AS (
+    SELECT uom.user_id, COUNT(DISTINCT uom.org_id)::integer AS org_count
+    FROM heartguard.user_org_membership uom
+    GROUP BY uom.user_id
+  )
+  SELECT
+    u.id,
+    u.name::text,
+    u.email::text,
+    us.code::text,
+    us.label::text,
+    u.created_at,
+    agg.first_action,
+    agg.last_action,
+    COALESCE(agg.actions_count, 0)::integer,
+    COALESCE(agg.distinct_actions, 0)::integer,
+    COALESCE(m.org_count, 0)::integer,
+    COUNT(*) OVER()::integer AS total_count
+  FROM candidates c
+  JOIN heartguard.users u ON u.id = c.id
+  LEFT JOIN aggregated agg ON agg.user_id = u.id
+  LEFT JOIN heartguard.user_statuses us ON us.id = u.user_status_id
+  LEFT JOIN memberships m ON m.user_id = u.id
+  WHERE (status_filter IS NULL OR us.code = status_filter)
+    AND (
+      search_filter IS NULL OR search_filter = ''
+      OR u.name ILIKE '%' || search_filter || '%'
+      OR u.email ILIKE '%' || search_filter || '%'
+    )
+  ORDER BY COALESCE(agg.actions_count, 0) DESC, u.created_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
 END;
 $$;
 

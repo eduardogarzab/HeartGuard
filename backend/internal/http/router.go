@@ -60,12 +60,31 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, 
 			r.Delete("/{catalog}/{id}", h.DeleteCatalogItem)
 		})
 
+		s.Route("/roles", func(r chi.Router) {
+			r.Get("/", h.ListRoles)
+			r.Post("/", h.CreateRole)
+			r.Patch("/{id}", h.UpdateRole)
+			r.Delete("/{id}", h.DeleteRole)
+		})
+
+		s.Route("/settings", func(r chi.Router) {
+			r.Get("/system", h.GetSystemSettings)
+			r.Put("/system", h.UpdateSystemSettings)
+		})
+
 		s.Get("/metrics/overview", h.MetricsOverview)
 		s.Get("/metrics/activity", h.MetricsRecentActivity)
 		s.Get("/metrics/users/status-breakdown", h.MetricsUserStatusBreakdown)
 		s.Get("/metrics/invitations/breakdown", h.MetricsInvitationBreakdown)
+		s.Get("/metrics/content/insights", h.MetricsContentInsights)
+		s.Get("/metrics/operations/report", h.MetricsOperationsReport)
+		s.Get("/metrics/users/report", h.MetricsUsersReport)
+		s.Get("/metrics/content/report", h.MetricsContentReport)
 		s.Get("/users", h.SearchUsers)
 		s.Patch("/users/{id}/status", h.UpdateUserStatus)
+		s.Get("/users/{id}/roles", h.ListUserRoles)
+		s.Post("/users/{id}/roles", h.AssignUserRole)
+		s.Delete("/users/{id}/roles/{roleId}", h.RemoveUserRole)
 		s.Post("/api-keys", h.CreateAPIKey)
 		s.Post("/api-keys/{id}/permissions", h.SetAPIKeyPermissions)
 		s.Delete("/api-keys/{id}", h.RevokeAPIKey)
