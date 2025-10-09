@@ -1,0 +1,290 @@
+{{define "superadmin/dashboard.html"}} {{template "layout" .}} {{end}} {{define "superadmin/dashboard.html:content"}}
+<section class="hg-section">
+	<div class="hg-dashboard-heading">
+		<div>
+			<h1>Panel</h1>
+			<p class="hg-section-subtitle">Resumen ejecutivo del entorno superadmin</p>
+		</div>
+	</div>
+	{{if .Data.Metrics}}
+	<div class="hg-dashboard-kpis">
+		{{range .Data.Metrics}}
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">{{.Label}}</span>
+			<span class="hg-kpi-value">{{.Value}}</span>
+			<span class="hg-kpi-caption">{{.Caption}}</span>
+		</article>
+		{{end}}
+	</div>
+	{{end}}
+</section>
+
+<section class="hg-section">
+	<header class="hg-dashboard-section-header">
+		<div>
+			<h2>Operación y usuarios</h2>
+			<p>Estado de cuentas, invitaciones y actividad auditada más reciente.</p>
+		</div>
+	</header>
+	<div class="hg-dashboard-grid">
+		<article class="hg-chart-card">
+			<header>
+				<h3>Estado de usuarios</h3>
+				<span class="hg-chart-meta">Total: {{.Data.StatusTotal}}</span>
+			</header>
+			{{if .Data.StatusChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartStatus" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Usuarios" data-hg-chart="{{toJSON .Data.StatusChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range .Data.StatusChart}}
+				<div class="hg-chart-bar">
+					<span class="hg-chart-bar-label">{{.Label}}</span>
+					<div class="hg-chart-bar-track">
+						{{if .State}}
+						<div class="hg-chart-bar-fill is-{{.State}}" style="--hg-bar-width: {{.Width}}"></div>
+						{{else}}
+						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{.Width}}"></div>
+						{{end}}
+					</div>
+					<span class="hg-chart-bar-count">{{.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin datos suficientes para mostrar el estado.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Invitaciones</h3>
+				<span class="hg-chart-meta">Total: {{.Data.InvitationTotal}}</span>
+			</header>
+			{{if .Data.InvitationChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartInvitations" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Invitaciones" data-hg-chart="{{toJSON .Data.InvitationChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range .Data.InvitationChart}}
+				<div class="hg-chart-bar">
+					<span class="hg-chart-bar-label">{{.Label}}</span>
+					<div class="hg-chart-bar-track">
+						{{if .State}}
+						<div class="hg-chart-bar-fill is-{{.State}}" style="--hg-bar-width: {{.Width}}"></div>
+						{{else}}
+						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{.Width}}"></div>
+						{{end}}
+					</div>
+					<span class="hg-chart-bar-count">{{.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin invitaciones registradas.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Operaciones destacadas</h3>
+				<span class="hg-chart-meta">Últimos eventos agregados</span>
+			</header>
+			{{if .Data.RecentOperations}}
+			<div class="hg-chart-visual">
+				<canvas
+					id="hgChartOperations"
+					class="hg-chart-canvas"
+					data-hg-type="bar"
+					data-hg-index-axis="y"
+					data-hg-series-label="Eventos"
+					data-hg-chart="{{toJSON .Data.RecentOperations}}"></canvas>
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin operaciones recientes.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card is-wide">
+			<header>
+				<h3>Actividad reciente</h3>
+				<span class="hg-chart-meta">Eventos auditados en la última jornada</span>
+			</header>
+			{{if .Data.ActivitySeries}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartActivity" class="hg-chart-canvas" data-hg-type="line" data-hg-series-label="Eventos" data-hg-chart="{{toJSON .Data.ActivitySeries}}"></canvas>
+			</div>
+			{{end}} {{if .Data.RecentActivity}}
+			<ul class="hg-activity-feed hg-activity-feed--compact">
+				{{range .Data.RecentActivity}}
+				<li>
+					<strong>{{.Label}}</strong>
+					<span>{{formatTime .Timestamp}}{{if .Actor}} &mdash; {{.Actor}}{{end}}{{if .Entity}} &middot; {{.Entity}}{{end}}</span>
+				</li>
+				{{end}}
+			</ul>
+			{{else}}
+			<p class="hg-chart-empty">Sin actividad reciente.</p>
+			{{end}}
+		</article>
+	</div>
+</section>
+
+<section class="hg-section">
+	<header class="hg-dashboard-section-header">
+		<div>
+			<h2>Contenido editorial</h2>
+			<p>Producción, categorías y contribuyentes destacados.</p>
+		</div>
+	</header>
+	<div class="hg-dashboard-grid">
+		<article class="hg-chart-card">
+			<header>
+				<h3>Estatus de contenido</h3>
+				{{if .Data.ContentTotals}}
+				<span class="hg-chart-meta">Total: {{.Data.ContentTotals.Total}}</span>
+				{{end}}
+			</header>
+			{{if .Data.ContentStatusChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartContentStatus" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Piezas" data-hg-chart="{{toJSON .Data.ContentStatusChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range .Data.ContentStatusChart}}
+				<div class="hg-chart-bar">
+					<span class="hg-chart-bar-label">{{.Label}}</span>
+					<div class="hg-chart-bar-track">
+						{{if .State}}
+						<div class="hg-chart-bar-fill is-{{.State}}" style="--hg-bar-width: {{.Width}}"></div>
+						{{else}}
+						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{.Width}}"></div>
+						{{end}}
+					</div>
+					<span class="hg-chart-bar-count">{{.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin piezas registradas en el catálogo.</p>
+			{{end}} {{if .Data.ContentTotals}}
+			<ul class="hg-list-compact">
+				<li><strong>Publicados:</strong> {{.Data.ContentTotals.Published}}</li>
+				<li><strong>En revisión:</strong> {{.Data.ContentTotals.InReview}}</li>
+				<li><strong>Borradores:</strong> {{.Data.ContentTotals.Drafts}}</li>
+				<li><strong>Programados:</strong> {{.Data.ContentTotals.Scheduled}}</li>
+				<li><strong>Archivados:</strong> {{.Data.ContentTotals.Archived}}</li>
+				<li><strong>Autores activos:</strong> {{.Data.ContentTotals.ActiveAuthors}}</li>
+				<li><strong>Actualizaciones 30d:</strong> {{.Data.ContentTotals.UpdatesLast30Days}}</li>
+			</ul>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Categorías principales</h3>
+				<span class="hg-chart-meta">Participación por familia</span>
+			</header>
+			{{if .Data.ContentCategoryChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartContentCategories" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Categorías" data-hg-chart="{{toJSON .Data.ContentCategoryChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range .Data.ContentCategoryChart}}
+				<div class="hg-chart-bar">
+					<span class="hg-chart-bar-label">{{.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Aún no se registran categorías con actividad.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Actividad por rol</h3>
+				<span class="hg-chart-meta">Ediciones recientes</span>
+			</header>
+			{{if .Data.ContentRoleChart}}
+			<div class="hg-chart-visual">
+				<canvas
+					id="hgChartContentRoles"
+					class="hg-chart-canvas"
+					data-hg-type="bar"
+					data-hg-index-axis="y"
+					data-hg-series-label="Acciones"
+					data-hg-chart="{{toJSON .Data.ContentRoleChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range .Data.ContentRoleChart}}
+				<div class="hg-chart-bar">
+					<span class="hg-chart-bar-label">{{.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin contribuciones registradas por rol.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Autores destacados</h3>
+				<span class="hg-chart-meta">Publicaciones emitidas</span>
+			</header>
+			{{if .Data.ContentAuthorChart}}
+			<div class="hg-chart-visual">
+				<canvas
+					id="hgChartContentAuthors"
+					class="hg-chart-canvas"
+					data-hg-type="bar"
+					data-hg-index-axis="y"
+					data-hg-series-label="Publicaciones"
+					data-hg-chart="{{toJSON .Data.ContentAuthorChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range .Data.ContentAuthorChart}}
+				<div class="hg-chart-bar">
+					<span class="hg-chart-bar-label">{{.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Aún no hay autores con publicaciones recientes.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card is-wide">
+			<header>
+				<h3>Producción mensual</h3>
+				<span class="hg-chart-meta">Serie histórica</span>
+			</header>
+			{{if .Data.ContentMonthlySeries}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartContentMonthly" class="hg-chart-canvas" data-hg-type="line" data-hg-series-label="Total" data-hg-chart="{{toJSON .Data.ContentMonthlySeries}}"></canvas>
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">No hay datos de producción mensual.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card is-wide">
+			<header>
+				<h3>Crecimiento acumulado</h3>
+				<span class="hg-chart-meta">Conteo histórico de piezas</span>
+			</header>
+			{{if .Data.ContentCumulativeSeries}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartContentCumulative" class="hg-chart-canvas" data-hg-type="line" data-hg-series-label="Acumulado" data-hg-chart="{{toJSON .Data.ContentCumulativeSeries}}"></canvas>
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin datos históricos disponibles.</p>
+			{{end}}
+		</article>
+	</div>
+</section>
+{{end}}

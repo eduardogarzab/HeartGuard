@@ -1,0 +1,95 @@
+{{define "superadmin/invitations.html"}} {{template "layout" .}} {{end}} {{define "superadmin/invitations.html:content"}}
+<section class="hg-section">
+	<h1>Invitaciones</h1>
+	<div class="hg-card">
+		<h2>Crear invitación</h2>
+		<form method="post" action="/superadmin/invitations" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="org_id">Organización</label>
+				<select id="org_id" name="org_id" required>
+					<option value="">Selecciona...</option>
+					{{range .Data.Organizations}}
+					<option value="{{.ID}}" {{if eq $.Data.SelectedOrgID .ID}}selected{{end}}>{{.Name}} ({{.Code}})</option>
+					{{end}}
+				</select>
+				<span class="hg-field-hint">El enlace quedará asociado a la organización seleccionada.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="org_role">Rol (código)</label>
+				<input id="org_role" name="org_role" placeholder="Ej. ADMIN" required maxlength="60" />
+				<span class="hg-field-hint">Utiliza el código corto del rol que tendrá la persona invitada.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="email">Correo electrónico (opcional)</label>
+				<input id="email" name="email" type="email" placeholder="usuario@ejemplo.com" />
+				<span class="hg-field-hint">Déjalo vacío si quieres un enlace genérico para compartir manualmente.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="ttl_hours">TTL (horas)</label>
+				<input id="ttl_hours" name="ttl_hours" type="number" min="1" max="720" value="24" required />
+				<span class="hg-field-hint">Define cuántas horas permanecerá activo el enlace (máximo 720).</span>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Generar enlace</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="hg-card">
+		<h2>Listado</h2>
+		<form method="get" action="/superadmin/invitations" class="hg-form-inline hg-gap">
+			<label for="filterOrg">Filtrar por organización</label>
+			<select id="filterOrg" name="org_id">
+				<option value="">Todas</option>
+				{{range .Data.Organizations}}
+				<option value="{{.ID}}" {{if eq $.Data.SelectedOrgID .ID}}selected{{end}}>{{.Name}}</option>
+				{{end}}
+			</select>
+			<button type="submit">Aplicar</button>
+		</form>
+
+		<table class="hg-table mt">
+			<thead>
+				<tr>
+					<th>Organización</th>
+					<th>Correo</th>
+					<th>Rol</th>
+					<th>Creada</th>
+					<th>Expira</th>
+					<th>Estado</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Invitations}}
+				<tr>
+					<td>{{with index $.Data.OrgNames .OrgID}}{{.}}{{else}}{{.OrgID}}{{end}}</td>
+					<td>{{if .Email}}{{.Email}}{{else}}—{{end}}</td>
+					<td>{{if .OrgRoleCode}}{{.OrgRoleCode}}{{else}}{{.OrgRoleID}}{{end}}</td>
+					<td>{{formatTime .CreatedAt}}</td>
+					<td>{{formatTime .ExpiresAt}}</td>
+					<td>
+						<span class="hg-status-chip {{if eq .Status "pending"}}is-warn{{else if eq .Status "cancelled"}}is-danger{{else if eq .Status "used"}}is-success{{end}}">
+							{{if eq .Status "pending"}}Pendiente{{else if eq .Status "cancelled"}}Cancelada{{else if eq .Status "used"}}Usada{{else}}{{.Status}}{{end}}
+						</span>
+					</td>
+					<td>
+						{{if eq .Status "pending"}}
+						<form method="post" action="/superadmin/invitations/{{.ID}}/cancel" data-hg-confirm="¿Cancelar invitación?">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Cancelar</button>
+						</form>
+						{{else}} — {{end}}
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="7" class="hg-empty-cell">No hay invitaciones.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

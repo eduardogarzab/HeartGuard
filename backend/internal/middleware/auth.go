@@ -3,80 +3,172 @@ package middleware
 import (
 	"context"
 	"net/http"
-	"strings"
 
-	"github.com/redis/go-redis/v9"
-	"heartguard-superadmin/internal/auth"
-	"heartguard-superadmin/internal/config"
+	"heartguard-superadmin/internal/models"
+	"heartguard-superadmin/internal/session"
 )
 
 type ctxKey string
 
-const CtxUserIDKey ctxKey = "actor_user_id"
+const (
+	CtxUserIDKey        ctxKey = "actor_user_id"
+	CtxSessionJTIKey    ctxKey = "session_jti"
+	CtxCSRFFromSession  ctxKey = "csrf_token"
+	CtxCurrentUserKey   ctxKey = "current_user"
+	CtxIsSuperadminKey  ctxKey = "is_superadmin"
+)
 
-func unauthorized(w http.ResponseWriter, msg string) {
-	w.Header().Set("WWW-Authenticate", `Bearer realm="heartguard", error="invalid_token"`)
-	http.Error(w, msg, http.StatusUnauthorized)
+// repoIface aggregates dependencies required by session middleware.
+type repoIface interface {
+	IsSuperadmin(ctx context.Context, userID string) (bool, error)
+	GetUserSummary(ctx context.Context, userID string) (*models.User, error)
 }
 
-func RequireAuth(cfg *config.Config, rdb *redis.Client) func(http.Handler) http.Handler {
+func SessionLoader(sm *session.Manager, repo repoIface) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			h := r.Header.Get("Authorization")
-			if h == "" || !strings.HasPrefix(h, "Bearer ") {
-				unauthorized(w, "missing bearer")
+			if sm == nil {
+				next.ServeHTTP(w, r)
 				return
 			}
-			tok := strings.TrimSpace(strings.TrimPrefix(h, "Bearer "))
-			if tok == "" {
-				unauthorized(w, "missing bearer")
+			cookie, err := r.Cookie(sm.CookieName())
+			if err != nil || cookie.Value == "" {
+				next.ServeHTTP(w, r)
 				return
 			}
-
-			claims, err := auth.ParseJWT(cfg.JWTSecret, tok)
+			claims, err := sm.Validate(r.Context(), cookie.Value)
 			if err != nil {
-				unauthorized(w, "invalid token")
-				return
-			}
-			if claims.JTI == "" || claims.UserID == "" {
-				unauthorized(w, "invalid token")
+				http.SetCookie(w, sm.ClearCookie())
+				next.ServeHTTP(w, r)
 				return
 			}
 
-			// denylist por jti (opcional si rdb == nil)
-			if rdb != nil {
-				key := "jwt:deny:" + claims.JTI
-				if ok, _ := rdb.Exists(r.Context(), key).Result(); ok == 1 {
-					unauthorized(w, "token revoked")
-					return
+			ctx := r.Context()
+			ctx = context.WithValue(ctx, CtxUserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, CtxSessionJTIKey, claims.JTI)
+
+			if repo != nil && claims.UserID != "" {
+				if user, err := repo.GetUserSummary(r.Context(), claims.UserID); err == nil {
+					ctx = context.WithValue(ctx, CtxCurrentUserKey, user)
+				}
+				if ok, err := repo.IsSuperadmin(r.Context(), claims.UserID); err == nil {
+					ctx = context.WithValue(ctx, CtxIsSuperadminKey, ok)
 				}
 			}
 
-			ctx := context.WithValue(r.Context(), CtxUserIDKey, claims.UserID)
+			if csrf, err := sm.EnsureCSRF(r.Context(), claims.JTI); err == nil {
+				ctx = context.WithValue(ctx, CtxCSRFFromSession, csrf)
+			}
+
+			sm.Refresh(r.Context(), claims.JTI)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }
 
-// repoIface pequeño para verificar el rol
-type repoIface interface {
-	IsSuperadmin(ctx context.Context, userID string) (bool, error)
-}
-
-func RequireSuperadmin(cfg *config.Config, rdb *redis.Client, repo repoIface) func(http.Handler) http.Handler {
+func RequireAuthenticated() func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
-		return RequireAuth(cfg, rdb)(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			uid, _ := r.Context().Value(CtxUserIDKey).(string)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uid := UserIDFromContext(r.Context())
 			if uid == "" {
-				unauthorized(w, "invalid token")
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
 				return
 			}
-			ok, err := repo.IsSuperadmin(r.Context(), uid)
-			if err != nil || !ok {
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func RequireSuperadmin(sm *session.Manager, repo repoIface) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return RequireAuthenticated()(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			uid := UserIDFromContext(r.Context())
+			if uid == "" {
+				http.Redirect(w, r, "/login", http.StatusSeeOther)
+				return
+			}
+			if repo == nil {
+				http.Error(w, "forbidden", http.StatusForbidden)
+				return
+			}
+			ok := false
+			if v, present := r.Context().Value(CtxIsSuperadminKey).(bool); present {
+				ok = v
+			} else {
+				if res, err := repo.IsSuperadmin(r.Context(), uid); err == nil {
+					ok = res
+				}
+			}
+			if !ok {
 				http.Error(w, "forbidden", http.StatusForbidden)
 				return
 			}
 			next.ServeHTTP(w, r)
 		}))
 	}
+}
+
+func CSRF(sm *session.Manager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			switch r.Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions, http.MethodTrace:
+				next.ServeHTTP(w, r)
+				return
+			}
+			jti := SessionJTIFromContext(r.Context())
+			if jti == "" {
+				http.Error(w, "unauthorized", http.StatusUnauthorized)
+				return
+			}
+			if err := r.ParseForm(); err != nil {
+				http.Error(w, "invalid form", http.StatusBadRequest)
+				return
+			}
+			token := r.FormValue("_csrf")
+			if token == "" {
+				token = r.Header.Get("X-CSRF-Token")
+			}
+			if err := sm.ValidateCSRF(r.Context(), jti, token); err != nil {
+				http.Error(w, "csrf failure", http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func UserIDFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(CtxUserIDKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func SessionJTIFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(CtxSessionJTIKey).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func CSRFFromContext(ctx context.Context) string {
+	if v, ok := ctx.Value(CtxCSRFFromSession).(string); ok {
+		return v
+	}
+	return ""
+}
+
+func UserFromContext(ctx context.Context) *models.User {
+	if v, ok := ctx.Value(CtxCurrentUserKey).(*models.User); ok {
+		return v
+	}
+	return nil
+}
+
+func IsSuperadmin(ctx context.Context) bool {
+	if v, ok := ctx.Value(CtxIsSuperadminKey).(bool); ok {
+		return v
+	}
+	return false
 }

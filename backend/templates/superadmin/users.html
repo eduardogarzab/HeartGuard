@@ -1,0 +1,95 @@
+{{define "superadmin/users.html"}} {{template "layout" .}} {{end}} {{define "superadmin/users.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>Usuarios</h1>
+	</div>
+	<div class="hg-card">
+		<form method="get" action="/superadmin/users" class="hg-form-grid">
+			<div class="hg-form-field hg-form-field--full">
+				<label for="search">Buscar usuario</label>
+				<input id="search" name="q" value="{{.Data.Query}}" placeholder="Nombre o correo" autocomplete="off" />
+				<span class="hg-field-hint">Ingresa el nombre completo o el correo electrónico para filtrar los resultados.</span>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Buscar</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<table class="hg-table">
+		<thead>
+			<tr>
+				<th>Nombre</th>
+				<th>Correo</th>
+				<th>Estado</th>
+				<th>Miembros</th>
+				<th>Roles actuales</th>
+				<th>Asignar rol</th>
+				<th>Creado</th>
+				<th>Cambiar estado</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Data.Users}} {{$user := .}}
+			<tr>
+				<td>{{.Name}}</td>
+				<td>{{.Email}}</td>
+				<td>
+					<span class="hg-status-chip {{if eq .Status "active"}}is-success{{else if eq .Status "blocked"}}is-danger{{else}}is-warn{{end}}">
+						{{if eq .Status "active"}}Activo{{else if eq .Status "blocked"}}Bloqueado{{else if eq .Status "pending"}}Pendiente{{else}}{{.Status}}{{end}}
+					</span>
+				</td>
+				<td>
+					{{if .Memberships}}
+					<ul class="hg-list-compact">
+						{{range .Memberships}}
+						<li>{{.OrgName}} ({{.OrgRoleLabel}})</li>
+						{{end}}
+					</ul>
+					{{else}} — {{end}}
+				</td>
+				<td>
+					{{if .Roles}}
+					<div class="hg-inline-roles">
+						{{range .Roles}}
+						<span class="hg-tag">{{.RoleName}}</span>
+						{{end}}
+					</div>
+					{{else}}—{{end}}
+				</td>
+				<td>
+					<form method="post" action="/superadmin/roles/users/{{.ID}}" class="hg-autoform">
+						<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+						<input type="hidden" name="redirect" value="{{if $.Data.Query}}/superadmin/users?q={{urlquery $.Data.Query}}{{else}}/superadmin/users{{end}}" />
+						<select name="role_id" class="hg-role-select">
+							<option value="" {{if eq (len $user.Roles) 0}}selected{{end}}>Sin rol asignado</option>
+							{{range $role := $.Data.Roles}}
+							<option value="{{$role.ID}}"{{range $user.Roles}}{{if eq .RoleID $role.ID}} selected{{end}}{{end}}>{{$role.Name}}</option>
+							{{end}}
+						</select>
+					</form>
+				</td>
+				<td>{{formatTime .CreatedAt}}</td>
+				<td>
+					<form method="post" action="/superadmin/users/{{.ID}}/status" class="hg-form-inline hg-autoform">
+						<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+						<input type="hidden" name="redirect" value="{{if $.Data.Query}}/superadmin/users?q={{urlquery $.Data.Query}}{{else}}/superadmin/users{{end}}" />
+						<select name="status">
+							{{range $.Data.Status}}
+							<option value="{{.Code}}" {{if eq .Code $user.Status}}selected{{end}}>{{.Label}}</option>
+							{{end}}
+						</select>
+					</form>
+				</td>
+			</tr>
+			{{else}}
+			<tr>
+				<td colspan="8" class="hg-empty-cell">No se encontraron usuarios.</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</section>
+{{end}}

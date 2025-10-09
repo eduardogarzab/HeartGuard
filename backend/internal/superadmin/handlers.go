@@ -1,3 +1,6 @@
+//go:build rest_api_legacy
+// +build rest_api_legacy
+
 package superadmin
 
 import (
@@ -9,7 +12,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -77,6 +79,7 @@ type Repository interface {
 	SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error
 	RevokeAPIKey(ctx context.Context, id string) error
 	ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error)
+	ListPermissions(ctx context.Context) ([]models.Permission, error)
 
 	ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error)
 }
@@ -235,21 +238,6 @@ func actorPtr(r *http.Request) *string {
 	return nil
 }
 
-// clientIP intenta obtener la IP del cliente desde X-Forwarded-For o RemoteAddr.
-func clientIP(r *http.Request) *string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ip := strings.TrimSpace(strings.Split(xff, ",")[0])
-		if ip != "" {
-			return &ip
-		}
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && host != "" {
-		return &host
-	}
-	return nil
-}
-
 func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, entity string, entityID *string, details map[string]any) {
 	pool := h.repo.AuditPool()
 	if pool == nil {
@@ -257,7 +245,7 @@ func (h *Handlers) writeAudit(ctx context.Context, r *http.Request, action, enti
 	}
 	ctxA, cancel := audit.Ctx(ctx)
 	defer cancel()
-	_ = audit.Write(ctxA, pool, actorPtr(r), action, entity, entityID, details, clientIP(r))
+	_ = audit.Write(ctxA, pool, actorPtr(r), action, entity, entityID, details, nil)
 }
 
 // Organizations

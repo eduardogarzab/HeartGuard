@@ -280,6 +280,11 @@ type UserMembership struct {
 	JoinedAt     *time.Time `json:"joined_at,omitempty"`
 }
 
+type Permission struct {
+	Code        string `json:"code"`
+	Description string `json:"description"`
+}
+
 type AuditLog struct {
 	ID       string         `json:"id"`
 	Action   string         `json:"action"`

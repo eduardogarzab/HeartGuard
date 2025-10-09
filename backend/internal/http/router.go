@@ -2,7 +2,7 @@ package http
 
 import (
 	"net/http"
-	"path/filepath"
+	"strings"
 
 	chi "github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -11,109 +11,94 @@ import (
 	"heartguard-superadmin/internal/auth"
 	"heartguard-superadmin/internal/config"
 	authmw "heartguard-superadmin/internal/middleware"
+	"heartguard-superadmin/internal/session"
 	"heartguard-superadmin/internal/superadmin"
 )
 
-func NewRouter(logger authmw.Logger, cfg *config.Config, repo *superadmin.Repo, rdb *redis.Client, h *superadmin.Handlers) http.Handler {
+func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Repository, rdb *redis.Client, sessions *session.Manager, authHandlers *auth.Handlers, uiHandlers *superadmin.Handlers) http.Handler {
 	r := chi.NewRouter()
 	r.Use(authmw.LoopbackOnly(logger))
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(authmw.RateLimit(rdb, cfg.RateLimitRPS, cfg.RateLimitBurst))
+	r.Use(authmw.SecurityHeaders())
+	r.Use(authmw.SessionLoader(sessions, repo))
 
-	// Health
-	r.Get("/healthz", h.Healthz)
+	r.Get("/healthz", uiHandlers.Healthz)
 
-	// Auth públicas
-	ah := auth.NewHandlers(cfg, repo)
-	r.Route("/v1/auth", func(r chi.Router) {
-		r.Post("/login", ah.Login)
-		r.Post("/refresh", ah.Refresh)
-		r.Post("/logout", ah.Logout)
-	})
-
-	// Superadmin protegidas
-	r.Route("/v1/superadmin", func(s chi.Router) {
-		s.Use(authmw.RequireSuperadmin(cfg, rdb, repo))
-
-		s.Route("/organizations", func(r chi.Router) {
-			r.Post("/", h.CreateOrganization)
-			r.Get("/", h.ListOrganizations)
-			r.Get("/{id}", h.GetOrganization)
-			r.Patch("/{id}", h.UpdateOrganization)
-			r.Delete("/{id}", h.DeleteOrganization)
-			r.Get("/{id}/members", h.ListMembers)
-			r.Post("/{id}/members", h.AddMember)
-			r.Delete("/{id}/members/{userId}", h.RemoveMember)
-		})
-
-		s.Route("/invitations", func(r chi.Router) {
-			r.Get("/", h.ListInvitations)
-			r.Post("/", h.CreateInvitation)
-			r.Post("/{token}/consume", h.ConsumeInvitation)
-			r.Delete("/{id}", h.CancelInvitation)
-		})
-
-		s.Route("/catalogs", func(r chi.Router) {
-			r.Get("/{catalog}", h.ListCatalog)
-			r.Post("/{catalog}", h.CreateCatalogItem)
-			r.Patch("/{catalog}/{id}", h.UpdateCatalogItem)
-			r.Delete("/{catalog}/{id}", h.DeleteCatalogItem)
-		})
-
-		s.Route("/roles", func(r chi.Router) {
-			r.Get("/", h.ListRoles)
-			r.Post("/", h.CreateRole)
-			r.Patch("/{id}", h.UpdateRole)
-			r.Delete("/{id}", h.DeleteRole)
-		})
-
-		s.Route("/settings", func(r chi.Router) {
-			r.Get("/system", h.GetSystemSettings)
-			r.Put("/system", h.UpdateSystemSettings)
-		})
-
-		s.Get("/metrics/overview", h.MetricsOverview)
-		s.Get("/metrics/activity", h.MetricsRecentActivity)
-		s.Get("/metrics/users/status-breakdown", h.MetricsUserStatusBreakdown)
-		s.Get("/metrics/invitations/breakdown", h.MetricsInvitationBreakdown)
-		s.Get("/metrics/content/insights", h.MetricsContentInsights)
-		s.Get("/metrics/operations/report", h.MetricsOperationsReport)
-		s.Get("/metrics/users/report", h.MetricsUsersReport)
-		s.Get("/metrics/content/report", h.MetricsContentReport)
-		s.Get("/users", h.SearchUsers)
-		s.Patch("/users/{id}/status", h.UpdateUserStatus)
-		s.Get("/users/{id}/roles", h.ListUserRoles)
-		s.Post("/users/{id}/roles", h.AssignUserRole)
-		s.Delete("/users/{id}/roles/{roleId}", h.RemoveUserRole)
-		s.Post("/api-keys", h.CreateAPIKey)
-		s.Post("/api-keys/{id}/permissions", h.SetAPIKeyPermissions)
-		s.Delete("/api-keys/{id}", h.RevokeAPIKey)
-		s.Get("/api-keys", h.ListAPIKeys)
-		s.Get("/audit-logs", h.ListAuditLogs)
-	})
-
-	// Static web/ (lo que ya tienes)
-	fs := http.Dir("web")
-	r.Get("/*", func(w http.ResponseWriter, req *http.Request) {
-		up := req.URL.Path
-		if up == "/" {
-			up = "/index.html"
-		}
-		f, err := fs.Open(up)
-		if err == nil {
-			defer f.Close()
-			fi, _ := f.Stat()
-			http.ServeContent(w, req, filepath.Base(up), fi.ModTime(), f)
+	r.Get("/", func(w http.ResponseWriter, req *http.Request) {
+		if authmw.UserIDFromContext(req.Context()) != "" {
+			http.Redirect(w, req, "/superadmin/dashboard", http.StatusSeeOther)
 			return
 		}
-		idx, err := fs.Open("/index.html")
-		if err != nil {
-			http.Error(w, "index not found", http.StatusInternalServerError)
+		http.Redirect(w, req, "/login", http.StatusSeeOther)
+	})
+
+	r.Get("/login", authHandlers.LoginForm)
+	r.Post("/login", authHandlers.LoginSubmit)
+	r.With(authmw.CSRF(sessions)).Post("/logout", authHandlers.Logout)
+
+	r.Route("/superadmin", func(s chi.Router) {
+		s.Use(authmw.RequireSuperadmin(sessions, repo))
+		s.Use(authmw.CSRF(sessions))
+
+		s.Get("/dashboard", uiHandlers.Dashboard)
+
+		s.Route("/organizations", func(or chi.Router) {
+			or.Get("/", uiHandlers.OrganizationsIndex)
+			or.Post("/", uiHandlers.OrganizationsCreate)
+			or.Get("/{id}", uiHandlers.OrganizationDetail)
+			or.Post("/{id}/delete", uiHandlers.OrganizationDelete)
+		})
+
+		s.Route("/invitations", func(ir chi.Router) {
+			ir.Get("/", uiHandlers.InvitationsIndex)
+			ir.Post("/", uiHandlers.InvitationsCreate)
+			ir.Post("/{id}/cancel", uiHandlers.InvitationCancel)
+		})
+
+		s.Route("/users", func(ur chi.Router) {
+			ur.Get("/", uiHandlers.UsersIndex)
+			ur.Post("/{id}/status", uiHandlers.UsersUpdateStatus)
+		})
+
+		s.Route("/roles", func(rr chi.Router) {
+			rr.Get("/", uiHandlers.RolesIndex)
+			rr.Post("/", uiHandlers.RolesCreate)
+			rr.Post("/users/{id}", uiHandlers.RolesUpdateUserAssignment)
+			rr.Post("/{id}/delete", uiHandlers.RolesDelete)
+		})
+
+		s.Route("/catalogs", func(cr chi.Router) {
+			cr.Get("/", uiHandlers.CatalogsIndex)
+			cr.Get("/{catalog}", uiHandlers.CatalogsIndex)
+			cr.Post("/{catalog}", uiHandlers.CatalogsCreate)
+			cr.Post("/{catalog}/{id}/update", uiHandlers.CatalogsUpdate)
+			cr.Post("/{catalog}/{id}/delete", uiHandlers.CatalogsDelete)
+		})
+
+		s.Route("/api-keys", func(ar chi.Router) {
+			ar.Get("/", uiHandlers.APIKeysIndex)
+			ar.Post("/", uiHandlers.APIKeysCreate)
+			ar.Post("/{id}/permissions", uiHandlers.APIKeysUpdatePermissions)
+			ar.Post("/{id}/revoke", uiHandlers.APIKeysRevoke)
+		})
+
+		s.Get("/audit", uiHandlers.AuditIndex)
+		s.Get("/settings/system", uiHandlers.SystemSettingsForm)
+		s.Post("/settings/system", uiHandlers.SystemSettingsUpdate)
+	})
+
+	uiFileServer := http.FileServer(http.Dir("ui/assets"))
+	r.Get("/ui-assets/*", func(w http.ResponseWriter, req *http.Request) {
+		http.StripPrefix("/ui-assets", uiFileServer).ServeHTTP(w, req)
+	})
+
+	r.NotFound(func(w http.ResponseWriter, req *http.Request) {
+		if strings.HasPrefix(req.URL.Path, "/ui-assets/") {
+			http.NotFound(w, req)
 			return
 		}
-		defer idx.Close()
-		fi, _ := idx.Stat()
-		http.ServeContent(w, req, "index.html", fi.ModTime(), idx)
+		http.Redirect(w, req, "/", http.StatusSeeOther)
 	})
 
 	return r

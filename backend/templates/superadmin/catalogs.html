@@ -1,0 +1,104 @@
+{{define "superadmin/catalogs.html"}} {{template "layout" .}} {{end}} {{define "superadmin/catalogs.html:content"}}
+<section class="hg-section">
+	<h1>Catálogos</h1>
+	<nav class="hg-tabs">
+		{{range .Data.Catalogs}}
+		<a href="/superadmin/catalogs/{{.Slug}}" class="{{if eq .Slug $.Data.CurrentSlug}}active{{end}}">{{.Label}}</a>
+		{{end}}
+	</nav>
+</section>
+
+<section class="hg-section">
+	<h2>{{.Data.CurrentMeta.Label}}</h2>
+	<div class="hg-card">
+		<h3>Agregar elemento</h3>
+		<form method="post" action="/superadmin/catalogs/{{.Data.CurrentSlug}}" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="catalog-code">Código</label>
+				<input id="catalog-code" name="code" required maxlength="60" />
+				<span class="hg-field-hint">Identificador único del elemento dentro de este catálogo.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="catalog-label">Nombre</label>
+				<input id="catalog-label" name="label" required maxlength="160" />
+				<span class="hg-field-hint">Texto legible que se mostrará al resto del equipo.</span>
+			</div>
+			{{if .Data.RequiresWeight}}
+			<div class="hg-form-field">
+				<label for="catalog-weight">Peso</label>
+				<input id="catalog-weight" name="weight" type="number" required />
+				<span class="hg-field-hint">Utiliza números enteros para determinar el orden de prioridad.</span>
+			</div>
+			{{else}}
+			<input type="hidden" name="weight" value="" />
+			{{end}}
+			<div class="hg-form-actions">
+				<button type="submit">Crear</button>
+			</div>
+		</form>
+	</div>
+
+	<div class="hg-card">
+		<h3>Elementos</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Código</th>
+					<th>Nombre</th>
+					{{if .Data.RequiresWeight}}
+					<th>Peso</th>
+					{{end}}
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				<tr>
+					<td>{{.Code}}</td>
+					<td>{{.Label}}</td>
+					{{if $.Data.RequiresWeight}}
+					<td>{{if .Weight}}{{formatIntPtr .Weight}}{{else}}—{{end}}</td>
+					{{end}}
+					<td class="hg-flex">
+						<details>
+							<summary>Editar</summary>
+							<form method="post" action="/superadmin/catalogs/{{$.Data.CurrentSlug}}/{{.ID}}/update" class="hg-form-grid">
+								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+								<div class="hg-form-field">
+									<label>Código</label>
+									<input name="code" value="{{.Code}}" maxlength="60" />
+								</div>
+								<div class="hg-form-field">
+									<label>Nombre</label>
+									<input name="label" value="{{.Label}}" maxlength="160" />
+								</div>
+								{{if $.Data.RequiresWeight}}
+								<div class="hg-form-field">
+									<label>Peso</label>
+									<input name="weight" type="number" value="{{formatIntPtr .Weight}}" />
+								</div>
+								{{else}}
+								<input type="hidden" name="weight" value="" />
+								{{end}}
+								<div class="hg-form-actions">
+									<button type="submit">Guardar</button>
+								</div>
+							</form>
+						</details>
+						<form method="post" action="/superadmin/catalogs/{{$.Data.CurrentSlug}}/{{.ID}}/delete" data-hg-confirm="¿Eliminar elemento?" class="hg-inline-form">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="{{if .Data.RequiresWeight}}4{{else}}3{{end}}" class="hg-empty-cell">Sin elementos.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

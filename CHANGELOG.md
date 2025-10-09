@@ -8,6 +8,9 @@ All notable changes to this project are documented here.
 
 -   Backend HTTP server ahora acepta únicamente conexiones desde localhost, bloqueando cualquier acceso remoto.
 -   Documentación y `.env.example` actualizados para reflejar el backend de administración cerrado.
+-   Superadmin panel migrado de SPA a renderizado del lado del servidor usando plantillas Go y `ui.ViewData`.
+-   Activos estáticos reorganizados en `backend/ui/assets` junto con nuevas utilidades JS/CSS para componentes SSR.
+-   Se eliminaron los archivos legacy bajo `backend/web` y se actualizaron las guías para reflejar la nueva arquitectura.
 
 ## [0.2.0] - 2025-09-28
 

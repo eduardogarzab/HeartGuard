@@ -1,0 +1,62 @@
+{{define "superadmin/roles.html"}} {{template "layout" .}} {{end}} {{define "superadmin/roles.html:content"}}
+<section class="hg-section">
+	<h1>Roles</h1>
+	<div class="hg-card">
+		<h2>Crear rol</h2>
+		<form method="post" action="/superadmin/roles" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="roleName">Nombre</label>
+				<input id="roleName" name="name" maxlength="50" required />
+				<span class="hg-field-hint">Ejemplo: Supervisor, Auditor, Soporte.</span>
+			</div>
+			<div class="hg-form-field hg-form-field--full">
+				<label for="roleDesc">Descripción</label>
+				<textarea id="roleDesc" name="description" maxlength="250" rows="2"></textarea>
+				<span class="hg-field-hint">Detalla brevemente para qué se utiliza este rol.</span>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h2>Roles registrados</h2>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Rol</th>
+					<th>Creado</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Roles}}
+				<tr>
+					<td>
+						<strong>{{.Name}}</strong>
+						{{if .Description}}
+						<p class="hg-field-hint">{{.Description}}</p>
+						{{end}}
+					</td>
+					<td>{{formatTime .CreatedAt}}</td>
+					<td>
+						<form method="post" action="/superadmin/roles/{{.ID}}/delete" data-hg-confirm="¿Eliminar rol?">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="3" class="hg-empty-cell">No hay roles configurados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

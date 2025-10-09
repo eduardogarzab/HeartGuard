@@ -1,19 +1,18 @@
 # HeartGuard
 
-Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositorio combina infraestructura Docker para la base de datos, una API de superadministración escrita en Go y un panel web estático servido por el mismo backend.
+Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositorio combina infraestructura Docker para la base de datos, un backend Go SSR con panel de superadministración y assets web servidos desde el mismo proceso.
 
 ## Vista general
 
--   **Repositorio monolítico:** servicios de datos (`db/`), backend (`backend/`) y assets web (`web/`).
+-   **Repositorio monolítico:** servicios de datos (`db/`), backend SSR (`backend/`) y assets compartidos (`backend/ui/assets`).
 -   **Base de datos:** PostgreSQL 14 + PostGIS, esquema y seeds listos para demos.
--   **Backend:** Panel administrativo cerrado (Go 1.22) con autenticación JWT y rate limiting en Redis, accesible únicamente desde localhost.
+-   **Backend:** Panel administrativo SSR (Go 1.22) con sesiones JWT en cookie, Redis y PostgreSQL. Todas las rutas quedan restringidas a localhost por middleware.
 -   **Infra local:** `docker-compose` provee Postgres y Redis; el backend corre con `make dev`.
 
 ## Estructura
 
 -   `db/` — scripts de inicialización (`init.sql`), seeds (`seed.sql`) y notas de operación.
--   `backend/` — API REST de superadministración + servidor de archivos estáticos bajo `/web`.
--   `web/` — HTML/CSS/JS que consume la API (servido por el backend).
+-   `backend/` — Backend SSR de superadministración y servidor de archivos estáticos (`backend/ui/assets`).
 -   `docker-compose.yml` — Postgres + Redis para desarrollo.
 -   `Makefile` — wrappers para migraciones, seeds y tareas de Go.
 -   `.env.example` — plantilla con todas las variables necesarias para clonar el entorno.
@@ -65,16 +64,13 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
     make tidy             # solo la primera vez
     make dev
     ```
-6. **Smoke tests manuales (ejecutados desde localhost):**
-   `sh
- curl -i http://localhost:8080/healthz
- curl -s -X POST http://localhost:8080/v1/auth/login \
-     -H "Content-Type: application/json" \
-     -d '{"email":"admin@heartguard.com","password":"Admin#2025"}'
- `
-7. **Panel web:** abre <http://localhost:8080/> y autentícate con usuarios de la tabla `users`.
+6. **Verificaciones rápidas (desde localhost):**
+    ```sh
+    curl -i http://localhost:8080/healthz
+    ```
+7. **Panel web:** abre <http://localhost:8080/> (redirige a `/login` si no hay sesión) e inicia sesión con las credenciales sembradas (`admin@heartguard.com / Admin#2025`).
 
-* En caso de ejecutarlo en una VM remota, usa `ssh -L 8080:localhost:8080 usuario@ip_de_la_vm` para tunelizar el puerto.
+-   En caso de ejecutarlo en una VM remota, usa `ssh -L 8080:localhost:8080 usuario@ip_de_la_vm` para tunelizar el puerto.
 
 ## Comandos clave del `Makefile`
 
@@ -92,15 +88,13 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | `make lint` / `test` | `go vet` y `go test ./...` respectivamente.                                    |
 | `make reset-all`     | Detiene contenedores, borra volúmenes, vuelve a levantar y re-inicializa todo. |
 
-## API y panel web
+## Panel de superadministración
 
-La documentación detallada de endpoints vive en `backend/README.md`, pero recuerda que ahora el backend sólo responde a peticiones hechas desde la propia máquina (`localhost`). Resumen:
-
--   Base URL: `http://localhost:8080` (configurable con `HTTP_ADDR`).
--   Rutas públicas: `/healthz`, `/v1/auth/login`, `/v1/auth/refresh`, `/v1/auth/logout`; todas requieren provenir de `127.0.0.1` o `::1`.
--   Rutas protegidas (`Authorization: Bearer <token>` y rol superadmin): `/v1/superadmin/**`.
--   Rate limiting: ventana de 1s con `RATE_LIMIT_RPS + RATE_LIMIT_BURST` por IP/método/path; encabezados `X-RateLimit-*` expuestos.
--   Acceso restringido: el servidor rechaza cualquier origen que no sea localhost, evitando exposición pública accidental.
+-   Base URL: `http://localhost:8080` (ajustable con `HTTP_ADDR`).
+-   Rutas públicas: `/`, `/login`, `/healthz` y assets en `/ui-assets/*`.
+-   Rutas protegidas: `/superadmin/**` (requieren sesión y rol `superadmin`).
+-   Rate limiting: ventana rolling de 1s (`RATE_LIMIT_RPS` + `RATE_LIMIT_BURST`), con encabezados `X-RateLimit-*`.
+-   Middleware `LoopbackOnly` garantiza que las peticiones provengan de `127.0.0.1` o `::1`.
 
 ## Base de datos
 
@@ -112,8 +106,9 @@ La documentación detallada de endpoints vive en `backend/README.md`, pero recue
 
 ## Testing y validaciones
 
--   `make test` ejecuta la suite de Go (`go test ./...`).
+-   `make test` ejecuta la suite Go (`go test ./...`).
 -   `make lint` corre `go vet`.
+-   `go fmt ./...` mantiene el formato antes de subir cambios.
 -   Para validar la conexión a la base, usa `make db-health` o `make db-psql`.
 
 ## Troubleshooting
@@ -124,10 +119,10 @@ La documentación detallada de endpoints vive en `backend/README.md`, pero recue
     ```
 -   **Dependencias Go faltantes:** `make tidy` regenerará `go.sum`.
 -   **Puerto 5432 ocupado:** ajusta el mapeo `5432:5432` en `docker-compose.yml` y las variables `PGPORT`/`DATABASE_URL`.
--   **Regenerar API key demo:** usa `openssl rand -hex 32` y pega el valor en `POST /v1/superadmin/api-keys`.
+-   **Regenerar API key demo:** usa `/superadmin/api-keys` en el panel para generar una nueva y guarda el secreto mostrado.
 -   **Redis no responde:** revisa `make logs-redis` y confirma que `REDIS_URL` use el puerto correcto (`6379`).
 
 ## Próximos pasos sugeridos
 
--   Revisa `backend/README.md` para flujos de autenticación, endpoints y estructuras de respuesta.
+-   Revisa `backend/README.md` para flujos de autenticación, arquitectura SSR y rutas del panel.
 -   Consulta `db/README.md` si necesitas extender el esquema o ajustar seeds para nuevos catálogos.

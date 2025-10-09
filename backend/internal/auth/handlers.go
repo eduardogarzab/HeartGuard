@@ -2,193 +2,160 @@ package auth
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
-	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
+
 	"heartguard-superadmin/internal/config"
+	"heartguard-superadmin/internal/middleware"
 	"heartguard-superadmin/internal/models"
+	"heartguard-superadmin/internal/session"
+	"heartguard-superadmin/internal/ui"
 )
 
-// Interfaz mínima para romper el acoplamiento con superadmin.Repo
+// AuthRepo expone las operaciones necesarias para autenticación.
 type AuthRepo interface {
 	GetUserByEmail(ctx context.Context, email string) (*models.User, string, error)
-	IssueRefreshToken(ctx context.Context, userID, tokenHash string, ttl time.Duration) error
-	ValidateRefreshToken(ctx context.Context, raw string) (string, error)
-	RevokeRefreshToken(ctx context.Context, raw string) error
-}
-
-type problem struct {
-	Code    string            `json:"code"`
-	Message string            `json:"message"`
-	Fields  map[string]string `json:"fields,omitempty"`
-}
-
-func writeProblem(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(problem{Code: code, Message: msg})
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_ = json.NewEncoder(w).Encode(v)
+	IsSuperadmin(ctx context.Context, userID string) (bool, error)
+	GetSystemSettings(ctx context.Context) (*models.SystemSettings, error)
 }
 
 type Handlers struct {
-	cfg  *config.Config
-	repo AuthRepo
+	cfg      *config.Config
+	repo     AuthRepo
+	renderer *ui.Renderer
+	sessions *session.Manager
+	logger   *zap.Logger
 }
 
-func NewHandlers(cfg *config.Config, repo AuthRepo) *Handlers {
-	return &Handlers{cfg: cfg, repo: repo}
+func NewHandlers(cfg *config.Config, repo AuthRepo, renderer *ui.Renderer, sessions *session.Manager, logger *zap.Logger) *Handlers {
+	return &Handlers{cfg: cfg, repo: repo, renderer: renderer, sessions: sessions, logger: logger}
 }
 
-type loginReq struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+type loginPageData struct {
+	Email    string
+	Error    string
+	Logout   bool
+	Settings *models.SystemSettings
 }
 
-func (h *Handlers) Login(w http.ResponseWriter, r *http.Request) {
-	var req loginReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, http.StatusBadRequest, "bad_request", "invalid json")
+func (h *Handlers) LoginForm(w http.ResponseWriter, r *http.Request) {
+	if middleware.UserIDFromContext(r.Context()) != "" {
+		http.Redirect(w, r, "/superadmin/dashboard", http.StatusSeeOther)
 		return
 	}
-	req.Email = strings.TrimSpace(strings.ToLower(req.Email))
-	if req.Email == "" || req.Password == "" {
-		writeProblem(w, http.StatusBadRequest, "bad_request", "email/password required")
+	settings, err := h.repo.GetSystemSettings(r.Context())
+	if err != nil && h.logger != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		h.logger.Error("login settings load", zap.Error(err))
+	}
+	token, err := h.sessions.IssueGuestCSRF(r.Context(), 10*time.Minute)
+	if err != nil {
+		http.Error(w, "no se pudo preparar el formulario", http.StatusInternalServerError)
+		return
+	}
+	http.SetCookie(w, h.sessions.GuestCSRFCookie(token, 10*time.Minute))
+	data := loginPageData{
+		Logout:   r.URL.Query().Get("logout") == "1",
+		Settings: settings,
+	}
+	view := ui.ViewData{
+		Title:     "Iniciar sesión",
+		CSRFToken: token,
+		Data:      data,
+	}
+	if err := h.renderer.Render(w, "login.html", view); err != nil && h.logger != nil {
+		h.logger.Error("render login", zap.Error(err))
+	}
+}
+
+func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	formToken := r.FormValue("_csrf")
+	cookie, err := r.Cookie(h.sessions.GuestCookieName())
+	if err != nil || cookie.Value == "" {
+		http.Error(w, "csrf inválido", http.StatusForbidden)
+		return
+	}
+	if err := h.sessions.ValidateGuestCSRF(r.Context(), formToken); err != nil || cookie.Value != formToken {
+		http.Error(w, "csrf inválido", http.StatusForbidden)
+		return
+	}
+	h.sessions.ConsumeGuestCSRF(r.Context(), formToken)
+	http.SetCookie(w, h.sessions.ClearGuestCSRFCookie())
+
+	email := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
+	password := r.FormValue("password")
+	if email == "" || password == "" {
+		h.renderLoginWithError(w, r, email, "Correo y contraseña son obligatorios")
 		return
 	}
 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	u, passHash, err := h.repo.GetUserByEmail(ctx, req.Email)
+	user, hash, err := h.repo.GetUserByEmail(ctx, email)
 	if err != nil {
-		writeProblem(w, http.StatusUnauthorized, "invalid_credentials", "email or password incorrect")
+		h.renderLoginWithError(w, r, email, "Credenciales inválidas")
 		return
 	}
-	if bcrypt.CompareHashAndPassword([]byte(passHash), []byte(req.Password)) != nil {
-		writeProblem(w, http.StatusUnauthorized, "invalid_credentials", "email or password incorrect")
+	if bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) != nil {
+		h.renderLoginWithError(w, r, email, "Credenciales inválidas")
+		return
+	}
+	ok, err := h.repo.IsSuperadmin(ctx, user.ID)
+	if err != nil || !ok {
+		h.renderLoginWithError(w, r, email, "Acceso restringido al panel de superadministración")
 		return
 	}
 
-	jti := uuid.NewString()
-	at, err := SignJWT(h.cfg.JWTSecret, u.ID, jti, h.cfg.AccessTokenTTL)
+	token, jti, _, err := h.sessions.Issue(r.Context(), user.ID)
 	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "server_error", err.Error())
+		http.Error(w, "no se pudo iniciar sesión", http.StatusInternalServerError)
 		return
 	}
-
-	rawRefresh, err := randomToken()
-	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-	sum := sha256.Sum256([]byte(rawRefresh))
-	if err := h.repo.IssueRefreshToken(ctx, u.ID, hex.EncodeToString(sum[:]), h.cfg.RefreshTokenTTL); err != nil {
-		writeProblem(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":  at,
-		"refresh_token": rawRefresh,
-		"user":          u,
-	})
-}
-
-type refreshReq struct {
-	RefreshToken string `json:"refresh_token"`
-}
-
-func (h *Handlers) Refresh(w http.ResponseWriter, r *http.Request) {
-	var req refreshReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, http.StatusBadRequest, "bad_request", "invalid json")
-		return
-	}
-	if strings.TrimSpace(req.RefreshToken) == "" {
-		writeProblem(w, http.StatusBadRequest, "bad_request", "missing token")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	uid, err := h.repo.ValidateRefreshToken(ctx, req.RefreshToken)
-	if err != nil {
-		writeProblem(w, http.StatusUnauthorized, "invalid_token", err.Error())
-		return
-	}
-
-	// opcional: rotación de refresh
-	if err := h.repo.RevokeRefreshToken(ctx, req.RefreshToken); err != nil {
-		writeProblem(w, http.StatusUnauthorized, "invalid_token", err.Error())
-		return
-	}
-
-	newRaw, err := randomToken()
-	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-	sum := sha256.Sum256([]byte(newRaw))
-	if err := h.repo.IssueRefreshToken(ctx, uid, hex.EncodeToString(sum[:]), h.cfg.RefreshTokenTTL); err != nil {
-		writeProblem(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-
-	jti := uuid.NewString()
-	at, err := SignJWT(h.cfg.JWTSecret, uid, jti, h.cfg.AccessTokenTTL)
-	if err != nil {
-		writeProblem(w, http.StatusInternalServerError, "server_error", err.Error())
-		return
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"access_token":  at,
-		"refresh_token": newRaw,
-	})
-}
-
-type logoutReq struct {
-	RefreshToken string `json:"refresh_token"`
+	http.SetCookie(w, h.sessions.SessionCookie(token, h.cfg.AccessTokenTTL))
+	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "¡Bienvenido de nuevo!"})
+	http.Redirect(w, r, "/superadmin/dashboard", http.StatusSeeOther)
 }
 
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
-	var req logoutReq
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		writeProblem(w, http.StatusBadRequest, "bad_request", "invalid json")
-		return
+	jti := middleware.SessionJTIFromContext(r.Context())
+	if jti != "" {
+		h.sessions.Revoke(r.Context(), jti)
 	}
-	if strings.TrimSpace(req.RefreshToken) == "" {
-		writeProblem(w, http.StatusBadRequest, "bad_request", "missing token")
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	if err := h.repo.RevokeRefreshToken(ctx, req.RefreshToken); err != nil {
-		writeProblem(w, http.StatusBadRequest, "invalid_token", err.Error())
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
+	http.SetCookie(w, h.sessions.ClearCookie())
+	http.Redirect(w, r, "/login?logout=1", http.StatusSeeOther)
 }
 
-func randomToken() (string, error) {
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		return "", err
+func (h *Handlers) renderLoginWithError(w http.ResponseWriter, r *http.Request, email, message string) {
+	settings, err := h.repo.GetSystemSettings(r.Context())
+	if err != nil && h.logger != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		h.logger.Error("login settings load", zap.Error(err))
 	}
-	return hex.EncodeToString(b), nil
+	token, err := h.sessions.IssueGuestCSRF(r.Context(), 10*time.Minute)
+	if err != nil {
+		http.Error(w, "no se pudo preparar el formulario", http.StatusInternalServerError)
+		return
+	}
+	http.SetCookie(w, h.sessions.GuestCSRFCookie(token, 10*time.Minute))
+	data := loginPageData{
+		Email:    email,
+		Error:    message,
+		Settings: settings,
+	}
+	view := ui.ViewData{
+		Title:     "Iniciar sesión",
+		CSRFToken: token,
+		Data:      data,
+	}
+	if err := h.renderer.Render(w, "login.html", view); err != nil && h.logger != nil {
+		h.logger.Error("render login error", zap.Error(err))
+	}
 }

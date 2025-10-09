@@ -1,0 +1,61 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>{{if .Title}}{{.Title}} · {{end}}HeartGuard Admin</title>
+		<link rel="stylesheet" href="/ui-assets/css/app.css" />
+		<script defer src="/ui-assets/js/app.js"></script>
+	</head>
+	<body class="hg-body">
+		<header class="hg-header">
+			<div class="hg-brand">
+				<a href="/superadmin/dashboard">{{if .Settings}}{{.Settings.BrandName}}{{else}}HeartGuard{{end}}</a>
+			</div>
+			<nav class="hg-user-nav">
+				{{if .CurrentUser}}
+				<span class="hg-user-name">{{.CurrentUser.Name}}</span>
+				<form method="post" action="/logout" class="hg-inline-form">
+					<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+					<button type="submit" class="hg-link">Cerrar sesión</button>
+				</form>
+				{{end}}
+			</nav>
+		</header>
+		<div class="hg-container">
+			<aside class="hg-sidebar">
+				<ul>
+					<li><a href="/superadmin/dashboard">Panel</a></li>
+					<li><a href="/superadmin/organizations">Organizaciones</a></li>
+					<li><a href="/superadmin/invitations">Invitaciones</a></li>
+					<li><a href="/superadmin/users">Usuarios</a></li>
+					<li><a href="/superadmin/roles">Roles</a></li>
+					<li><a href="/superadmin/catalogs">Catálogos</a></li>
+					<li><a href="/superadmin/api-keys">API Keys</a></li>
+					<li><a href="/superadmin/audit">Auditoría</a></li>
+					<li><a href="/superadmin/settings/system">Configuración</a></li>
+				</ul>
+			</aside>
+			<main class="hg-main">
+				{{if .Breadcrumbs}}
+				<nav class="hg-breadcrumbs">
+					<ul>
+						{{range $i, $crumb := .Breadcrumbs}}
+						<li>{{if $crumb.URL}}<a href="{{$crumb.URL}}">{{$crumb.Label}}</a>{{else}}{{$crumb.Label}}{{end}}</li>
+						{{end}}
+					</ul>
+				</nav>
+				{{end}} {{if .Flashes}}
+				<div class="hg-flashes">
+					{{range .Flashes}}
+					<div class="hg-flash hg-flash-{{.Type}}">{{.Message}}</div>
+					{{end}}
+				</div>
+				{{end}} {{if .ContentHTML}} {{.ContentHTML}} {{end}}
+			</main>
+		</div>
+	</body>
+</html>
+{{end}}

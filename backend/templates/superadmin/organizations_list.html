@@ -1,0 +1,53 @@
+{{define "superadmin/organizations_list.html"}} {{template "layout" .}} {{end}} {{define "superadmin/organizations_list.html:content"}}
+<section class="hg-section">
+	<h1>Organizaciones</h1>
+	<div class="hg-card">
+		<h2>Nueva organización</h2>
+		<form method="post" action="/superadmin/organizations" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="code">Código</label>
+				<input id="code" name="code" required maxlength="60" />
+				<span class="hg-field-hint">Debe ser único, en mayúsculas y sin espacios (ej. HG-001).</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="name">Nombre</label>
+				<input id="name" name="name" required maxlength="160" />
+				<span class="hg-field-hint">Nombre comercial que verán los usuarios dentro del panel.</span>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear</button>
+			</div>
+		</form>
+	</div>
+	<table class="hg-table">
+		<thead>
+			<tr>
+				<th>Código</th>
+				<th>Nombre</th>
+				<th>Creada</th>
+				<th></th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Data.Organizations}}
+			<tr>
+				<td>{{.Code}}</td>
+				<td><a href="/superadmin/organizations/{{.ID}}">{{.Name}}</a></td>
+				<td>{{formatTime .CreatedAt}}</td>
+				<td>
+					<form method="post" action="/superadmin/organizations/{{.ID}}/delete" data-hg-confirm="¿Eliminar organización?">
+						<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+						<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+					</form>
+				</td>
+			</tr>
+			{{else}}
+			<tr>
+				<td colspan="4" class="hg-empty-cell">No hay organizaciones.</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</section>
+{{end}}

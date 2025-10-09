@@ -1,0 +1,67 @@
+{{define "superadmin/settings.html"}} {{template "layout" .}} {{end}} {{define "superadmin/settings.html:content"}}
+<section class="hg-section">
+	<h1>Configuración del sistema</h1>
+	<div class="hg-card">
+		<form method="post" action="/superadmin/settings/system" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			{{with .Data.Settings}}
+			<div class="hg-form-field">
+				<label for="brand_name">Nombre de marca</label>
+				<input id="brand_name" name="brand_name" value="{{.BrandName}}" required maxlength="160" />
+				<span class="hg-field-hint">Se muestra en el encabezado del panel y en la pantalla de inicio de sesión.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="support_email">Correo de soporte</label>
+				<input id="support_email" name="support_email" type="email" value="{{.SupportEmail}}" required />
+				<span class="hg-field-hint">Correo de contacto que se mostrará en comunicados y notificaciones.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="primary_color">Color primario</label>
+				<input id="primary_color" name="primary_color" value="{{.PrimaryColor}}" required />
+				<span class="hg-field-hint">Usa un valor HEX (#0EA5E9) para personalizar el acento visual.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="secondary_color">Color secundario</label>
+				<input id="secondary_color" name="secondary_color" value="{{if .SecondaryColor}}{{.SecondaryColor}}{{end}}" />
+				<span class="hg-field-hint">Opcional, se usa en elementos alternos como etiquetas y gráficos.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="logo_url">URL del logo</label>
+				<input id="logo_url" name="logo_url" value="{{if .LogoURL}}{{.LogoURL}}{{end}}" />
+				<span class="hg-field-hint">Proporciona una URL absoluta a una imagen optimizada para fondo oscuro.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="contact_phone">Teléfono de contacto</label>
+				<input id="contact_phone" name="contact_phone" value="{{if .ContactPhone}}{{.ContactPhone}}{{end}}" />
+				<span class="hg-field-hint">Número que se mostrará al personal en mensajes de ayuda.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="default_locale">Locale por defecto</label>
+				<input id="default_locale" name="default_locale" value="{{.DefaultLocale}}" required />
+				<span class="hg-field-hint">Ejemplo: <code>es-MX</code>, utilizado para formatos y regionalización.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="default_timezone">Zona horaria por defecto</label>
+				<input id="default_timezone" name="default_timezone" value="{{.DefaultTimezone}}" required />
+				<span class="hg-field-hint">Usa el identificador IANA (ej. <code>America/Mexico_City</code>).</span>
+			</div>
+			<div class="hg-form-field hg-form-field--full hg-form-field--plain">
+				<label class="hg-checkbox">
+					<input type="checkbox" name="maintenance_mode" {{if .MaintenanceMode}}checked{{end}} />
+					<span>Habilitar modo de mantenimiento</span>
+				</label>
+				<span class="hg-field-hint">Mientras esté activo, solo el personal autenticado podrá acceder al panel.</span>
+			</div>
+			<div class="hg-form-field hg-form-field--full">
+				<label for="maintenance_message">Mensaje de mantenimiento</label>
+				<textarea id="maintenance_message" name="maintenance_message" rows="3">{{if .MaintenanceMessage}}{{.MaintenanceMessage}}{{end}}</textarea>
+				<span class="hg-field-hint">Mensaje visible cuando el modo mantenimiento esté habilitado.</span>
+			</div>
+			{{end}}
+			<div class="hg-form-actions">
+				<button type="submit">Guardar cambios</button>
+			</div>
+		</form>
+	</div>
+</section>
+{{end}}

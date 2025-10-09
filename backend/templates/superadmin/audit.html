@@ -1,0 +1,66 @@
+{{define "superadmin/audit.html"}} {{template "layout" .}} {{end}} {{define "superadmin/audit.html:content"}}
+<section class="hg-section">
+	<h1>Auditoría</h1>
+	<div class="hg-card">
+		<form method="get" action="/superadmin/audit" class="hg-audit-filters">
+			<div class="hg-filter-field">
+				<label for="audit-from">Desde</label>
+				<input id="audit-from" name="from" type="date" value="{{.Data.From}}" />
+			</div>
+			<div class="hg-filter-field">
+				<label for="audit-to">Hasta</label>
+				<input id="audit-to" name="to" type="date" value="{{.Data.To}}" />
+			</div>
+			<div class="hg-filter-field">
+				<label for="audit-action">Acción</label>
+				<select id="audit-action" name="action">
+					<option value="">Todas</option>
+					{{range .Data.Actions}}
+					<option value="{{.Slug}}" {{if eq $.Data.Action .Slug}}selected{{end}}>{{.Label}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-filter-actions">
+				<button type="submit">Filtrar</button>
+				<a href="/superadmin/audit" class="hg-link-button hg-button-muted" role="button">Limpiar</a>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<div class="hg-table-responsive">
+			<table class="hg-table">
+				<thead>
+					<tr>
+						<th>Fecha</th>
+						<th>Acción</th>
+						<th>Usuario</th>
+						<th>Entidad</th>
+						<th>Detalles</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Data.Logs}}
+					<tr>
+						<td>{{formatTime .Log.TS}}</td>
+						<td>
+							<strong>{{.ActionLabel}}</strong><br />
+							<small>{{.Log.Action}}</small>
+						</td>
+						<td>{{if .Log.UserID}}{{.Log.UserID}}{{else}}—{{end}}</td>
+						<td>{{if .Log.Entity}}{{.Log.Entity}}{{end}} {{if .Log.EntityID}}#{{.Log.EntityID}}{{end}}</td>
+						<td><pre class="hg-pre">{{if .Log.Details}}{{printf "%+v" .Log.Details}}{{else}}—{{end}}</pre></td>
+					</tr>
+					{{else}}
+					<tr>
+						<td colspan="5" class="hg-empty-cell">Sin registros.</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+{{end}}

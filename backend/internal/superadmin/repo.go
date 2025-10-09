@@ -1338,12 +1338,37 @@ RETURNING
 		updated.UpdatedBy = &s
 	}
 	return &updated, nil
-}
+	}
 
-// ------------------------------
-// API Keys
-// ------------------------------
-func (r *Repo) CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error) {
+	// ------------------------------
+	// API Keys
+	// ------------------------------
+	func (r *Repo) ListPermissions(ctx context.Context) ([]models.Permission, error) {
+		rows, err := r.pool.Query(ctx, `
+	SELECT code, COALESCE(description,'')
+	FROM permissions
+	ORDER BY code
+	`)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		out := make([]models.Permission, 0, 32)
+		for rows.Next() {
+			var item models.Permission
+			if err := rows.Scan(&item.Code, &item.Description); err != nil {
+				return nil, err
+			}
+			out = append(out, item)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+		return out, nil
+	}
+
+	func (r *Repo) CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error) {
 	var id string
 	err := r.pool.QueryRow(ctx, `
 INSERT INTO api_keys (id, key_hash, label, owner_user_id, created_at, expires_at)
@@ -1486,8 +1511,7 @@ SELECT
   user_id,
   entity,
   entity_id,
-  details,
-  ip::text
+	details
 FROM audit_logs
 %s
 ORDER BY ts DESC
@@ -1512,7 +1536,6 @@ LIMIT $%d OFFSET $%d
 			entity     *string
 			entityUUID *uuid.UUID
 			detailsRaw []byte
-			ipText     *string
 		)
 		if err := rows.Scan(
 			&idText,
@@ -1522,7 +1545,6 @@ LIMIT $%d OFFSET $%d
 			&entity,
 			&entityUUID,
 			&detailsRaw,
-			&ipText,
 		); err != nil {
 			return nil, err
 		}
@@ -1551,7 +1573,6 @@ LIMIT $%d OFFSET $%d
 			Entity:   entity,
 			EntityID: entityID,
 			Details:  details,
-			IP:       ipText,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1576,6 +1597,20 @@ WHERE lower(u.email) = lower($1) AND us.code <> 'blocked'
 		return nil, "", err
 	}
 	return &u, hash, nil
+}
+
+func (r *Repo) GetUserSummary(ctx context.Context, userID string) (*models.User, error) {
+	row := r.pool.QueryRow(ctx, `
+SELECT u.id::text, u.name, u.email, us.code AS status, u.created_at
+FROM users u
+JOIN user_statuses us ON us.id = u.user_status_id
+WHERE u.id = $1
+`, userID)
+	var u models.User
+	if err := row.Scan(&u.ID, &u.Name, &u.Email, &u.Status, &u.CreatedAt); err != nil {
+		return nil, err
+	}
+	return &u, nil
 }
 
 func (r *Repo) IsSuperadmin(ctx context.Context, userID string) (bool, error) {

@@ -9,12 +9,15 @@ import (
 	"syscall"
 	"time"
 
+	"heartguard-superadmin/internal/auth"
 	"heartguard-superadmin/internal/config"
 	"heartguard-superadmin/internal/db"
 	hhttp "heartguard-superadmin/internal/http"
 	"heartguard-superadmin/internal/middleware"
 	"heartguard-superadmin/internal/rediscli"
+	"heartguard-superadmin/internal/session"
 	"heartguard-superadmin/internal/superadmin"
+	"heartguard-superadmin/internal/ui"
 )
 
 func main() {
@@ -41,10 +44,16 @@ func main() {
 
 	// Repo + handlers
 	repo := superadmin.NewRepo(pool, rdb)
-	handlers := superadmin.NewHandlers(repo, logger)
+	renderer, err := ui.NewRenderer()
+	if err != nil {
+		logger.Fatal("templates", middleware.Field("err", err))
+	}
+	sessions := session.NewManager(cfg, rdb)
+	authHandlers := auth.NewHandlers(cfg, repo, renderer, sessions, logger)
+	superHandlers := superadmin.NewHandlers(repo, renderer, sessions, logger)
 
 	// Router
-	router := hhttp.NewRouter(logger, cfg, repo, rdb, handlers)
+	router := hhttp.NewRouter(logger, cfg, repo, rdb, sessions, authHandlers, superHandlers)
 
 	// Servidor HTTP estándar (reemplaza hhttp.NewServer)
 	srv := &http.Server{

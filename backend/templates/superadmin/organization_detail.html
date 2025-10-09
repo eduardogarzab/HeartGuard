@@ -1,0 +1,61 @@
+{{define "superadmin/organization_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/organization_detail.html:content"}}
+<section class="hg-section">
+	<h1>{{.Data.Organization.Name}}</h1>
+	<p><strong>Código:</strong> {{.Data.Organization.Code}}</p>
+	<p><strong>Creada:</strong> {{formatTime .Data.Organization.CreatedAt}}</p>
+</section>
+<section class="hg-section">
+	<h2>Miembros</h2>
+	<table class="hg-table">
+		<thead>
+			<tr>
+				<th>Nombre</th>
+				<th>Correo</th>
+				<th>Rol</th>
+				<th>Ingresó</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Data.Members}}
+			<tr>
+				<td>{{.Name}}</td>
+				<td>{{.Email}}</td>
+				<td>{{.OrgRoleLabel}}</td>
+				<td>{{formatTime .JoinedAt}}</td>
+			</tr>
+			{{else}}
+			<tr>
+				<td colspan="4" class="hg-empty-cell">Sin miembros.</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</section>
+<section class="hg-section">
+	<h2>Invitaciones</h2>
+	<table class="hg-table">
+		<thead>
+			<tr>
+				<th>Correo</th>
+				<th>Rol</th>
+				<th>Expira</th>
+				<th>Estatus</th>
+			</tr>
+		</thead>
+		<tbody>
+			{{range .Data.Invitations}}
+			<tr>
+				<td>{{if .Email}}{{.Email}}{{else}}—{{end}}</td>
+				<td>{{.OrgRoleCode}}</td>
+				<td>{{formatTime .ExpiresAt}}</td>
+				<td>{{.Status}}</td>
+			</tr>
+			{{else}}
+			<tr>
+				<td colspan="4" class="hg-empty-cell">Sin invitaciones.</td>
+			</tr>
+			{{end}}
+		</tbody>
+	</table>
+</section>
+{{end}}
