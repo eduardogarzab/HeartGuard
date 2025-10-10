@@ -1,0 +1,160 @@
+{{define "superadmin/devices.html"}} {{template "layout" .}} {{end}} {{define "superadmin/devices.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>Dispositivos</h1>
+	</div>
+	<div class="hg-card">
+		<h3>Registrar dispositivo</h3>
+		<form method="post" action="/superadmin/devices" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="device-serial">Serie</label>
+				<input id="device-serial" name="serial" type="text" required placeholder="SN-123456" />
+			</div>
+			<div class="hg-form-field">
+				<label for="device-org">Organización</label>
+				<select id="device-org" name="org_id">
+					<option value="">Sin organización</option>
+					{{range .Data.Organizations}}
+					<option value="{{.ID}}">{{.Name}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="device-type">Tipo</label>
+				<select id="device-type" name="device_type" required>
+					<option value="">Selecciona tipo</option>
+					{{range .Data.DeviceTypes}}
+					<option value="{{.Code}}">{{.Code}}{{if .Description}} — {{.Description}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="device-brand">Marca</label>
+				<input id="device-brand" name="brand" type="text" />
+			</div>
+			<div class="hg-form-field">
+				<label for="device-model">Modelo</label>
+				<input id="device-model" name="model" type="text" />
+			</div>
+			<div class="hg-form-field">
+				<label for="device-owner">Paciente asignado</label>
+				<select id="device-owner" name="owner_patient_id">
+					<option value="">Sin asignar</option>
+					{{range .Data.Patients}}
+					<option value="{{.ID}}">{{.Name}}{{if .OrgName}} · {{.OrgName}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label class="hg-checkbox">
+					<input type="checkbox" name="active" value="1" checked />
+					<span>Activo</span>
+				</label>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear dispositivo</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Dispositivos registrados</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Serie</th>
+					<th>Organización</th>
+					<th>Tipo</th>
+					<th>Paciente</th>
+					<th>Marca</th>
+					<th>Modelo</th>
+					<th>Activo</th>
+					<th>Registrado</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				{{$device := .}}
+				<tr>
+					<td>{{$device.Serial}}</td>
+					<td>{{if $device.OrgName}}{{$device.OrgName}}{{else}}—{{end}}</td>
+					<td>{{$device.DeviceTypeLabel}}</td>
+					<td>{{if $device.OwnerPatientName}}{{$device.OwnerPatientName}}{{else}}—{{end}}</td>
+					<td>{{stringValue $device.Brand}}</td>
+					<td>{{stringValue $device.Model}}</td>
+					<td>{{if $device.Active}}Sí{{else}}No{{end}}</td>
+					<td>{{formatTime $device.RegisteredAt}}</td>
+					<td class="hg-flex">
+						<details>
+							<summary>Editar</summary>
+							<form method="post" action="/superadmin/devices/{{$device.ID}}/update" class="hg-form-grid">
+								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+								<div class="hg-form-field">
+									<label>Serie</label>
+									<input name="serial" type="text" value="{{$device.Serial}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Organización</label>
+									<select name="org_id">
+										<option value="">Sin organización</option>
+										{{range $.Data.Organizations}}
+										<option value="{{.ID}}" {{if eq .ID (stringValue $device.OrgID)}}selected{{end}}>{{.Name}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Tipo</label>
+									<select name="device_type" required>
+										{{range $.Data.DeviceTypes}}
+										<option value="{{.Code}}" {{if eq .Code $device.DeviceTypeCode}}selected{{end}}>{{.Code}}{{if .Description}} — {{.Description}}{{end}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Marca</label>
+									<input name="brand" type="text" value="{{stringValue $device.Brand}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Modelo</label>
+									<input name="model" type="text" value="{{stringValue $device.Model}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Paciente</label>
+									<select name="owner_patient_id">
+										<option value="">Sin asignar</option>
+										{{range $.Data.Patients}}
+										<option value="{{.ID}}" {{if eq .ID (stringValue $device.OwnerPatientID)}}selected{{end}}>{{.Name}}{{if .OrgName}} · {{.OrgName}}{{end}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label class="hg-checkbox">
+										<input type="checkbox" name="active" value="1" {{if $device.Active}}checked{{end}} />
+										<span>Activo</span>
+									</label>
+								</div>
+								<div class="hg-form-actions">
+									<button type="submit">Guardar</button>
+								</div>
+							</form>
+						</details>
+						<form method="post" action="/superadmin/devices/{{$device.ID}}/delete" data-hg-confirm="¿Eliminar dispositivo?" class="hg-inline-form">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="9" class="hg-empty-cell">Sin dispositivos registrados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

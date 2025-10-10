@@ -1,0 +1,107 @@
+{{define "superadmin/models.html"}} {{template "layout" .}} {{end}} {{define "superadmin/models.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>Modelos ML</h1>
+	</div>
+	<div class="hg-card">
+		<h3>Registrar modelo</h3>
+		<form method="post" action="/superadmin/models" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="model-name">Nombre</label>
+				<input id="model-name" name="name" type="text" required placeholder="Predictor ritmo" />
+			</div>
+			<div class="hg-form-field">
+				<label for="model-version">Versión</label>
+				<input id="model-version" name="version" type="text" required placeholder="1.0" />
+			</div>
+			<div class="hg-form-field">
+				<label for="model-task">Tarea</label>
+				<input id="model-task" name="task" type="text" required placeholder="arrhythmia_detection" />
+			</div>
+			<div class="hg-form-field">
+				<label for="model-training">Dato de entrenamiento (ref)</label>
+				<input id="model-training" name="training_data_ref" type="text" placeholder="s3://bucket/path" />
+			</div>
+			<div class="hg-form-field">
+				<label for="model-hyperparams">Hyperparámetros (JSON)</label>
+				<textarea id="model-hyperparams" name="hyperparams" rows="3" placeholder='{"lr":0.01}'></textarea>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear modelo</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Modelos registrados</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Nombre</th>
+					<th>Versión</th>
+					<th>Tarea</th>
+					<th>Entrenamiento</th>
+					<th>Hyperparámetros</th>
+					<th>Creado</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				{{$model := .}}
+				<tr>
+					<td>{{$model.Name}}</td>
+					<td>{{$model.Version}}</td>
+					<td>{{$model.Task}}</td>
+					<td>{{if $model.TrainingDataRef}}{{$model.TrainingDataRef}}{{else}}—{{end}}</td>
+					<td class="hg-pre">{{if $model.Hyperparams}}{{$model.Hyperparams}}{{else}}—{{end}}</td>
+					<td>{{formatTime $model.CreatedAt}}</td>
+					<td class="hg-flex">
+						<details>
+							<summary>Editar</summary>
+							<form method="post" action="/superadmin/models/{{$model.ID}}/update" class="hg-form-grid">
+								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+								<div class="hg-form-field">
+									<label>Nombre</label>
+									<input name="name" type="text" value="{{$model.Name}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Versión</label>
+									<input name="version" type="text" value="{{$model.Version}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Tarea</label>
+									<input name="task" type="text" value="{{$model.Task}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Dato de entrenamiento</label>
+									<input name="training_data_ref" type="text" value="{{if $model.TrainingDataRef}}{{$model.TrainingDataRef}}{{end}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Hyperparámetros (JSON)</label>
+									<textarea name="hyperparams" rows="3">{{if $model.Hyperparams}}{{$model.Hyperparams}}{{end}}</textarea>
+								</div>
+								<div class="hg-form-actions">
+									<button type="submit">Guardar</button>
+								</div>
+							</form>
+						</details>
+						<form method="post" action="/superadmin/models/{{$model.ID}}/delete" data-hg-confirm="¿Eliminar modelo?" class="hg-inline-form">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="7" class="hg-empty-cell">Sin modelos registrados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

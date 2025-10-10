@@ -1,0 +1,157 @@
+{{define "superadmin/alerts.html"}} {{template "layout" .}} {{end}} {{define "superadmin/alerts.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>Alertas</h1>
+	</div>
+	<div class="hg-card">
+		<h3>Registrar alerta</h3>
+		<form method="post" action="/superadmin/alerts" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="alert-patient">Paciente</label>
+				<select id="alert-patient" name="patient_id" required>
+					<option value="">Selecciona paciente</option>
+					{{range .Data.Patients}}
+					<option value="{{.ID}}">{{.Name}}{{if .OrgName}} · {{.OrgName}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-type">Tipo</label>
+				<select id="alert-type" name="alert_type" required>
+					<option value="">Selecciona tipo</option>
+					{{range .Data.AlertTypes}}
+					<option value="{{.Code}}">{{.Code}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-level">Nivel</label>
+				<select id="alert-level" name="alert_level" required>
+					<option value="">Selecciona nivel</option>
+					{{range .Data.AlertLevels}}
+					<option value="{{.Code}}">{{.Label}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-status">Estatus</label>
+				<select id="alert-status" name="status" required>
+					<option value="">Selecciona estatus</option>
+					{{range .Data.AlertStatuses}}
+					<option value="{{.Code}}">{{.Description}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-model">Modelo</label>
+				<select id="alert-model" name="model_id">
+					<option value="">Sin modelo</option>
+					{{range .Data.Models}}
+					<option value="{{.ID}}">{{.Name}} · {{.Version}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-inference">Inferencia</label>
+				<select id="alert-inference" name="inference_id">
+					<option value="">Sin inferencia</option>
+					{{range .Data.Inferences}}
+					<option value="{{.ID}}">{{.EventLabel}} · {{formatTime .WindowStart}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-desc">Descripción</label>
+				<textarea id="alert-desc" name="description" rows="2"></textarea>
+			</div>
+			<div class="hg-form-field">
+				<label for="alert-location">Ubicación (WKT)</label>
+				<input id="alert-location" name="location_wkt" type="text" placeholder="POINT(-99.14 19.4)" />
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear alerta</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Alertas registradas</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Paciente</th>
+					<th>Tipo</th>
+					<th>Nivel</th>
+					<th>Estatus</th>
+					<th>Organización</th>
+					<th>Creada</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				{{$alert := .}}
+				<tr>
+					<td>{{$alert.PatientName}}</td>
+					<td>{{$alert.AlertTypeLabel}}</td>
+					<td>{{$alert.LevelLabel}}</td>
+					<td>{{$alert.StatusLabel}}</td>
+					<td>{{if $alert.OrgName}}{{$alert.OrgName}}{{else}}—{{end}}</td>
+					<td>{{formatTime $alert.CreatedAt}}</td>
+					<td class="hg-flex">
+						<details>
+							<summary>Editar</summary>
+							<form method="post" action="/superadmin/alerts/{{$alert.ID}}/update" class="hg-form-grid">
+								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+								<div class="hg-form-field">
+									<label>Tipo</label>
+									<select name="alert_type" required>
+										{{range $.Data.AlertTypes}}
+										<option value="{{.Code}}" {{if eq .Code $alert.AlertTypeCode}}selected{{end}}>{{.Code}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Nivel</label>
+									<select name="alert_level" required>
+										{{range $.Data.AlertLevels}}
+										<option value="{{.Code}}" {{if eq .Code $alert.LevelCode}}selected{{end}}>{{.Label}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Estatus</label>
+									<select name="status" required>
+										{{range $.Data.AlertStatuses}}
+										<option value="{{.Code}}" {{if eq .Code $alert.StatusCode}}selected{{end}}>{{.Description}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Descripción</label>
+									<textarea name="description" rows="2">{{if $alert.Description}}{{$alert.Description}}{{end}}</textarea>
+								</div>
+								<div class="hg-form-actions">
+									<button type="submit">Guardar</button>
+								</div>
+							</form>
+						</details>
+						<form method="post" action="/superadmin/alerts/{{$alert.ID}}/delete" data-hg-confirm="¿Eliminar alerta?" class="hg-inline-form">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="7" class="hg-empty-cell">Sin alertas registradas.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

@@ -55,6 +55,48 @@ type Repository interface {
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
+	ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error)
+	CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error)
+	UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error)
+	DeleteContentBlockType(ctx context.Context, id string) error
+
+	ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error)
+	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
+	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
+	DeletePatient(ctx context.Context, id string) error
+
+	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
+	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
+	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
+	DeleteDevice(ctx context.Context, id string) error
+	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+
+	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
+	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
+	UpdateSignalStream(ctx context.Context, id string, input models.SignalStreamInput) (*models.SignalStream, error)
+	DeleteSignalStream(ctx context.Context, id string) error
+
+	ListModels(ctx context.Context, limit, offset int) ([]models.MLModel, error)
+	CreateModel(ctx context.Context, input models.MLModelInput) (*models.MLModel, error)
+	UpdateModel(ctx context.Context, id string, input models.MLModelInput) (*models.MLModel, error)
+	DeleteModel(ctx context.Context, id string) error
+
+	ListEventTypes(ctx context.Context, limit, offset int) ([]models.EventType, error)
+	CreateEventType(ctx context.Context, input models.EventTypeInput) (*models.EventType, error)
+	UpdateEventType(ctx context.Context, id string, input models.EventTypeInput) (*models.EventType, error)
+	DeleteEventType(ctx context.Context, id string) error
+
+	ListInferences(ctx context.Context, limit, offset int) ([]models.Inference, error)
+	CreateInference(ctx context.Context, input models.InferenceInput) (*models.Inference, error)
+	UpdateInference(ctx context.Context, id string, input models.InferenceInput) (*models.Inference, error)
+	DeleteInference(ctx context.Context, id string) error
+
+	ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error)
+	CreateAlert(ctx context.Context, patientID string, input models.AlertInput) (*models.Alert, error)
+	UpdateAlert(ctx context.Context, id string, input models.AlertInput) (*models.Alert, error)
+	DeleteAlert(ctx context.Context, id string) error
+	ListAlertTypes(ctx context.Context) ([]models.AlertType, error)
+	ListAlertStatuses(ctx context.Context) ([]models.AlertStatus, error)
 	ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error)
 	GetContent(ctx context.Context, id string) (*models.ContentDetail, error)
 	CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error)
@@ -362,6 +404,7 @@ var allowedCatalogs = map[string]catalogMeta{
 	"org_roles":             {Label: "Roles de organización"},
 	"content_statuses":      {Label: "Estatus de contenido", RequiresWeight: true},
 	"content_categories":    {Label: "Categorías de contenido"},
+	"content_types":         {Label: "Tipos de contenido"},
 }
 
 func catalogInfo(slug string) (catalogMeta, bool) {

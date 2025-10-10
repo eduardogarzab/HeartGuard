@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
@@ -52,6 +53,49 @@ type Repository interface {
 	CreateCatalogItem(ctx context.Context, catalog, code, label string, weight *int) (*models.CatalogItem, error)
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
+
+	ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error)
+	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
+	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
+	DeletePatient(ctx context.Context, id string) error
+
+	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
+	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
+	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
+	DeleteDevice(ctx context.Context, id string) error
+	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+
+	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
+	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
+	UpdateSignalStream(ctx context.Context, id string, input models.SignalStreamInput) (*models.SignalStream, error)
+	DeleteSignalStream(ctx context.Context, id string) error
+
+	ListModels(ctx context.Context, limit, offset int) ([]models.MLModel, error)
+	CreateModel(ctx context.Context, input models.MLModelInput) (*models.MLModel, error)
+	UpdateModel(ctx context.Context, id string, input models.MLModelInput) (*models.MLModel, error)
+	DeleteModel(ctx context.Context, id string) error
+
+	ListEventTypes(ctx context.Context, limit, offset int) ([]models.EventType, error)
+	CreateEventType(ctx context.Context, input models.EventTypeInput) (*models.EventType, error)
+	UpdateEventType(ctx context.Context, id string, input models.EventTypeInput) (*models.EventType, error)
+	DeleteEventType(ctx context.Context, id string) error
+
+	ListInferences(ctx context.Context, limit, offset int) ([]models.Inference, error)
+	CreateInference(ctx context.Context, input models.InferenceInput) (*models.Inference, error)
+	UpdateInference(ctx context.Context, id string, input models.InferenceInput) (*models.Inference, error)
+	DeleteInference(ctx context.Context, id string) error
+
+	ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error)
+	CreateAlert(ctx context.Context, patientID string, input models.AlertInput) (*models.Alert, error)
+	UpdateAlert(ctx context.Context, id string, input models.AlertInput) (*models.Alert, error)
+	DeleteAlert(ctx context.Context, id string) error
+	ListAlertTypes(ctx context.Context) ([]models.AlertType, error)
+	ListAlertStatuses(ctx context.Context) ([]models.AlertStatus, error)
+
+	ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error)
+	CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error)
+	UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error)
+	DeleteContentBlockType(ctx context.Context, id string) error
 
 	ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error)
 	GetContent(ctx context.Context, id string) (*models.ContentDetail, error)
@@ -130,25 +174,49 @@ var allowedCatalogs = map[string]catalogMeta{
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":         "Alta de organización",
-	"ORG_UPDATE":         "Actualización de organización",
-	"ORG_DELETE":         "Eliminación de organización",
-	"INVITE_CREATE":      "Emisión de invitación",
-	"INVITE_CANCEL":      "Cancelación de invitación",
-	"INVITE_CONSUME":     "Consumo de invitación",
-	"MEMBER_ADD":         "Alta de miembro",
-	"MEMBER_REMOVE":      "Baja de miembro",
-	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
-	"APIKEY_CREATE":      "Creación de API Key",
-	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":      "Revocación de API Key",
-	"CATALOG_CREATE":     "Alta en catálogo",
-	"CATALOG_UPDATE":     "Actualización de catálogo",
-	"CATALOG_DELETE":     "Eliminación de catálogo",
-	"AUDIT_EXPORT":       "Exportación de auditoría",
-	"CONTENT_CREATE":     "Alta de contenido",
-	"CONTENT_UPDATE":     "Actualización de contenido",
-	"CONTENT_DELETE":     "Eliminación de contenido",
+	"ORG_CREATE":                "Alta de organización",
+	"ORG_UPDATE":                "Actualización de organización",
+	"ORG_DELETE":                "Eliminación de organización",
+	"INVITE_CREATE":             "Emisión de invitación",
+	"INVITE_CANCEL":             "Cancelación de invitación",
+	"INVITE_CONSUME":            "Consumo de invitación",
+	"MEMBER_ADD":                "Alta de miembro",
+	"MEMBER_REMOVE":             "Baja de miembro",
+	"USER_STATUS_UPDATE":        "Actualización de estatus de usuario",
+	"APIKEY_CREATE":             "Creación de API Key",
+	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":             "Revocación de API Key",
+	"CATALOG_CREATE":            "Alta en catálogo",
+	"CATALOG_UPDATE":            "Actualización de catálogo",
+	"CATALOG_DELETE":            "Eliminación de catálogo",
+	"CONTENT_BLOCK_TYPE_CREATE": "Alta de tipo de bloque",
+	"CONTENT_BLOCK_TYPE_UPDATE": "Actualización de tipo de bloque",
+	"CONTENT_BLOCK_TYPE_DELETE": "Eliminación de tipo de bloque",
+	"PATIENT_CREATE":            "Alta de paciente",
+	"PATIENT_UPDATE":            "Actualización de paciente",
+	"PATIENT_DELETE":            "Eliminación de paciente",
+	"DEVICE_CREATE":             "Alta de dispositivo",
+	"DEVICE_UPDATE":             "Actualización de dispositivo",
+	"DEVICE_DELETE":             "Eliminación de dispositivo",
+	"SIGNAL_STREAM_CREATE":      "Alta de stream de señal",
+	"SIGNAL_STREAM_UPDATE":      "Actualización de stream de señal",
+	"SIGNAL_STREAM_DELETE":      "Eliminación de stream de señal",
+	"MODEL_CREATE":              "Alta de modelo ML",
+	"MODEL_UPDATE":              "Actualización de modelo ML",
+	"MODEL_DELETE":              "Eliminación de modelo ML",
+	"EVENT_TYPE_CREATE":         "Alta de tipo de evento",
+	"EVENT_TYPE_UPDATE":         "Actualización de tipo de evento",
+	"EVENT_TYPE_DELETE":         "Eliminación de tipo de evento",
+	"INFERENCE_CREATE":          "Alta de inferencia",
+	"INFERENCE_UPDATE":          "Actualización de inferencia",
+	"INFERENCE_DELETE":          "Eliminación de inferencia",
+	"ALERT_CREATE":              "Alta de alerta",
+	"ALERT_UPDATE":              "Actualización de alerta",
+	"ALERT_DELETE":              "Eliminación de alerta",
+	"AUDIT_EXPORT":              "Exportación de auditoría",
+	"CONTENT_CREATE":            "Alta de contenido",
+	"CONTENT_UPDATE":            "Actualización de contenido",
+	"CONTENT_DELETE":            "Eliminación de contenido",
 }
 
 func humanizeToken(input string) string {
@@ -770,6 +838,40 @@ func parseDateTimeLocal(input string) (*time.Time, error) {
 		return nil, err
 	}
 	return &t, nil
+}
+
+func optionalString(raw string) *string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	val := trimmed
+	return &val
+}
+
+func optionalJSON(raw string) (*string, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	if !json.Valid([]byte(trimmed)) {
+		return nil, fmt.Errorf("JSON inválido")
+	}
+	val := trimmed
+	return &val, nil
+}
+
+func optionalFloat32(raw string) (*float32, error) {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil, nil
+	}
+	val, err := strconv.ParseFloat(trimmed, 32)
+	if err != nil {
+		return nil, err
+	}
+	f32 := float32(val)
+	return &f32, nil
 }
 
 func (h *Handlers) ContentIndex(w http.ResponseWriter, r *http.Request) {
@@ -1436,6 +1538,56 @@ type catalogsViewData struct {
 	RequiresWeight bool
 }
 
+type contentBlockTypesViewData struct {
+	Items []models.ContentBlockType
+}
+
+type patientsViewData struct {
+	Items         []models.Patient
+	Organizations []models.Organization
+	Sexes         []models.CatalogItem
+}
+
+type devicesViewData struct {
+	Items         []models.Device
+	Organizations []models.Organization
+	DeviceTypes   []models.DeviceType
+	Patients      []models.Patient
+}
+
+type signalStreamsViewData struct {
+	Items       []models.SignalStream
+	Patients    []models.Patient
+	Devices     []models.Device
+	SignalTypes []models.CatalogItem
+}
+
+type modelsViewData struct {
+	Items []models.MLModel
+}
+
+type eventTypesViewData struct {
+	Items  []models.EventType
+	Levels []models.CatalogItem
+}
+
+type inferencesViewData struct {
+	Items      []models.Inference
+	Models     []models.MLModel
+	Streams    []models.SignalStream
+	EventTypes []models.EventType
+}
+
+type alertsViewData struct {
+	Items         []models.Alert
+	Patients      []models.Patient
+	AlertTypes    []models.AlertType
+	AlertStatuses []models.AlertStatus
+	AlertLevels   []models.CatalogItem
+	Models        []models.MLModel
+	Inferences    []models.Inference
+}
+
 type apiKeysViewData struct {
 	Keys         []models.APIKey
 	Permissions  []models.Permission
@@ -1949,6 +2101,1126 @@ func (h *Handlers) CatalogsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "CATALOG_DELETE", "catalog_item", &id, map[string]any{"catalog": slug})
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Elemento eliminado"})
 	http.Redirect(w, r, "/superadmin/catalogs/"+slug, http.StatusSeeOther)
+}
+
+func (h *Handlers) ContentBlockTypesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	items, err := h.repo.ListContentBlockTypes(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos de bloque", http.StatusInternalServerError)
+		return
+	}
+
+	data := contentBlockTypesViewData{Items: items}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Tipos de bloque"}}
+	h.render(w, r, "superadmin/content_blocks.html", "Tipos de bloque", data, crumbs)
+}
+
+func (h *Handlers) ContentBlockTypesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	code := strings.TrimSpace(r.FormValue("code"))
+	label := strings.TrimSpace(r.FormValue("label"))
+	descriptionRaw := strings.TrimSpace(r.FormValue("description"))
+	redirectURL := "/superadmin/content-block-types"
+
+	if code == "" || label == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y nombre son obligatorios"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	var description *string
+	if descriptionRaw != "" {
+		descCopy := descriptionRaw
+		description = &descCopy
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.CreateContentBlockType(ctx, code, label, description)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23505":
+				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El código ya existe"})
+			case "23514":
+				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: pgErr.Message})
+			default:
+				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el tipo de bloque"})
+			}
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el tipo de bloque"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_CREATE", "content_block_type", &item.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque creado"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) ContentBlockTypesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	redirectURL := "/superadmin/content-block-types"
+	code := strings.TrimSpace(r.FormValue("code"))
+	label := strings.TrimSpace(r.FormValue("label"))
+	descriptionVal := strings.TrimSpace(r.FormValue("description"))
+
+	if code == "" || label == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y nombre son obligatorios"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	codeCopy := code
+	labelCopy := label
+	descCopy := descriptionVal
+	descPtr := &descCopy
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.UpdateContentBlockType(ctx, id, &codeCopy, &labelCopy, descPtr)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El código ya existe"})
+		} else if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Tipo de bloque no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el tipo de bloque"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_UPDATE", "content_block_type", &item.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque actualizado"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) ContentBlockTypesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteContentBlockType(ctx, id); err != nil {
+		status := http.StatusInternalServerError
+		msg := "No se pudo eliminar"
+		if errors.Is(err, pgx.ErrNoRows) {
+			status = http.StatusNotFound
+			msg = "Tipo de bloque no encontrado"
+		}
+		http.Error(w, msg, status)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_DELETE", "content_block_type", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque eliminado"})
+	http.Redirect(w, r, "/superadmin/content-block-types", http.StatusSeeOther)
+}
+
+// Patients
+
+func (h *Handlers) PatientsIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	orgs, err := h.repo.ListOrganizations(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las organizaciones", http.StatusInternalServerError)
+		return
+	}
+	sexes, err := h.repo.ListCatalog(ctx, "sexes", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
+		return
+	}
+
+	data := patientsViewData{Items: patients, Organizations: orgs, Sexes: sexes}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes"}}
+	h.render(w, r, "superadmin/patients.html", "Pacientes", data, crumbs)
+}
+
+func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre es obligatorio"})
+		http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+		return
+	}
+	orgIDRaw := strings.TrimSpace(r.FormValue("org_id"))
+	var orgID *string
+	if orgIDRaw != "" {
+		orgID = &orgIDRaw
+	}
+	birthRaw := strings.TrimSpace(r.FormValue("birthdate"))
+	var birth *time.Time
+	if birthRaw != "" {
+		parsed, err := time.Parse("2006-01-02", birthRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de nacimiento inválida"})
+			http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+			return
+		}
+		birth = &parsed
+	}
+	sexRaw := strings.TrimSpace(r.FormValue("sex_code"))
+	var sexCode *string
+	if sexRaw != "" {
+		lower := strings.ToLower(sexRaw)
+		sexCode = &lower
+	}
+	riskRaw := strings.TrimSpace(r.FormValue("risk_level"))
+	var risk *string
+	if riskRaw != "" {
+		risk = &riskRaw
+	}
+
+	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	patient, err := h.repo.CreatePatient(ctx, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el paciente"})
+		http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PATIENT_CREATE", "patient", &patient.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente creado"})
+	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientsUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre es obligatorio"})
+		http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+		return
+	}
+	orgIDRaw := strings.TrimSpace(r.FormValue("org_id"))
+	var orgID *string
+	if orgIDRaw != "" {
+		orgID = &orgIDRaw
+	}
+	birthRaw := strings.TrimSpace(r.FormValue("birthdate"))
+	var birth *time.Time
+	if birthRaw != "" {
+		parsed, err := time.Parse("2006-01-02", birthRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de nacimiento inválida"})
+			http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+			return
+		}
+		birth = &parsed
+	}
+	sexRaw := strings.TrimSpace(r.FormValue("sex_code"))
+	var sexCode *string
+	if sexRaw != "" {
+		lower := strings.ToLower(sexRaw)
+		sexCode = &lower
+	}
+	riskRaw := strings.TrimSpace(r.FormValue("risk_level"))
+	var risk *string
+	if riskRaw != "" {
+		risk = &riskRaw
+	}
+	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	patient, err := h.repo.UpdatePatient(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el paciente"})
+		http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PATIENT_UPDATE", "patient", &patient.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente actualizado"})
+	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePatient(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "PATIENT_DELETE", "patient", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente eliminado"})
+	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+// Devices
+
+func (h *Handlers) DevicesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	devices, err := h.repo.ListDevices(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los dispositivos", http.StatusInternalServerError)
+		return
+	}
+	orgs, err := h.repo.ListOrganizations(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las organizaciones", http.StatusInternalServerError)
+		return
+	}
+	deviceTypes, err := h.repo.ListDeviceTypes(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos de dispositivo", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	data := devicesViewData{Items: devices, Organizations: orgs, DeviceTypes: deviceTypes, Patients: patients}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Dispositivos"}}
+	h.render(w, r, "superadmin/devices.html", "Dispositivos", data, crumbs)
+}
+
+func (h *Handlers) DevicesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	serial := strings.TrimSpace(r.FormValue("serial"))
+	if serial == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Serie obligatoria"})
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	orgIDRaw := strings.TrimSpace(r.FormValue("org_id"))
+	var orgID *string
+	if orgIDRaw != "" {
+		orgID = &orgIDRaw
+	}
+	brandRaw := strings.TrimSpace(r.FormValue("brand"))
+	var brand *string
+	if brandRaw != "" {
+		brand = &brandRaw
+	}
+	modelRaw := strings.TrimSpace(r.FormValue("model"))
+	var model *string
+	if modelRaw != "" {
+		model = &modelRaw
+	}
+	typeCode := strings.TrimSpace(r.FormValue("device_type"))
+	if typeCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Tipo de dispositivo requerido"})
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	ownerRaw := strings.TrimSpace(r.FormValue("owner_patient_id"))
+	var owner *string
+	if ownerRaw != "" {
+		owner = &ownerRaw
+	}
+	activeVal := true
+	if r.FormValue("active") == "" {
+		activeVal = false
+	}
+	input := models.DeviceInput{OrgID: orgID, Serial: serial, Brand: brand, Model: model, DeviceTypeCode: typeCode, OwnerPatientID: owner, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.CreateDevice(ctx, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el dispositivo"})
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "DEVICE_CREATE", "device", &device.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo creado"})
+	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) DevicesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	serial := strings.TrimSpace(r.FormValue("serial"))
+	if serial == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Serie obligatoria"})
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	orgIDRaw := strings.TrimSpace(r.FormValue("org_id"))
+	var orgID *string
+	if orgIDRaw != "" {
+		orgID = &orgIDRaw
+	}
+	brandRaw := strings.TrimSpace(r.FormValue("brand"))
+	var brand *string
+	if brandRaw != "" {
+		brand = &brandRaw
+	}
+	modelRaw := strings.TrimSpace(r.FormValue("model"))
+	var model *string
+	if modelRaw != "" {
+		model = &modelRaw
+	}
+	typeCode := strings.TrimSpace(r.FormValue("device_type"))
+	if typeCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Tipo de dispositivo requerido"})
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	ownerRaw := strings.TrimSpace(r.FormValue("owner_patient_id"))
+	var owner *string
+	if ownerRaw != "" {
+		owner = &ownerRaw
+	}
+	activeVal := false
+	if r.FormValue("active") != "" {
+		activeVal = true
+	}
+	input := models.DeviceInput{OrgID: orgID, Serial: serial, Brand: brand, Model: model, DeviceTypeCode: typeCode, OwnerPatientID: owner, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.UpdateDevice(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el dispositivo"})
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "DEVICE_UPDATE", "device", &device.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo actualizado"})
+	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteDevice(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "DEVICE_DELETE", "device", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
+	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+}
+
+// Signal streams
+
+func (h *Handlers) SignalStreamsIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	streams, err := h.repo.ListSignalStreams(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los streams", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	devices, err := h.repo.ListDevices(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los dispositivos", http.StatusInternalServerError)
+		return
+	}
+	signalTypes, err := h.repo.ListCatalog(ctx, "signal_types", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos de señal", http.StatusInternalServerError)
+		return
+	}
+	data := signalStreamsViewData{Items: streams, Patients: patients, Devices: devices, SignalTypes: signalTypes}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Streams de señal"}}
+	h.render(w, r, "superadmin/signal_streams.html", "Streams de señal", data, crumbs)
+}
+
+func (h *Handlers) SignalStreamsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	deviceID := strings.TrimSpace(r.FormValue("device_id"))
+	signalType := strings.TrimSpace(r.FormValue("signal_type"))
+	startRaw := strings.TrimSpace(r.FormValue("started_at"))
+	rateRaw := strings.TrimSpace(r.FormValue("sample_rate"))
+	if patientID == "" || deviceID == "" || signalType == "" || startRaw == "" || rateRaw == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Todos los campos obligatorios"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	rate, err := strconv.ParseFloat(rateRaw, 64)
+	if err != nil || rate <= 0 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Frecuencia inválida"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	startedAtPtr, err := parseDateTimeLocal(startRaw)
+	if err != nil || startedAtPtr == nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de inicio inválida"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	endRaw := strings.TrimSpace(r.FormValue("ended_at"))
+	var ended *time.Time
+	if endRaw != "" {
+		parsed, err := parseDateTimeLocal(endRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de cierre inválida"})
+			http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+			return
+		}
+		ended = parsed
+	}
+	input := models.SignalStreamInput{PatientID: patientID, DeviceID: deviceID, SignalType: signalType, SampleRateHz: rate, StartedAt: *startedAtPtr, EndedAt: ended}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	stream, err := h.repo.CreateSignalStream(ctx, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el stream"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "SIGNAL_STREAM_CREATE", "signal_stream", &stream.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Stream creado"})
+	http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	deviceID := strings.TrimSpace(r.FormValue("device_id"))
+	signalType := strings.TrimSpace(r.FormValue("signal_type"))
+	startRaw := strings.TrimSpace(r.FormValue("started_at"))
+	rateRaw := strings.TrimSpace(r.FormValue("sample_rate"))
+	if patientID == "" || deviceID == "" || signalType == "" || startRaw == "" || rateRaw == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Todos los campos obligatorios"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	rate, err := strconv.ParseFloat(rateRaw, 64)
+	if err != nil || rate <= 0 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Frecuencia inválida"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	startedAtPtr, err := parseDateTimeLocal(startRaw)
+	if err != nil || startedAtPtr == nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de inicio inválida"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	endRaw := strings.TrimSpace(r.FormValue("ended_at"))
+	var ended *time.Time
+	if endRaw != "" {
+		parsed, err := parseDateTimeLocal(endRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de cierre inválida"})
+			http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+			return
+		}
+		ended = parsed
+	}
+	input := models.SignalStreamInput{PatientID: patientID, DeviceID: deviceID, SignalType: signalType, SampleRateHz: rate, StartedAt: *startedAtPtr, EndedAt: ended}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	stream, err := h.repo.UpdateSignalStream(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el stream"})
+		http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "SIGNAL_STREAM_UPDATE", "signal_stream", &stream.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Stream actualizado"})
+	http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteSignalStream(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "SIGNAL_STREAM_DELETE", "signal_stream", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Stream eliminado"})
+	http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+}
+
+// Models
+
+func (h *Handlers) ModelsIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	items, err := h.repo.ListModels(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los modelos", http.StatusInternalServerError)
+		return
+	}
+	data := modelsViewData{Items: items}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Modelos ML"}}
+	h.render(w, r, "superadmin/models.html", "Modelos ML", data, crumbs)
+}
+
+func (h *Handlers) ModelsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	version := strings.TrimSpace(r.FormValue("version"))
+	task := strings.TrimSpace(r.FormValue("task"))
+	if name == "" || version == "" || task == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre, versión y tarea son obligatorios"})
+		http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+		return
+	}
+	trainingPtr := optionalString(r.FormValue("training_data_ref"))
+	hyperPtr, err := optionalJSON(r.FormValue("hyperparams"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Hyperparámetros deben ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+		return
+	}
+	input := models.MLModelInput{Name: name, Version: version, Task: task, TrainingDataRef: trainingPtr, Hyperparams: hyperPtr}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	model, err := h.repo.CreateModel(ctx, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el modelo"})
+		http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "MODEL_CREATE", "ml_model", &model.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Modelo creado"})
+	http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+}
+
+func (h *Handlers) ModelsUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	version := strings.TrimSpace(r.FormValue("version"))
+	task := strings.TrimSpace(r.FormValue("task"))
+	if name == "" || version == "" || task == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre, versión y tarea son obligatorios"})
+		http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+		return
+	}
+	trainingPtr := optionalString(r.FormValue("training_data_ref"))
+	hyperPtr, err := optionalJSON(r.FormValue("hyperparams"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Hyperparámetros deben ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+		return
+	}
+	input := models.MLModelInput{Name: name, Version: version, Task: task, TrainingDataRef: trainingPtr, Hyperparams: hyperPtr}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	model, err := h.repo.UpdateModel(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el modelo"})
+		http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "MODEL_UPDATE", "ml_model", &model.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Modelo actualizado"})
+	http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+}
+
+func (h *Handlers) ModelsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteModel(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "MODEL_DELETE", "ml_model", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Modelo eliminado"})
+	http.Redirect(w, r, "/superadmin/models", http.StatusSeeOther)
+}
+
+// Event types
+
+func (h *Handlers) EventTypesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	items, err := h.repo.ListEventTypes(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos de evento", http.StatusInternalServerError)
+		return
+	}
+	levels, err := h.repo.ListCatalog(ctx, "alert_levels", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los niveles", http.StatusInternalServerError)
+		return
+	}
+	data := eventTypesViewData{Items: items, Levels: levels}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Tipos de evento"}}
+	h.render(w, r, "superadmin/event_types.html", "Tipos de evento", data, crumbs)
+}
+
+func (h *Handlers) EventTypesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	code := strings.ToLower(strings.TrimSpace(r.FormValue("code")))
+	severity := strings.TrimSpace(r.FormValue("severity_default"))
+	if code == "" || severity == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y severidad son obligatorios"})
+		http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+		return
+	}
+	desc := optionalString(r.FormValue("description"))
+	input := models.EventTypeInput{Code: code, Description: desc, SeverityDefault: severity}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	etype, err := h.repo.CreateEventType(ctx, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el tipo de evento"})
+		http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "EVENT_TYPE_CREATE", "event_type", &etype.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de evento creado"})
+	http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+}
+
+func (h *Handlers) EventTypesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	code := strings.ToLower(strings.TrimSpace(r.FormValue("code")))
+	severity := strings.TrimSpace(r.FormValue("severity_default"))
+	if code == "" || severity == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y severidad son obligatorios"})
+		http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+		return
+	}
+	desc := optionalString(r.FormValue("description"))
+	input := models.EventTypeInput{Code: code, Description: desc, SeverityDefault: severity}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	etype, err := h.repo.UpdateEventType(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el tipo de evento"})
+		http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "EVENT_TYPE_UPDATE", "event_type", &etype.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de evento actualizado"})
+	http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+}
+
+func (h *Handlers) EventTypesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteEventType(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "EVENT_TYPE_DELETE", "event_type", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de evento eliminado"})
+	http.Redirect(w, r, "/superadmin/event-types", http.StatusSeeOther)
+}
+
+// Inferences
+
+func (h *Handlers) InferencesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	items, err := h.repo.ListInferences(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las inferencias", http.StatusInternalServerError)
+		return
+	}
+	modelsList, err := h.repo.ListModels(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los modelos", http.StatusInternalServerError)
+		return
+	}
+	streams, err := h.repo.ListSignalStreams(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los streams", http.StatusInternalServerError)
+		return
+	}
+	eventTypes, err := h.repo.ListEventTypes(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos de evento", http.StatusInternalServerError)
+		return
+	}
+	data := inferencesViewData{Items: items, Models: modelsList, Streams: streams, EventTypes: eventTypes}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Inferencias"}}
+	h.render(w, r, "superadmin/inferences.html", "Inferencias", data, crumbs)
+}
+
+func (h *Handlers) InferencesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	streamID := strings.TrimSpace(r.FormValue("stream_id"))
+	eventCode := strings.TrimSpace(r.FormValue("event_code"))
+	startRaw := strings.TrimSpace(r.FormValue("window_start"))
+	endRaw := strings.TrimSpace(r.FormValue("window_end"))
+	if streamID == "" || eventCode == "" || startRaw == "" || endRaw == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Stream, evento y ventanas son obligatorios"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	startPtr, err := parseDateTimeLocal(startRaw)
+	if err != nil || startPtr == nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha inicio inválida"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	endPtr, err := parseDateTimeLocal(endRaw)
+	if err != nil || endPtr == nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha fin inválida"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	if !endPtr.After(*startPtr) {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "La ventana debe tener fin posterior al inicio"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	modelID := optionalString(r.FormValue("model_id"))
+	scorePtr, err := optionalFloat32(r.FormValue("score"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Score inválido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	thresholdPtr, err := optionalFloat32(r.FormValue("threshold"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Umbral inválido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	metadataPtr, err := optionalJSON(r.FormValue("metadata"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Metadata debe ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	featurePtr, err := optionalJSON(r.FormValue("feature_snapshot"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Snapshot debe ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	seriesPtr := optionalString(r.FormValue("series_ref"))
+	input := models.InferenceInput{
+		ModelID:         modelID,
+		StreamID:        streamID,
+		EventCode:       eventCode,
+		WindowStart:     *startPtr,
+		WindowEnd:       *endPtr,
+		Score:           scorePtr,
+		Threshold:       thresholdPtr,
+		Metadata:        metadataPtr,
+		SeriesRef:       seriesPtr,
+		FeatureSnapshot: featurePtr,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	inference, err := h.repo.CreateInference(ctx, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear la inferencia"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "INFERENCE_CREATE", "inference", &inference.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Inferencia creada"})
+	http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+}
+
+func (h *Handlers) InferencesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	streamID := strings.TrimSpace(r.FormValue("stream_id"))
+	eventCode := strings.TrimSpace(r.FormValue("event_code"))
+	startRaw := strings.TrimSpace(r.FormValue("window_start"))
+	endRaw := strings.TrimSpace(r.FormValue("window_end"))
+	if streamID == "" || eventCode == "" || startRaw == "" || endRaw == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Stream, evento y ventanas son obligatorios"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	startPtr, err := parseDateTimeLocal(startRaw)
+	if err != nil || startPtr == nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha inicio inválida"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	endPtr, err := parseDateTimeLocal(endRaw)
+	if err != nil || endPtr == nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha fin inválida"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	if !endPtr.After(*startPtr) {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "La ventana debe tener fin posterior al inicio"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	modelID := optionalString(r.FormValue("model_id"))
+	scorePtr, err := optionalFloat32(r.FormValue("score"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Score inválido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	thresholdPtr, err := optionalFloat32(r.FormValue("threshold"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Umbral inválido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	metadataPtr, err := optionalJSON(r.FormValue("metadata"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Metadata debe ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	featurePtr, err := optionalJSON(r.FormValue("feature_snapshot"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Snapshot debe ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	seriesPtr := optionalString(r.FormValue("series_ref"))
+	input := models.InferenceInput{
+		ModelID:         modelID,
+		StreamID:        streamID,
+		EventCode:       eventCode,
+		WindowStart:     *startPtr,
+		WindowEnd:       *endPtr,
+		Score:           scorePtr,
+		Threshold:       thresholdPtr,
+		Metadata:        metadataPtr,
+		SeriesRef:       seriesPtr,
+		FeatureSnapshot: featurePtr,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	inference, err := h.repo.UpdateInference(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar la inferencia"})
+		http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "INFERENCE_UPDATE", "inference", &inference.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Inferencia actualizada"})
+	http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+}
+
+func (h *Handlers) InferencesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteInference(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "INFERENCE_DELETE", "inference", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Inferencia eliminada"})
+	http.Redirect(w, r, "/superadmin/inferences", http.StatusSeeOther)
+}
+
+// Alerts
+
+func (h *Handlers) AlertsIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	alerts, err := h.repo.ListAlerts(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las alertas", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	alertTypes, err := h.repo.ListAlertTypes(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos de alerta", http.StatusInternalServerError)
+		return
+	}
+	statuses, err := h.repo.ListAlertStatuses(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los estatus", http.StatusInternalServerError)
+		return
+	}
+	levels, err := h.repo.ListCatalog(ctx, "alert_levels", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los niveles", http.StatusInternalServerError)
+		return
+	}
+	modelsList, err := h.repo.ListModels(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los modelos", http.StatusInternalServerError)
+		return
+	}
+	inferences, err := h.repo.ListInferences(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las inferencias", http.StatusInternalServerError)
+		return
+	}
+	data := alertsViewData{
+		Items:         alerts,
+		Patients:      patients,
+		AlertTypes:    alertTypes,
+		AlertStatuses: statuses,
+		AlertLevels:   levels,
+		Models:        modelsList,
+		Inferences:    inferences,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Alertas"}}
+	h.render(w, r, "superadmin/alerts.html", "Alertas", data, crumbs)
+}
+
+func (h *Handlers) AlertsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	alertType := strings.TrimSpace(r.FormValue("alert_type"))
+	alertLevel := strings.TrimSpace(r.FormValue("alert_level"))
+	status := strings.TrimSpace(r.FormValue("status"))
+	if patientID == "" || alertType == "" || alertLevel == "" || status == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente, tipo, nivel y estatus son obligatorios"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	modelID := optionalString(r.FormValue("model_id"))
+	inferenceID := optionalString(r.FormValue("inference_id"))
+	description := optionalString(r.FormValue("description"))
+	location := optionalString(r.FormValue("location_wkt"))
+	input := models.AlertInput{
+		PatientID:   patientID,
+		AlertType:   alertType,
+		AlertLevel:  alertLevel,
+		Status:      status,
+		ModelID:     modelID,
+		InferenceID: inferenceID,
+		Description: description,
+		LocationWKT: location,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	alert, err := h.repo.CreateAlert(ctx, patientID, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear la alerta"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "ALERT_CREATE", "alert", &alert.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Alerta creada"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+}
+
+func (h *Handlers) AlertsUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	alertType := strings.TrimSpace(r.FormValue("alert_type"))
+	alertLevel := strings.TrimSpace(r.FormValue("alert_level"))
+	status := strings.TrimSpace(r.FormValue("status"))
+	if alertType == "" || alertLevel == "" || status == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Tipo, nivel y estatus son obligatorios"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	modelID := optionalString(r.FormValue("model_id"))
+	inferenceID := optionalString(r.FormValue("inference_id"))
+	description := optionalString(r.FormValue("description"))
+	location := optionalString(r.FormValue("location_wkt"))
+	input := models.AlertInput{
+		AlertType:   alertType,
+		AlertLevel:  alertLevel,
+		Status:      status,
+		ModelID:     modelID,
+		InferenceID: inferenceID,
+		Description: description,
+		LocationWKT: location,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	alert, err := h.repo.UpdateAlert(ctx, id, input)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar la alerta"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "ALERT_UPDATE", "alert", &alert.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Alerta actualizada"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+}
+
+func (h *Handlers) AlertsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteAlert(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "ALERT_DELETE", "alert", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Alerta eliminada"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
 }
 
 func (h *Handlers) APIKeysIndex(w http.ResponseWriter, r *http.Request) {

@@ -59,6 +59,62 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			cr.Post("/{id}/delete", uiHandlers.ContentDelete)
 		})
 
+		s.Route("/content-block-types", func(br chi.Router) {
+			br.Get("/", uiHandlers.ContentBlockTypesIndex)
+			br.Post("/", uiHandlers.ContentBlockTypesCreate)
+			br.Post("/{id}/update", uiHandlers.ContentBlockTypesUpdate)
+			br.Post("/{id}/delete", uiHandlers.ContentBlockTypesDelete)
+		})
+
+		s.Route("/patients", func(pr chi.Router) {
+			pr.Get("/", uiHandlers.PatientsIndex)
+			pr.Post("/", uiHandlers.PatientsCreate)
+			pr.Post("/{id}/update", uiHandlers.PatientsUpdate)
+			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
+		})
+
+		s.Route("/devices", func(dr chi.Router) {
+			dr.Get("/", uiHandlers.DevicesIndex)
+			dr.Post("/", uiHandlers.DevicesCreate)
+			dr.Post("/{id}/update", uiHandlers.DevicesUpdate)
+			dr.Post("/{id}/delete", uiHandlers.DevicesDelete)
+		})
+
+		s.Route("/signal-streams", func(sr chi.Router) {
+			sr.Get("/", uiHandlers.SignalStreamsIndex)
+			sr.Post("/", uiHandlers.SignalStreamsCreate)
+			sr.Post("/{id}/update", uiHandlers.SignalStreamsUpdate)
+			sr.Post("/{id}/delete", uiHandlers.SignalStreamsDelete)
+		})
+
+		s.Route("/models", func(mr chi.Router) {
+			mr.Get("/", uiHandlers.ModelsIndex)
+			mr.Post("/", uiHandlers.ModelsCreate)
+			mr.Post("/{id}/update", uiHandlers.ModelsUpdate)
+			mr.Post("/{id}/delete", uiHandlers.ModelsDelete)
+		})
+
+		s.Route("/event-types", func(er chi.Router) {
+			er.Get("/", uiHandlers.EventTypesIndex)
+			er.Post("/", uiHandlers.EventTypesCreate)
+			er.Post("/{id}/update", uiHandlers.EventTypesUpdate)
+			er.Post("/{id}/delete", uiHandlers.EventTypesDelete)
+		})
+
+		s.Route("/inferences", func(ir chi.Router) {
+			ir.Get("/", uiHandlers.InferencesIndex)
+			ir.Post("/", uiHandlers.InferencesCreate)
+			ir.Post("/{id}/update", uiHandlers.InferencesUpdate)
+			ir.Post("/{id}/delete", uiHandlers.InferencesDelete)
+		})
+
+		s.Route("/alerts", func(ar chi.Router) {
+			ar.Get("/", uiHandlers.AlertsIndex)
+			ar.Post("/", uiHandlers.AlertsCreate)
+			ar.Post("/{id}/update", uiHandlers.AlertsUpdate)
+			ar.Post("/{id}/delete", uiHandlers.AlertsDelete)
+		})
+
 		s.Route("/invitations", func(ir chi.Router) {
 			ir.Get("/", uiHandlers.InvitationsIndex)
 			ir.Post("/", uiHandlers.InvitationsCreate)

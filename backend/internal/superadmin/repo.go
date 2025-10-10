@@ -53,6 +53,52 @@ func (r *Repo) Ping(ctx context.Context) error {
 
 var nowFn = time.Now
 
+func stringParam(ptr *string, trim bool) any {
+	if ptr == nil {
+		return nil
+	}
+	if trim {
+		v := strings.TrimSpace(*ptr)
+		if v == "" {
+			return nil
+		}
+		return v
+	}
+	return *ptr
+}
+
+func timeParam(ptr *time.Time) any {
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
+func boolParam(ptr *bool) any {
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
+func float32Param(ptr *float32) any {
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
+func jsonParam(ptr *string) any {
+	if ptr == nil {
+		return nil
+	}
+	v := strings.TrimSpace(*ptr)
+	if v == "" {
+		return nil
+	}
+	return []byte(v)
+}
+
 func invitationStatus(inv *models.OrgInvitation, now time.Time) string {
 	if inv == nil {
 		return ""
@@ -362,6 +408,979 @@ func (r *Repo) UpdateCatalogItem(ctx context.Context, catalog, id string, code, 
 func (r *Repo) DeleteCatalogItem(ctx context.Context, catalog, id string) error {
 	var ok bool
 	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_catalog_delete($1, $2)`, catalog, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Patients
+// ------------------------------
+
+func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_patients_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Patient, 0, limit)
+	for rows.Next() {
+		var (
+			patient  models.Patient
+			orgID    sql.NullString
+			org      sql.NullString
+			birth    sql.NullTime
+			sexCode  sql.NullString
+			sexLabel sql.NullString
+			risk     sql.NullString
+		)
+		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt); err != nil {
+			return nil, err
+		}
+		if orgID.Valid {
+			v := orgID.String
+			patient.OrgID = &v
+		}
+		if org.Valid {
+			v := org.String
+			patient.OrgName = &v
+		}
+		if birth.Valid {
+			bt := birth.Time
+			patient.Birthdate = &bt
+		}
+		if sexCode.Valid {
+			v := sexCode.String
+			patient.SexCode = &v
+		}
+		if sexLabel.Valid {
+			v := sexLabel.String
+			patient.SexLabel = &v
+		}
+		if risk.Valid {
+			v := risk.String
+			patient.RiskLevel = &v
+		}
+		out = append(out, patient)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error) {
+	var (
+		patient  models.Patient
+		orgID    sql.NullString
+		org      sql.NullString
+		birth    sql.NullTime
+		sexCode  sql.NullString
+		sexLabel sql.NullString
+		risk     sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5)`, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		patient.OrgID = &v
+	}
+	if org.Valid {
+		v := org.String
+		patient.OrgName = &v
+	}
+	if birth.Valid {
+		bt := birth.Time
+		patient.Birthdate = &bt
+	}
+	if sexCode.Valid {
+		v := sexCode.String
+		patient.SexCode = &v
+	}
+	if sexLabel.Valid {
+		v := sexLabel.String
+		patient.SexLabel = &v
+	}
+	if risk.Valid {
+		v := risk.String
+		patient.RiskLevel = &v
+	}
+	return &patient, nil
+}
+
+func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error) {
+	var (
+		patient  models.Patient
+		orgID    sql.NullString
+		org      sql.NullString
+		birth    sql.NullTime
+		sexCode  sql.NullString
+		sexLabel sql.NullString
+		risk     sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6)`, id, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		patient.OrgID = &v
+	}
+	if org.Valid {
+		v := org.String
+		patient.OrgName = &v
+	}
+	if birth.Valid {
+		bt := birth.Time
+		patient.Birthdate = &bt
+	}
+	if sexCode.Valid {
+		v := sexCode.String
+		patient.SexCode = &v
+	}
+	if sexLabel.Valid {
+		v := sexLabel.String
+		patient.SexLabel = &v
+	}
+	if risk.Valid {
+		v := risk.String
+		patient.RiskLevel = &v
+	}
+	return &patient, nil
+}
+
+func (r *Repo) DeletePatient(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_patient_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Devices
+// ------------------------------
+
+func (r *Repo) ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_devices_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Device, 0, limit)
+	for rows.Next() {
+		var (
+			device    models.Device
+			orgID     sql.NullString
+			orgName   sql.NullString
+			brand     sql.NullString
+			model     sql.NullString
+			ownerID   sql.NullString
+			ownerName sql.NullString
+		)
+		if err := rows.Scan(&device.ID, &orgID, &orgName, &device.Serial, &brand, &model, &device.DeviceTypeCode, &device.DeviceTypeLabel, &ownerID, &ownerName, &device.RegisteredAt, &device.Active); err != nil {
+			return nil, err
+		}
+		if orgID.Valid {
+			v := orgID.String
+			device.OrgID = &v
+		}
+		if orgName.Valid {
+			v := orgName.String
+			device.OrgName = &v
+		}
+		if brand.Valid {
+			v := brand.String
+			device.Brand = &v
+		}
+		if model.Valid {
+			v := model.String
+			device.Model = &v
+		}
+		if ownerID.Valid {
+			v := ownerID.String
+			device.OwnerPatientID = &v
+		}
+		if ownerName.Valid {
+			v := ownerName.String
+			device.OwnerPatientName = &v
+		}
+		out = append(out, device)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error) {
+	var (
+		device    models.Device
+		orgID     sql.NullString
+		orgName   sql.NullString
+		brand     sql.NullString
+		model     sql.NullString
+		ownerID   sql.NullString
+		ownerName sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_device_create($1, $2, $3, $4, $5, $6, $7)`, stringParam(input.OrgID, true), input.Serial, stringParam(input.Brand, true), stringParam(input.Model, true), input.DeviceTypeCode, stringParam(input.OwnerPatientID, true), boolParam(input.Active)).
+		Scan(&device.ID, &orgID, &orgName, &device.Serial, &brand, &model, &device.DeviceTypeCode, &device.DeviceTypeLabel, &ownerID, &ownerName, &device.RegisteredAt, &device.Active)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		device.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		device.OrgName = &v
+	}
+	if brand.Valid {
+		v := brand.String
+		device.Brand = &v
+	}
+	if model.Valid {
+		v := model.String
+		device.Model = &v
+	}
+	if ownerID.Valid {
+		v := ownerID.String
+		device.OwnerPatientID = &v
+	}
+	if ownerName.Valid {
+		v := ownerName.String
+		device.OwnerPatientName = &v
+	}
+	return &device, nil
+}
+
+func (r *Repo) UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error) {
+	var (
+		device    models.Device
+		orgID     sql.NullString
+		orgName   sql.NullString
+		brand     sql.NullString
+		model     sql.NullString
+		ownerID   sql.NullString
+		ownerName sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_device_update($1, $2, $3, $4, $5, $6, $7, $8)`, id, stringParam(input.OrgID, true), input.Serial, stringParam(input.Brand, true), stringParam(input.Model, true), input.DeviceTypeCode, stringParam(input.OwnerPatientID, true), boolParam(input.Active)).
+		Scan(&device.ID, &orgID, &orgName, &device.Serial, &brand, &model, &device.DeviceTypeCode, &device.DeviceTypeLabel, &ownerID, &ownerName, &device.RegisteredAt, &device.Active)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		device.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		device.OrgName = &v
+	}
+	if brand.Valid {
+		v := brand.String
+		device.Brand = &v
+	}
+	if model.Valid {
+		v := model.String
+		device.Model = &v
+	}
+	if ownerID.Valid {
+		v := ownerID.String
+		device.OwnerPatientID = &v
+	}
+	if ownerName.Valid {
+		v := ownerName.String
+		device.OwnerPatientName = &v
+	}
+	return &device, nil
+}
+
+func (r *Repo) DeleteDevice(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_device_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, code, description FROM heartguard.device_types ORDER BY code`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.DeviceType
+	for rows.Next() {
+		var (
+			d    models.DeviceType
+			desc sql.NullString
+		)
+		if err := rows.Scan(&d.ID, &d.Code, &desc); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			v := desc.String
+			d.Description = &v
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// ------------------------------
+// Signal streams
+// ------------------------------
+
+func (r *Repo) ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_signal_streams_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.SignalStream, 0, limit)
+	for rows.Next() {
+		var (
+			stream models.SignalStream
+			ended  sql.NullTime
+		)
+		if err := rows.Scan(&stream.ID, &stream.PatientID, &stream.PatientName, &stream.DeviceID, &stream.DeviceSerial, &stream.SignalType, &stream.SignalLabel, &stream.SampleRateHz, &stream.StartedAt, &ended); err != nil {
+			return nil, err
+		}
+		if ended.Valid {
+			et := ended.Time
+			stream.EndedAt = &et
+		}
+		out = append(out, stream)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error) {
+	var (
+		stream models.SignalStream
+		ended  sql.NullTime
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_signal_stream_create($1, $2, $3, $4, $5, $6)`, input.PatientID, input.DeviceID, input.SignalType, input.SampleRateHz, input.StartedAt, timeParam(input.EndedAt)).
+		Scan(&stream.ID, &stream.PatientID, &stream.PatientName, &stream.DeviceID, &stream.DeviceSerial, &stream.SignalType, &stream.SignalLabel, &stream.SampleRateHz, &stream.StartedAt, &ended)
+	if err != nil {
+		return nil, err
+	}
+	if ended.Valid {
+		et := ended.Time
+		stream.EndedAt = &et
+	}
+	return &stream, nil
+}
+
+func (r *Repo) UpdateSignalStream(ctx context.Context, id string, input models.SignalStreamInput) (*models.SignalStream, error) {
+	var (
+		stream models.SignalStream
+		ended  sql.NullTime
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_signal_stream_update($1, $2, $3, $4, $5, $6, $7)`, id, input.PatientID, input.DeviceID, input.SignalType, input.SampleRateHz, input.StartedAt, timeParam(input.EndedAt)).
+		Scan(&stream.ID, &stream.PatientID, &stream.PatientName, &stream.DeviceID, &stream.DeviceSerial, &stream.SignalType, &stream.SignalLabel, &stream.SampleRateHz, &stream.StartedAt, &ended)
+	if err != nil {
+		return nil, err
+	}
+	if ended.Valid {
+		et := ended.Time
+		stream.EndedAt = &et
+	}
+	return &stream, nil
+}
+
+func (r *Repo) DeleteSignalStream(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_signal_stream_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// ML Models
+// ------------------------------
+
+func (r *Repo) ListModels(ctx context.Context, limit, offset int) ([]models.MLModel, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_models_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.MLModel, 0, limit)
+	for rows.Next() {
+		var (
+			model    models.MLModel
+			training sql.NullString
+			hparams  sql.NullString
+		)
+		if err := rows.Scan(&model.ID, &model.Name, &model.Version, &model.Task, &training, &hparams, &model.CreatedAt); err != nil {
+			return nil, err
+		}
+		if training.Valid {
+			v := training.String
+			model.TrainingDataRef = &v
+		}
+		if hparams.Valid {
+			v := hparams.String
+			model.Hyperparams = &v
+		}
+		out = append(out, model)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateModel(ctx context.Context, input models.MLModelInput) (*models.MLModel, error) {
+	var (
+		model    models.MLModel
+		training sql.NullString
+		hparams  sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_model_create($1, $2, $3, $4, $5)`, input.Name, input.Version, input.Task, stringParam(input.TrainingDataRef, true), jsonParam(input.Hyperparams)).
+		Scan(&model.ID, &model.Name, &model.Version, &model.Task, &training, &hparams, &model.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if training.Valid {
+		v := training.String
+		model.TrainingDataRef = &v
+	}
+	if hparams.Valid {
+		v := hparams.String
+		model.Hyperparams = &v
+	}
+	return &model, nil
+}
+
+func (r *Repo) UpdateModel(ctx context.Context, id string, input models.MLModelInput) (*models.MLModel, error) {
+	var (
+		model    models.MLModel
+		training sql.NullString
+		hparams  sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_model_update($1, $2, $3, $4, $5, $6)`, id, input.Name, input.Version, input.Task, stringParam(input.TrainingDataRef, true), jsonParam(input.Hyperparams)).
+		Scan(&model.ID, &model.Name, &model.Version, &model.Task, &training, &hparams, &model.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if training.Valid {
+		v := training.String
+		model.TrainingDataRef = &v
+	}
+	if hparams.Valid {
+		v := hparams.String
+		model.Hyperparams = &v
+	}
+	return &model, nil
+}
+
+func (r *Repo) DeleteModel(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_model_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Event types
+// ------------------------------
+
+func (r *Repo) ListEventTypes(ctx context.Context, limit, offset int) ([]models.EventType, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_event_types_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.EventType, 0, limit)
+	for rows.Next() {
+		var (
+			et       models.EventType
+			desc     sql.NullString
+			sevLabel sql.NullString
+		)
+		if err := rows.Scan(&et.ID, &et.Code, &desc, &et.SeverityDefault, &sevLabel); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			v := desc.String
+			et.Description = &v
+		}
+		if sevLabel.Valid {
+			et.SeverityDefaultLabel = sevLabel.String
+		}
+		out = append(out, et)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateEventType(ctx context.Context, input models.EventTypeInput) (*models.EventType, error) {
+	var (
+		et       models.EventType
+		desc     sql.NullString
+		sevLabel sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_event_type_create($1, $2, $3)`, input.Code, stringParam(input.Description, true), input.SeverityDefault).
+		Scan(&et.ID, &et.Code, &desc, &et.SeverityDefault, &sevLabel)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		v := desc.String
+		et.Description = &v
+	}
+	if sevLabel.Valid {
+		et.SeverityDefaultLabel = sevLabel.String
+	}
+	return &et, nil
+}
+
+func (r *Repo) UpdateEventType(ctx context.Context, id string, input models.EventTypeInput) (*models.EventType, error) {
+	var (
+		et       models.EventType
+		desc     sql.NullString
+		sevLabel sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_event_type_update($1, $2, $3, $4)`, id, input.Code, stringParam(input.Description, true), input.SeverityDefault).
+		Scan(&et.ID, &et.Code, &desc, &et.SeverityDefault, &sevLabel)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		v := desc.String
+		et.Description = &v
+	}
+	if sevLabel.Valid {
+		et.SeverityDefaultLabel = sevLabel.String
+	}
+	return &et, nil
+}
+
+func (r *Repo) DeleteEventType(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_event_type_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Inferences
+// ------------------------------
+
+func (r *Repo) ListInferences(ctx context.Context, limit, offset int) ([]models.Inference, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_inferences_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Inference, 0, limit)
+	for rows.Next() {
+		var (
+			inf          models.Inference
+			modelName    sql.NullString
+			patName      sql.NullString
+			deviceSerial sql.NullString
+			score        sql.NullFloat64
+			threshold    sql.NullFloat64
+			seriesRef    sql.NullString
+		)
+		if err := rows.Scan(&inf.ID, &inf.ModelID, &modelName, &inf.StreamID, &patName, &deviceSerial, &inf.EventCode, &inf.EventLabel, &inf.WindowStart, &inf.WindowEnd, &score, &threshold, &inf.CreatedAt, &seriesRef); err != nil {
+			return nil, err
+		}
+		if modelName.Valid {
+			v := modelName.String
+			inf.ModelName = &v
+		}
+		if patName.Valid {
+			inf.PatientName = patName.String
+		}
+		if deviceSerial.Valid {
+			inf.DeviceSerial = deviceSerial.String
+		}
+		if score.Valid {
+			v := float32(score.Float64)
+			inf.Score = &v
+		}
+		if threshold.Valid {
+			v := float32(threshold.Float64)
+			inf.Threshold = &v
+		}
+		if seriesRef.Valid {
+			v := seriesRef.String
+			inf.SeriesRef = &v
+		}
+		labelParts := strings.TrimSpace(inf.PatientName)
+		if labelParts != "" {
+			inf.StreamLabel = labelParts
+		}
+		if inf.DeviceSerial != "" {
+			if inf.StreamLabel != "" {
+				inf.StreamLabel = fmt.Sprintf("%s · %s", inf.StreamLabel, inf.DeviceSerial)
+			} else {
+				inf.StreamLabel = inf.DeviceSerial
+			}
+		}
+		if inf.StreamLabel == "" {
+			inf.StreamLabel = inf.StreamID
+		}
+		out = append(out, inf)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateInference(ctx context.Context, input models.InferenceInput) (*models.Inference, error) {
+	var (
+		inf          models.Inference
+		modelName    sql.NullString
+		patName      sql.NullString
+		deviceSerial sql.NullString
+		score        sql.NullFloat64
+		threshold    sql.NullFloat64
+		seriesRef    sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_inference_create($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`, stringParam(input.ModelID, true), input.StreamID, input.WindowStart, input.WindowEnd, input.EventCode, float32Param(input.Score), float32Param(input.Threshold), jsonParam(input.Metadata), stringParam(input.SeriesRef, true), jsonParam(input.FeatureSnapshot)).
+		Scan(&inf.ID, &inf.ModelID, &modelName, &inf.StreamID, &patName, &deviceSerial, &inf.EventCode, &inf.EventLabel, &inf.WindowStart, &inf.WindowEnd, &score, &threshold, &inf.CreatedAt, &seriesRef)
+	if err != nil {
+		return nil, err
+	}
+	if modelName.Valid {
+		v := modelName.String
+		inf.ModelName = &v
+	}
+	if patName.Valid {
+		inf.PatientName = patName.String
+	}
+	if deviceSerial.Valid {
+		inf.DeviceSerial = deviceSerial.String
+	}
+	if score.Valid {
+		v := float32(score.Float64)
+		inf.Score = &v
+	}
+	if threshold.Valid {
+		v := float32(threshold.Float64)
+		inf.Threshold = &v
+	}
+	if seriesRef.Valid {
+		v := seriesRef.String
+		inf.SeriesRef = &v
+	}
+	if inf.PatientName != "" && inf.DeviceSerial != "" {
+		inf.StreamLabel = fmt.Sprintf("%s · %s", inf.PatientName, inf.DeviceSerial)
+	} else if inf.PatientName != "" {
+		inf.StreamLabel = inf.PatientName
+	} else if inf.DeviceSerial != "" {
+		inf.StreamLabel = inf.DeviceSerial
+	} else {
+		inf.StreamLabel = inf.StreamID
+	}
+	return &inf, nil
+}
+
+func (r *Repo) UpdateInference(ctx context.Context, id string, input models.InferenceInput) (*models.Inference, error) {
+	var (
+		inf          models.Inference
+		modelName    sql.NullString
+		patName      sql.NullString
+		deviceSerial sql.NullString
+		score        sql.NullFloat64
+		threshold    sql.NullFloat64
+		seriesRef    sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_inference_update($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`, id, stringParam(input.ModelID, true), input.StreamID, input.WindowStart, input.WindowEnd, input.EventCode, float32Param(input.Score), float32Param(input.Threshold), jsonParam(input.Metadata), stringParam(input.SeriesRef, true), jsonParam(input.FeatureSnapshot)).
+		Scan(&inf.ID, &inf.ModelID, &modelName, &inf.StreamID, &patName, &deviceSerial, &inf.EventCode, &inf.EventLabel, &inf.WindowStart, &inf.WindowEnd, &score, &threshold, &inf.CreatedAt, &seriesRef)
+	if err != nil {
+		return nil, err
+	}
+	if modelName.Valid {
+		v := modelName.String
+		inf.ModelName = &v
+	}
+	if patName.Valid {
+		inf.PatientName = patName.String
+	}
+	if deviceSerial.Valid {
+		inf.DeviceSerial = deviceSerial.String
+	}
+	if score.Valid {
+		v := float32(score.Float64)
+		inf.Score = &v
+	}
+	if threshold.Valid {
+		v := float32(threshold.Float64)
+		inf.Threshold = &v
+	}
+	if seriesRef.Valid {
+		v := seriesRef.String
+		inf.SeriesRef = &v
+	}
+	if inf.PatientName != "" && inf.DeviceSerial != "" {
+		inf.StreamLabel = fmt.Sprintf("%s · %s", inf.PatientName, inf.DeviceSerial)
+	} else if inf.PatientName != "" {
+		inf.StreamLabel = inf.PatientName
+	} else if inf.DeviceSerial != "" {
+		inf.StreamLabel = inf.DeviceSerial
+	} else {
+		inf.StreamLabel = inf.StreamID
+	}
+	return &inf, nil
+}
+
+func (r *Repo) DeleteInference(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_inference_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Alerts
+// ------------------------------
+
+func (r *Repo) ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_alerts_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Alert, 0, limit)
+	for rows.Next() {
+		var (
+			alert   models.Alert
+			orgID   sql.NullString
+			orgName sql.NullString
+			desc    sql.NullString
+		)
+		if err := rows.Scan(&alert.ID, &orgID, &orgName, &alert.PatientID, &alert.PatientName, &alert.AlertTypeCode, &alert.AlertTypeLabel, &alert.LevelCode, &alert.LevelLabel, &alert.StatusCode, &alert.StatusLabel, &alert.CreatedAt, &desc); err != nil {
+			return nil, err
+		}
+		if orgID.Valid {
+			v := orgID.String
+			alert.OrgID = &v
+		}
+		if orgName.Valid {
+			v := orgName.String
+			alert.OrgName = &v
+		}
+		if desc.Valid {
+			v := desc.String
+			alert.Description = &v
+		}
+		out = append(out, alert)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateAlert(ctx context.Context, patientID string, input models.AlertInput) (*models.Alert, error) {
+	var (
+		alert   models.Alert
+		orgID   sql.NullString
+		orgName sql.NullString
+		desc    sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_alert_create($1, $2, $3, $4, $5, $6, $7, $8)`, patientID, input.AlertType, input.AlertLevel, input.Status, stringParam(input.ModelID, true), stringParam(input.InferenceID, true), stringParam(input.Description, true), stringParam(input.LocationWKT, true)).
+		Scan(&alert.ID, &orgID, &orgName, &alert.PatientID, &alert.PatientName, &alert.AlertTypeCode, &alert.AlertTypeLabel, &alert.LevelCode, &alert.LevelLabel, &alert.StatusCode, &alert.StatusLabel, &alert.CreatedAt, &desc)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		alert.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		alert.OrgName = &v
+	}
+	if desc.Valid {
+		v := desc.String
+		alert.Description = &v
+	}
+	return &alert, nil
+}
+
+func (r *Repo) UpdateAlert(ctx context.Context, id string, input models.AlertInput) (*models.Alert, error) {
+	var (
+		alert   models.Alert
+		orgID   sql.NullString
+		orgName sql.NullString
+		desc    sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_alert_update($1, $2, $3, $4, $5, $6, $7, $8)`, id, input.AlertType, input.AlertLevel, input.Status, stringParam(input.ModelID, true), stringParam(input.InferenceID, true), stringParam(input.Description, true), stringParam(input.LocationWKT, true)).
+		Scan(&alert.ID, &orgID, &orgName, &alert.PatientID, &alert.PatientName, &alert.AlertTypeCode, &alert.AlertTypeLabel, &alert.LevelCode, &alert.LevelLabel, &alert.StatusCode, &alert.StatusLabel, &alert.CreatedAt, &desc)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		alert.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		alert.OrgName = &v
+	}
+	if desc.Valid {
+		v := desc.String
+		alert.Description = &v
+	}
+	return &alert, nil
+}
+
+func (r *Repo) DeleteAlert(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_alert_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListAlertTypes(ctx context.Context) ([]models.AlertType, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, code, description FROM heartguard.alert_types ORDER BY code`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.AlertType
+	for rows.Next() {
+		var (
+			at   models.AlertType
+			desc sql.NullString
+		)
+		if err := rows.Scan(&at.ID, &at.Code, &desc); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			v := desc.String
+			at.Description = &v
+		}
+		out = append(out, at)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) ListAlertStatuses(ctx context.Context) ([]models.AlertStatus, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, code, description, step_order FROM heartguard.alert_status ORDER BY step_order, code`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []models.AlertStatus
+	for rows.Next() {
+		var status models.AlertStatus
+		if err := rows.Scan(&status.ID, &status.Code, &status.Description, &status.StepOrder); err != nil {
+			return nil, err
+		}
+		out = append(out, status)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error) {
+	if limit <= 0 {
+		limit = 100
+	} else if limit > 200 {
+		limit = 200
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_content_block_types_list($1, $2)`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.ContentBlockType, 0, limit)
+	for rows.Next() {
+		var (
+			bt   models.ContentBlockType
+			desc sql.NullString
+		)
+		if err := rows.Scan(&bt.ID, &bt.Code, &bt.Label, &desc); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			d := desc.String
+			bt.Description = &d
+		}
+		out = append(out, bt)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error) {
+	var (
+		bt   models.ContentBlockType
+		desc sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_block_type_create($1, $2, $3)`, code, label, description).
+		Scan(&bt.ID, &bt.Code, &bt.Label, &desc)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		d := desc.String
+		bt.Description = &d
+	}
+	return &bt, nil
+}
+
+func (r *Repo) UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error) {
+	var (
+		bt   models.ContentBlockType
+		desc sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_block_type_update($1, $2, $3, $4)`, id, code, label, description).
+		Scan(&bt.ID, &bt.Code, &bt.Label, &desc)
+	if err != nil {
+		return nil, err
+	}
+	if desc.Valid {
+		d := desc.String
+		bt.Description = &d
+	}
+	return &bt, nil
+}
+
+func (r *Repo) DeleteContentBlockType(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_content_block_type_delete($1)`, id).Scan(&ok); err != nil {
 		return err
 	}
 	if !ok {

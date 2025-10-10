@@ -96,6 +96,189 @@ type ContentStatusTrend struct {
 	Count  int    `json:"count"`
 }
 
+type ContentBlockType struct {
+	ID          string  `json:"id"`
+	Code        string  `json:"code"`
+	Label       string  `json:"label"`
+	Description *string `json:"description,omitempty"`
+}
+
+type Patient struct {
+	ID        string     `json:"id"`
+	OrgID     *string    `json:"org_id,omitempty"`
+	OrgName   *string    `json:"org_name,omitempty"`
+	Name      string     `json:"name"`
+	Birthdate *time.Time `json:"birthdate,omitempty"`
+	SexCode   *string    `json:"sex_code,omitempty"`
+	SexLabel  *string    `json:"sex_label,omitempty"`
+	RiskLevel *string    `json:"risk_level,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
+}
+
+type PatientInput struct {
+	OrgID     *string    `json:"org_id,omitempty"`
+	Name      string     `json:"name"`
+	Birthdate *time.Time `json:"birthdate,omitempty"`
+	SexCode   *string    `json:"sex_code,omitempty"`
+	RiskLevel *string    `json:"risk_level,omitempty"`
+}
+
+type Device struct {
+	ID               string    `json:"id"`
+	OrgID            *string   `json:"org_id,omitempty"`
+	OrgName          *string   `json:"org_name,omitempty"`
+	Serial           string    `json:"serial"`
+	Brand            *string   `json:"brand,omitempty"`
+	Model            *string   `json:"model,omitempty"`
+	DeviceTypeCode   string    `json:"device_type_code"`
+	DeviceTypeLabel  string    `json:"device_type_label"`
+	OwnerPatientID   *string   `json:"owner_patient_id,omitempty"`
+	OwnerPatientName *string   `json:"owner_patient_name,omitempty"`
+	RegisteredAt     time.Time `json:"registered_at"`
+	Active           bool      `json:"active"`
+}
+
+type DeviceInput struct {
+	OrgID          *string `json:"org_id,omitempty"`
+	Serial         string  `json:"serial"`
+	Brand          *string `json:"brand,omitempty"`
+	Model          *string `json:"model,omitempty"`
+	DeviceTypeCode string  `json:"device_type_code"`
+	OwnerPatientID *string `json:"owner_patient_id,omitempty"`
+	Active         *bool   `json:"active,omitempty"`
+}
+
+type DeviceType struct {
+	ID          string  `json:"id"`
+	Code        string  `json:"code"`
+	Description *string `json:"description,omitempty"`
+}
+
+type SignalStream struct {
+	ID           string     `json:"id"`
+	PatientID    string     `json:"patient_id"`
+	PatientName  string     `json:"patient_name"`
+	DeviceID     string     `json:"device_id"`
+	DeviceSerial string     `json:"device_serial"`
+	SignalType   string     `json:"signal_type"`
+	SignalLabel  string     `json:"signal_label"`
+	SampleRateHz float64    `json:"sample_rate_hz"`
+	StartedAt    time.Time  `json:"started_at"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
+}
+
+type SignalStreamInput struct {
+	PatientID    string     `json:"patient_id"`
+	DeviceID     string     `json:"device_id"`
+	SignalType   string     `json:"signal_type"`
+	SampleRateHz float64    `json:"sample_rate_hz"`
+	StartedAt    time.Time  `json:"started_at"`
+	EndedAt      *time.Time `json:"ended_at,omitempty"`
+}
+
+type MLModel struct {
+	ID              string    `json:"id"`
+	Name            string    `json:"name"`
+	Version         string    `json:"version"`
+	Task            string    `json:"task"`
+	TrainingDataRef *string   `json:"training_data_ref,omitempty"`
+	Hyperparams     *string   `json:"hyperparams,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
+type MLModelInput struct {
+	Name            string  `json:"name"`
+	Version         string  `json:"version"`
+	Task            string  `json:"task"`
+	TrainingDataRef *string `json:"training_data_ref,omitempty"`
+	Hyperparams     *string `json:"hyperparams,omitempty"`
+}
+
+type EventType struct {
+	ID                   string  `json:"id"`
+	Code                 string  `json:"code"`
+	Description          *string `json:"description,omitempty"`
+	SeverityDefault      string  `json:"severity_default"`
+	SeverityDefaultLabel string  `json:"severity_default_label"`
+}
+
+type EventTypeInput struct {
+	Code            string  `json:"code"`
+	Description     *string `json:"description,omitempty"`
+	SeverityDefault string  `json:"severity_default"`
+}
+
+type Inference struct {
+	ID           string    `json:"id"`
+	ModelID      *string   `json:"model_id,omitempty"`
+	ModelName    *string   `json:"model_name,omitempty"`
+	StreamID     string    `json:"stream_id"`
+	StreamLabel  string    `json:"stream_label"`
+	PatientName  string    `json:"patient_name"`
+	DeviceSerial string    `json:"device_serial"`
+	WindowStart  time.Time `json:"window_start"`
+	WindowEnd    time.Time `json:"window_end"`
+	EventCode    string    `json:"event_code"`
+	EventLabel   string    `json:"event_label"`
+	Score        *float32  `json:"score,omitempty"`
+	Threshold    *float32  `json:"threshold,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+	SeriesRef    *string   `json:"series_ref,omitempty"`
+}
+
+type InferenceInput struct {
+	ModelID         *string   `json:"model_id,omitempty"`
+	StreamID        string    `json:"stream_id"`
+	EventCode       string    `json:"event_code"`
+	WindowStart     time.Time `json:"window_start"`
+	WindowEnd       time.Time `json:"window_end"`
+	Score           *float32  `json:"score,omitempty"`
+	Threshold       *float32  `json:"threshold,omitempty"`
+	Metadata        *string   `json:"metadata,omitempty"`
+	SeriesRef       *string   `json:"series_ref,omitempty"`
+	FeatureSnapshot *string   `json:"feature_snapshot,omitempty"`
+}
+
+type Alert struct {
+	ID             string    `json:"id"`
+	OrgID          *string   `json:"org_id,omitempty"`
+	OrgName        *string   `json:"org_name,omitempty"`
+	PatientID      string    `json:"patient_id"`
+	PatientName    string    `json:"patient_name"`
+	AlertTypeCode  string    `json:"alert_type_code"`
+	AlertTypeLabel string    `json:"alert_type_label"`
+	LevelCode      string    `json:"level_code"`
+	LevelLabel     string    `json:"level_label"`
+	StatusCode     string    `json:"status_code"`
+	StatusLabel    string    `json:"status_label"`
+	CreatedAt      time.Time `json:"created_at"`
+	Description    *string   `json:"description,omitempty"`
+}
+
+type AlertInput struct {
+	PatientID   string  `json:"patient_id"`
+	AlertType   string  `json:"alert_type"`
+	AlertLevel  string  `json:"alert_level"`
+	Status      string  `json:"status"`
+	ModelID     *string `json:"model_id,omitempty"`
+	InferenceID *string `json:"inference_id,omitempty"`
+	Description *string `json:"description,omitempty"`
+	LocationWKT *string `json:"location_wkt,omitempty"`
+}
+
+type AlertType struct {
+	ID          string  `json:"id"`
+	Code        string  `json:"code"`
+	Description *string `json:"description,omitempty"`
+}
+
+type AlertStatus struct {
+	ID          string `json:"id"`
+	Code        string `json:"code"`
+	Description string `json:"description"`
+	StepOrder   int    `json:"step_order"`
+}
+
 type ContentRoleActivity struct {
 	Role  string `json:"role"`
 	Count int    `json:"count"`

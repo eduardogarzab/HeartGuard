@@ -1,0 +1,94 @@
+{{define "superadmin/event_types.html"}} {{template "layout" .}} {{end}} {{define "superadmin/event_types.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>Tipos de evento</h1>
+	</div>
+	<div class="hg-card">
+		<h3>Registrar tipo</h3>
+		<form method="post" action="/superadmin/event-types" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="event-code">Código</label>
+				<input id="event-code" name="code" type="text" required placeholder="arrhythmia_detected" />
+			</div>
+			<div class="hg-form-field">
+				<label for="event-desc">Descripción</label>
+				<input id="event-desc" name="description" type="text" placeholder="Evento arrítmico detectado" />
+			</div>
+			<div class="hg-form-field">
+				<label for="event-level">Severidad por defecto</label>
+				<select id="event-level" name="severity_default" required>
+					<option value="">Selecciona nivel</option>
+					{{range .Data.Levels}}
+					<option value="{{.Code}}">{{.Label}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear tipo</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Tipos registrados</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Código</th>
+					<th>Descripción</th>
+					<th>Severidad</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				{{$item := .}}
+				<tr>
+					<td>{{$item.Code}}</td>
+					<td>{{if $item.Description}}{{$item.Description}}{{else}}—{{end}}</td>
+					<td>{{$item.SeverityDefaultLabel}}</td>
+					<td class="hg-flex">
+						<details>
+							<summary>Editar</summary>
+							<form method="post" action="/superadmin/event-types/{{$item.ID}}/update" class="hg-form-grid">
+								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+								<div class="hg-form-field">
+									<label>Código</label>
+									<input name="code" type="text" value="{{$item.Code}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Descripción</label>
+									<input name="description" type="text" value="{{if $item.Description}}{{$item.Description}}{{end}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Severidad</label>
+									<select name="severity_default" required>
+										{{range $.Data.Levels}}
+										<option value="{{.Code}}" {{if eq .Code $item.SeverityDefault}}selected{{end}}>{{.Label}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-actions">
+									<button type="submit">Guardar</button>
+								</div>
+							</form>
+						</details>
+						<form method="post" action="/superadmin/event-types/{{$item.ID}}/delete" data-hg-confirm="¿Eliminar tipo?" class="hg-inline-form">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="4" class="hg-empty-cell">Sin tipos registrados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

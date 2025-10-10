@@ -51,6 +51,42 @@ func NewRenderer() (*Renderer, error) {
 			}
 			return t.In(time.Local).Format("2006-01-02 15:04")
 		},
+		"formatTimeLocal": func(t time.Time) string {
+			if t.IsZero() {
+				return ""
+			}
+			return t.In(time.Local).Format("2006-01-02T15:04")
+		},
+		"formatTimeLocalPtr": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return t.In(time.Local).Format("2006-01-02T15:04")
+		},
+		"formatDate": func(t time.Time) string {
+			if t.IsZero() {
+				return ""
+			}
+			return t.In(time.Local).Format("2006-01-02")
+		},
+		"formatDatePtr": func(t *time.Time) string {
+			if t == nil {
+				return ""
+			}
+			return t.In(time.Local).Format("2006-01-02")
+		},
+		"formatFloat32": func(v *float32) string {
+			if v == nil {
+				return ""
+			}
+			return strconv.FormatFloat(float64(*v), 'f', 4, 32)
+		},
+		"stringValue": func(ptr *string) string {
+			if ptr == nil {
+				return ""
+			}
+			return *ptr
+		},
 		"urlquery": url.QueryEscape,
 		"hasScope": func(scopes []string, code string) bool {
 			for _, s := range scopes {

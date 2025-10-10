@@ -260,6 +260,184 @@ CREATE TABLE IF NOT EXISTS caregiver_patient (
   PRIMARY KEY (patient_id, user_id)
 );
 
+CREATE OR REPLACE FUNCTION heartguard.sp_patients_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  person_name text,
+  birthdate date,
+  sex_code text,
+  sex_label text,
+  risk_level text,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    p.id::text,
+    p.org_id::text,
+    o.name::text,
+    p.person_name::text,
+    p.birthdate,
+    sx.code::text,
+    sx.label::text,
+    p.risk_level::text,
+    p.created_at
+  FROM heartguard.patients p
+  LEFT JOIN heartguard.organizations o ON o.id = p.org_id
+  LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+  ORDER BY p.created_at DESC, p.person_name
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_patient_create(
+  p_org_id uuid,
+  p_person_name text,
+  p_birthdate date DEFAULT NULL,
+  p_sex_code text DEFAULT NULL,
+  p_risk_level text DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  person_name text,
+  birthdate date,
+  sex_code text,
+  sex_label text,
+  risk_level text,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_name text;
+  v_sex_id uuid := NULL;
+  v_risk text;
+BEGIN
+  v_name := NULLIF(btrim(p_person_name), '');
+  IF v_name IS NULL THEN
+    RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
+  END IF;
+
+  IF p_sex_code IS NOT NULL THEN
+    IF btrim(p_sex_code) = '' THEN
+      v_sex_id := NULL;
+    ELSE
+      SELECT sx.id INTO v_sex_id
+      FROM heartguard.sexes sx
+      WHERE lower(sx.code) = lower(btrim(p_sex_code))
+      LIMIT 1;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Sexo % no existe', p_sex_code USING ERRCODE = '23514';
+      END IF;
+    END IF;
+  END IF;
+
+  v_risk := NULLIF(btrim(p_risk_level), '');
+
+  RETURN QUERY
+  INSERT INTO heartguard.patients AS p (org_id, person_name, birthdate, sex_id, risk_level)
+  VALUES (p_org_id, v_name, p_birthdate, v_sex_id, v_risk)
+  RETURNING
+    p.id::text,
+    p.org_id::text,
+    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = p.org_id),
+    p.person_name::text,
+    p.birthdate,
+    (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
+    (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
+    p.risk_level::text,
+    p.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_patient_update(
+  p_id uuid,
+  p_org_id uuid,
+  p_person_name text,
+  p_birthdate date,
+  p_sex_code text,
+  p_risk_level text)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  person_name text,
+  birthdate date,
+  sex_code text,
+  sex_label text,
+  risk_level text,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_name text;
+  v_sex_id uuid := NULL;
+  v_risk text;
+BEGIN
+  v_name := NULLIF(btrim(p_person_name), '');
+  IF v_name IS NULL THEN
+    RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
+  END IF;
+
+  IF p_sex_code IS NOT NULL THEN
+    IF btrim(p_sex_code) = '' THEN
+      v_sex_id := NULL;
+    ELSE
+      SELECT sx.id INTO v_sex_id
+      FROM heartguard.sexes sx
+      WHERE lower(sx.code) = lower(btrim(p_sex_code))
+      LIMIT 1;
+      IF NOT FOUND THEN
+        RAISE EXCEPTION 'Sexo % no existe', p_sex_code USING ERRCODE = '23514';
+      END IF;
+    END IF;
+  END IF;
+
+  v_risk := NULLIF(btrim(p_risk_level), '');
+
+  RETURN QUERY
+  UPDATE heartguard.patients AS p
+     SET org_id = COALESCE(p_org_id, p.org_id),
+         person_name = v_name,
+         birthdate = CASE WHEN p_birthdate IS NULL THEN p.birthdate ELSE p_birthdate END,
+         sex_id = CASE WHEN p_sex_code IS NULL THEN p.sex_id ELSE v_sex_id END,
+         risk_level = CASE WHEN p_risk_level IS NULL THEN p.risk_level ELSE v_risk END
+   WHERE p.id = p_id
+  RETURNING
+    p.id::text,
+    p.org_id::text,
+    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = p.org_id),
+    p.person_name::text,
+    p.birthdate,
+    (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
+    (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
+    p.risk_level::text,
+    p.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_patient_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.patients WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS org_invitations (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -305,7 +483,7 @@ BEGIN
   IF table_name IS NULL THEN
     RAISE EXCEPTION 'Catalogo % no soportado', p_catalog;
   END IF;
-  IF lower(p_catalog) = 'alert_levels' THEN
+  IF lower(p_catalog) IN ('alert_levels', 'content_statuses') THEN
     has_weight := TRUE;
   END IF;
 END;
@@ -622,6 +800,359 @@ CREATE TABLE IF NOT EXISTS timeseries_binding_tag (
   UNIQUE (binding_id, tag_key)
 );
 
+CREATE OR REPLACE FUNCTION heartguard.sp_signal_streams_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  patient_id text,
+  patient_name text,
+  device_id text,
+  device_serial text,
+  signal_type_code text,
+  signal_type_label text,
+  sample_rate_hz numeric,
+  started_at timestamp,
+  ended_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    ss.id::text,
+    ss.patient_id::text,
+    pat.person_name::text,
+    ss.device_id::text,
+    dev.serial::text,
+    st.code::text,
+    st.label::text,
+    ss.sample_rate_hz,
+    ss.started_at,
+    ss.ended_at
+  FROM heartguard.signal_streams ss
+  JOIN heartguard.patients pat ON pat.id = ss.patient_id
+  JOIN heartguard.devices dev ON dev.id = ss.device_id
+  JOIN heartguard.signal_types st ON st.id = ss.signal_type_id
+  ORDER BY ss.started_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_signal_stream_create(
+  p_patient_id uuid,
+  p_device_id uuid,
+  p_signal_type_code text,
+  p_sample_rate numeric,
+  p_started_at timestamp,
+  p_ended_at timestamp)
+RETURNS TABLE (
+  id text,
+  patient_id text,
+  patient_name text,
+  device_id text,
+  device_serial text,
+  signal_type_code text,
+  signal_type_label text,
+  sample_rate_hz numeric,
+  started_at timestamp,
+  ended_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_signal_type_id uuid;
+BEGIN
+  SELECT st.id INTO v_signal_type_id
+  FROM heartguard.signal_types st
+  WHERE lower(st.code) = lower(btrim(p_signal_type_code))
+  LIMIT 1;
+  IF v_signal_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de señal % no existe', p_signal_type_code USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY
+  INSERT INTO heartguard.signal_streams AS ss (patient_id, device_id, signal_type_id, sample_rate_hz, started_at, ended_at)
+  VALUES (p_patient_id, p_device_id, v_signal_type_id, p_sample_rate, p_started_at, p_ended_at)
+  RETURNING
+    ss.id::text,
+    ss.patient_id::text,
+    (SELECT pat.person_name::text FROM heartguard.patients pat WHERE pat.id = ss.patient_id),
+    ss.device_id::text,
+    (SELECT dev.serial::text FROM heartguard.devices dev WHERE dev.id = ss.device_id),
+    (SELECT st.code::text FROM heartguard.signal_types st WHERE st.id = ss.signal_type_id),
+    (SELECT st.label::text FROM heartguard.signal_types st WHERE st.id = ss.signal_type_id),
+    ss.sample_rate_hz,
+    ss.started_at,
+    ss.ended_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_signal_stream_update(
+  p_id uuid,
+  p_patient_id uuid,
+  p_device_id uuid,
+  p_signal_type_code text,
+  p_sample_rate numeric,
+  p_started_at timestamp,
+  p_ended_at timestamp)
+RETURNS TABLE (
+  id text,
+  patient_id text,
+  patient_name text,
+  device_id text,
+  device_serial text,
+  signal_type_code text,
+  signal_type_label text,
+  sample_rate_hz numeric,
+  started_at timestamp,
+  ended_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_signal_type_id uuid;
+BEGIN
+  SELECT st.id INTO v_signal_type_id
+  FROM heartguard.signal_types st
+  WHERE lower(st.code) = lower(btrim(p_signal_type_code))
+  LIMIT 1;
+  IF v_signal_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de señal % no existe', p_signal_type_code USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY
+  UPDATE heartguard.signal_streams AS ss
+     SET patient_id = p_patient_id,
+         device_id = p_device_id,
+         signal_type_id = v_signal_type_id,
+         sample_rate_hz = p_sample_rate,
+         started_at = p_started_at,
+         ended_at = p_ended_at
+   WHERE ss.id = p_id
+  RETURNING
+    ss.id::text,
+    ss.patient_id::text,
+    (SELECT pat.person_name::text FROM heartguard.patients pat WHERE pat.id = ss.patient_id),
+    ss.device_id::text,
+    (SELECT dev.serial::text FROM heartguard.devices dev WHERE dev.id = ss.device_id),
+    (SELECT st.code::text FROM heartguard.signal_types st WHERE st.id = ss.signal_type_id),
+    (SELECT st.label::text FROM heartguard.signal_types st WHERE st.id = ss.signal_type_id),
+    ss.sample_rate_hz,
+    ss.started_at,
+    ss.ended_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_signal_stream_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.signal_streams WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_devices_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  serial text,
+  brand text,
+  model text,
+  device_type_code text,
+  device_type_label text,
+  owner_patient_id text,
+  owner_patient_name text,
+  registered_at timestamp,
+  active boolean)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    d.id::text,
+    d.org_id::text,
+    o.name::text,
+    d.serial::text,
+    d.brand::text,
+    d.model::text,
+    dt.code::text,
+    dt.description::text,
+    d.owner_patient_id::text,
+    p.person_name::text,
+    d.registered_at,
+    d.active
+  FROM heartguard.devices d
+  LEFT JOIN heartguard.organizations o ON o.id = d.org_id
+  JOIN heartguard.device_types dt ON dt.id = d.device_type_id
+  LEFT JOIN heartguard.patients p ON p.id = d.owner_patient_id
+  ORDER BY d.registered_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_device_create(
+  p_org_id uuid,
+  p_serial text,
+  p_brand text DEFAULT NULL,
+  p_model text DEFAULT NULL,
+  p_device_type_code text DEFAULT NULL,
+  p_owner_patient_id uuid DEFAULT NULL,
+  p_active boolean DEFAULT TRUE)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  serial text,
+  brand text,
+  model text,
+  device_type_code text,
+  device_type_label text,
+  owner_patient_id text,
+  owner_patient_name text,
+  registered_at timestamp,
+  active boolean)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_serial text;
+  v_brand text;
+  v_model text;
+  v_type_id uuid;
+BEGIN
+  v_serial := NULLIF(btrim(p_serial), '');
+  IF v_serial IS NULL THEN
+    RAISE EXCEPTION 'Serie requerida' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT dt.id INTO v_type_id
+  FROM heartguard.device_types dt
+  WHERE lower(dt.code) = lower(btrim(p_device_type_code))
+  LIMIT 1;
+  IF v_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de dispositivo % no existe', p_device_type_code USING ERRCODE = '23514';
+  END IF;
+
+  v_brand := NULLIF(btrim(p_brand), '');
+  v_model := NULLIF(btrim(p_model), '');
+
+  RETURN QUERY
+  INSERT INTO heartguard.devices AS d (org_id, serial, brand, model, device_type_id, owner_patient_id, active)
+  VALUES (p_org_id, v_serial, v_brand, v_model, v_type_id, p_owner_patient_id, COALESCE(p_active, TRUE))
+  RETURNING
+    d.id::text,
+    d.org_id::text,
+    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = d.org_id),
+    d.serial::text,
+    d.brand::text,
+    d.model::text,
+    (SELECT dt.code::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
+    (SELECT dt.description::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
+    d.owner_patient_id::text,
+    (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = d.owner_patient_id),
+    d.registered_at,
+    d.active;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_device_update(
+  p_id uuid,
+  p_org_id uuid,
+  p_serial text,
+  p_brand text,
+  p_model text,
+  p_device_type_code text,
+  p_owner_patient_id uuid,
+  p_active boolean)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  serial text,
+  brand text,
+  model text,
+  device_type_code text,
+  device_type_label text,
+  owner_patient_id text,
+  owner_patient_name text,
+  registered_at timestamp,
+  active boolean)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_serial text;
+  v_brand text;
+  v_model text;
+  v_type_id uuid;
+BEGIN
+  v_serial := NULLIF(btrim(p_serial), '');
+  IF v_serial IS NULL THEN
+    RAISE EXCEPTION 'Serie requerida' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT dt.id INTO v_type_id
+  FROM heartguard.device_types dt
+  WHERE lower(dt.code) = lower(btrim(p_device_type_code))
+  LIMIT 1;
+  IF v_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de dispositivo % no existe', p_device_type_code USING ERRCODE = '23514';
+  END IF;
+
+  v_brand := NULLIF(btrim(p_brand), '');
+  v_model := NULLIF(btrim(p_model), '');
+
+  RETURN QUERY
+  UPDATE heartguard.devices AS d
+     SET org_id = COALESCE(p_org_id, d.org_id),
+         serial = v_serial,
+         brand = v_brand,
+         model = v_model,
+         device_type_id = v_type_id,
+         owner_patient_id = p_owner_patient_id,
+         active = COALESCE(p_active, d.active)
+   WHERE d.id = p_id
+  RETURNING
+    d.id::text,
+    d.org_id::text,
+    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = d.org_id),
+    d.serial::text,
+    d.brand::text,
+    d.model::text,
+    (SELECT dt.code::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
+    (SELECT dt.description::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
+    d.owner_patient_id::text,
+    (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = d.owner_patient_id),
+    d.registered_at,
+    d.active;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_device_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.devices WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
+
 -- =========================================================
 -- E) ML e inferencias
 -- =========================================================
@@ -636,12 +1167,283 @@ CREATE TABLE IF NOT EXISTS models (
   UNIQUE(name, version)
 );
 
+CREATE OR REPLACE FUNCTION heartguard.sp_models_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  name text,
+  version text,
+  task text,
+  training_data_ref text,
+  hyperparams text,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    m.id::text,
+    m.name::text,
+    m.version::text,
+    m.task::text,
+    m.training_data_ref,
+    CASE WHEN m.hyperparams IS NULL THEN NULL ELSE m.hyperparams::text END,
+    m.created_at
+  FROM heartguard.models m
+  ORDER BY m.created_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_model_create(
+  p_name text,
+  p_version text,
+  p_task text,
+  p_training_data_ref text DEFAULT NULL,
+  p_hyperparams jsonb DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  name text,
+  version text,
+  task text,
+  training_data_ref text,
+  hyperparams text,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_name text;
+  v_version text;
+  v_task text;
+BEGIN
+  v_name := NULLIF(btrim(p_name), '');
+  v_version := NULLIF(btrim(p_version), '');
+  v_task := NULLIF(btrim(p_task), '');
+  IF v_name IS NULL OR v_version IS NULL OR v_task IS NULL THEN
+    RAISE EXCEPTION 'Nombre, versión y tarea son obligatorios' USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY
+  INSERT INTO heartguard.models AS m (name, version, task, training_data_ref, hyperparams)
+  VALUES (v_name, v_version, v_task, NULLIF(btrim(p_training_data_ref), ''), p_hyperparams)
+  RETURNING
+    m.id::text,
+    m.name::text,
+    m.version::text,
+    m.task::text,
+    m.training_data_ref,
+    CASE WHEN m.hyperparams IS NULL THEN NULL ELSE m.hyperparams::text END,
+    m.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_model_update(
+  p_id uuid,
+  p_name text,
+  p_version text,
+  p_task text,
+  p_training_data_ref text,
+  p_hyperparams jsonb)
+RETURNS TABLE (
+  id text,
+  name text,
+  version text,
+  task text,
+  training_data_ref text,
+  hyperparams text,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_name text;
+  v_version text;
+  v_task text;
+BEGIN
+  v_name := NULLIF(btrim(p_name), '');
+  v_version := NULLIF(btrim(p_version), '');
+  v_task := NULLIF(btrim(p_task), '');
+  IF v_name IS NULL OR v_version IS NULL OR v_task IS NULL THEN
+    RAISE EXCEPTION 'Nombre, versión y tarea son obligatorios' USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY
+  UPDATE heartguard.models AS m
+     SET name = v_name,
+         version = v_version,
+         task = v_task,
+         training_data_ref = NULLIF(btrim(p_training_data_ref), ''),
+         hyperparams = p_hyperparams
+   WHERE m.id = p_id
+  RETURNING
+    m.id::text,
+    m.name::text,
+    m.version::text,
+    m.task::text,
+    m.training_data_ref,
+    CASE WHEN m.hyperparams IS NULL THEN NULL ELSE m.hyperparams::text END,
+    m.created_at;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_model_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.models WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
+
 CREATE TABLE IF NOT EXISTS event_types (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code                VARCHAR(40) NOT NULL UNIQUE,
   description         TEXT,
   severity_default_id UUID NOT NULL REFERENCES alert_levels(id) ON DELETE RESTRICT
 );
+
+CREATE OR REPLACE FUNCTION heartguard.sp_event_types_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  code text,
+  description text,
+  severity_code text,
+  severity_label text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 200);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    et.id::text,
+    et.code::text,
+    et.description,
+    al.code::text,
+    al.label::text
+  FROM heartguard.event_types et
+  JOIN heartguard.alert_levels al ON al.id = et.severity_default_id
+  ORDER BY et.code
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_event_type_create(
+  p_code text,
+  p_description text DEFAULT NULL,
+  p_severity_code text DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  code text,
+  description text,
+  severity_code text,
+  severity_label text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_code text;
+  v_desc text;
+  v_severity_id uuid;
+BEGIN
+  v_code := lower(NULLIF(btrim(p_code), ''));
+  IF v_code IS NULL THEN
+    RAISE EXCEPTION 'Código requerido' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT al.id INTO v_severity_id
+  FROM heartguard.alert_levels al
+  WHERE lower(al.code) = lower(btrim(p_severity_code))
+  LIMIT 1;
+  IF v_severity_id IS NULL THEN
+    RAISE EXCEPTION 'Nivel de alerta % no existe', p_severity_code USING ERRCODE = '23514';
+  END IF;
+
+  v_desc := NULLIF(btrim(p_description), '');
+
+  RETURN QUERY
+  INSERT INTO heartguard.event_types AS et (code, description, severity_default_id)
+  VALUES (v_code, v_desc, v_severity_id)
+  RETURNING
+    et.id::text,
+    et.code::text,
+    et.description,
+    (SELECT al.code::text FROM heartguard.alert_levels al WHERE al.id = et.severity_default_id),
+    (SELECT al.label::text FROM heartguard.alert_levels al WHERE al.id = et.severity_default_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_event_type_update(
+  p_id uuid,
+  p_code text,
+  p_description text,
+  p_severity_code text)
+RETURNS TABLE (
+  id text,
+  code text,
+  description text,
+  severity_code text,
+  severity_label text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_code text;
+  v_desc text;
+  v_severity_id uuid;
+BEGIN
+  v_code := lower(NULLIF(btrim(p_code), ''));
+  IF v_code IS NULL THEN
+    RAISE EXCEPTION 'Código requerido' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT al.id INTO v_severity_id
+  FROM heartguard.alert_levels al
+  WHERE lower(al.code) = lower(btrim(p_severity_code))
+  LIMIT 1;
+  IF v_severity_id IS NULL THEN
+    RAISE EXCEPTION 'Nivel de alerta % no existe', p_severity_code USING ERRCODE = '23514';
+  END IF;
+
+  v_desc := NULLIF(btrim(p_description), '');
+
+  RETURN QUERY
+  UPDATE heartguard.event_types AS et
+     SET code = v_code,
+         description = v_desc,
+         severity_default_id = v_severity_id
+   WHERE et.id = p_id
+  RETURNING
+    et.id::text,
+    et.code::text,
+    et.description,
+    (SELECT al.code::text FROM heartguard.alert_levels al WHERE al.id = et.severity_default_id),
+    (SELECT al.label::text FROM heartguard.alert_levels al WHERE al.id = et.severity_default_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_event_type_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.event_types WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS inferences (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -660,6 +1462,210 @@ CREATE TABLE IF NOT EXISTS inferences (
 );
 CREATE INDEX IF NOT EXISTS idx_inferences_stream_time
   ON inferences(stream_id, window_start, window_end);
+
+CREATE OR REPLACE FUNCTION heartguard.sp_inferences_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  model_id text,
+  model_name text,
+  stream_id text,
+  patient_name text,
+  device_serial text,
+  event_code text,
+  event_label text,
+  window_start timestamp,
+  window_end timestamp,
+  score numeric,
+  threshold numeric,
+  created_at timestamp,
+  series_ref text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    inf.id::text,
+    inf.model_id::text,
+    m.name::text,
+    inf.stream_id::text,
+    pat.person_name::text,
+    dev.serial::text,
+    et.code::text,
+    et.description,
+    inf.window_start,
+    inf.window_end,
+    inf.score,
+    inf.threshold,
+    inf.created_at,
+    inf.series_ref
+  FROM heartguard.inferences inf
+  JOIN heartguard.signal_streams ss ON ss.id = inf.stream_id
+  JOIN heartguard.patients pat ON pat.id = ss.patient_id
+  JOIN heartguard.devices dev ON dev.id = ss.device_id
+  JOIN heartguard.event_types et ON et.id = inf.predicted_event_id
+  LEFT JOIN heartguard.models m ON m.id = inf.model_id
+  ORDER BY inf.created_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_inference_create(
+  p_model_id uuid,
+  p_stream_id uuid,
+  p_window_start timestamp,
+  p_window_end timestamp,
+  p_event_code text,
+  p_score numeric,
+  p_threshold numeric,
+  p_metadata jsonb DEFAULT NULL,
+  p_series_ref text DEFAULT NULL,
+  p_feature_snapshot jsonb DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  model_id text,
+  model_name text,
+  stream_id text,
+  patient_name text,
+  device_serial text,
+  event_code text,
+  event_label text,
+  window_start timestamp,
+  window_end timestamp,
+  score numeric,
+  threshold numeric,
+  created_at timestamp,
+  series_ref text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_event_id uuid;
+BEGIN
+  IF p_window_end <= p_window_start THEN
+    RAISE EXCEPTION 'La ventana debe ser válida' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT et.id INTO v_event_id
+  FROM heartguard.event_types et
+  WHERE lower(et.code) = lower(btrim(p_event_code))
+  LIMIT 1;
+  IF v_event_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de evento % no existe', p_event_code USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY
+  INSERT INTO heartguard.inferences AS inf (model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, series_ref, feature_snapshot)
+  VALUES (p_model_id, p_stream_id, p_window_start, p_window_end, v_event_id, p_score, p_threshold, p_metadata, NULLIF(btrim(p_series_ref), ''), p_feature_snapshot)
+  RETURNING
+    inf.id::text,
+    inf.model_id::text,
+    (SELECT m.name::text FROM heartguard.models m WHERE m.id = inf.model_id),
+    inf.stream_id::text,
+    (SELECT pat.person_name::text FROM heartguard.patients pat JOIN heartguard.signal_streams ss ON ss.patient_id = pat.id WHERE ss.id = inf.stream_id),
+    (SELECT dev.serial::text FROM heartguard.devices dev JOIN heartguard.signal_streams ss ON ss.device_id = dev.id WHERE ss.id = inf.stream_id),
+    (SELECT et.code::text FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
+    (SELECT et.description FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
+    inf.window_start,
+    inf.window_end,
+    inf.score,
+    inf.threshold,
+    inf.created_at,
+    inf.series_ref;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_inference_update(
+  p_id uuid,
+  p_model_id uuid,
+  p_stream_id uuid,
+  p_window_start timestamp,
+  p_window_end timestamp,
+  p_event_code text,
+  p_score numeric,
+  p_threshold numeric,
+  p_metadata jsonb,
+  p_series_ref text,
+  p_feature_snapshot jsonb)
+RETURNS TABLE (
+  id text,
+  model_id text,
+  model_name text,
+  stream_id text,
+  patient_name text,
+  device_serial text,
+  event_code text,
+  event_label text,
+  window_start timestamp,
+  window_end timestamp,
+  score numeric,
+  threshold numeric,
+  created_at timestamp,
+  series_ref text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_event_id uuid;
+BEGIN
+  IF p_window_end <= p_window_start THEN
+    RAISE EXCEPTION 'La ventana debe ser válida' USING ERRCODE = '23514';
+  END IF;
+
+  SELECT et.id INTO v_event_id
+  FROM heartguard.event_types et
+  WHERE lower(et.code) = lower(btrim(p_event_code))
+  LIMIT 1;
+  IF v_event_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de evento % no existe', p_event_code USING ERRCODE = '23514';
+  END IF;
+
+  RETURN QUERY
+  UPDATE heartguard.inferences AS inf
+     SET model_id = p_model_id,
+         stream_id = p_stream_id,
+         window_start = p_window_start,
+         window_end = p_window_end,
+         predicted_event_id = v_event_id,
+         score = p_score,
+         threshold = p_threshold,
+         metadata = p_metadata,
+         series_ref = NULLIF(btrim(p_series_ref), ''),
+         feature_snapshot = p_feature_snapshot
+   WHERE inf.id = p_id
+  RETURNING
+    inf.id::text,
+    inf.model_id::text,
+    (SELECT m.name::text FROM heartguard.models m WHERE m.id = inf.model_id),
+    inf.stream_id::text,
+    (SELECT pat.person_name::text FROM heartguard.patients pat JOIN heartguard.signal_streams ss ON ss.patient_id = pat.id WHERE ss.id = inf.stream_id),
+    (SELECT dev.serial::text FROM heartguard.devices dev JOIN heartguard.signal_streams ss ON ss.device_id = dev.id WHERE ss.id = inf.stream_id),
+    (SELECT et.code::text FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
+    (SELECT et.description FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
+    inf.window_start,
+    inf.window_end,
+    inf.score,
+    inf.threshold,
+    inf.created_at,
+    inf.series_ref;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_inference_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.inferences WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
 
 -- =========================================================
 -- F) Ground truth
@@ -712,6 +1718,239 @@ CREATE INDEX IF NOT EXISTS idx_alerts_patient_status ON alerts(patient_id, statu
 CREATE INDEX IF NOT EXISTS idx_alerts_level ON alerts(alert_level_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_loc_gix ON alerts USING GIST(location);
 CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at DESC);
+
+CREATE OR REPLACE FUNCTION heartguard.sp_alerts_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  patient_id text,
+  patient_name text,
+  alert_type_code text,
+  alert_type_label text,
+  level_code text,
+  level_label text,
+  status_code text,
+  status_label text,
+  created_at timestamp,
+  description text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    a.id::text,
+    a.org_id::text,
+    o.name::text,
+    a.patient_id::text,
+    p.person_name::text,
+    at.code::text,
+    at.description,
+    al.code::text,
+    al.label::text,
+    ast.code::text,
+    ast.description,
+    a.created_at,
+    a.description
+  FROM heartguard.alerts a
+  JOIN heartguard.patients p ON p.id = a.patient_id
+  LEFT JOIN heartguard.organizations o ON o.id = a.org_id
+  JOIN heartguard.alert_types at ON at.id = a.type_id
+  JOIN heartguard.alert_levels al ON al.id = a.alert_level_id
+  JOIN heartguard.alert_status ast ON ast.id = a.status_id
+  ORDER BY a.created_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_alert_create(
+  p_patient_id uuid,
+  p_alert_type_code text,
+  p_alert_level_code text,
+  p_status_code text,
+  p_model_id uuid,
+  p_inference_id uuid,
+  p_description text,
+  p_location_wkt text)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  patient_id text,
+  patient_name text,
+  alert_type_code text,
+  alert_type_label text,
+  level_code text,
+  level_label text,
+  status_code text,
+  status_label text,
+  created_at timestamp,
+  description text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_type_id uuid;
+  v_level_id uuid;
+  v_status_id uuid;
+  v_org_id uuid;
+  v_location geometry(Point,4326);
+BEGIN
+  SELECT at.id INTO v_type_id
+  FROM heartguard.alert_types at
+  WHERE lower(at.code) = lower(btrim(p_alert_type_code))
+  LIMIT 1;
+  IF v_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de alerta % no existe', p_alert_type_code USING ERRCODE = '23514';
+  END IF;
+
+  SELECT al.id INTO v_level_id
+  FROM heartguard.alert_levels al
+  WHERE lower(al.code) = lower(btrim(p_alert_level_code))
+  LIMIT 1;
+  IF v_level_id IS NULL THEN
+    RAISE EXCEPTION 'Nivel de alerta % no existe', p_alert_level_code USING ERRCODE = '23514';
+  END IF;
+
+  SELECT ast.id INTO v_status_id
+  FROM heartguard.alert_status ast
+  WHERE lower(ast.code) = lower(btrim(p_status_code))
+  LIMIT 1;
+  IF v_status_id IS NULL THEN
+    RAISE EXCEPTION 'Estatus de alerta % no existe', p_status_code USING ERRCODE = '23514';
+  END IF;
+
+  SELECT p.org_id INTO v_org_id FROM heartguard.patients p WHERE p.id = p_patient_id;
+
+  IF p_location_wkt IS NOT NULL AND btrim(p_location_wkt) <> '' THEN
+    v_location := ST_GeomFromText(p_location_wkt, 4326);
+  END IF;
+
+  RETURN QUERY
+  INSERT INTO heartguard.alerts AS a (org_id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, description, location)
+  VALUES (v_org_id, p_patient_id, v_type_id, p_model_id, p_inference_id, v_level_id, v_status_id, NULLIF(btrim(p_description), ''), v_location)
+  RETURNING
+    a.id::text,
+    a.org_id::text,
+    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = a.org_id),
+    a.patient_id::text,
+    (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = a.patient_id),
+    (SELECT at.code::text FROM heartguard.alert_types at WHERE at.id = a.type_id),
+    (SELECT at.description FROM heartguard.alert_types at WHERE at.id = a.type_id),
+    (SELECT al.code::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
+    (SELECT al.label::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
+    (SELECT ast.code::text FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
+    (SELECT ast.description FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
+    a.created_at,
+    a.description;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_alert_update(
+  p_id uuid,
+  p_alert_type_code text,
+  p_alert_level_code text,
+  p_status_code text,
+  p_model_id uuid,
+  p_inference_id uuid,
+  p_description text,
+  p_location_wkt text)
+RETURNS TABLE (
+  id text,
+  org_id text,
+  org_name text,
+  patient_id text,
+  patient_name text,
+  alert_type_code text,
+  alert_type_label text,
+  level_code text,
+  level_label text,
+  status_code text,
+  status_label text,
+  created_at timestamp,
+  description text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_type_id uuid;
+  v_level_id uuid;
+  v_status_id uuid;
+  v_location geometry(Point,4326);
+BEGIN
+  SELECT at.id INTO v_type_id
+  FROM heartguard.alert_types at
+  WHERE lower(at.code) = lower(btrim(p_alert_type_code))
+  LIMIT 1;
+  IF v_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de alerta % no existe', p_alert_type_code USING ERRCODE = '23514';
+  END IF;
+
+  SELECT al.id INTO v_level_id
+  FROM heartguard.alert_levels al
+  WHERE lower(al.code) = lower(btrim(p_alert_level_code))
+  LIMIT 1;
+  IF v_level_id IS NULL THEN
+    RAISE EXCEPTION 'Nivel de alerta % no existe', p_alert_level_code USING ERRCODE = '23514';
+  END IF;
+
+  SELECT ast.id INTO v_status_id
+  FROM heartguard.alert_status ast
+  WHERE lower(ast.code) = lower(btrim(p_status_code))
+  LIMIT 1;
+  IF v_status_id IS NULL THEN
+    RAISE EXCEPTION 'Estatus de alerta % no existe', p_status_code USING ERRCODE = '23514';
+  END IF;
+
+  IF p_location_wkt IS NOT NULL AND btrim(p_location_wkt) <> '' THEN
+    v_location := ST_GeomFromText(p_location_wkt, 4326);
+  ELSE
+    v_location := NULL;
+  END IF;
+
+  RETURN QUERY
+  UPDATE heartguard.alerts AS a
+     SET type_id = v_type_id,
+         alert_level_id = v_level_id,
+         status_id = v_status_id,
+         created_by_model_id = p_model_id,
+         source_inference_id = p_inference_id,
+         description = NULLIF(btrim(p_description), ''),
+         location = v_location
+   WHERE a.id = p_id
+  RETURNING
+    a.id::text,
+    a.org_id::text,
+    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = a.org_id),
+    a.patient_id::text,
+    (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = a.patient_id),
+    (SELECT at.code::text FROM heartguard.alert_types at WHERE at.id = a.type_id),
+    (SELECT at.description FROM heartguard.alert_types at WHERE at.id = a.type_id),
+    (SELECT al.code::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
+    (SELECT al.label::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
+    (SELECT ast.code::text FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
+    (SELECT ast.description FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
+    a.created_at,
+    a.description;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_alert_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.alerts WHERE id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
 
 CREATE TABLE IF NOT EXISTS alert_assignment (
   alert_id            UUID NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
@@ -906,6 +2145,127 @@ CREATE INDEX IF NOT EXISTS idx_content_updates_content ON content_updates(conten
 CREATE INDEX IF NOT EXISTS idx_content_updates_created_at ON content_updates(created_at DESC);
 
 -- Stored procedures: Contenido editorial
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_block_types_list(
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  code text,
+  label text,
+  description text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 200);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    cbt.id::text,
+    cbt.code::text,
+    cbt.label::text,
+    cbt.description
+  FROM heartguard.content_block_types cbt
+  ORDER BY LOWER(cbt.code), cbt.label
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_block_type_create(
+  p_code text,
+  p_label text,
+  p_description text DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  code text,
+  label text,
+  description text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_code text;
+  v_label text;
+  v_description text;
+BEGIN
+  v_code := lower(btrim(p_code));
+  IF v_code IS NULL OR v_code = '' THEN
+    RAISE EXCEPTION 'Código requerido' USING ERRCODE = '23514';
+  END IF;
+
+  v_label := NULLIF(btrim(p_label), '');
+  IF v_label IS NULL THEN
+    RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
+  END IF;
+
+  v_description := NULLIF(btrim(p_description), '');
+
+  RETURN QUERY
+  INSERT INTO heartguard.content_block_types AS cbt (code, label, description)
+  VALUES (v_code, v_label, v_description)
+  RETURNING cbt.id::text, cbt.code::text, cbt.label::text, cbt.description;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_block_type_update(
+  p_id uuid,
+  p_code text DEFAULT NULL,
+  p_label text DEFAULT NULL,
+  p_description text DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  code text,
+  label text,
+  description text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_code text;
+  v_label text;
+  v_description text;
+BEGIN
+  IF p_code IS NOT NULL THEN
+    v_code := lower(btrim(p_code));
+    IF v_code = '' THEN
+      RAISE EXCEPTION 'Código requerido' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  IF p_label IS NOT NULL THEN
+    v_label := NULLIF(btrim(p_label), '');
+    IF v_label IS NULL THEN
+      RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
+    END IF;
+  END IF;
+
+  IF p_description IS NOT NULL THEN
+    v_description := NULLIF(btrim(p_description), '');
+  END IF;
+
+  RETURN QUERY
+  UPDATE heartguard.content_block_types cbt
+     SET code = COALESCE(v_code, cbt.code),
+         label = COALESCE(v_label, cbt.label),
+         description = CASE WHEN p_description IS NULL THEN cbt.description ELSE v_description END
+   WHERE cbt.id = p_id
+  RETURNING cbt.id::text, cbt.code::text, cbt.label::text, cbt.description;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_block_type_delete(
+  p_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.content_block_types cbt
+  WHERE cbt.id = p_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
 
 CREATE OR REPLACE FUNCTION heartguard.sp_content_list(
   p_type text DEFAULT NULL,

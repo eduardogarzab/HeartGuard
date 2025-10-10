@@ -1,0 +1,169 @@
+{{define "superadmin/inferences.html"}} {{template "layout" .}} {{end}} {{define "superadmin/inferences.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>Inferencias</h1>
+	</div>
+	<div class="hg-card">
+		<h3>Registrar inferencia</h3>
+		<form method="post" action="/superadmin/inferences" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field">
+				<label for="inf-stream">Stream</label>
+				<select id="inf-stream" name="stream_id" required>
+					<option value="">Selecciona stream</option>
+					{{range .Data.Streams}}
+					<option value="{{.ID}}">{{.PatientName}} · {{.SignalLabel}}{{if .DeviceSerial}} · {{.DeviceSerial}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-model">Modelo</label>
+				<select id="inf-model" name="model_id">
+					<option value="">Sin modelo</option>
+					{{range .Data.Models}}
+					<option value="{{.ID}}">{{.Name}} · {{.Version}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-event">Evento</label>
+				<select id="inf-event" name="event_code" required>
+					<option value="">Selecciona evento</option>
+					{{range .Data.EventTypes}}
+					<option value="{{.Code}}">{{.Code}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-start">Inicio ventana</label>
+				<input id="inf-start" name="window_start" type="datetime-local" required />
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-end">Fin ventana</label>
+				<input id="inf-end" name="window_end" type="datetime-local" required />
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-score">Score</label>
+				<input id="inf-score" name="score" type="number" step="0.0001" placeholder="0.87" />
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-threshold">Umbral</label>
+				<input id="inf-threshold" name="threshold" type="number" step="0.0001" placeholder="0.75" />
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-series">Serie ref</label>
+				<input id="inf-series" name="series_ref" type="text" placeholder="segment-123" />
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-metadata">Metadata (JSON)</label>
+				<textarea id="inf-metadata" name="metadata" rows="2"></textarea>
+			</div>
+			<div class="hg-form-field">
+				<label for="inf-feature">Snapshot (JSON)</label>
+				<textarea id="inf-feature" name="feature_snapshot" rows="2"></textarea>
+			</div>
+			<div class="hg-form-actions">
+				<button type="submit">Crear inferencia</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Inferencias registradas</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Stream</th>
+					<th>Evento</th>
+					<th>Ventana</th>
+					<th>Score</th>
+					<th>Umbral</th>
+					<th>Modelo</th>
+					<th>Creado</th>
+					<th></th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				{{$inf := .}}
+				<tr>
+					<td>{{$inf.PatientName}} · {{$inf.StreamLabel}}</td>
+					<td>{{$inf.EventLabel}}</td>
+					<td>{{formatTime $inf.WindowStart}} → {{formatTime $inf.WindowEnd}}</td>
+					<td>{{with formatFloat32 $inf.Score}}{{.}}{{else}}—{{end}}</td>
+					<td>{{with formatFloat32 $inf.Threshold}}{{.}}{{else}}—{{end}}</td>
+					<td>{{if $inf.ModelName}}{{$inf.ModelName}}{{else}}—{{end}}</td>
+					<td>{{formatTime $inf.CreatedAt}}</td>
+					<td class="hg-flex">
+						<details>
+							<summary>Editar</summary>
+							<form method="post" action="/superadmin/inferences/{{$inf.ID}}/update" class="hg-form-grid">
+								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+								<div class="hg-form-field">
+									<label>Stream</label>
+									<select name="stream_id" required>
+										{{range $.Data.Streams}}
+										<option value="{{.ID}}" {{if eq .ID $inf.StreamID}}selected{{end}}>{{.PatientName}} · {{.SignalLabel}}{{if .DeviceSerial}} · {{.DeviceSerial}}{{end}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Modelo</label>
+									<select name="model_id">
+										<option value="" {{if eq (stringValue $inf.ModelID) ""}}selected{{end}}>Sin modelo</option>
+										{{range $.Data.Models}}
+										<option value="{{.ID}}" {{if eq .ID (stringValue $inf.ModelID)}}selected{{end}}>{{.Name}} · {{.Version}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Evento</label>
+									<select name="event_code" required>
+										{{range $.Data.EventTypes}}
+										<option value="{{.Code}}" {{if eq .Code $inf.EventCode}}selected{{end}}>{{.Code}}</option>
+										{{end}}
+									</select>
+								</div>
+								<div class="hg-form-field">
+									<label>Inicio ventana</label>
+									<input name="window_start" type="datetime-local" value="{{formatTimeLocal $inf.WindowStart}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Fin ventana</label>
+									<input name="window_end" type="datetime-local" value="{{formatTimeLocal $inf.WindowEnd}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Score</label>
+									<input name="score" type="number" step="0.0001" value="{{formatFloat32 $inf.Score}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Umbral</label>
+									<input name="threshold" type="number" step="0.0001" value="{{formatFloat32 $inf.Threshold}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Serie ref</label>
+									<input name="series_ref" type="text" value="{{if $inf.SeriesRef}}{{$inf.SeriesRef}}{{end}}" />
+								</div>
+								<div class="hg-form-actions">
+									<button type="submit">Guardar</button>
+								</div>
+							</form>
+						</details>
+						<form method="post" action="/superadmin/inferences/{{$inf.ID}}/delete" data-hg-confirm="¿Eliminar inferencia?" class="hg-inline-form">
+							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+						</form>
+					</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="8" class="hg-empty-cell">Sin inferencias registradas.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}
