@@ -12,12 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"heartguard-superadmin/internal/models"
+
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"heartguard-superadmin/internal/models"
 )
 
 type pgPool interface {
@@ -32,7 +33,6 @@ type Repo struct {
 	pool      pgPool
 	auditPool *pgxpool.Pool
 	redis     *redis.Client
-
 }
 
 func NewRepo(pool *pgxpool.Pool, redis *redis.Client) *Repo {
@@ -368,6 +368,374 @@ func (r *Repo) DeleteCatalogItem(ctx context.Context, catalog, id string) error 
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// ------------------------------
+// Content
+// ------------------------------
+
+func (r *Repo) ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error) {
+	limit := filters.Limit
+	if limit <= 0 {
+		limit = 50
+	} else if limit > 200 {
+		limit = 200
+	}
+	offset := filters.Offset
+	if offset < 0 {
+		offset = 0
+	}
+
+	var typeCode any
+	if filters.TypeCode != nil {
+		if trimmed := strings.TrimSpace(*filters.TypeCode); trimmed != "" {
+			typeCode = strings.ToLower(trimmed)
+		}
+	}
+	var statusCode any
+	if filters.StatusCode != nil {
+		if trimmed := strings.TrimSpace(*filters.StatusCode); trimmed != "" {
+			statusCode = strings.ToLower(trimmed)
+		}
+	}
+	var categoryCode any
+	if filters.CategoryCode != nil {
+		if trimmed := strings.TrimSpace(*filters.CategoryCode); trimmed != "" {
+			categoryCode = strings.ToLower(trimmed)
+		}
+	}
+	var search any
+	if filters.Search != nil {
+		if trimmed := strings.TrimSpace(*filters.Search); trimmed != "" {
+			search = trimmed
+		}
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_content_list($1, $2, $3, $4, $5, $6)`,
+		typeCode, statusCode, categoryCode, search, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.ContentItem, 0, limit)
+	for rows.Next() {
+		var (
+			item            models.ContentItem
+			statusCodeVal   string
+			statusLabel     string
+			statusWeight    int32
+			categoryCodeVal string
+			categoryLabel   string
+			typeCodeVal     string
+			typeLabel       string
+			authorName      sql.NullString
+			authorEmail     sql.NullString
+			publishedAt     sql.NullTime
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&item.Title,
+			&statusCodeVal,
+			&statusLabel,
+			&statusWeight,
+			&categoryCodeVal,
+			&categoryLabel,
+			&typeCodeVal,
+			&typeLabel,
+			&authorName,
+			&authorEmail,
+			&item.UpdatedAt,
+			&publishedAt,
+			&item.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		item.StatusCode = strings.ToLower(statusCodeVal)
+		item.StatusLabel = statusLabel
+		item.StatusWeight = int(statusWeight)
+		item.CategoryCode = strings.ToLower(categoryCodeVal)
+		item.CategoryLabel = categoryLabel
+		item.TypeCode = strings.ToLower(typeCodeVal)
+		item.TypeLabel = typeLabel
+		if authorName.Valid {
+			name := authorName.String
+			item.AuthorName = &name
+		}
+		if authorEmail.Valid {
+			email := authorEmail.String
+			item.AuthorEmail = &email
+		}
+		if publishedAt.Valid {
+			t := publishedAt.Time
+			item.PublishedAt = &t
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) GetContent(ctx context.Context, id string) (*models.ContentDetail, error) {
+	row := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_detail($1)`, id)
+	return scanContentDetail(row)
+}
+
+func (r *Repo) CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error) {
+	blocksJSON, err := contentBlocksToJSON(input.Blocks)
+	if err != nil {
+		return nil, err
+	}
+	var summaryParam any
+	if input.Summary != nil {
+		if trimmed := strings.TrimSpace(*input.Summary); trimmed != "" {
+			summaryParam = trimmed
+		}
+	}
+	var slugParam any
+	if input.Slug != nil {
+		if trimmed := strings.TrimSpace(*input.Slug); trimmed != "" {
+			slugParam = trimmed
+		}
+	}
+	var localeParam any
+	if input.Locale != nil {
+		if trimmed := strings.TrimSpace(*input.Locale); trimmed != "" {
+			localeParam = trimmed
+		}
+	}
+	var authorParam any
+	if input.AuthorEmail != nil {
+		if trimmed := strings.TrimSpace(*input.AuthorEmail); trimmed != "" {
+			authorParam = trimmed
+		}
+	}
+	var noteParam any
+	if input.Note != nil {
+		if trimmed := strings.TrimSpace(*input.Note); trimmed != "" {
+			noteParam = trimmed
+		}
+	}
+	var publishedAtParam any
+	if input.PublishedAt != nil {
+		publishedAtParam = *input.PublishedAt
+	}
+	var actorParam any
+	if actorID != nil {
+		if trimmed := strings.TrimSpace(*actorID); trimmed != "" {
+			actorParam = trimmed
+		}
+	}
+
+	row := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_create($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		input.Title,
+		strings.ToLower(strings.TrimSpace(input.StatusCode)),
+		strings.ToLower(strings.TrimSpace(input.CategoryCode)),
+		strings.ToLower(strings.TrimSpace(input.TypeCode)),
+		summaryParam,
+		slugParam,
+		localeParam,
+		authorParam,
+		input.Body,
+		blocksJSON,
+		actorParam,
+		noteParam,
+		publishedAtParam,
+	)
+	return scanContentDetail(row)
+}
+
+func (r *Repo) UpdateContent(ctx context.Context, id string, input models.ContentUpdateInput, actorID *string) (*models.ContentDetail, error) {
+	blocksJSON, err := contentBlocksToJSON(input.Blocks)
+	if err != nil {
+		return nil, err
+	}
+	var titleParam any
+	if input.Title != nil {
+		if trimmed := strings.TrimSpace(*input.Title); trimmed != "" {
+			titleParam = trimmed
+		} else {
+			titleParam = ""
+		}
+	}
+	var summaryParam any
+	if input.Summary != nil {
+		summaryParam = strings.TrimSpace(*input.Summary)
+	}
+	var slugParam any
+	if input.Slug != nil {
+		slugParam = strings.TrimSpace(*input.Slug)
+	}
+	var localeParam any
+	if input.Locale != nil {
+		if trimmed := strings.TrimSpace(*input.Locale); trimmed != "" {
+			localeParam = trimmed
+		} else {
+			localeParam = ""
+		}
+	}
+	var statusParam any
+	if input.StatusCode != nil {
+		if trimmed := strings.TrimSpace(*input.StatusCode); trimmed != "" {
+			statusParam = strings.ToLower(trimmed)
+		}
+	}
+	var categoryParam any
+	if input.CategoryCode != nil {
+		if trimmed := strings.TrimSpace(*input.CategoryCode); trimmed != "" {
+			categoryParam = strings.ToLower(trimmed)
+		}
+	}
+	var typeParam any
+	if input.TypeCode != nil {
+		if trimmed := strings.TrimSpace(*input.TypeCode); trimmed != "" {
+			typeParam = strings.ToLower(trimmed)
+		}
+	}
+	var authorParam any
+	if input.AuthorEmail != nil {
+		trimmed := strings.TrimSpace(*input.AuthorEmail)
+		authorParam = trimmed
+		if trimmed == "" {
+			authorParam = ""
+		}
+	}
+	var bodyParam any
+	if input.Body != nil {
+		bodyParam = *input.Body
+	}
+	var noteParam any
+	if input.Note != nil {
+		if trimmed := strings.TrimSpace(*input.Note); trimmed != "" {
+			noteParam = trimmed
+		}
+	}
+	var publishedAtParam any
+	if input.PublishedAt != nil {
+		publishedAtParam = *input.PublishedAt
+	}
+	var actorParam any
+	if actorID != nil {
+		if trimmed := strings.TrimSpace(*actorID); trimmed != "" {
+			actorParam = trimmed
+		}
+	}
+
+	row := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_update($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		id,
+		titleParam,
+		summaryParam,
+		slugParam,
+		localeParam,
+		statusParam,
+		categoryParam,
+		typeParam,
+		authorParam,
+		bodyParam,
+		blocksJSON,
+		actorParam,
+		noteParam,
+		publishedAtParam,
+		input.ForceNewVersion,
+	)
+	return scanContentDetail(row)
+}
+
+func (r *Repo) DeleteContent(ctx context.Context, id string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_content_delete($1)`, id).Scan(&ok); err != nil {
+		return err
+	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListContentVersions(ctx context.Context, id string, limit, offset int) ([]models.ContentVersion, error) {
+	if limit <= 0 {
+		limit = 20
+	} else if limit > 100 {
+		limit = 100
+	}
+	if offset < 0 {
+		offset = 0
+	}
+
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_content_versions($1, $2, $3)`, id, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.ContentVersion, 0, limit)
+	for rows.Next() {
+		var (
+			item       models.ContentVersion
+			editorID   sql.NullString
+			editorName sql.NullString
+			note       sql.NullString
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&item.VersionNo,
+			&item.CreatedAt,
+			&editorID,
+			&editorName,
+			&item.ChangeType,
+			&note,
+			&item.Published,
+			&item.Body,
+		); err != nil {
+			return nil, err
+		}
+		if editorID.Valid {
+			idVal := editorID.String
+			item.EditorUserID = &idVal
+		}
+		if editorName.Valid {
+			name := editorName.String
+			item.EditorName = &name
+		}
+		if note.Valid {
+			noteText := note.String
+			item.Note = &noteText
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) ListContentAuthors(ctx context.Context) ([]models.ContentAuthor, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT u.id::text, u.name, u.email, LOWER(us.code)
+FROM heartguard.users u
+JOIN heartguard.user_statuses us ON us.id = u.user_status_id
+WHERE LOWER(us.code) <> 'blocked'
+ORDER BY LOWER(u.name), LOWER(u.email)
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	authors := make([]models.ContentAuthor, 0, 32)
+	for rows.Next() {
+		var item models.ContentAuthor
+		if err := rows.Scan(&item.UserID, &item.Name, &item.Email, &item.StatusCode); err != nil {
+			return nil, err
+		}
+		authors = append(authors, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return authors, nil
 }
 
 // ------------------------------
@@ -758,12 +1126,12 @@ func (r *Repo) MetricsUserActivityReport(ctx context.Context, filters models.Use
 
 	for rows.Next() {
 		var (
-			row          models.UserActivityReportRow
-			statusCode   sql.NullString
-			statusLabel  sql.NullString
-			firstAction  sql.NullTime
-			lastAction   sql.NullTime
-			totalCount   int
+			row         models.UserActivityReportRow
+			statusCode  sql.NullString
+			statusLabel sql.NullString
+			firstAction sql.NullTime
+			lastAction  sql.NullTime
+			totalCount  int
 		)
 		if err := rows.Scan(
 			&row.ID,
@@ -928,7 +1296,7 @@ LIMIT $2 OFFSET $3
 	var out []models.User
 	for rows.Next() {
 		var (
-			m             models.User
+			m              models.User
 			membershipsRaw []byte
 			rolesRaw       []byte
 		)
@@ -1099,8 +1467,8 @@ ORDER BY ur.assigned_at DESC
 	out := make([]models.UserRole, 0, 4)
 	for rows.Next() {
 		var (
-			item models.UserRole
-			desc sql.NullString
+			item     models.UserRole
+			desc     sql.NullString
 			assigned time.Time
 		)
 		if err := rows.Scan(&item.RoleID, &item.RoleName, &desc, &assigned); err != nil {
@@ -1122,8 +1490,8 @@ ORDER BY ur.assigned_at DESC
 
 func (r *Repo) AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error) {
 	var (
-		item models.UserRole
-		desc sql.NullString
+		item     models.UserRole
+		desc     sql.NullString
 		assigned time.Time
 	)
 	err := r.pool.QueryRow(ctx, `
@@ -1166,7 +1534,7 @@ func (r *Repo) RemoveRoleFromUser(ctx context.Context, userID, roleID string) er
 
 func (r *Repo) GetSystemSettings(ctx context.Context) (*models.SystemSettings, error) {
 	var (
-		settings models.SystemSettings
+		settings  models.SystemSettings
 		secondary sql.NullString
 		logo      sql.NullString
 		phone     sql.NullString
@@ -1253,12 +1621,12 @@ func (r *Repo) UpdateSystemSettings(ctx context.Context, payload models.SystemSe
 		actor = *updatedBy
 	}
 	var (
-		updated       models.SystemSettings
-		outSecondary  sql.NullString
-		outLogo       sql.NullString
-		outPhone      sql.NullString
-		outMessage    sql.NullString
-		outUpdatedBy  sql.NullString
+		updated      models.SystemSettings
+		outSecondary sql.NullString
+		outLogo      sql.NullString
+		outPhone     sql.NullString
+		outMessage   sql.NullString
+		outUpdatedBy sql.NullString
 	)
 	err := r.pool.QueryRow(ctx, `
 UPDATE system_settings SET
@@ -1338,37 +1706,37 @@ RETURNING
 		updated.UpdatedBy = &s
 	}
 	return &updated, nil
-	}
+}
 
-	// ------------------------------
-	// API Keys
-	// ------------------------------
-	func (r *Repo) ListPermissions(ctx context.Context) ([]models.Permission, error) {
-		rows, err := r.pool.Query(ctx, `
+// ------------------------------
+// API Keys
+// ------------------------------
+func (r *Repo) ListPermissions(ctx context.Context) ([]models.Permission, error) {
+	rows, err := r.pool.Query(ctx, `
 	SELECT code, COALESCE(description,'')
 	FROM permissions
 	ORDER BY code
 	`)
-		if err != nil {
-			return nil, err
-		}
-		defer rows.Close()
-
-		out := make([]models.Permission, 0, 32)
-		for rows.Next() {
-			var item models.Permission
-			if err := rows.Scan(&item.Code, &item.Description); err != nil {
-				return nil, err
-			}
-			out = append(out, item)
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
-		return out, nil
+	if err != nil {
+		return nil, err
 	}
+	defer rows.Close()
 
-	func (r *Repo) CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error) {
+	out := make([]models.Permission, 0, 32)
+	for rows.Next() {
+		var item models.Permission
+		if err := rows.Scan(&item.Code, &item.Description); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error) {
 	var id string
 	err := r.pool.QueryRow(ctx, `
 INSERT INTO api_keys (id, key_hash, label, owner_user_id, created_at, expires_at)
@@ -1700,6 +2068,160 @@ WHERE token_hash = $1 AND revoked_at IS NULL
 		}
 	}
 	return nil
+}
+
+func contentBlocksToJSON(blocks []models.ContentBlockInput) ([]byte, error) {
+	if len(blocks) == 0 {
+		return nil, nil
+	}
+	type blockPayload struct {
+		BlockType string  `json:"block_type"`
+		Title     *string `json:"title,omitempty"`
+		Content   string  `json:"content"`
+		Position  int     `json:"position"`
+	}
+	payload := make([]blockPayload, 0, len(blocks))
+	for _, block := range blocks {
+		payload = append(payload, blockPayload{
+			BlockType: strings.TrimSpace(block.BlockType),
+			Title:     block.Title,
+			Content:   block.Content,
+			Position:  block.Position,
+		})
+	}
+	return json.Marshal(payload)
+}
+
+func scanContentDetail(row pgx.Row) (*models.ContentDetail, error) {
+	var (
+		id                     string
+		title                  string
+		summary                sql.NullString
+		slug                   sql.NullString
+		locale                 sql.NullString
+		statusCode             string
+		statusLabel            string
+		statusWeight           int32
+		categoryCode           string
+		categoryLabel          string
+		typeCode               string
+		typeLabel              string
+		authorUserID           sql.NullString
+		authorName             sql.NullString
+		authorEmail            sql.NullString
+		createdAt              time.Time
+		updatedAt              time.Time
+		publishedAt            sql.NullTime
+		archivedAt             sql.NullTime
+		latestVersionNo        sql.NullInt32
+		latestVersionID        sql.NullString
+		latestVersionCreatedAt sql.NullTime
+		body                   sql.NullString
+		blocksRaw              []byte
+	)
+	if err := row.Scan(
+		&id,
+		&title,
+		&summary,
+		&slug,
+		&locale,
+		&statusCode,
+		&statusLabel,
+		&statusWeight,
+		&categoryCode,
+		&categoryLabel,
+		&typeCode,
+		&typeLabel,
+		&authorUserID,
+		&authorName,
+		&authorEmail,
+		&createdAt,
+		&updatedAt,
+		&publishedAt,
+		&archivedAt,
+		&latestVersionNo,
+		&latestVersionID,
+		&latestVersionCreatedAt,
+		&body,
+		&blocksRaw,
+	); err != nil {
+		return nil, err
+	}
+
+	detail := &models.ContentDetail{
+		ContentItem: models.ContentItem{
+			ID:            id,
+			Title:         title,
+			Locale:        strings.TrimSpace(locale.String),
+			StatusCode:    strings.ToLower(statusCode),
+			StatusLabel:   statusLabel,
+			StatusWeight:  int(statusWeight),
+			CategoryCode:  strings.ToLower(categoryCode),
+			CategoryLabel: categoryLabel,
+			TypeCode:      strings.ToLower(typeCode),
+			TypeLabel:     typeLabel,
+			UpdatedAt:     updatedAt,
+			CreatedAt:     createdAt,
+		},
+		Body:   body.String,
+		Blocks: make([]models.ContentBlock, 0),
+	}
+
+	if detail.Locale == "" {
+		detail.Locale = locale.String
+	}
+
+	if summary.Valid {
+		val := summary.String
+		detail.Summary = &val
+	}
+	if slug.Valid {
+		val := slug.String
+		detail.Slug = &val
+	}
+	if authorName.Valid {
+		val := authorName.String
+		detail.AuthorName = &val
+	}
+	if authorEmail.Valid {
+		val := authorEmail.String
+		detail.AuthorEmail = &val
+	}
+	if publishedAt.Valid {
+		val := publishedAt.Time
+		detail.PublishedAt = &val
+	}
+	if archivedAt.Valid {
+		val := archivedAt.Time
+		detail.ArchivedAt = &val
+	}
+	if latestVersionNo.Valid {
+		v := int(latestVersionNo.Int32)
+		detail.LatestVersionNo = &v
+	}
+	if latestVersionID.Valid {
+		val := latestVersionID.String
+		detail.LatestVersionID = &val
+	}
+	if latestVersionCreatedAt.Valid {
+		val := latestVersionCreatedAt.Time
+		detail.LatestVersionCreatedAt = &val
+	}
+
+	if len(blocksRaw) > 0 {
+		var blocks []models.ContentBlock
+		if err := json.Unmarshal(blocksRaw, &blocks); err != nil {
+			return nil, err
+		}
+		if blocks != nil {
+			detail.Blocks = blocks
+		}
+	}
+	if detail.Blocks == nil {
+		detail.Blocks = make([]models.ContentBlock, 0)
+	}
+
+	return detail, nil
 }
 
 // ------------------------------

@@ -120,14 +120,119 @@ type ContentUpdateHeatmapPoint struct {
 }
 
 type ContentMetrics struct {
-	Totals       ContentTotals                `json:"totals"`
-	Monthly      []ContentMonthlyPoint        `json:"monthly"`
-	Categories   []ContentCategorySlice       `json:"categories"`
-	StatusTrends []ContentStatusTrend         `json:"status_trends"`
-	RoleActivity []ContentRoleActivity        `json:"role_activity"`
-	Cumulative   []ContentCumulativePoint     `json:"cumulative"`
-	TopAuthors   []ContentTopAuthor           `json:"top_authors"`
+	Totals        ContentTotals               `json:"totals"`
+	Monthly       []ContentMonthlyPoint       `json:"monthly"`
+	Categories    []ContentCategorySlice      `json:"categories"`
+	StatusTrends  []ContentStatusTrend        `json:"status_trends"`
+	RoleActivity  []ContentRoleActivity       `json:"role_activity"`
+	Cumulative    []ContentCumulativePoint    `json:"cumulative"`
+	TopAuthors    []ContentTopAuthor          `json:"top_authors"`
 	UpdateHeatmap []ContentUpdateHeatmapPoint `json:"update_heatmap"`
+}
+
+type ContentItem struct {
+	ID            string     `json:"id"`
+	Title         string     `json:"title"`
+	Summary       *string    `json:"summary,omitempty"`
+	Slug          *string    `json:"slug,omitempty"`
+	Locale        string     `json:"locale"`
+	StatusCode    string     `json:"status_code"`
+	StatusLabel   string     `json:"status_label"`
+	StatusWeight  int        `json:"status_weight"`
+	CategoryCode  string     `json:"category_code"`
+	CategoryLabel string     `json:"category_label"`
+	TypeCode      string     `json:"type_code"`
+	TypeLabel     string     `json:"type_label"`
+	AuthorName    *string    `json:"author_name,omitempty"`
+	AuthorEmail   *string    `json:"author_email,omitempty"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+	PublishedAt   *time.Time `json:"published_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
+}
+
+type ContentFilters struct {
+	TypeCode     *string `json:"type_code,omitempty"`
+	StatusCode   *string `json:"status_code,omitempty"`
+	CategoryCode *string `json:"category_code,omitempty"`
+	Search       *string `json:"search,omitempty"`
+	Limit        int     `json:"limit"`
+	Offset       int     `json:"offset"`
+}
+
+type ContentBlock struct {
+	ID             string  `json:"id"`
+	BlockTypeCode  string  `json:"block_type_code"`
+	BlockTypeLabel string  `json:"block_type_label"`
+	Position       int     `json:"position"`
+	Title          *string `json:"title,omitempty"`
+	Content        string  `json:"content"`
+}
+
+type ContentAuthor struct {
+	UserID     string `json:"user_id"`
+	Name       string `json:"name"`
+	Email      string `json:"email"`
+	StatusCode string `json:"status_code"`
+}
+
+type ContentVersion struct {
+	ID           string    `json:"id"`
+	VersionNo    int       `json:"version_no"`
+	CreatedAt    time.Time `json:"created_at"`
+	EditorUserID *string   `json:"editor_user_id,omitempty"`
+	EditorName   *string   `json:"editor_name,omitempty"`
+	ChangeType   string    `json:"change_type"`
+	Note         *string   `json:"note,omitempty"`
+	Published    bool      `json:"published"`
+	Body         string    `json:"body"`
+}
+
+type ContentDetail struct {
+	ContentItem
+	Body                   string         `json:"body"`
+	LatestVersionID        *string        `json:"latest_version_id,omitempty"`
+	LatestVersionNo        *int           `json:"latest_version_no,omitempty"`
+	LatestVersionCreatedAt *time.Time     `json:"latest_version_created_at,omitempty"`
+	Blocks                 []ContentBlock `json:"blocks"`
+}
+
+type ContentBlockInput struct {
+	BlockType string  `json:"block_type"`
+	Title     *string `json:"title,omitempty"`
+	Content   string  `json:"content"`
+	Position  int     `json:"position"`
+}
+
+type ContentCreateInput struct {
+	Title        string              `json:"title"`
+	Summary      *string             `json:"summary,omitempty"`
+	Slug         *string             `json:"slug,omitempty"`
+	Locale       *string             `json:"locale,omitempty"`
+	StatusCode   string              `json:"status_code"`
+	CategoryCode string              `json:"category_code"`
+	TypeCode     string              `json:"type_code"`
+	AuthorEmail  *string             `json:"author_email,omitempty"`
+	Body         string              `json:"body"`
+	Blocks       []ContentBlockInput `json:"blocks,omitempty"`
+	Note         *string             `json:"note,omitempty"`
+	PublishedAt  *time.Time          `json:"published_at,omitempty"`
+}
+
+type ContentUpdateInput struct {
+	Title           *string             `json:"title,omitempty"`
+	Summary         *string             `json:"summary,omitempty"`
+	Slug            *string             `json:"slug,omitempty"`
+	Locale          *string             `json:"locale,omitempty"`
+	StatusCode      *string             `json:"status_code,omitempty"`
+	CategoryCode    *string             `json:"category_code,omitempty"`
+	TypeCode        *string             `json:"type_code,omitempty"`
+	AuthorEmail     *string             `json:"author_email,omitempty"`
+	Body            *string             `json:"body,omitempty"`
+	Blocks          []ContentBlockInput `json:"blocks,omitempty"`
+	Note            *string             `json:"note,omitempty"`
+	PublishedAt     *time.Time          `json:"published_at,omitempty"`
+	ForceNewVersion bool                `json:"force_new_version"`
 }
 
 type ContentReportFilters struct {
@@ -143,19 +248,19 @@ type ContentReportFilters struct {
 }
 
 type ContentReportRow struct {
-	ID              string     `json:"id"`
-	Title           string     `json:"title"`
-	StatusCode      string     `json:"status_code"`
-	StatusLabel     string     `json:"status_label"`
-	CategoryCode    string     `json:"category_code"`
-	CategoryLabel   string     `json:"category_label"`
-	AuthorName      *string    `json:"author_name,omitempty"`
-	AuthorEmail     *string    `json:"author_email,omitempty"`
-	PublishedAt     *time.Time `json:"published_at,omitempty"`
-	UpdatedAt       time.Time  `json:"updated_at"`
-	LastUpdateAt    *time.Time `json:"last_update_at,omitempty"`
-	LastEditorName  *string    `json:"last_editor_name,omitempty"`
-	Updates30d      int        `json:"updates_30d"`
+	ID             string     `json:"id"`
+	Title          string     `json:"title"`
+	StatusCode     string     `json:"status_code"`
+	StatusLabel    string     `json:"status_label"`
+	CategoryCode   string     `json:"category_code"`
+	CategoryLabel  string     `json:"category_label"`
+	AuthorName     *string    `json:"author_name,omitempty"`
+	AuthorEmail    *string    `json:"author_email,omitempty"`
+	PublishedAt    *time.Time `json:"published_at,omitempty"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	LastUpdateAt   *time.Time `json:"last_update_at,omitempty"`
+	LastEditorName *string    `json:"last_editor_name,omitempty"`
+	Updates30d     int        `json:"updates_30d"`
 }
 
 type ContentReportResult struct {
@@ -235,11 +340,11 @@ type User struct {
 }
 
 type Role struct {
-	ID          string     `json:"id"`
-	Name        string     `json:"name"`
-	Description *string    `json:"description,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	Permissions []string   `json:"permissions,omitempty"`
+	ID          string    `json:"id"`
+	Name        string    `json:"name"`
+	Description *string   `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	Permissions []string  `json:"permissions,omitempty"`
 }
 
 type UserRole struct {
@@ -302,27 +407,27 @@ type OperationCount struct {
 }
 
 type ActivityEntry struct {
-	TS         time.Time         `json:"ts"`
-	Action     string            `json:"action"`
-	Entity     *string           `json:"entity,omitempty"`
-	UserID     *string           `json:"user_id,omitempty"`
-	ActorEmail *string           `json:"actor_email,omitempty"`
-	Details    map[string]any    `json:"details,omitempty"`
+	TS         time.Time      `json:"ts"`
+	Action     string         `json:"action"`
+	Entity     *string        `json:"entity,omitempty"`
+	UserID     *string        `json:"user_id,omitempty"`
+	ActorEmail *string        `json:"actor_email,omitempty"`
+	Details    map[string]any `json:"details,omitempty"`
 }
 
 type SystemSettings struct {
-	BrandName          string     `json:"brand_name"`
-	SupportEmail       string     `json:"support_email"`
-	PrimaryColor       string     `json:"primary_color"`
-	SecondaryColor     *string    `json:"secondary_color,omitempty"`
-	LogoURL            *string    `json:"logo_url,omitempty"`
-	ContactPhone       *string    `json:"contact_phone,omitempty"`
-	DefaultLocale      string     `json:"default_locale"`
-	DefaultTimezone    string     `json:"default_timezone"`
-	MaintenanceMode    bool       `json:"maintenance_mode"`
-	MaintenanceMessage *string    `json:"maintenance_message,omitempty"`
-	UpdatedAt          time.Time  `json:"updated_at"`
-	UpdatedBy          *string    `json:"updated_by,omitempty"`
+	BrandName          string    `json:"brand_name"`
+	SupportEmail       string    `json:"support_email"`
+	PrimaryColor       string    `json:"primary_color"`
+	SecondaryColor     *string   `json:"secondary_color,omitempty"`
+	LogoURL            *string   `json:"logo_url,omitempty"`
+	ContactPhone       *string   `json:"contact_phone,omitempty"`
+	DefaultLocale      string    `json:"default_locale"`
+	DefaultTimezone    string    `json:"default_timezone"`
+	MaintenanceMode    bool      `json:"maintenance_mode"`
+	MaintenanceMessage *string   `json:"maintenance_message,omitempty"`
+	UpdatedAt          time.Time `json:"updated_at"`
+	UpdatedBy          *string   `json:"updated_by,omitempty"`
 }
 
 type SystemSettingsInput struct {

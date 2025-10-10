@@ -50,6 +50,15 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			or.Post("/{id}/delete", uiHandlers.OrganizationDelete)
 		})
 
+		s.Route("/content", func(cr chi.Router) {
+			cr.Get("/", uiHandlers.ContentIndex)
+			cr.Get("/new", uiHandlers.ContentNew)
+			cr.Post("/", uiHandlers.ContentCreate)
+			cr.Get("/{id}", uiHandlers.ContentEdit)
+			cr.Post("/{id}", uiHandlers.ContentUpdate)
+			cr.Post("/{id}/delete", uiHandlers.ContentDelete)
+		})
+
 		s.Route("/invitations", func(ir chi.Router) {
 			ir.Get("/", uiHandlers.InvitationsIndex)
 			ir.Post("/", uiHandlers.InvitationsCreate)

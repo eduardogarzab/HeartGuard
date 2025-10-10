@@ -18,6 +18,10 @@ import (
 	"time"
 	"unicode"
 
+	"heartguard-superadmin/internal/audit"
+	mw "heartguard-superadmin/internal/middleware"
+	"heartguard-superadmin/internal/models"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
 	"github.com/jackc/pgx/v5"
@@ -25,9 +29,6 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	gofpdf "github.com/jung-kurt/gofpdf"
 	"go.uber.org/zap"
-	"heartguard-superadmin/internal/audit"
-	mw "heartguard-superadmin/internal/middleware"
-	"heartguard-superadmin/internal/models"
 )
 
 type Repository interface {
@@ -53,6 +54,13 @@ type Repository interface {
 	CreateCatalogItem(ctx context.Context, catalog, code, label string, weight *int) (*models.CatalogItem, error)
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
+
+	ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error)
+	GetContent(ctx context.Context, id string) (*models.ContentDetail, error)
+	CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error)
+	UpdateContent(ctx context.Context, id string, input models.ContentUpdateInput, actorID *string) (*models.ContentDetail, error)
+	DeleteContent(ctx context.Context, id string) error
+	ListContentVersions(ctx context.Context, id string, limit, offset int) ([]models.ContentVersion, error)
 
 	MetricsOverview(ctx context.Context) (*models.MetricsOverview, error)
 	MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error)
@@ -460,7 +468,7 @@ type catalogCreateReq struct {
 type catalogUpdateReq struct {
 	Code   *string `json:"code"`
 	Label  *string `json:"label"`
-	Weight *int   `json:"weight"`
+	Weight *int    `json:"weight"`
 }
 
 func (h *Handlers) ListCatalog(w http.ResponseWriter, r *http.Request) {

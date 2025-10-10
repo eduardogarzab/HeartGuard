@@ -309,107 +309,193 @@ SELECT '00000000-0000-0000-0000-00000000A103'::uuid,
 WHERE NOT EXISTS (SELECT 1 FROM service_health WHERE id='00000000-0000-0000-0000-00000000A103'::uuid);
 
 -- Contenido editorial demo
-INSERT INTO content_items (id, title, category_id, status_id, author_user_id, summary, created_at, updated_at, published_at)
+INSERT INTO content_types(code, label, description) VALUES
+  ('article','Artículo','Artículos y guías gestionadas desde el panel'),
+  ('page','Página','Contenido informativo estático'),
+  ('block','Bloque','Fragmentos reutilizables para otras páginas')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO content_block_types(code, label, description) VALUES
+  ('richtext','Texto enriquecido','Bloque de texto principal'),
+  ('callout','Llamado a la acción','Destacar notas o avisos'),
+  ('checklist','Lista de verificación','Pasos secuenciales para validar procesos'),
+  ('quote','Cita','Testimonios o fragmentos destacados'),
+  ('media','Multimedia','Bloques para imágenes o video')
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO content_items (id, title, summary, slug, locale, category_id, status_id, content_type_id, author_user_id, created_at, updated_at, published_at, archived_at)
 VALUES
   (
     '00000000-0000-0000-0000-000000000101',
     'Guía rápida de monitoreo post-operatorio',
+    'Checklist actualizado para pacientes en recuperación cardiovascular.',
+    'guia-rapida-monitoreo-post-operatorio',
+    'es',
     (SELECT id FROM content_categories WHERE code='clinical_guides'),
     (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    'Checklist actualizado para pacientes en recuperación cardiovascular.',
     NOW() - INTERVAL '330 days',
     NOW() - INTERVAL '200 days',
-    NOW() - INTERVAL '327 days'
+    NOW() - INTERVAL '327 days',
+    NULL
   ),
   (
     '00000000-0000-0000-0000-000000000102',
     'Protocolos de triage cardiaco',
+    'Flujo para escalar alertas críticas en menos de cinco minutos.',
+    'protocolos-triage-cardiaco',
+    'es',
     (SELECT id FROM content_categories WHERE code='alert_protocols'),
     (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    'Flujo para escalar alertas críticas en menos de cinco minutos.',
     NOW() - INTERVAL '270 days',
     NOW() - INTERVAL '40 days',
-    NOW() - INTERVAL '266 days'
+    NOW() - INTERVAL '266 days',
+    NULL
   ),
   (
     '00000000-0000-0000-0000-000000000103',
     'Preguntas frecuentes sobre telemetría domiciliaria',
+    'Respuestas rápidas para cuidadores sobre dispositivos y soporte.',
+    'faq-telemetria-domiciliaria',
+    'es',
     (SELECT id FROM content_categories WHERE code='faq'),
     (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM content_types WHERE code='page'),
     (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
-    'Respuestas rápidas para cuidadores sobre dispositivos y soporte.',
     NOW() - INTERVAL '210 days',
     NOW() - INTERVAL '25 days',
-    NOW() - INTERVAL '205 days'
+    NOW() - INTERVAL '205 days',
+    NULL
   ),
   (
     '00000000-0000-0000-0000-000000000104',
     'Boletín educativo: manejo de hipertensión',
+    'Campaña educativa para pacientes con seguimiento remoto.',
+    'boletin-manejo-hipertension',
+    'es',
     (SELECT id FROM content_categories WHERE code='education'),
     (SELECT id FROM content_statuses WHERE code='scheduled'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    'Campaña educativa para pacientes con seguimiento remoto.',
     NOW() - INTERVAL '150 days',
     NOW() - INTERVAL '7 days',
-    NOW() + INTERVAL '12 days'
+    NOW() + INTERVAL '12 days',
+    NULL
   ),
   (
     '00000000-0000-0000-0000-000000000105',
     'Script de seguimiento telefónico',
+    'Guion para llamadas de verificación después de eventos de riesgo.',
+    'script-seguimiento-telefonico',
+    'es',
     (SELECT id FROM content_categories WHERE code='communications'),
     (SELECT id FROM content_statuses WHERE code='in_review'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    'Guion para llamadas de verificación después de eventos de riesgo.',
     NOW() - INTERVAL '110 days',
     NOW() - INTERVAL '12 days',
+    NULL,
     NULL
   ),
   (
     '00000000-0000-0000-0000-000000000106',
     'Protocolo de cierre de alertas',
+    'Procedimiento histórico para cerrar alertas tras verificación manual.',
+    'protocolo-cierre-alertas',
+    'es',
     (SELECT id FROM content_categories WHERE code='alert_protocols'),
     (SELECT id FROM content_statuses WHERE code='archived'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    'Procedimiento histórico para cerrar alertas tras verificación manual.',
     NOW() - INTERVAL '380 days',
     NOW() - INTERVAL '320 days',
-    NOW() - INTERVAL '376 days'
+    NOW() - INTERVAL '376 days',
+    NOW() - INTERVAL '310 days'
   ),
   (
     '00000000-0000-0000-0000-000000000107',
     'Guía de configuración para nuevos dispositivos',
+    'Procedimiento paso a paso para instalar sensores domiciliarios.',
+    'guia-configuracion-dispositivos',
+    'es',
     (SELECT id FROM content_categories WHERE code='clinical_guides'),
     (SELECT id FROM content_statuses WHERE code='draft'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
-    'Procedimiento paso a paso para instalar sensores domiciliarios.',
     NOW() - INTERVAL '45 days',
     NOW() - INTERVAL '5 days',
+    NULL,
     NULL
   ),
   (
     '00000000-0000-0000-0000-000000000108',
     'Resumen semanal de incidencias',
+    'Resumen ejecutivo con insights del monitoreo semanal.',
+    'resumen-semanal-incidencias',
+    'es',
     (SELECT id FROM content_categories WHERE code='communications'),
     (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM content_types WHERE code='page'),
     (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    'Resumen ejecutivo con insights del monitoreo semanal.',
     NOW() - INTERVAL '20 days',
     NOW() - INTERVAL '2 days',
-    NOW() - INTERVAL '18 days'
+    NOW() - INTERVAL '18 days',
+    NULL
   ),
   (
     '00000000-0000-0000-0000-000000000109',
     'Checklist pre-implante para dispositivos implantables',
+    'Evaluación previa a la implantación de sensores cardíacos.',
+    'checklist-pre-implante-dispositivos',
+    'es',
     (SELECT id FROM content_categories WHERE code='clinical_guides'),
     (SELECT id FROM content_statuses WHERE code='published'),
+    (SELECT id FROM content_types WHERE code='article'),
     (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    'Evaluación previa a la implantación de sensores cardíacos.',
     NOW() - INTERVAL '420 days',
     NOW() - INTERVAL '260 days',
-    NOW() - INTERVAL '415 days'
+    NOW() - INTERVAL '415 days',
+    NULL
   )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO content_versions (id, content_id, version_no, body, editor_user_id, note, change_type, created_at, published)
+VALUES
+  ('00000000-0000-0000-0000-000000000301', '00000000-0000-0000-0000-000000000101', 1, 'Checklist completo de signos vitales y acciones posoperatorias para los primeros siete días.', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '200 days', TRUE),
+  ('00000000-0000-0000-0000-000000000302', '00000000-0000-0000-0000-000000000102', 1, 'Secuencia de triage para alertas cardíacas con tiempos objetivo y responsables.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '40 days', TRUE),
+  ('00000000-0000-0000-0000-000000000303', '00000000-0000-0000-0000-000000000103', 1, 'Respuestas frecuentes sobre configuración, conectividad y soporte para telemetría domiciliaria.', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '25 days', TRUE),
+  ('00000000-0000-0000-0000-000000000304', '00000000-0000-0000-0000-000000000104', 1, 'Boletín educativo con consejos para pacientes hipertensos y recordatorios de seguimiento.', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '7 days', FALSE),
+  ('00000000-0000-0000-0000-000000000305', '00000000-0000-0000-0000-000000000105', 1, 'Guion telefónico con preguntas clave y registro de observaciones para cuidadores.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '12 days', FALSE),
+  ('00000000-0000-0000-0000-000000000306', '00000000-0000-0000-0000-000000000106', 1, 'Procedimiento histórico documentado para cerrar alertas críticas de forma manual.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '320 days', FALSE),
+  ('00000000-0000-0000-0000-000000000307', '00000000-0000-0000-0000-000000000107', 1, 'Pasos detallados para configurar dispositivos y calibrar sensores domiciliarios.', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '5 days', FALSE),
+  ('00000000-0000-0000-0000-000000000308', '00000000-0000-0000-0000-000000000108', 1, 'Resumen ejecutivo con métricas clave y acciones recomendadas de la última semana.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '2 days', TRUE),
+  ('00000000-0000-0000-0000-000000000309', '00000000-0000-0000-0000-000000000109', 1, 'Checklist preoperatorio con validaciones clínicas y requisitos administrativos.', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '260 days', TRUE)
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO content_blocks (id, version_id, block_type_id, position, title, content, created_at)
+SELECT
+  v.block_id,
+  v.version_id,
+  (SELECT id FROM content_block_types WHERE code='richtext'),
+  0,
+  NULL,
+  v.body,
+  v.created_at
+FROM (
+  VALUES
+    ('00000000-0000-0000-0000-000000000401'::uuid, '00000000-0000-0000-0000-000000000301'::uuid, 'Checklist completo de signos vitales y acciones posoperatorias para los primeros siete días.', NOW() - INTERVAL '200 days'),
+    ('00000000-0000-0000-0000-000000000402'::uuid, '00000000-0000-0000-0000-000000000302'::uuid, 'Secuencia de triage para alertas cardíacas con tiempos objetivo y responsables.', NOW() - INTERVAL '40 days'),
+    ('00000000-0000-0000-0000-000000000403'::uuid, '00000000-0000-0000-0000-000000000303'::uuid, 'Respuestas frecuentes sobre configuración, conectividad y soporte para telemetría domiciliaria.', NOW() - INTERVAL '25 days'),
+    ('00000000-0000-0000-0000-000000000404'::uuid, '00000000-0000-0000-0000-000000000304'::uuid, 'Boletín educativo con consejos para pacientes hipertensos y recordatorios de seguimiento.', NOW() - INTERVAL '7 days'),
+    ('00000000-0000-0000-0000-000000000405'::uuid, '00000000-0000-0000-0000-000000000305'::uuid, 'Guion telefónico con preguntas clave y registro de observaciones para cuidadores.', NOW() - INTERVAL '12 days'),
+    ('00000000-0000-0000-0000-000000000406'::uuid, '00000000-0000-0000-0000-000000000306'::uuid, 'Procedimiento histórico documentado para cerrar alertas críticas de forma manual.', NOW() - INTERVAL '320 days'),
+    ('00000000-0000-0000-0000-000000000407'::uuid, '00000000-0000-0000-0000-000000000307'::uuid, 'Pasos detallados para configurar dispositivos y calibrar sensores domiciliarios.', NOW() - INTERVAL '5 days'),
+    ('00000000-0000-0000-0000-000000000408'::uuid, '00000000-0000-0000-0000-000000000308'::uuid, 'Resumen ejecutivo con métricas clave y acciones recomendadas de la última semana.', NOW() - INTERVAL '2 days'),
+    ('00000000-0000-0000-0000-000000000409'::uuid, '00000000-0000-0000-0000-000000000309'::uuid, 'Checklist preoperatorio con validaciones clínicas y requisitos administrativos.', NOW() - INTERVAL '260 days')
+) AS v(block_id, version_id, body, created_at)
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO content_updates (id, content_id, editor_user_id, change_type, note, created_at)

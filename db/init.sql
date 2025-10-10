@@ -298,8 +298,9 @@ BEGIN
     WHEN 'delivery_statuses'    THEN table_name := 'delivery_statuses';
     WHEN 'batch_export_statuses'THEN table_name := 'batch_export_statuses';
     WHEN 'org_roles'            THEN table_name := 'org_roles';
-      WHEN 'content_categories'   THEN table_name := 'content_categories';
-      WHEN 'content_statuses'     THEN table_name := 'content_statuses';
+    WHEN 'content_categories'   THEN table_name := 'content_categories';
+    WHEN 'content_statuses'     THEN table_name := 'content_statuses';
+    WHEN 'content_types'        THEN table_name := 'content_types';
   END CASE;
   IF table_name IS NULL THEN
     RAISE EXCEPTION 'Catalogo % no soportado', p_catalog;
@@ -829,21 +830,69 @@ CREATE TABLE IF NOT EXISTS content_statuses (
   weight INT NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS content_types (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code        VARCHAR(40) NOT NULL UNIQUE,
+  label       VARCHAR(120) NOT NULL,
+  description TEXT
+);
+
 CREATE TABLE IF NOT EXISTS content_items (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   title           TEXT NOT NULL,
+  summary         TEXT,
+  slug            VARCHAR(160) UNIQUE,
+  locale          VARCHAR(16) NOT NULL DEFAULT 'es',
   category_id     UUID NOT NULL REFERENCES content_categories(id) ON DELETE RESTRICT,
   status_id       UUID NOT NULL REFERENCES content_statuses(id) ON DELETE RESTRICT,
+  content_type_id UUID NOT NULL REFERENCES content_types(id) ON DELETE RESTRICT,
   author_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
-  summary         TEXT,
   created_at      TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at      TIMESTAMP NOT NULL DEFAULT NOW(),
-  published_at    TIMESTAMP
+  published_at    TIMESTAMP,
+  archived_at     TIMESTAMP
 );
 CREATE INDEX IF NOT EXISTS idx_content_items_category ON content_items(category_id);
 CREATE INDEX IF NOT EXISTS idx_content_items_status ON content_items(status_id);
+CREATE INDEX IF NOT EXISTS idx_content_items_type ON content_items(content_type_id);
 CREATE INDEX IF NOT EXISTS idx_content_items_author ON content_items(author_user_id);
 CREATE INDEX IF NOT EXISTS idx_content_items_created_at ON content_items(created_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_content_items_slug_unique
+  ON content_items(LOWER(slug))
+  WHERE slug IS NOT NULL AND btrim(slug) <> '';
+
+CREATE TABLE IF NOT EXISTS content_versions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  content_id     UUID NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+  version_no     INT NOT NULL,
+  body           TEXT NOT NULL,
+  editor_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  note           TEXT,
+  change_type    VARCHAR(40) NOT NULL DEFAULT 'edit',
+  created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
+  published      BOOLEAN NOT NULL DEFAULT FALSE,
+  UNIQUE (content_id, version_no)
+);
+CREATE INDEX IF NOT EXISTS idx_content_versions_content ON content_versions(content_id, version_no DESC);
+
+CREATE TABLE IF NOT EXISTS content_block_types (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code        VARCHAR(60) NOT NULL UNIQUE,
+  label       VARCHAR(120) NOT NULL,
+  description TEXT
+);
+
+CREATE TABLE IF NOT EXISTS content_blocks (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version_id    UUID NOT NULL REFERENCES content_versions(id) ON DELETE CASCADE,
+  block_type_id UUID NOT NULL REFERENCES content_block_types(id) ON DELETE RESTRICT,
+  position      INT NOT NULL DEFAULT 0,
+  title         TEXT,
+  content       TEXT NOT NULL,
+  created_at    TIMESTAMP NOT NULL DEFAULT NOW(),
+  CONSTRAINT content_block_position_nonneg CHECK (position >= 0)
+);
+CREATE INDEX IF NOT EXISTS idx_content_blocks_version ON content_blocks(version_id, position);
 
 CREATE TABLE IF NOT EXISTS content_updates (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -856,12 +905,625 @@ CREATE TABLE IF NOT EXISTS content_updates (
 CREATE INDEX IF NOT EXISTS idx_content_updates_content ON content_updates(content_id);
 CREATE INDEX IF NOT EXISTS idx_content_updates_created_at ON content_updates(created_at DESC);
 
+-- Stored procedures: Contenido editorial
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_list(
+  p_type text DEFAULT NULL,
+  p_status text DEFAULT NULL,
+  p_category text DEFAULT NULL,
+  p_search text DEFAULT NULL,
+  p_limit integer DEFAULT 100,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  title text,
+  status_code text,
+  status_label text,
+  status_weight int,
+  category_code text,
+  category_label text,
+  type_code text,
+  type_label text,
+  author_name text,
+  author_email text,
+  updated_at timestamp,
+  published_at timestamp,
+  created_at timestamp)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
+  safe_offset integer := GREATEST(p_offset, 0);
+  type_code text := NULLIF(btrim(lower(p_type)), '');
+  status_code text := NULLIF(btrim(lower(p_status)), '');
+  category_code text := NULLIF(btrim(lower(p_category)), '');
+  search_term text := NULLIF(btrim(p_search), '');
+BEGIN
+  RETURN QUERY
+  SELECT
+    ci.id::text,
+    ci.title::text,
+    cs.code::text,
+    cs.label::text,
+    cs.weight::int,
+    cc.code::text,
+    cc.label::text,
+    ct.code::text,
+    ct.label::text,
+    au.name::text,
+    au.email::text,
+    ci.updated_at,
+    ci.published_at,
+    ci.created_at
+  FROM heartguard.content_items ci
+  JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
+  JOIN heartguard.content_categories cc ON cc.id = ci.category_id
+  JOIN heartguard.content_types ct ON ct.id = ci.content_type_id
+  LEFT JOIN heartguard.users au ON au.id = ci.author_user_id
+  WHERE (type_code IS NULL OR lower(ct.code) = type_code)
+    AND (status_code IS NULL OR lower(cs.code) = status_code)
+    AND (category_code IS NULL OR lower(cc.code) = category_code)
+    AND (
+      search_term IS NULL OR search_term = ''
+      OR ci.title ILIKE '%' || search_term || '%'
+      OR COALESCE(ci.summary, '') ILIKE '%' || search_term || '%'
+      OR COALESCE(ci.slug, '') ILIKE '%' || search_term || '%'
+      OR COALESCE(au.name, '') ILIKE '%' || search_term || '%'
+      OR COALESCE(au.email, '') ILIKE '%' || search_term || '%'
+    )
+  ORDER BY ci.updated_at DESC, ci.created_at DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_detail(
+  p_content_id uuid)
+RETURNS TABLE (
+  id text,
+  title text,
+  summary text,
+  slug text,
+  locale text,
+  status_code text,
+  status_label text,
+  status_weight int,
+  category_code text,
+  category_label text,
+  type_code text,
+  type_label text,
+  author_user_id text,
+  author_name text,
+  author_email text,
+  created_at timestamp,
+  updated_at timestamp,
+  published_at timestamp,
+  archived_at timestamp,
+  latest_version_no int,
+  latest_version_id text,
+  latest_version_created_at timestamp,
+  latest_body text,
+  blocks jsonb)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  WITH base AS (
+    SELECT
+      ci.id,
+      ci.title,
+      ci.summary,
+      ci.slug,
+      ci.locale,
+      ci.created_at,
+      ci.updated_at,
+      ci.published_at,
+      ci.archived_at,
+      cs.code AS status_code,
+      cs.label AS status_label,
+      cs.weight AS status_weight,
+      cc.code AS category_code,
+      cc.label AS category_label,
+      ct.code AS type_code,
+      ct.label AS type_label,
+      ci.author_user_id,
+      au.name AS author_name,
+      au.email AS author_email
+    FROM heartguard.content_items ci
+    JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
+    JOIN heartguard.content_categories cc ON cc.id = ci.category_id
+    JOIN heartguard.content_types ct ON ct.id = ci.content_type_id
+    LEFT JOIN heartguard.users au ON au.id = ci.author_user_id
+    WHERE ci.id = p_content_id
+  ), latest_version AS (
+    SELECT
+      cv.content_id,
+      cv.version_no,
+      cv.body,
+      cv.id AS version_id,
+      cv.created_at
+    FROM heartguard.content_versions cv
+    WHERE cv.content_id = p_content_id
+    ORDER BY cv.version_no DESC
+    LIMIT 1
+  ), blocks AS (
+    SELECT
+      lb.version_id,
+      COALESCE(jsonb_agg(
+        jsonb_build_object(
+          'id', cb.id::text,
+          'block_type_code', cbt.code,
+          'block_type_label', cbt.label,
+          'position', cb.position,
+          'title', cb.title,
+          'content', cb.content
+        )
+        ORDER BY cb.position, cb.created_at
+      ), '[]'::jsonb) AS blocks
+    FROM latest_version lb
+    JOIN heartguard.content_blocks cb ON cb.version_id = lb.version_id
+    JOIN heartguard.content_block_types cbt ON cbt.id = cb.block_type_id
+    GROUP BY lb.version_id
+  )
+  SELECT
+    b.id::text,
+    b.title::text,
+    b.summary::text,
+    b.slug::text,
+    b.locale::text,
+    lower(b.status_code)::text,
+    b.status_label::text,
+    b.status_weight::int,
+    lower(b.category_code)::text,
+    b.category_label::text,
+    lower(b.type_code)::text,
+    b.type_label::text,
+    b.author_user_id::text,
+    b.author_name::text,
+    b.author_email::text,
+    b.created_at,
+    b.updated_at,
+    b.published_at,
+    b.archived_at,
+    lv.version_no,
+    lv.version_id::text,
+    lv.created_at,
+    lv.body::text,
+    COALESCE(bl.blocks, '[]'::jsonb)
+  FROM base b
+  LEFT JOIN latest_version lv ON lv.content_id = b.id
+  LEFT JOIN blocks bl ON bl.version_id = lv.version_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_versions(
+  p_content_id uuid,
+  p_limit integer DEFAULT 20,
+  p_offset integer DEFAULT 0)
+RETURNS TABLE (
+  id text,
+  version_no int,
+  created_at timestamp,
+  editor_user_id text,
+  editor_name text,
+  change_type text,
+  note text,
+  published boolean,
+  body text)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  safe_limit integer := LEAST(GREATEST(p_limit, 1), 100);
+  safe_offset integer := GREATEST(p_offset, 0);
+BEGIN
+  RETURN QUERY
+  SELECT
+    cv.id::text,
+    cv.version_no,
+    cv.created_at,
+    cv.editor_user_id::text,
+    u.name::text,
+    cv.change_type::text,
+    cv.note::text,
+    cv.published,
+    cv.body
+  FROM heartguard.content_versions cv
+  LEFT JOIN heartguard.users u ON u.id = cv.editor_user_id
+  WHERE cv.content_id = p_content_id
+  ORDER BY cv.version_no DESC
+  LIMIT safe_limit OFFSET safe_offset;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_resolve_block_type(p_code text)
+RETURNS uuid
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  v_id uuid;
+BEGIN
+  IF p_code IS NULL OR btrim(p_code) = '' THEN
+    SELECT id INTO v_id FROM heartguard.content_block_types WHERE code = 'richtext' LIMIT 1;
+  ELSE
+    SELECT id INTO v_id FROM heartguard.content_block_types WHERE lower(code) = lower(p_code) LIMIT 1;
+    IF v_id IS NULL THEN
+      SELECT id INTO v_id FROM heartguard.content_block_types WHERE code = 'richtext' LIMIT 1;
+    END IF;
+  END IF;
+  IF v_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de bloque % no configurado', COALESCE(p_code, 'richtext') USING ERRCODE = '23514';
+  END IF;
+  RETURN v_id;
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_create(
+  p_title text,
+  p_status_code text,
+  p_category_code text,
+  p_type_code text,
+  p_summary text DEFAULT NULL,
+  p_slug text DEFAULT NULL,
+  p_locale text DEFAULT 'es',
+  p_author_email text DEFAULT NULL,
+  p_body text DEFAULT '',
+  p_blocks jsonb DEFAULT NULL,
+  p_actor uuid DEFAULT NULL,
+  p_note text DEFAULT NULL,
+  p_published_at timestamp DEFAULT NULL)
+RETURNS TABLE (
+  id text,
+  title text,
+  summary text,
+  slug text,
+  locale text,
+  status_code text,
+  status_label text,
+  status_weight int,
+  category_code text,
+  category_label text,
+  type_code text,
+  type_label text,
+  author_user_id text,
+  author_name text,
+  author_email text,
+  created_at timestamp,
+  updated_at timestamp,
+  published_at timestamp,
+  archived_at timestamp,
+  latest_version_no int,
+  latest_version_id text,
+  latest_version_created_at timestamp,
+  latest_body text,
+  blocks jsonb)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_status_id uuid;
+  v_category_id uuid;
+  v_type_id uuid;
+  v_author_id uuid;
+  v_content_id uuid;
+  v_version_id uuid;
+  v_publish_at timestamp := p_published_at;
+  v_locale text := COALESCE(NULLIF(btrim(p_locale), ''), 'es');
+  v_body text := COALESCE(p_body, '');
+  v_status_code_text text;
+  block_record jsonb;
+  v_block_type uuid;
+  v_note text := COALESCE(NULLIF(btrim(p_note), ''), 'Alta de contenido');
+BEGIN
+  SELECT cs.id INTO v_status_id
+  FROM heartguard.content_statuses cs
+  WHERE lower(cs.code) = lower(p_status_code);
+  IF v_status_id IS NULL THEN
+    RAISE EXCEPTION 'Estatus de contenido % no encontrado', p_status_code USING ERRCODE = '23514';
+  END IF;
+  SELECT lower(cs.code) INTO v_status_code_text
+  FROM heartguard.content_statuses cs
+  WHERE cs.id = v_status_id;
+
+  SELECT cc.id INTO v_category_id
+  FROM heartguard.content_categories cc
+  WHERE lower(cc.code) = lower(p_category_code);
+  IF v_category_id IS NULL THEN
+    RAISE EXCEPTION 'Categoría de contenido % no encontrada', p_category_code USING ERRCODE = '23514';
+  END IF;
+
+  SELECT ct.id INTO v_type_id
+  FROM heartguard.content_types ct
+  WHERE lower(ct.code) = lower(p_type_code);
+  IF v_type_id IS NULL THEN
+    RAISE EXCEPTION 'Tipo de contenido % no encontrado', p_type_code USING ERRCODE = '23514';
+  END IF;
+
+  IF p_author_email IS NOT NULL AND btrim(p_author_email) <> '' THEN
+    SELECT u.id INTO v_author_id
+    FROM heartguard.users u
+    WHERE lower(u.email) = lower(p_author_email);
+    IF v_author_id IS NULL THEN
+      RAISE EXCEPTION 'Autor con email % no existe', p_author_email USING ERRCODE = '23503';
+    END IF;
+  END IF;
+
+  IF v_publish_at IS NULL AND v_status_code_text = 'published' THEN
+    v_publish_at := NOW();
+  END IF;
+
+  INSERT INTO heartguard.content_items AS ci
+    (title, summary, slug, locale, category_id, status_id, content_type_id, author_user_id, created_at, updated_at, published_at)
+  VALUES
+    (p_title, NULLIF(btrim(p_summary), ''), NULLIF(btrim(p_slug), ''), v_locale, v_category_id, v_status_id, v_type_id, v_author_id, NOW(), NOW(), v_publish_at)
+  RETURNING ci.id INTO v_content_id;
+
+  INSERT INTO heartguard.content_versions AS cv
+    (content_id, version_no, body, editor_user_id, note, change_type, created_at, published)
+  VALUES
+    (v_content_id, 1, v_body, p_actor, 'Versión inicial', 'create', NOW(), v_status_code_text = 'published')
+  RETURNING cv.id INTO v_version_id;
+
+  IF p_blocks IS NOT NULL AND jsonb_typeof(p_blocks) = 'array' AND jsonb_array_length(p_blocks) > 0 THEN
+    FOR block_record IN SELECT value FROM jsonb_array_elements(p_blocks) AS t(value)
+    LOOP
+      v_block_type := heartguard.sp_content_resolve_block_type(block_record->>'block_type');
+      INSERT INTO heartguard.content_blocks (version_id, block_type_id, position, title, content)
+      VALUES (
+        v_version_id,
+        v_block_type,
+        COALESCE((block_record->>'position')::int, 0),
+        NULLIF(block_record->>'title', ''),
+        COALESCE(block_record->>'content', '')
+      );
+    END LOOP;
+  ELSE
+    v_block_type := heartguard.sp_content_resolve_block_type('richtext');
+    INSERT INTO heartguard.content_blocks (version_id, block_type_id, position, title, content)
+    VALUES (v_version_id, v_block_type, 0, NULL, v_body);
+  END IF;
+
+  INSERT INTO heartguard.content_updates (content_id, editor_user_id, change_type, note, created_at)
+  VALUES (v_content_id, p_actor, 'create', v_note, NOW());
+
+  RETURN QUERY SELECT * FROM heartguard.sp_content_detail(v_content_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_update(
+  p_content_id uuid,
+  p_title text DEFAULT NULL,
+  p_summary text DEFAULT NULL,
+  p_slug text DEFAULT NULL,
+  p_locale text DEFAULT NULL,
+  p_status_code text DEFAULT NULL,
+  p_category_code text DEFAULT NULL,
+  p_type_code text DEFAULT NULL,
+  p_author_email text DEFAULT NULL,
+  p_body text DEFAULT NULL,
+  p_blocks jsonb DEFAULT NULL,
+  p_actor uuid DEFAULT NULL,
+  p_note text DEFAULT NULL,
+  p_published_at timestamp DEFAULT NULL,
+  p_force_new_version boolean DEFAULT FALSE)
+RETURNS TABLE (
+  id text,
+  title text,
+  summary text,
+  slug text,
+  locale text,
+  status_code text,
+  status_label text,
+  status_weight int,
+  category_code text,
+  category_label text,
+  type_code text,
+  type_label text,
+  author_user_id text,
+  author_name text,
+  author_email text,
+  created_at timestamp,
+  updated_at timestamp,
+  published_at timestamp,
+  archived_at timestamp,
+  latest_version_no int,
+  latest_version_id text,
+  latest_version_created_at timestamp,
+  latest_body text,
+  blocks jsonb)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  v_status_id uuid;
+  v_category_id uuid;
+  v_type_id uuid;
+  v_author_id uuid;
+  v_publish_at timestamp := p_published_at;
+  v_locale text;
+  v_has_version boolean := FALSE;
+  v_next_version int;
+  v_version_id uuid;
+  v_body text;
+  v_previous_body text;
+  block_record jsonb;
+  v_block_type uuid;
+  v_note text := COALESCE(NULLIF(btrim(p_note), ''), 'Actualización de contenido');
+  v_current record;
+  v_any_change boolean := FALSE;
+  v_status_code_text text;
+BEGIN
+  SELECT * INTO v_current
+  FROM heartguard.content_items ci
+  WHERE ci.id = p_content_id
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Contenido % no existe', p_content_id USING ERRCODE = '23503';
+  END IF;
+
+  IF p_status_code IS NOT NULL THEN
+    SELECT cs.id INTO v_status_id
+    FROM heartguard.content_statuses cs
+    WHERE lower(cs.code) = lower(p_status_code);
+    IF v_status_id IS NULL THEN
+      RAISE EXCEPTION 'Estatus de contenido % no encontrado', p_status_code USING ERRCODE = '23514';
+    END IF;
+  ELSE
+    v_status_id := v_current.status_id;
+  END IF;
+  SELECT lower(cs.code) INTO v_status_code_text
+  FROM heartguard.content_statuses cs
+  WHERE cs.id = v_status_id;
+
+  IF p_category_code IS NOT NULL THEN
+    SELECT cc.id INTO v_category_id
+    FROM heartguard.content_categories cc
+    WHERE lower(cc.code) = lower(p_category_code);
+    IF v_category_id IS NULL THEN
+      RAISE EXCEPTION 'Categoría de contenido % no encontrada', p_category_code USING ERRCODE = '23514';
+    END IF;
+  ELSE
+    v_category_id := v_current.category_id;
+  END IF;
+
+  IF p_type_code IS NOT NULL THEN
+    SELECT ct.id INTO v_type_id
+    FROM heartguard.content_types ct
+    WHERE lower(ct.code) = lower(p_type_code);
+    IF v_type_id IS NULL THEN
+      RAISE EXCEPTION 'Tipo de contenido % no encontrado', p_type_code USING ERRCODE = '23514';
+    END IF;
+  ELSE
+    v_type_id := v_current.content_type_id;
+  END IF;
+
+  IF p_author_email IS NOT NULL THEN
+    IF btrim(p_author_email) = '' THEN
+      v_author_id := NULL;
+    ELSE
+      SELECT u.id INTO v_author_id
+      FROM heartguard.users u
+      WHERE lower(u.email) = lower(p_author_email);
+      IF v_author_id IS NULL THEN
+        RAISE EXCEPTION 'Autor con email % no existe', p_author_email USING ERRCODE = '23503';
+      END IF;
+    END IF;
+  ELSE
+    v_author_id := v_current.author_user_id;
+  END IF;
+
+  v_locale := COALESCE(NULLIF(btrim(p_locale), ''), v_current.locale);
+
+  IF p_slug IS NOT NULL THEN
+    IF NULLIF(btrim(p_slug), '') IS NULL THEN
+      v_current.slug := NULL;
+    ELSE
+      PERFORM 1
+      FROM heartguard.content_items ci2
+      WHERE ci2.id <> p_content_id AND lower(ci2.slug) = lower(p_slug)
+      LIMIT 1;
+      IF FOUND THEN
+        RAISE EXCEPTION 'Slug % ya está en uso', p_slug USING ERRCODE = '23505';
+      END IF;
+      v_current.slug := btrim(p_slug);
+    END IF;
+  END IF;
+
+  IF v_publish_at IS NULL AND v_current.published_at IS NULL AND v_status_code_text = 'published' THEN
+    v_publish_at := NOW();
+  ELSIF v_publish_at IS NULL THEN
+    v_publish_at := v_current.published_at;
+  END IF;
+
+  UPDATE heartguard.content_items ci
+  SET title = COALESCE(p_title, v_current.title),
+      summary = CASE WHEN p_summary IS NOT NULL THEN NULLIF(btrim(p_summary), '') ELSE v_current.summary END,
+      slug = v_current.slug,
+      locale = v_locale,
+      status_id = v_status_id,
+      category_id = v_category_id,
+      content_type_id = v_type_id,
+      author_user_id = v_author_id,
+      published_at = v_publish_at,
+      updated_at = NOW()
+  WHERE ci.id = p_content_id;
+
+  IF p_title IS NOT NULL OR p_summary IS NOT NULL OR p_slug IS NOT NULL OR p_locale IS NOT NULL OR p_status_code IS NOT NULL OR p_category_code IS NOT NULL OR p_type_code IS NOT NULL OR p_author_email IS NOT NULL OR p_published_at IS NOT NULL THEN
+    v_any_change := TRUE;
+  END IF;
+
+  IF p_body IS NOT NULL OR p_blocks IS NOT NULL OR p_force_new_version THEN
+    SELECT COALESCE(MAX(cv.version_no), 0) + 1 INTO v_next_version
+    FROM heartguard.content_versions cv
+    WHERE cv.content_id = p_content_id;
+
+    IF p_body IS NOT NULL THEN
+      v_body := p_body;
+    ELSE
+      SELECT cv.body INTO v_previous_body
+      FROM heartguard.content_versions cv
+      WHERE cv.content_id = p_content_id
+      ORDER BY cv.version_no DESC
+      LIMIT 1;
+      v_body := COALESCE(v_previous_body, '');
+    END IF;
+
+    INSERT INTO heartguard.content_versions AS cv_new
+      (content_id, version_no, body, editor_user_id, note, change_type, created_at, published)
+    VALUES
+      (p_content_id, v_next_version, v_body, p_actor, v_note, 'update', NOW(), v_status_code_text = 'published')
+    RETURNING cv_new.id INTO v_version_id;
+
+    IF p_blocks IS NOT NULL AND jsonb_typeof(p_blocks) = 'array' AND jsonb_array_length(p_blocks) > 0 THEN
+      FOR block_record IN SELECT value FROM jsonb_array_elements(p_blocks) AS t(value)
+      LOOP
+        v_block_type := heartguard.sp_content_resolve_block_type(block_record->>'block_type');
+        INSERT INTO heartguard.content_blocks (version_id, block_type_id, position, title, content)
+        VALUES (
+          v_version_id,
+          v_block_type,
+          COALESCE((block_record->>'position')::int, 0),
+          NULLIF(block_record->>'title', ''),
+          COALESCE(block_record->>'content', '')
+        );
+      END LOOP;
+    ELSE
+      v_block_type := heartguard.sp_content_resolve_block_type('richtext');
+      INSERT INTO heartguard.content_blocks (version_id, block_type_id, position, title, content)
+      VALUES (v_version_id, v_block_type, 0, NULL, v_body);
+    END IF;
+
+    v_has_version := TRUE;
+    v_any_change := TRUE;
+  END IF;
+
+  IF v_any_change THEN
+    INSERT INTO heartguard.content_updates (content_id, editor_user_id, change_type, note, created_at)
+    VALUES (p_content_id, p_actor, CASE WHEN v_has_version THEN 'version' ELSE 'update' END, v_note, NOW());
+  END IF;
+
+  RETURN QUERY SELECT * FROM heartguard.sp_content_detail(p_content_id);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.sp_content_delete(
+  p_content_id uuid)
+RETURNS boolean
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+DECLARE
+  rows_deleted integer;
+BEGIN
+  DELETE FROM heartguard.content_items ci
+  WHERE ci.id = p_content_id;
+  GET DIAGNOSTICS rows_deleted = ROW_COUNT;
+  RETURN rows_deleted > 0;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION touch_content_item()
 RETURNS TRIGGER AS $$
 BEGIN
-  UPDATE content_items
+  UPDATE heartguard.content_items ci
      SET updated_at = NEW.created_at
-   WHERE id = NEW.content_id;
+   WHERE ci.id = NEW.content_id;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;

@@ -1,0 +1,147 @@
+{{define "superadmin/content_edit.html"}} {{template "layout" .}} {{end}} {{define "superadmin/content_edit.html:content"}}
+<section class="hg-section">
+	<div class="hg-flex-between">
+		<h1>{{if .Data.IsNew}}Nuevo contenido{{else}}Editar contenido{{end}}</h1>
+		{{if not .Data.IsNew}}
+		<form method="post" action="/superadmin/content/{{.Data.Item.ID}}/delete" data-hg-confirm="¿Eliminar este contenido?" class="hg-inline-form">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+		</form>
+		{{end}}
+	</div>
+	{{if .Data.Error}}
+	<div class="hg-flash hg-flash-error">{{.Data.Error}}</div>
+	{{end}}
+	<div class="hg-card">
+		<form method="post" action="{{if .Data.IsNew}}/superadmin/content{{else}}/superadmin/content/{{.Data.Item.ID}}{{end}}" class="hg-form-grid">
+			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+			<div class="hg-form-field hg-form-field--full">
+				<label for="title">Título</label>
+				<input id="title" name="title" value="{{.Data.Form.Title}}" required maxlength="240" />
+			</div>
+			<div class="hg-form-field hg-form-field--full">
+				<label for="summary">Resumen</label>
+				<textarea id="summary" name="summary" rows="3">{{.Data.Form.Summary}}</textarea>
+				<span class="hg-field-hint">Texto corto que aparecerá en listados o tarjetas del sitio.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="slug">Slug</label>
+				<input id="slug" name="slug" value="{{.Data.Form.Slug}}" maxlength="160" />
+				<span class="hg-field-hint">Identificador opcional sin espacios. Si se deja vacío se generará automáticamente.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="locale">Locale</label>
+				<input id="locale" name="locale" value="{{if .Data.Form.Locale}}{{.Data.Form.Locale}}{{else}}es{{end}}" maxlength="10" />
+			</div>
+			<div class="hg-form-field">
+				<label for="status">Estatus</label>
+				<select id="status" name="status" required>
+					{{range .Data.Statuses}}
+					<option value="{{.Code}}" {{if eq $.Data.Form.Status .Code}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Code}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="category">Categoría</label>
+				<select id="category" name="category" required>
+					{{range .Data.Categories}}
+					<option value="{{.Code}}" {{if eq $.Data.Form.Category .Code}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Code}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="type">Tipo</label>
+				<select id="type" name="type" required>
+					{{range .Data.Types}}
+					<option value="{{.Code}}" {{if eq $.Data.Form.Type .Code}}selected{{end}}>{{if .Label}}{{.Label}}{{else}}{{.Code}}{{end}}</option>
+					{{end}}
+				</select>
+			</div>
+			<div class="hg-form-field">
+				<label for="author_email">Autor</label>
+				<input id="author_email" name="author_email" type="email" value="{{.Data.Form.AuthorEmail}}" list="content-author-options" autocomplete="off" />
+				{{if .Data.Authors}}
+				<datalist id="content-author-options">
+					{{range .Data.Authors}}
+					<option value="{{.Email}}" label="{{.Name}} ({{.Email}}){{if ne .StatusCode "active"}} · {{.StatusCode}}{{end}}"></option>
+					{{end}}
+				</datalist>
+				{{end}}
+				<span class="hg-field-hint">Selecciona un autor existente o ingresa un correo electrónico válido.</span>
+			</div>
+			<div class="hg-form-field">
+				<label for="published_at">Publicado en</label>
+				<input id="published_at" name="published_at" type="datetime-local" value="{{.Data.Form.PublishedAt}}" />
+				<span class="hg-field-hint">Define una fecha específica para considerar el contenido publicado.</span>
+			</div>
+			<div class="hg-form-field hg-form-field--full">
+				<label for="body">Contenido</label>
+				<textarea id="body" name="body" rows="14" required>{{.Data.Form.Body}}</textarea>
+				<span class="hg-field-hint">Se guardará como la versión principal. Puedes usar Markdown o HTML ligero según las políticas editoriales.</span>
+			</div>
+			<div class="hg-form-field hg-form-field--full">
+				<label for="note">Nota</label>
+				<textarea id="note" name="note" rows="2">{{.Data.Form.Note}}</textarea>
+				<span class="hg-field-hint">Describe brevemente el motivo del cambio para el historial.</span>
+			</div>
+			{{if not .Data.IsNew}}
+			<div class="hg-form-field hg-form-field--plain hg-form-field--full">
+				<label class="hg-checkbox">
+					<input type="checkbox" name="force_new_version" {{if .Data.Form.ForceNewVersion}}checked{{end}} />
+					<span>Forzar nueva versión aunque no cambie el cuerpo</span>
+				</label>
+			</div>
+			{{end}}
+			<div class="hg-form-actions">
+				<button type="submit">{{if .Data.IsNew}}Crear contenido{{else}}Guardar cambios{{end}}</button>
+			</div>
+		</form>
+	</div>
+</section>
+
+{{if not .Data.IsNew}}
+<section class="hg-section">
+	<div class="hg-card">
+		<h2>Metadatos</h2>
+		<ul class="hg-list-compact">
+			<li><strong>ID:</strong> {{.Data.Item.ID}}</li>
+			<li><strong>Slug:</strong> {{if .Data.Item.Slug}}{{.Data.Item.Slug}}{{else}}—{{end}}</li>
+			<li><strong>Creado:</strong> {{formatTime .Data.Item.CreatedAt}}</li>
+			<li><strong>Actualizado:</strong> {{formatTime .Data.Item.UpdatedAt}}</li>
+			<li><strong>Última versión:</strong> {{if .Data.Item.LatestVersionNo}}{{.Data.Item.LatestVersionNo}}{{else}}—{{end}}</li>
+		</ul>
+	</div>
+	<div class="hg-card">
+		<h2>Versiones recientes</h2>
+		<div class="hg-table-responsive">
+			<table class="hg-table">
+				<thead>
+					<tr>
+						<th>Versión</th>
+						<th>Creada</th>
+						<th>Cambio</th>
+						<th>Nota</th>
+						<th>Editor</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Data.Versions}}
+					<tr>
+						<td>{{.VersionNo}}</td>
+						<td>{{formatTime .CreatedAt}}</td>
+						<td>{{.ChangeType}}</td>
+						<td>{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
+						<td>{{if .EditorName}}{{.EditorName}}{{else if .EditorUserID}}{{.EditorUserID}}{{else}}—{{end}}</td>
+					</tr>
+					{{else}}
+					<tr>
+						<td colspan="5" class="hg-empty-cell">Sin versiones registradas.</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+{{end}}
+{{end}}
