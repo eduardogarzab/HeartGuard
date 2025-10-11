@@ -121,12 +121,15 @@ type Repository interface {
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
 	ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error)
+	ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error)
 	CreateRole(ctx context.Context, name string, description *string) (*models.Role, error)
 	UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error)
 	DeleteRole(ctx context.Context, id string) error
 	ListUserRoles(ctx context.Context, userID string) ([]models.UserRole, error)
 	AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error)
 	RemoveRoleFromUser(ctx context.Context, userID, roleID string) error
+	GrantRolePermission(ctx context.Context, roleID, permissionCode string) (*models.RolePermission, error)
+	RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error
 	GetSystemSettings(ctx context.Context) (*models.SystemSettings, error)
 	UpdateSystemSettings(ctx context.Context, payload models.SystemSettingsInput, updatedBy *string) (*models.SystemSettings, error)
 
@@ -1528,6 +1531,107 @@ func (h *Handlers) ListRoles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) ListRolePermissions(w http.ResponseWriter, r *http.Request) {
+	roleID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	perms, err := h.repo.ListRolePermissions(ctx, roleID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "22P02" {
+			writeProblem(w, 400, "bad_request", "invalid role id", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+
+	resp := models.RolePermissionsResponse{RoleID: roleID, Permissions: perms}
+	writeJSON(w, 200, resp)
+}
+
+func (h *Handlers) GrantRolePermission(w http.ResponseWriter, r *http.Request) {
+	roleID := chi.URLParam(r, "id")
+	var req models.RolePermissionRequest
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	permission := strings.TrimSpace(req.Permission)
+	if permission == "" {
+		writeProblem(w, 422, "validation_error", "permission is required", map[string]string{"permission": "required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.GrantRolePermission(ctx, roleID, permission)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeProblem(w, 404, "not_found", "permission not found", nil)
+			return
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "22P02":
+					writeProblem(w, 400, "bad_request", "invalid role id", nil)
+					return
+				case "23503":
+					writeProblem(w, 404, "not_found", "role not found", nil)
+					return
+				}
+			}
+			writeProblem(w, 500, "db_error", err.Error(), nil)
+			return
+		}
+	}
+	h.writeAudit(ctx, r, "ROLE_PERMISSION_GRANT", "role", &roleID, map[string]any{"permission": permission})
+	writeJSON(w, 201, item)
+}
+
+func (h *Handlers) RevokeRolePermission(w http.ResponseWriter, r *http.Request) {
+	roleID := chi.URLParam(r, "id")
+	var req models.RolePermissionRequest
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	permission := strings.TrimSpace(req.Permission)
+	if permission == "" {
+		writeProblem(w, 422, "validation_error", "permission is required", map[string]string{"permission": "required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RevokeRolePermission(ctx, roleID, permission); err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeProblem(w, 404, "not_found", "permission assignment not found", nil)
+			return
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "22P02":
+					writeProblem(w, 400, "bad_request", "invalid role id", nil)
+					return
+				case "23503":
+					writeProblem(w, 404, "not_found", "role not found", nil)
+					return
+				}
+			}
+			writeProblem(w, 500, "db_error", err.Error(), nil)
+			return
+		}
+	}
+	h.writeAudit(ctx, r, "ROLE_PERMISSION_REVOKE", "role", &roleID, map[string]any{"permission": permission})
+	w.WriteHeader(204)
 }
 
 func (h *Handlers) CreateRole(w http.ResponseWriter, r *http.Request) {

@@ -309,14 +309,6 @@ type ContentCumulativePoint struct {
 	Count  int    `json:"count"`
 }
 
-type ContentTopAuthor struct {
-	UserID        string  `json:"user_id"`
-	Name          string  `json:"name"`
-	Email         *string `json:"email,omitempty"`
-	Published     int     `json:"published"`
-	LastPublished *string `json:"last_published,omitempty"`
-}
-
 type ContentUpdateHeatmapPoint struct {
 	Date  string `json:"date"`
 	Count int    `json:"count"`
@@ -329,7 +321,6 @@ type ContentMetrics struct {
 	StatusTrends  []ContentStatusTrend        `json:"status_trends"`
 	RoleActivity  []ContentRoleActivity       `json:"role_activity"`
 	Cumulative    []ContentCumulativePoint    `json:"cumulative"`
-	TopAuthors    []ContentTopAuthor          `json:"top_authors"`
 	UpdateHeatmap []ContentUpdateHeatmapPoint `json:"update_heatmap"`
 }
 
@@ -548,6 +539,22 @@ type Role struct {
 	Description *string   `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
 	Permissions []string  `json:"permissions,omitempty"`
+}
+
+type RolePermission struct {
+	RoleID      string    `json:"role_id"`
+	Code        string    `json:"code"`
+	Description string    `json:"description,omitempty"`
+	GrantedAt   time.Time `json:"granted_at"`
+}
+
+type RolePermissionRequest struct {
+	Permission string `json:"permission" validate:"required"`
+}
+
+type RolePermissionsResponse struct {
+	RoleID      string           `json:"role_id"`
+	Permissions []RolePermission `json:"permissions"`
 }
 
 type UserRole struct {

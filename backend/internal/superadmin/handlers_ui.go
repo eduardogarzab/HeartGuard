@@ -131,12 +131,15 @@ type Repository interface {
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
 	ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error)
+	ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error)
 	CreateRole(ctx context.Context, name string, description *string) (*models.Role, error)
 	UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error)
 	DeleteRole(ctx context.Context, id string) error
 	ListUserRoles(ctx context.Context, userID string) ([]models.UserRole, error)
 	AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error)
 	RemoveRoleFromUser(ctx context.Context, userID, roleID string) error
+	GrantRolePermission(ctx context.Context, roleID, permissionCode string) (*models.RolePermission, error)
+	RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error
 
 	GetUserSummary(ctx context.Context, userID string) (*models.User, error)
 	IsSuperadmin(ctx context.Context, userID string) (bool, error)
@@ -203,6 +206,8 @@ var operationLabels = map[string]string{
 	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
 	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
 	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
+	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
+	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
 	"CATALOG_CREATE":            "Alta en catálogo",
 	"CATALOG_UPDATE":            "Actualización de catálogo",
 	"CATALOG_DELETE":            "Eliminación de catálogo",
@@ -383,7 +388,6 @@ type dashboardViewData struct {
 	ContentStatusChart      []dashboardChartSlice
 	ContentCategoryChart    []dashboardChartSlice
 	ContentRoleChart        []dashboardChartSlice
-	ContentAuthorChart      []dashboardChartSlice
 	ContentMonthlySeries    []dashboardActivitySeriesPoint
 	ContentCumulativeSeries []dashboardActivitySeriesPoint
 }
@@ -542,7 +546,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 		contentStatusChart      []dashboardChartSlice
 		contentCategoryChart    []dashboardChartSlice
 		contentRoleChart        []dashboardChartSlice
-		contentAuthorChart      []dashboardChartSlice
 		contentMonthlySeries    []dashboardActivitySeriesPoint
 		contentCumulativeSeries []dashboardActivitySeriesPoint
 	)
@@ -695,44 +698,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 			contentRoleChart = contentRoleChart[:maxSlices]
 		}
 
-		authorTotal := 0
-		for _, author := range content.TopAuthors {
-			authorTotal += author.Published
-		}
-		for _, author := range content.TopAuthors {
-			if author.Published <= 0 {
-				continue
-			}
-			label := author.Name
-			if label == "" && author.Email != nil {
-				label = *author.Email
-			}
-			if label == "" {
-				label = author.UserID
-			}
-			percent := 0.0
-			if authorTotal > 0 {
-				percent = (float64(author.Published) / float64(authorTotal)) * 100
-			}
-			width := int(math.Round(percent))
-			if width <= 0 && author.Published > 0 {
-				width = 4
-			}
-			if width > 100 {
-				width = 100
-			}
-			contentAuthorChart = append(contentAuthorChart, dashboardChartSlice{
-				Label:   label,
-				Count:   author.Published,
-				Percent: percent,
-				State:   "success",
-				Width:   width,
-			})
-			if len(contentAuthorChart) >= maxSlices {
-				break
-			}
-		}
-
 		for _, point := range content.Monthly {
 			if t, ok := parsePeriod(point.Period); ok {
 				contentMonthlySeries = append(contentMonthlySeries, dashboardActivitySeriesPoint{
@@ -776,7 +741,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 		ContentStatusChart:      contentStatusChart,
 		ContentCategoryChart:    contentCategoryChart,
 		ContentRoleChart:        contentRoleChart,
-		ContentAuthorChart:      contentAuthorChart,
 		ContentMonthlySeries:    contentMonthlySeries,
 		ContentCumulativeSeries: contentCumulativeSeries,
 	}
@@ -2273,10 +2237,16 @@ type usersViewData struct {
 }
 
 type rolesViewData struct {
-	Roles     []models.Role
-	FormError string
-	FormName  string
-	FormDesc  string
+	Roles       []models.Role
+	Permissions map[string]rolePermissionsView
+	FormError   string
+	FormName    string
+	FormDesc    string
+}
+
+type rolePermissionsView struct {
+	Assigned  []models.RolePermission
+	Available []models.Permission
 }
 
 type catalogNavItem struct {
@@ -2561,7 +2531,32 @@ func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
 		return
 	}
-	data := rolesViewData{Roles: roles}
+	allPerms, err := h.repo.ListPermissions(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los permisos", http.StatusInternalServerError)
+		return
+	}
+	permMap := make(map[string]rolePermissionsView, len(roles))
+	for _, role := range roles {
+		assigned, err := h.repo.ListRolePermissions(ctx, role.ID)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los permisos del rol", http.StatusInternalServerError)
+			return
+		}
+		assignedSet := make(map[string]struct{}, len(assigned))
+		for _, rp := range assigned {
+			assignedSet[rp.Code] = struct{}{}
+		}
+		available := make([]models.Permission, 0, len(allPerms))
+		for _, perm := range allPerms {
+			if _, ok := assignedSet[perm.Code]; ok {
+				continue
+			}
+			available = append(available, perm)
+		}
+		permMap[role.ID] = rolePermissionsView{Assigned: assigned, Available: available}
+	}
+	data := rolesViewData{Roles: roles, Permissions: permMap}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Roles"}}
 	h.render(w, r, "superadmin/roles.html", "Roles", data, crumbs)
 }
@@ -2635,6 +2630,83 @@ func (h *Handlers) RolesDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "ROLE_DELETE", "role", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Rol eliminado"})
 	http.Redirect(w, r, "/superadmin/roles", http.StatusSeeOther)
+}
+
+func (h *Handlers) RolesGrantPermission(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	roleID := chi.URLParam(r, "id")
+	permission := strings.TrimSpace(r.FormValue("permission"))
+	redirect := strings.TrimSpace(r.FormValue("redirect"))
+	if redirect == "" || !strings.HasPrefix(redirect, "/") {
+		redirect = "/superadmin/roles"
+	}
+	if permission == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un permiso"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.repo.GrantRolePermission(ctx, roleID, permission); err != nil {
+		msg := "No se pudo asignar el permiso"
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			msg = "Permiso no encontrado"
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "23503":
+					msg = "Rol no encontrado"
+				case "22P02":
+					msg = "Identificador de rol inválido"
+				}
+			}
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "ROLE_PERMISSION_GRANT", "role", &roleID, map[string]any{"permission": permission})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso asignado"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) RolesRevokePermission(w http.ResponseWriter, r *http.Request) {
+	roleID := chi.URLParam(r, "id")
+	permission := chi.URLParam(r, "code")
+	redirect := strings.TrimSpace(r.URL.Query().Get("redirect"))
+	if redirect == "" || !strings.HasPrefix(redirect, "/") {
+		redirect = "/superadmin/roles"
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RevokeRolePermission(ctx, roleID, permission); err != nil {
+		msg := "No se pudo revocar el permiso"
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			msg = "El permiso no está asignado"
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "23503":
+					msg = "Rol no encontrado"
+				case "22P02":
+					msg = "Identificador de rol inválido"
+				}
+			}
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "ROLE_PERMISSION_REVOKE", "role", &roleID, map[string]any{"permission": permission})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso revocado"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 func (h *Handlers) RolesUpdateUserAssignment(w http.ResponseWriter, r *http.Request) {

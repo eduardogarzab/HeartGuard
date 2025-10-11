@@ -137,6 +137,8 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 		s.Route("/roles", func(rr chi.Router) {
 			rr.Get("/", uiHandlers.RolesIndex)
 			rr.Post("/", uiHandlers.RolesCreate)
+			rr.Post("/{id}/permissions", uiHandlers.RolesGrantPermission)
+			rr.Post("/{id}/permissions/{code}/delete", uiHandlers.RolesRevokePermission)
 			rr.Post("/users/{id}", uiHandlers.RolesUpdateUserAssignment)
 			rr.Post("/{id}/delete", uiHandlers.RolesDelete)
 		})
