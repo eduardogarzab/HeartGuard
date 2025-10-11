@@ -81,6 +81,15 @@ type Repository interface {
 	UpdateSignalStream(ctx context.Context, id string, input models.SignalStreamInput) (*models.SignalStream, error)
 	DeleteSignalStream(ctx context.Context, id string) error
 
+	ListTimeseriesBindings(ctx context.Context, streamID string) ([]models.TimeseriesBinding, error)
+	CreateTimeseriesBinding(ctx context.Context, streamID string, input models.TimeseriesBindingInput) (*models.TimeseriesBinding, error)
+	UpdateTimeseriesBinding(ctx context.Context, id string, input models.TimeseriesBindingUpdateInput) (*models.TimeseriesBinding, error)
+	DeleteTimeseriesBinding(ctx context.Context, id string) error
+	ListTimeseriesBindingTags(ctx context.Context, bindingID string) ([]models.TimeseriesBindingTag, error)
+	CreateTimeseriesBindingTag(ctx context.Context, bindingID string, input models.TimeseriesBindingTagInput) (*models.TimeseriesBindingTag, error)
+	UpdateTimeseriesBindingTag(ctx context.Context, id string, input models.TimeseriesBindingTagUpdateInput) (*models.TimeseriesBindingTag, error)
+	DeleteTimeseriesBindingTag(ctx context.Context, id string) error
+
 	ListModels(ctx context.Context, limit, offset int) ([]models.MLModel, error)
 	CreateModel(ctx context.Context, input models.MLModelInput) (*models.MLModel, error)
 	UpdateModel(ctx context.Context, id string, input models.MLModelInput) (*models.MLModel, error)
@@ -248,30 +257,36 @@ func averagePerDay(total int, days int) float64 {
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":              "Alta de organización",
-	"ORG_UPDATE":              "Actualización de organización",
-	"ORG_DELETE":              "Eliminación de organización",
-	"INVITE_CREATE":           "Emisión de invitación",
-	"INVITE_CANCEL":           "Cancelación de invitación",
-	"INVITE_CONSUME":          "Consumo de invitación",
-	"MEMBER_ADD":              "Alta de miembro",
-	"MEMBER_REMOVE":           "Baja de miembro",
-	"USER_STATUS_UPDATE":      "Actualización de estatus de usuario",
-	"APIKEY_CREATE":           "Creación de API Key",
-	"APIKEY_SET_PERMS":        "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":           "Revocación de API Key",
-	"PUSH_DEVICE_CREATE":      "Registro de dispositivo push",
-	"PUSH_DEVICE_UPDATE":      "Actualización de dispositivo push",
-	"PUSH_DEVICE_DELETE":      "Eliminación de dispositivo push",
-	"ALERT_ASSIGNMENT_CREATE": "Registro de asignación de alerta",
-	"ALERT_ACK_CREATE":        "Registro de acuse de alerta",
-	"ALERT_RESOLUTION_CREATE": "Registro de resolución de alerta",
-	"ALERT_DELIVERY_CREATE":   "Registro de entrega de alerta",
-	"CATALOG_CREATE":          "Alta en catálogo",
-	"CATALOG_UPDATE":          "Actualización de catálogo",
-	"CATALOG_DELETE":          "Eliminación de catálogo",
-	"DASHBOARD_EXPORT":        "Exportación de panel",
-	"AUDIT_EXPORT":            "Exportación de auditoría"
+	"ORG_CREATE":                "Alta de organización",
+	"ORG_UPDATE":                "Actualización de organización",
+	"ORG_DELETE":                "Eliminación de organización",
+	"INVITE_CREATE":             "Emisión de invitación",
+	"INVITE_CANCEL":             "Cancelación de invitación",
+	"INVITE_CONSUME":            "Consumo de invitación",
+	"MEMBER_ADD":                "Alta de miembro",
+	"MEMBER_REMOVE":             "Baja de miembro",
+	"USER_STATUS_UPDATE":        "Actualización de estatus de usuario",
+	"APIKEY_CREATE":             "Creación de API Key",
+	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":             "Revocación de API Key",
+	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
+	"ALERT_ASSIGNMENT_CREATE":   "Registro de asignación de alerta",
+	"ALERT_ACK_CREATE":          "Registro de acuse de alerta",
+	"ALERT_RESOLUTION_CREATE":   "Registro de resolución de alerta",
+	"ALERT_DELIVERY_CREATE":     "Registro de entrega de alerta",
+	"TIMESERIES_BINDING_CREATE": "Alta de binding de series",
+	"TIMESERIES_BINDING_UPDATE": "Actualización de binding de series",
+	"TIMESERIES_BINDING_DELETE": "Eliminación de binding de series",
+	"TIMESERIES_TAG_CREATE":     "Alta de etiqueta de binding",
+	"TIMESERIES_TAG_UPDATE":     "Actualización de etiqueta de binding",
+	"TIMESERIES_TAG_DELETE":     "Eliminación de etiqueta de binding",
+	"CATALOG_CREATE":            "Alta en catálogo",
+	"CATALOG_UPDATE":            "Actualización de catálogo",
+	"CATALOG_DELETE":            "Eliminación de catálogo",
+	"DASHBOARD_EXPORT":          "Exportación de panel",
+	"AUDIT_EXPORT":              "Exportación de auditoría",
 }
 
 func operationLabel(code string) string {
@@ -2325,6 +2340,293 @@ func (h *Handlers) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
 }
 
 // Audit
+
+type timeseriesBindingReq struct {
+	InfluxOrg     *string `json:"influx_org" validate:"omitempty,max=120"`
+	InfluxBucket  string  `json:"influx_bucket" validate:"required,min=1,max=120"`
+	Measurement   string  `json:"measurement" validate:"required,min=1,max=120"`
+	RetentionHint *string `json:"retention_hint" validate:"omitempty,max=60"`
+}
+
+type timeseriesBindingPatch struct {
+	InfluxOrg     *string `json:"influx_org" validate:"omitempty,max=120"`
+	InfluxBucket  *string `json:"influx_bucket" validate:"omitempty,min=1,max=120"`
+	Measurement   *string `json:"measurement" validate:"omitempty,min=1,max=120"`
+	RetentionHint *string `json:"retention_hint" validate:"omitempty,max=60"`
+}
+
+type timeseriesBindingTagReq struct {
+	TagKey   string `json:"tag_key" validate:"required,min=1,max=120"`
+	TagValue string `json:"tag_value" validate:"required,min=1,max=240"`
+}
+
+type timeseriesBindingTagPatch struct {
+	TagKey   *string `json:"tag_key" validate:"omitempty,min=1,max=120"`
+	TagValue *string `json:"tag_value" validate:"omitempty,min=1,max=240"`
+}
+
+func trimOptionalString(ptr *string) *string {
+	if ptr == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*ptr)
+	if trimmed == "" {
+		return nil
+	}
+	result := trimmed
+	return &result
+}
+
+func (h *Handlers) ListTimeseriesBindings(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	if streamID == "" {
+		writeProblem(w, 400, "bad_request", "missing stream id", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	bindings, err := h.repo.ListTimeseriesBindings(ctx, streamID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, bindings)
+}
+
+func (h *Handlers) CreateTimeseriesBinding(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	if streamID == "" {
+		writeProblem(w, 400, "bad_request", "missing stream id", nil)
+		return
+	}
+	var req timeseriesBindingReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	bucket := strings.TrimSpace(req.InfluxBucket)
+	measurement := strings.TrimSpace(req.Measurement)
+	input := models.TimeseriesBindingInput{
+		InfluxOrg:     trimOptionalString(req.InfluxOrg),
+		InfluxBucket:  bucket,
+		Measurement:   measurement,
+		RetentionHint: trimOptionalString(req.RetentionHint),
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	binding, err := h.repo.CreateTimeseriesBinding(ctx, streamID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503":
+				writeProblem(w, 404, "not_found", "stream not found", nil)
+				return
+			case "23505":
+				writeProblem(w, 409, "conflict", "binding already exists", nil)
+				return
+			}
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_BINDING_CREATE", "timeseries_binding", &binding.ID, map[string]any{"stream_id": streamID})
+	writeJSON(w, 201, binding)
+}
+
+func (h *Handlers) UpdateTimeseriesBinding(w http.ResponseWriter, r *http.Request) {
+	bindingID := chi.URLParam(r, "bindingID")
+	if bindingID == "" {
+		writeProblem(w, 400, "bad_request", "missing binding id", nil)
+		return
+	}
+	var req timeseriesBindingPatch
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		if verrs, ok := err.(validator.ValidationErrors); ok {
+			fields := make(map[string]string, len(verrs))
+			for _, e := range verrs {
+				fields[e.Field()] = e.Tag()
+			}
+			writeProblem(w, 400, "bad_request", "invalid payload", fields)
+			return
+		}
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	input := models.TimeseriesBindingUpdateInput{
+		InfluxOrg:     trimOptionalString(req.InfluxOrg),
+		InfluxBucket:  trimOptionalString(req.InfluxBucket),
+		Measurement:   trimOptionalString(req.Measurement),
+		RetentionHint: trimOptionalString(req.RetentionHint),
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	binding, err := h.repo.UpdateTimeseriesBinding(ctx, bindingID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "binding not found", nil)
+			return
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeProblem(w, 409, "conflict", "binding already exists", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_BINDING_UPDATE", "timeseries_binding", &binding.ID, nil)
+	writeJSON(w, 200, binding)
+}
+
+func (h *Handlers) DeleteTimeseriesBinding(w http.ResponseWriter, r *http.Request) {
+	bindingID := chi.URLParam(r, "bindingID")
+	if bindingID == "" {
+		writeProblem(w, 400, "bad_request", "missing binding id", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteTimeseriesBinding(ctx, bindingID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "binding not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_BINDING_DELETE", "timeseries_binding", &bindingID, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListTimeseriesBindingTags(w http.ResponseWriter, r *http.Request) {
+	bindingID := chi.URLParam(r, "bindingID")
+	if bindingID == "" {
+		writeProblem(w, 400, "bad_request", "missing binding id", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	tags, err := h.repo.ListTimeseriesBindingTags(ctx, bindingID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, tags)
+}
+
+func (h *Handlers) CreateTimeseriesBindingTag(w http.ResponseWriter, r *http.Request) {
+	bindingID := chi.URLParam(r, "bindingID")
+	if bindingID == "" {
+		writeProblem(w, 400, "bad_request", "missing binding id", nil)
+		return
+	}
+	var req timeseriesBindingTagReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	tagKey := strings.TrimSpace(req.TagKey)
+	tagValue := strings.TrimSpace(req.TagValue)
+	input := models.TimeseriesBindingTagInput{TagKey: tagKey, TagValue: tagValue}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	tag, err := h.repo.CreateTimeseriesBindingTag(ctx, bindingID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503":
+				writeProblem(w, 404, "not_found", "binding not found", nil)
+				return
+			case "23505":
+				writeProblem(w, 409, "conflict", "tag already exists", nil)
+				return
+			}
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_TAG_CREATE", "timeseries_binding_tag", &tag.ID, map[string]any{"binding_id": bindingID})
+	writeJSON(w, 201, tag)
+}
+
+func (h *Handlers) UpdateTimeseriesBindingTag(w http.ResponseWriter, r *http.Request) {
+	tagID := chi.URLParam(r, "tagID")
+	if tagID == "" {
+		writeProblem(w, 400, "bad_request", "missing tag id", nil)
+		return
+	}
+	var req timeseriesBindingTagPatch
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		if verrs, ok := err.(validator.ValidationErrors); ok {
+			fields := make(map[string]string, len(verrs))
+			for _, e := range verrs {
+				fields[e.Field()] = e.Tag()
+			}
+			writeProblem(w, 400, "bad_request", "invalid payload", fields)
+			return
+		}
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	input := models.TimeseriesBindingTagUpdateInput{
+		TagKey:   trimOptionalString(req.TagKey),
+		TagValue: trimOptionalString(req.TagValue),
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	tag, err := h.repo.UpdateTimeseriesBindingTag(ctx, tagID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "tag not found", nil)
+			return
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeProblem(w, 409, "conflict", "tag already exists", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_TAG_UPDATE", "timeseries_binding_tag", &tag.ID, nil)
+	writeJSON(w, 200, tag)
+}
+
+func (h *Handlers) DeleteTimeseriesBindingTag(w http.ResponseWriter, r *http.Request) {
+	tagID := chi.URLParam(r, "tagID")
+	if tagID == "" {
+		writeProblem(w, 400, "bad_request", "missing tag id", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteTimeseriesBindingTag(ctx, tagID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "tag not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_TAG_DELETE", "timeseries_binding_tag", &tagID, nil)
+	w.WriteHeader(204)
+}
 
 func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()

@@ -93,6 +93,12 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			sr.Post("/", uiHandlers.SignalStreamsCreate)
 			sr.Post("/{id}/update", uiHandlers.SignalStreamsUpdate)
 			sr.Post("/{id}/delete", uiHandlers.SignalStreamsDelete)
+			sr.Post("/{id}/bindings", uiHandlers.SignalStreamsBindingsCreate)
+			sr.Post("/{id}/bindings/{bindingID}/update", uiHandlers.SignalStreamsBindingsUpdate)
+			sr.Post("/{id}/bindings/{bindingID}/delete", uiHandlers.SignalStreamsBindingsDelete)
+			sr.Post("/{id}/bindings/{bindingID}/tags", uiHandlers.SignalStreamsBindingTagsCreate)
+			sr.Post("/{id}/bindings/{bindingID}/tags/{tagID}/update", uiHandlers.SignalStreamsBindingTagsUpdate)
+			sr.Post("/{id}/bindings/{bindingID}/tags/{tagID}/delete", uiHandlers.SignalStreamsBindingTagsDelete)
 		})
 
 		s.Route("/models", func(mr chi.Router) {

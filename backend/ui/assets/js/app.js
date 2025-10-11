@@ -572,17 +572,26 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
-	document.querySelectorAll("form.hg-autoform select").forEach((select) => {
-		select.addEventListener("change", () => {
-			const form = select.closest("form.hg-autoform");
-			if (!form) {
-				return;
-			}
-			form.submit();
-		});
-	});
+        document.querySelectorAll("form.hg-autoform select").forEach((select) => {
+                select.addEventListener("change", () => {
+                        const form = select.closest("form.hg-autoform");
+                        if (!form) {
+                                return;
+                        }
+                        form.submit();
+                });
+        });
 
-	hgInitDashboardCharts();
+        document.querySelectorAll("[data-hg-stream-selector]").forEach((select) => {
+                select.addEventListener("change", () => {
+                        const form = select.closest("form");
+                        if (form) {
+                                form.submit();
+                        }
+                });
+        });
+
+        hgInitDashboardCharts();
 });
 
 window.addEventListener(

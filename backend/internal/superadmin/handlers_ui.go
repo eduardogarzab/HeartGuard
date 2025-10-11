@@ -84,6 +84,14 @@ type Repository interface {
 	UpdateSignalStream(ctx context.Context, id string, input models.SignalStreamInput) (*models.SignalStream, error)
 	DeleteSignalStream(ctx context.Context, id string) error
 
+	ListTimeseriesBindings(ctx context.Context, streamID string) ([]models.TimeseriesBinding, error)
+	CreateTimeseriesBinding(ctx context.Context, streamID string, input models.TimeseriesBindingInput) (*models.TimeseriesBinding, error)
+	UpdateTimeseriesBinding(ctx context.Context, id string, input models.TimeseriesBindingUpdateInput) (*models.TimeseriesBinding, error)
+	DeleteTimeseriesBinding(ctx context.Context, id string) error
+	CreateTimeseriesBindingTag(ctx context.Context, bindingID string, input models.TimeseriesBindingTagInput) (*models.TimeseriesBindingTag, error)
+	UpdateTimeseriesBindingTag(ctx context.Context, id string, input models.TimeseriesBindingTagUpdateInput) (*models.TimeseriesBindingTag, error)
+	DeleteTimeseriesBindingTag(ctx context.Context, id string) error
+
 	ListModels(ctx context.Context, limit, offset int) ([]models.MLModel, error)
 	CreateModel(ctx context.Context, input models.MLModelInput) (*models.MLModel, error)
 	UpdateModel(ctx context.Context, id string, input models.MLModelInput) (*models.MLModel, error)
@@ -231,6 +239,12 @@ var operationLabels = map[string]string{
 	"SIGNAL_STREAM_CREATE":      "Alta de stream de señal",
 	"SIGNAL_STREAM_UPDATE":      "Actualización de stream de señal",
 	"SIGNAL_STREAM_DELETE":      "Eliminación de stream de señal",
+	"TIMESERIES_BINDING_CREATE": "Alta de binding de series",
+	"TIMESERIES_BINDING_UPDATE": "Actualización de binding de series",
+	"TIMESERIES_BINDING_DELETE": "Eliminación de binding de series",
+	"TIMESERIES_TAG_CREATE":     "Alta de etiqueta de binding",
+	"TIMESERIES_TAG_UPDATE":     "Actualización de etiqueta de binding",
+	"TIMESERIES_TAG_DELETE":     "Eliminación de etiqueta de binding",
 	"MODEL_CREATE":              "Alta de modelo ML",
 	"MODEL_UPDATE":              "Actualización de modelo ML",
 	"MODEL_DELETE":              "Eliminación de modelo ML",
@@ -2291,6 +2305,12 @@ type devicesViewData struct {
 	Patients      []models.Patient
 }
 
+type timeseriesBindingsViewData struct {
+	Streams          []models.SignalStream
+	SelectedStreamID string
+	Bindings         []models.TimeseriesBinding
+}
+
 type pushDevicesViewData struct {
 	Items          []models.PushDevice
 	Users          []models.User
@@ -2300,10 +2320,12 @@ type pushDevicesViewData struct {
 }
 
 type signalStreamsViewData struct {
+	ActiveTab   string
 	Items       []models.SignalStream
 	Patients    []models.Patient
 	Devices     []models.Device
 	SignalTypes []models.CatalogItem
+	Bindings    timeseriesBindingsViewData
 }
 
 type modelsViewData struct {
@@ -3539,6 +3561,11 @@ func (h *Handlers) PushDevicesDelete(w http.ResponseWriter, r *http.Request) {
 // Signal streams
 
 func (h *Handlers) SignalStreamsIndex(w http.ResponseWriter, r *http.Request) {
+	tab := strings.TrimSpace(r.URL.Query().Get("tab"))
+	if tab != "bindings" {
+		tab = "streams"
+	}
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
@@ -3547,22 +3574,52 @@ func (h *Handlers) SignalStreamsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los streams", http.StatusInternalServerError)
 		return
 	}
-	patients, err := h.repo.ListPatients(ctx, 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
-		return
+
+	var (
+		patients    []models.Patient
+		devices     []models.Device
+		signalTypes []models.CatalogItem
+	)
+	if tab == "streams" {
+		patients, err = h.repo.ListPatients(ctx, 200, 0)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+			return
+		}
+		devices, err = h.repo.ListDevices(ctx, 200, 0)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los dispositivos", http.StatusInternalServerError)
+			return
+		}
+		signalTypes, err = h.repo.ListCatalog(ctx, "signal_types", 200, 0)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los tipos de señal", http.StatusInternalServerError)
+			return
+		}
 	}
-	devices, err := h.repo.ListDevices(ctx, 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los dispositivos", http.StatusInternalServerError)
-		return
+
+	bindingData := timeseriesBindingsViewData{Streams: streams}
+	if tab == "bindings" {
+		selected := strings.TrimSpace(r.URL.Query().Get("stream"))
+		bindingData.SelectedStreamID = selected
+		if selected != "" {
+			bindings, err := h.repo.ListTimeseriesBindings(ctx, selected)
+			if err != nil {
+				http.Error(w, "No se pudieron cargar los bindings", http.StatusInternalServerError)
+				return
+			}
+			bindingData.Bindings = bindings
+		}
 	}
-	signalTypes, err := h.repo.ListCatalog(ctx, "signal_types", 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los tipos de señal", http.StatusInternalServerError)
-		return
+
+	data := signalStreamsViewData{
+		ActiveTab:   tab,
+		Items:       streams,
+		Patients:    patients,
+		Devices:     devices,
+		SignalTypes: signalTypes,
+		Bindings:    bindingData,
 	}
-	data := signalStreamsViewData{Items: streams, Patients: patients, Devices: devices, SignalTypes: signalTypes}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Streams de señal"}}
 	h.render(w, r, "superadmin/signal_streams.html", "Streams de señal", data, crumbs)
 }
@@ -3683,6 +3740,201 @@ func (h *Handlers) SignalStreamsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "SIGNAL_STREAM_DELETE", "signal_stream", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Stream eliminado"})
 	http.Redirect(w, r, "/superadmin/signal-streams", http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsBindingsCreate(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	redirectURL := fmt.Sprintf("/superadmin/signal-streams?tab=bindings&stream=%s", streamID)
+	bucket := strings.TrimSpace(r.FormValue("influx_bucket"))
+	measurement := strings.TrimSpace(r.FormValue("measurement"))
+	if streamID == "" || bucket == "" || measurement == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Campos obligatorios"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	influxOrgRaw := strings.TrimSpace(r.FormValue("influx_org"))
+	retentionRaw := strings.TrimSpace(r.FormValue("retention_hint"))
+	var influxOrg *string
+	if influxOrgRaw != "" {
+		v := influxOrgRaw
+		influxOrg = &v
+	}
+	var retention *string
+	if retentionRaw != "" {
+		v := retentionRaw
+		retention = &v
+	}
+	input := models.TimeseriesBindingInput{InfluxOrg: influxOrg, InfluxBucket: bucket, Measurement: measurement, RetentionHint: retention}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	binding, err := h.repo.CreateTimeseriesBinding(ctx, streamID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Stream no encontrado"})
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Ya existe un binding con esa combinación"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el binding"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_BINDING_CREATE", "timeseries_binding", &binding.ID, map[string]any{"stream_id": streamID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Binding creado"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsBindingsUpdate(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	bindingID := chi.URLParam(r, "bindingID")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	redirectURL := fmt.Sprintf("/superadmin/signal-streams?tab=bindings&stream=%s", streamID)
+	bucket := strings.TrimSpace(r.FormValue("influx_bucket"))
+	measurement := strings.TrimSpace(r.FormValue("measurement"))
+	if bucket == "" || measurement == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Campos obligatorios"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	influxOrgRaw := strings.TrimSpace(r.FormValue("influx_org"))
+	retentionRaw := strings.TrimSpace(r.FormValue("retention_hint"))
+	var influxOrg *string
+	if influxOrgRaw != "" {
+		v := influxOrgRaw
+		influxOrg = &v
+	}
+	var retention *string
+	if retentionRaw != "" {
+		v := retentionRaw
+		retention = &v
+	}
+	input := models.TimeseriesBindingUpdateInput{InfluxOrg: influxOrg, InfluxBucket: &bucket, Measurement: &measurement, RetentionHint: retention}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	binding, err := h.repo.UpdateTimeseriesBinding(ctx, bindingID, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Binding no encontrado"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el binding"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_BINDING_UPDATE", "timeseries_binding", &binding.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Binding actualizado"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsBindingsDelete(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	bindingID := chi.URLParam(r, "bindingID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	redirectURL := fmt.Sprintf("/superadmin/signal-streams?tab=bindings&stream=%s", streamID)
+	if err := h.repo.DeleteTimeseriesBinding(ctx, bindingID); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar el binding"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_BINDING_DELETE", "timeseries_binding", &bindingID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Binding eliminado"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsBindingTagsCreate(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	bindingID := chi.URLParam(r, "bindingID")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	redirectURL := fmt.Sprintf("/superadmin/signal-streams?tab=bindings&stream=%s", streamID)
+	key := strings.TrimSpace(r.FormValue("tag_key"))
+	value := strings.TrimSpace(r.FormValue("tag_value"))
+	if key == "" || value == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Campos obligatorios"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	input := models.TimeseriesBindingTagInput{TagKey: key, TagValue: value}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	tag, err := h.repo.CreateTimeseriesBindingTag(ctx, bindingID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "La etiqueta ya existe"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear la etiqueta"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_TAG_CREATE", "timeseries_binding_tag", &tag.ID, map[string]any{"binding_id": bindingID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Etiqueta agregada"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsBindingTagsUpdate(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	bindingID := chi.URLParam(r, "bindingID")
+	tagID := chi.URLParam(r, "tagID")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	redirectURL := fmt.Sprintf("/superadmin/signal-streams?tab=bindings&stream=%s", streamID)
+	key := strings.TrimSpace(r.FormValue("tag_key"))
+	value := strings.TrimSpace(r.FormValue("tag_value"))
+	if key == "" || value == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Campos obligatorios"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	input := models.TimeseriesBindingTagUpdateInput{TagKey: &key, TagValue: &value}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	tag, err := h.repo.UpdateTimeseriesBindingTag(ctx, tagID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Etiqueta no encontrada"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar la etiqueta"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_TAG_UPDATE", "timeseries_binding_tag", &tag.ID, map[string]any{"binding_id": bindingID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Etiqueta actualizada"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) SignalStreamsBindingTagsDelete(w http.ResponseWriter, r *http.Request) {
+	streamID := chi.URLParam(r, "id")
+	bindingID := chi.URLParam(r, "bindingID")
+	tagID := chi.URLParam(r, "tagID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	redirectURL := fmt.Sprintf("/superadmin/signal-streams?tab=bindings&stream=%s", streamID)
+	if err := h.repo.DeleteTimeseriesBindingTag(ctx, tagID); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la etiqueta"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "TIMESERIES_TAG_DELETE", "timeseries_binding_tag", &tagID, map[string]any{"binding_id": bindingID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Etiqueta eliminada"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 // Models
