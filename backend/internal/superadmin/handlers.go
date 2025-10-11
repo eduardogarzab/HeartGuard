@@ -24,6 +24,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -70,6 +71,15 @@ type Repository interface {
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+
+	ListServices(ctx context.Context, limit, offset int) ([]models.Service, error)
+	GetService(ctx context.Context, id string) (*models.Service, error)
+	CreateService(ctx context.Context, name, url string, description *string) (*models.Service, error)
+	UpdateService(ctx context.Context, id string, name, url, description *string) (*models.Service, error)
+	DeleteService(ctx context.Context, id string) error
+	RecordServiceHealth(ctx context.Context, record ServiceHealthRecord) (*models.ServiceHealth, error)
+	ImportServiceHealth(ctx context.Context, records []ServiceHealthRecord) (int, error)
+	ListServiceHealth(ctx context.Context, serviceID *string, limit, offset int) ([]models.ServiceHealth, error)
 
 	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
 	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
@@ -235,23 +245,28 @@ func averagePerDay(total int, days int) float64 {
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":         "Alta de organización",
-	"ORG_UPDATE":         "Actualización de organización",
-	"ORG_DELETE":         "Eliminación de organización",
-	"INVITE_CREATE":      "Emisión de invitación",
-	"INVITE_CANCEL":      "Cancelación de invitación",
-	"INVITE_CONSUME":     "Consumo de invitación",
-	"MEMBER_ADD":         "Alta de miembro",
-	"MEMBER_REMOVE":      "Baja de miembro",
-	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
-	"APIKEY_CREATE":      "Creación de API Key",
-	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":      "Revocación de API Key",
-	"CATALOG_CREATE":     "Alta en catálogo",
-	"CATALOG_UPDATE":     "Actualización de catálogo",
-	"CATALOG_DELETE":     "Eliminación de catálogo",
-	"DASHBOARD_EXPORT":   "Exportación de panel",
-	"AUDIT_EXPORT":       "Exportación de auditoría",
+	"ORG_CREATE":            "Alta de organización",
+	"ORG_UPDATE":            "Actualización de organización",
+	"ORG_DELETE":            "Eliminación de organización",
+	"INVITE_CREATE":         "Emisión de invitación",
+	"INVITE_CANCEL":         "Cancelación de invitación",
+	"INVITE_CONSUME":        "Consumo de invitación",
+	"MEMBER_ADD":            "Alta de miembro",
+	"MEMBER_REMOVE":         "Baja de miembro",
+	"USER_STATUS_UPDATE":    "Actualización de estatus de usuario",
+	"APIKEY_CREATE":         "Creación de API Key",
+	"APIKEY_SET_PERMS":      "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":         "Revocación de API Key",
+	"CATALOG_CREATE":        "Alta en catálogo",
+	"CATALOG_UPDATE":        "Actualización de catálogo",
+	"CATALOG_DELETE":        "Eliminación de catálogo",
+	"SERVICE_CREATE":        "Alta de servicio",
+	"SERVICE_UPDATE":        "Actualización de servicio",
+	"SERVICE_DELETE":        "Eliminación de servicio",
+	"SERVICE_HEALTH_CREATE": "Registro de healthcheck",
+	"SERVICE_HEALTH_IMPORT": "Carga histórica de healthchecks",
+	"DASHBOARD_EXPORT":      "Exportación de panel",
+	"AUDIT_EXPORT":          "Exportación de auditoría",
 }
 
 func operationLabel(code string) string {
@@ -1856,6 +1871,295 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	var entityID string = "singleton"
 	h.writeAudit(ctx, r, "SYSTEM_SETTINGS_UPDATE", entity, &entityID, map[string]any{"brand_name": updated.BrandName, "maintenance_mode": updated.MaintenanceMode})
 	writeJSON(w, 200, updated)
+}
+
+// Services
+
+type serviceReq struct {
+	Name        string  `json:"name" validate:"required,min=3,max=120"`
+	URL         string  `json:"url" validate:"required"`
+	Description *string `json:"description" validate:"omitempty,max=400"`
+}
+
+type servicePatch struct {
+	Name        *string `json:"name" validate:"omitempty,min=3,max=120"`
+	URL         *string `json:"url" validate:"omitempty"`
+	Description *string `json:"description" validate:"omitempty,max=400"`
+}
+
+type serviceHealthReq struct {
+	ServiceID  string     `json:"service_id" validate:"required,uuid4"`
+	StatusCode string     `json:"status_code" validate:"required"`
+	LatencyMs  *int       `json:"latency_ms" validate:"omitempty,min=0"`
+	Version    *string    `json:"version" validate:"omitempty,max=40"`
+	CheckedAt  *time.Time `json:"checked_at,omitempty"`
+}
+
+func (h *Handlers) CreateService(w http.ResponseWriter, r *http.Request) {
+	var req serviceReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	name := strings.TrimSpace(req.Name)
+	if len(name) < 3 {
+		writeProblem(w, 400, "bad_request", "invalid payload", map[string]string{"name": "min"})
+		return
+	}
+	normalizedURL, err := normalizeServiceURL(req.URL)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid url", map[string]string{"url": "url"})
+		return
+	}
+	var description *string
+	if req.Description != nil {
+		trimmed := strings.TrimSpace(*req.Description)
+		if trimmed != "" {
+			description = &trimmed
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	svc, err := h.repo.CreateService(ctx, name, normalizedURL, description)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_CREATE", "service", &svc.ID, map[string]any{"name": svc.Name})
+	writeJSON(w, 201, svc)
+}
+
+func (h *Handlers) ListServices(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListServices(ctx, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) GetService(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	svc, err := h.repo.GetService(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "service not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, svc)
+}
+
+func (h *Handlers) UpdateService(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req servicePatch
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	var namePtr, urlPtr, descPtr *string
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if len(trimmed) < 3 {
+			writeProblem(w, 400, "bad_request", "invalid payload", map[string]string{"name": "min"})
+			return
+		}
+		namePtr = &trimmed
+	}
+	if req.URL != nil {
+		normalizedURL, err := normalizeServiceURL(*req.URL)
+		if err != nil {
+			writeProblem(w, 400, "bad_request", "invalid url", map[string]string{"url": "url"})
+			return
+		}
+		urlPtr = &normalizedURL
+	}
+	if req.Description != nil {
+		trimmed := strings.TrimSpace(*req.Description)
+		if trimmed != "" {
+			descPtr = &trimmed
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	svc, err := h.repo.UpdateService(ctx, id, namePtr, urlPtr, descPtr)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "service not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_UPDATE", "service", &svc.ID, map[string]any{"name": svc.Name})
+	writeJSON(w, 200, svc)
+}
+
+func (h *Handlers) DeleteService(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteService(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "service not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_DELETE", "service", &id, nil)
+	w.WriteHeader(204)
+}
+
+func buildServiceHealthRecord(req serviceHealthReq) (ServiceHealthRecord, map[string]string, error) {
+	status := strings.ToLower(strings.TrimSpace(req.StatusCode))
+	if status == "" {
+		return ServiceHealthRecord{}, map[string]string{"status_code": "required"}, errors.New("invalid status code")
+	}
+	var latency *int
+	if req.LatencyMs != nil {
+		if *req.LatencyMs < 0 {
+			return ServiceHealthRecord{}, map[string]string{"latency_ms": "min"}, errors.New("latency must be positive")
+		}
+		v := *req.LatencyMs
+		latency = &v
+	}
+	var version *string
+	if req.Version != nil {
+		trimmed := strings.TrimSpace(*req.Version)
+		if len(trimmed) > 40 {
+			return ServiceHealthRecord{}, map[string]string{"version": "max"}, errors.New("version too long")
+		}
+		if trimmed != "" {
+			version = &trimmed
+		}
+	}
+	var checkedAt *time.Time
+	if req.CheckedAt != nil {
+		t := req.CheckedAt.UTC()
+		checkedAt = &t
+	}
+	record := ServiceHealthRecord{ServiceID: req.ServiceID, StatusCode: status, LatencyMs: latency, Version: version, CheckedAt: checkedAt}
+	return record, nil, nil
+}
+
+func (h *Handlers) ListServiceHealth(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	var serviceID *string
+	if sid := strings.TrimSpace(r.URL.Query().Get("service_id")); sid != "" {
+		if _, err := uuid.Parse(sid); err != nil {
+			writeProblem(w, 400, "bad_request", "invalid service_id", map[string]string{"service_id": "uuid4"})
+			return
+		}
+		serviceID = &sid
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListServiceHealth(ctx, serviceID, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateServiceHealth(w http.ResponseWriter, r *http.Request) {
+	var req serviceHealthReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	record, extraFields, err := buildServiceHealthRecord(req)
+	if err != nil {
+		if extraFields != nil {
+			writeProblem(w, 400, "bad_request", err.Error(), extraFields)
+		} else {
+			writeProblem(w, 400, "bad_request", err.Error(), nil)
+		}
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	health, err := h.repo.RecordServiceHealth(ctx, record)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 400, "bad_request", "invalid service or status", map[string]string{"service_id": "exists", "status_code": "exists"})
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_HEALTH_CREATE", "service", &health.ServiceID, map[string]any{"status": health.StatusCode})
+	writeJSON(w, 201, health)
+}
+
+func (h *Handlers) ImportServiceHealth(w http.ResponseWriter, r *http.Request) {
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var payload []serviceHealthReq
+	if err := dec.Decode(&payload); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if len(payload) == 0 {
+		writeProblem(w, 400, "bad_request", "no records provided", nil)
+		return
+	}
+	if len(payload) > 500 {
+		writeProblem(w, 400, "bad_request", "too many records", map[string]string{"records": "max"})
+		return
+	}
+	records := make([]ServiceHealthRecord, 0, len(payload))
+	for idx, item := range payload {
+		if err := h.validate.Struct(item); err != nil {
+			fields := map[string]string{}
+			if verrs, ok := err.(validator.ValidationErrors); ok {
+				for _, e := range verrs {
+					fields[fmt.Sprintf("records[%d].%s", idx, e.Field())] = e.Tag()
+				}
+			}
+			writeProblem(w, 400, "bad_request", "invalid payload", fields)
+			return
+		}
+		record, extraFields, err := buildServiceHealthRecord(item)
+		if err != nil {
+			fields := map[string]string{}
+			if extraFields != nil {
+				for k, v := range extraFields {
+					fields[fmt.Sprintf("records[%d].%s", idx, k)] = v
+				}
+			}
+			if len(fields) == 0 {
+				fields[fmt.Sprintf("records[%d]", idx)] = "invalid"
+			}
+			writeProblem(w, 400, "bad_request", err.Error(), fields)
+			return
+		}
+		records = append(records, record)
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	inserted, err := h.repo.ImportServiceHealth(ctx, records)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 400, "bad_request", "invalid service or status", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_HEALTH_IMPORT", "service", nil, map[string]any{"count": inserted})
+	writeJSON(w, 201, map[string]any{"inserted": inserted})
 }
 
 // API Keys

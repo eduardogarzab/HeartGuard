@@ -10,8 +10,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-playground/validator/v10"
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -73,6 +76,15 @@ type Repository interface {
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+
+	ListServices(ctx context.Context, limit, offset int) ([]models.Service, error)
+	GetService(ctx context.Context, id string) (*models.Service, error)
+	CreateService(ctx context.Context, name, url string, description *string) (*models.Service, error)
+	UpdateService(ctx context.Context, id string, name, url, description *string) (*models.Service, error)
+	DeleteService(ctx context.Context, id string) error
+	RecordServiceHealth(ctx context.Context, record ServiceHealthRecord) (*models.ServiceHealth, error)
+	ImportServiceHealth(ctx context.Context, records []ServiceHealthRecord) (int, error)
+	ListServiceHealth(ctx context.Context, serviceID *string, limit, offset int) ([]models.ServiceHealth, error)
 
 	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
 	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
@@ -231,6 +243,11 @@ var operationLabels = map[string]string{
 	"CONTENT_CREATE":            "Alta de contenido",
 	"CONTENT_UPDATE":            "Actualización de contenido",
 	"CONTENT_DELETE":            "Eliminación de contenido",
+	"SERVICE_CREATE":            "Alta de servicio",
+	"SERVICE_UPDATE":            "Actualización de servicio",
+	"SERVICE_DELETE":            "Eliminación de servicio",
+	"SERVICE_HEALTH_CREATE":     "Registro de healthcheck",
+	"SERVICE_HEALTH_IMPORT":     "Carga histórica de healthchecks",
 }
 
 func humanizeToken(input string) string {
@@ -2264,6 +2281,12 @@ type patientsViewData struct {
 	Sexes         []models.CatalogItem
 }
 
+type servicesViewData struct {
+	Services []models.Service
+	Statuses []models.CatalogItem
+	History  []models.ServiceHealth
+}
+
 type devicesViewData struct {
 	Items         []models.Device
 	Organizations []models.Organization
@@ -3191,6 +3214,337 @@ func (h *Handlers) PatientsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "PATIENT_DELETE", "patient", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente eliminado"})
 	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+// Services
+
+func parseCSVCheckedAt(value string) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+	layouts := []string{time.RFC3339, "2006-01-02T15:04", "2006-01-02 15:04"}
+	trimmed := strings.TrimSpace(value)
+	for _, layout := range layouts {
+		if strings.Contains(layout, "T") {
+			if t, err := time.Parse(layout, trimmed); err == nil {
+				utc := t.UTC()
+				return &utc, nil
+			}
+		} else {
+			if t, err := time.ParseInLocation(layout, trimmed, time.Local); err == nil {
+				utc := t.UTC()
+				return &utc, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("formato de fecha inválido")
+}
+
+func parseFormCheckedAt(value string) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+	if t, err := time.ParseInLocation("2006-01-02T15:04", value, time.Local); err == nil {
+		utc := t.UTC()
+		return &utc, nil
+	}
+	if t, err := time.Parse(time.RFC3339, value); err == nil {
+		utc := t.UTC()
+		return &utc, nil
+	}
+	return nil, fmt.Errorf("fecha inválida")
+}
+
+func (h *Handlers) ServicesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	services, err := h.repo.ListServices(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los servicios", http.StatusInternalServerError)
+		return
+	}
+	statuses, err := h.repo.ListCatalog(ctx, "service_statuses", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los estatus", http.StatusInternalServerError)
+		return
+	}
+	history, err := h.repo.ListServiceHealth(ctx, nil, 50, 0)
+	if err != nil {
+		http.Error(w, "No se pudo cargar el historial", http.StatusInternalServerError)
+		return
+	}
+	data := servicesViewData{Services: services, Statuses: statuses, History: history}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Servicios"}}
+	h.render(w, r, "superadmin/services.html", "Servicios", data, crumbs)
+}
+
+func (h *Handlers) ServicesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre requerido"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	rawURL := strings.TrimSpace(r.FormValue("url"))
+	normalizedURL, err := normalizeServiceURL(rawURL)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "URL inválida"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	descRaw := strings.TrimSpace(r.FormValue("description"))
+	var description *string
+	if descRaw != "" {
+		description = &descRaw
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	svc, err := h.repo.CreateService(ctx, name, normalizedURL, description)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el servicio"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_CREATE", "service", &svc.ID, map[string]any{"name": svc.Name})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Servicio creado"})
+	http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+}
+
+func (h *Handlers) ServicesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre requerido"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	rawURL := strings.TrimSpace(r.FormValue("url"))
+	normalizedURL, err := normalizeServiceURL(rawURL)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "URL inválida"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	descRaw := strings.TrimSpace(r.FormValue("description"))
+	var description *string
+	if descRaw != "" {
+		description = &descRaw
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	svc, err := h.repo.UpdateService(ctx, id, &name, &normalizedURL, description)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el servicio"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_UPDATE", "service", &svc.ID, map[string]any{"name": svc.Name})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Servicio actualizado"})
+	http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+}
+
+func (h *Handlers) ServicesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteService(ctx, id); err != nil {
+		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_DELETE", "service", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Servicio eliminado"})
+	http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+}
+
+func (h *Handlers) ServiceHealthCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	serviceID := strings.TrimSpace(r.FormValue("service_id"))
+	if serviceID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Servicio requerido"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	if _, err := uuid.Parse(serviceID); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Servicio inválido"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	statusCode := strings.TrimSpace(r.FormValue("status_code"))
+	if statusCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Estatus requerido"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	statusCode = strings.ToLower(statusCode)
+	latencyRaw := strings.TrimSpace(r.FormValue("latency_ms"))
+	var latency *int
+	if latencyRaw != "" {
+		val, err := strconv.Atoi(latencyRaw)
+		if err != nil || val < 0 {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Latencia inválida"})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		latency = &val
+	}
+	versionRaw := strings.TrimSpace(r.FormValue("version"))
+	var version *string
+	if versionRaw != "" {
+		if len(versionRaw) > 40 {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Versión demasiado larga"})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		version = &versionRaw
+	}
+	checkedAt, err := parseFormCheckedAt(strings.TrimSpace(r.FormValue("checked_at")))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha inválida"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	record := ServiceHealthRecord{ServiceID: serviceID, StatusCode: statusCode, LatencyMs: latency, Version: version, CheckedAt: checkedAt}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.repo.RecordServiceHealth(ctx, record); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar el check"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_HEALTH_CREATE", "service", &serviceID, map[string]any{"status": statusCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Check registrado"})
+	http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+}
+
+func (h *Handlers) ServiceHealthImport(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(4 << 20); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Archivo inválido"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	file, _, err := r.FormFile("history_file")
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un archivo CSV"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	defer file.Close()
+
+	reader := csv.NewReader(file)
+	reader.TrimLeadingSpace = true
+	records := make([]ServiceHealthRecord, 0, 64)
+	rowIndex := 0
+	for {
+		row, err := reader.Read()
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "CSV inválido"})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		rowIndex++
+		if rowIndex == 1 {
+			if len(row) > 0 && strings.EqualFold(strings.TrimSpace(row[0]), "service_id") {
+				continue
+			}
+		}
+		if len(row) == 0 {
+			continue
+		}
+		if len(row) < 2 {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d incompleta", rowIndex)})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		serviceID := strings.TrimSpace(row[0])
+		if serviceID == "" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d sin servicio", rowIndex)})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		if _, err := uuid.Parse(serviceID); err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d servicio inválido", rowIndex)})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		statusCode := strings.ToLower(strings.TrimSpace(row[1]))
+		if statusCode == "" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d sin estatus", rowIndex)})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+		var latency *int
+		if len(row) > 2 {
+			latencyRaw := strings.TrimSpace(row[2])
+			if latencyRaw != "" {
+				val, err := strconv.Atoi(latencyRaw)
+				if err != nil || val < 0 {
+					h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d latencia inválida", rowIndex)})
+					http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+					return
+				}
+				latency = &val
+			}
+		}
+		var checkedAt *time.Time
+		if len(row) > 3 {
+			ts, err := parseCSVCheckedAt(strings.TrimSpace(row[3]))
+			if err != nil {
+				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d fecha inválida", rowIndex)})
+				http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+				return
+			}
+			checkedAt = ts
+		}
+		var version *string
+		if len(row) > 4 {
+			versionRaw := strings.TrimSpace(row[4])
+			if versionRaw != "" {
+				if len(versionRaw) > 40 {
+					h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: fmt.Sprintf("Fila %d versión muy larga", rowIndex)})
+					http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+					return
+				}
+				version = &versionRaw
+			}
+		}
+		records = append(records, ServiceHealthRecord{ServiceID: serviceID, StatusCode: statusCode, LatencyMs: latency, Version: version, CheckedAt: checkedAt})
+		if len(records) > 500 {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Máximo 500 filas por carga"})
+			http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+			return
+		}
+	}
+	if len(records) == 0 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Sin registros para importar"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+	defer cancel()
+	inserted, err := h.repo.ImportServiceHealth(ctx, records)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo importar el historial"})
+		http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "SERVICE_HEALTH_IMPORT", "service", nil, map[string]any{"count": inserted})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: fmt.Sprintf("%d checks importados", inserted)})
+	http.Redirect(w, r, "/superadmin/services", http.StatusSeeOther)
 }
 
 // Devices

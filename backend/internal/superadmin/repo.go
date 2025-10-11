@@ -53,6 +53,18 @@ func (r *Repo) Ping(ctx context.Context) error {
 
 var nowFn = time.Now
 
+type ServiceHealthRecord struct {
+	ServiceID  string
+	StatusCode string
+	LatencyMs  *int
+	Version    *string
+	CheckedAt  *time.Time
+}
+
+type queryRower interface {
+	QueryRow(context.Context, string, ...any) pgx.Row
+}
+
 func stringParam(ptr *string, trim bool) any {
 	if ptr == nil {
 		return nil
@@ -88,6 +100,13 @@ func float32Param(ptr *float32) any {
 	return *ptr
 }
 
+func intParam(ptr *int) any {
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
 func jsonParam(ptr *string) any {
 	if ptr == nil {
 		return nil
@@ -97,6 +116,88 @@ func jsonParam(ptr *string) any {
 		return nil
 	}
 	return []byte(v)
+}
+
+func scanServiceRow(row pgx.Row) (models.Service, error) {
+	var (
+		svc         models.Service
+		description sql.NullString
+		checkedAt   sql.NullTime
+		latency     sql.NullInt32
+		version     sql.NullString
+		statusCode  sql.NullString
+		statusLabel sql.NullString
+	)
+	if err := row.Scan(&svc.ID, &svc.Name, &svc.URL, &description, &svc.CreatedAt, &checkedAt, &latency, &version, &statusCode, &statusLabel); err != nil {
+		return svc, err
+	}
+	if description.Valid {
+		v := description.String
+		svc.Description = &v
+	}
+	if checkedAt.Valid {
+		ts := checkedAt.Time
+		svc.LastCheckedAt = &ts
+	}
+	if latency.Valid {
+		v := int(latency.Int32)
+		svc.LastLatencyMs = &v
+	}
+	if version.Valid {
+		v := version.String
+		svc.LastVersion = &v
+	}
+	if statusCode.Valid {
+		v := statusCode.String
+		svc.LastStatusCode = &v
+	}
+	if statusLabel.Valid {
+		v := statusLabel.String
+		svc.LastStatusLabel = &v
+	}
+	return svc, nil
+}
+
+func insertServiceHealth(ctx context.Context, runner queryRower, record ServiceHealthRecord) (*models.ServiceHealth, error) {
+	var (
+		health      models.ServiceHealth
+		latency     sql.NullInt32
+		version     sql.NullString
+		statusCode  sql.NullString
+		statusLabel sql.NullString
+	)
+	err := runner.QueryRow(ctx, `
+WITH ins AS (
+        INSERT INTO service_health (service_id, service_status_id, latency_ms, version, checked_at)
+        SELECT $1, ss.id, $3, $4, COALESCE($5, NOW())
+        FROM service_statuses ss
+        WHERE ss.code = $2
+        RETURNING id, service_id, checked_at, service_status_id, latency_ms, version
+)
+SELECT ins.id, ins.service_id, s.name, ins.checked_at, ins.service_status_id, ins.latency_ms, ins.version, ss.code, ss.label
+FROM ins
+JOIN services s ON s.id = ins.service_id
+JOIN service_statuses ss ON ss.id = ins.service_status_id
+`, record.ServiceID, record.StatusCode, intParam(record.LatencyMs), stringParam(record.Version, true), timeParam(record.CheckedAt)).
+		Scan(&health.ID, &health.ServiceID, &health.ServiceName, &health.CheckedAt, &health.StatusID, &latency, &version, &statusCode, &statusLabel)
+	if err != nil {
+		return nil, err
+	}
+	if latency.Valid {
+		v := int(latency.Int32)
+		health.LatencyMs = &v
+	}
+	if version.Valid {
+		v := version.String
+		health.Version = &v
+	}
+	if statusCode.Valid {
+		health.StatusCode = statusCode.String
+	}
+	if statusLabel.Valid {
+		health.StatusLabel = statusLabel.String
+	}
+	return &health, nil
 }
 
 func invitationStatus(inv *models.OrgInvitation, now time.Time) string {
@@ -563,6 +664,174 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+// ------------------------------
+// Services
+// ------------------------------
+
+func (r *Repo) ListServices(ctx context.Context, limit, offset int) ([]models.Service, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT s.id, s.name, s.url, s.description, s.created_at,
+       h.checked_at, h.latency_ms, h.version, ss.code, ss.label
+FROM services s
+LEFT JOIN LATERAL (
+        SELECT sh.checked_at, sh.latency_ms, sh.version, sh.service_status_id
+        FROM service_health sh
+        WHERE sh.service_id = s.id
+        ORDER BY sh.checked_at DESC
+        LIMIT 1
+) h ON TRUE
+LEFT JOIN service_statuses ss ON ss.id = h.service_status_id
+ORDER BY s.created_at DESC
+LIMIT $1 OFFSET $2
+`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Service, 0, limit)
+	for rows.Next() {
+		svc, err := scanServiceRow(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, svc)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) GetService(ctx context.Context, id string) (*models.Service, error) {
+	svc, err := scanServiceRow(r.pool.QueryRow(ctx, `
+SELECT s.id, s.name, s.url, s.description, s.created_at,
+       h.checked_at, h.latency_ms, h.version, ss.code, ss.label
+FROM services s
+LEFT JOIN LATERAL (
+        SELECT sh.checked_at, sh.latency_ms, sh.version, sh.service_status_id
+        FROM service_health sh
+        WHERE sh.service_id = s.id
+        ORDER BY sh.checked_at DESC
+        LIMIT 1
+) h ON TRUE
+LEFT JOIN service_statuses ss ON ss.id = h.service_status_id
+WHERE s.id = $1
+`, id))
+	if err != nil {
+		return nil, err
+	}
+	return &svc, nil
+}
+
+func (r *Repo) CreateService(ctx context.Context, name, url string, description *string) (*models.Service, error) {
+	var id string
+	if err := r.pool.QueryRow(ctx, `
+INSERT INTO services (name, url, description)
+VALUES ($1, $2, $3)
+RETURNING id
+`, name, url, stringParam(description, true)).Scan(&id); err != nil {
+		return nil, err
+	}
+	return r.GetService(ctx, id)
+}
+
+func (r *Repo) UpdateService(ctx context.Context, id string, name, url, description *string) (*models.Service, error) {
+	var updatedID string
+	if err := r.pool.QueryRow(ctx, `
+UPDATE services SET
+        name = COALESCE($2, name),
+        url = COALESCE($3, url),
+        description = COALESCE($4, description)
+WHERE id = $1
+RETURNING id
+`, id, stringParam(name, true), stringParam(url, true), stringParam(description, true)).Scan(&updatedID); err != nil {
+		return nil, err
+	}
+	return r.GetService(ctx, updatedID)
+}
+
+func (r *Repo) DeleteService(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM services WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) RecordServiceHealth(ctx context.Context, record ServiceHealthRecord) (*models.ServiceHealth, error) {
+	return insertServiceHealth(ctx, r.pool, record)
+}
+
+func (r *Repo) ImportServiceHealth(ctx context.Context, records []ServiceHealthRecord) (int, error) {
+	if len(records) == 0 {
+		return 0, nil
+	}
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback(ctx)
+
+	count := 0
+	for _, record := range records {
+		if _, err := insertServiceHealth(ctx, tx, record); err != nil {
+			return 0, err
+		}
+		count++
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (r *Repo) ListServiceHealth(ctx context.Context, serviceID *string, limit, offset int) ([]models.ServiceHealth, error) {
+	base := `
+SELECT sh.id, sh.service_id, s.name, sh.checked_at, sh.service_status_id, sh.latency_ms, sh.version, ss.code, ss.label
+FROM service_health sh
+JOIN services s ON s.id = sh.service_id
+JOIN service_statuses ss ON ss.id = sh.service_status_id
+`
+	args := make([]any, 0, 4)
+	idx := 1
+	if serviceID != nil {
+		base += fmt.Sprintf("WHERE sh.service_id = $%d\n", idx)
+		args = append(args, *serviceID)
+		idx++
+	}
+	base += fmt.Sprintf("ORDER BY sh.checked_at DESC\nLIMIT $%d OFFSET $%d", idx, idx+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, base, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.ServiceHealth, 0, limit)
+	for rows.Next() {
+		var (
+			rec     models.ServiceHealth
+			latency sql.NullInt32
+			version sql.NullString
+		)
+		if err := rows.Scan(&rec.ID, &rec.ServiceID, &rec.ServiceName, &rec.CheckedAt, &rec.StatusID, &latency, &version, &rec.StatusCode, &rec.StatusLabel); err != nil {
+			return nil, err
+		}
+		if latency.Valid {
+			v := int(latency.Int32)
+			rec.LatencyMs = &v
+		}
+		if version.Valid {
+			v := version.String
+			rec.Version = &v
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 // ------------------------------

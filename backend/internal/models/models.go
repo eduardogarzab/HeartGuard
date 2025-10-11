@@ -148,6 +148,31 @@ type DeviceInput struct {
 	Active         *bool   `json:"active,omitempty"`
 }
 
+type Service struct {
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	URL             string     `json:"url"`
+	Description     *string    `json:"description,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
+	LastStatusCode  *string    `json:"last_status_code,omitempty"`
+	LastStatusLabel *string    `json:"last_status_label,omitempty"`
+	LastCheckedAt   *time.Time `json:"last_checked_at,omitempty"`
+	LastLatencyMs   *int       `json:"last_latency_ms,omitempty"`
+	LastVersion     *string    `json:"last_version,omitempty"`
+}
+
+type ServiceHealth struct {
+	ID          string    `json:"id"`
+	ServiceID   string    `json:"service_id"`
+	ServiceName string    `json:"service_name"`
+	StatusID    string    `json:"status_id"`
+	StatusCode  string    `json:"status_code"`
+	StatusLabel string    `json:"status_label"`
+	CheckedAt   time.Time `json:"checked_at"`
+	LatencyMs   *int      `json:"latency_ms,omitempty"`
+	Version     *string   `json:"version,omitempty"`
+}
+
 type DeviceType struct {
 	ID          string  `json:"id"`
 	Code        string  `json:"code"`

@@ -1,0 +1,183 @@
+{{define "superadmin/services.html"}} {{template "layout" .}} {{end}} {{define "superadmin/services.html:content"}}
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Servicios</h1>
+        </div>
+        <div class="hg-card">
+                <h3>Registrar servicio</h3>
+                <form method="post" action="/superadmin/services" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label for="service-name">Nombre</label>
+                                <input id="service-name" name="name" type="text" required placeholder="Servicio principal" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="service-url">URL</label>
+                                <input id="service-url" name="url" type="url" required placeholder="https://api.example.com" />
+                        </div>
+                        <div class="hg-form-field hg-form-field-span2">
+                                <label for="service-desc">Descripción</label>
+                                <textarea id="service-desc" name="description" rows="2" placeholder="Uso o notas del servicio"></textarea>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Crear servicio</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Servicios configurados</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Nombre</th>
+                                        <th>URL</th>
+                                        <th>Descripción</th>
+                                        <th>Último estatus</th>
+                                        <th>Último check</th>
+                                        <th>Latencia</th>
+                                        <th>Versión</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Services}}
+                                {{$svc := .}}
+                                <tr>
+                                        <td>{{$svc.Name}}</td>
+                                        <td><a href="{{$svc.URL}}" target="_blank" rel="noopener">{{$svc.URL}}</a></td>
+                                        <td>{{stringValue $svc.Description}}</td>
+                                        <td>{{if $svc.LastStatusLabel}}{{$svc.LastStatusLabel}}{{else}}—{{end}}</td>
+                                        <td>{{if $svc.LastCheckedAt}}{{formatTime $svc.LastCheckedAt}}{{else}}—{{end}}</td>
+                                        <td>{{if $svc.LastLatencyMs}}{{$svc.LastLatencyMs}} ms{{else}}—{{end}}</td>
+                                        <td>{{stringValue $svc.LastVersion}}</td>
+                                        <td class="hg-flex">
+                                                <details>
+                                                        <summary>Editar</summary>
+                                                        <form method="post" action="/superadmin/services/{{$svc.ID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Nombre</label>
+                                                                        <input name="name" type="text" value="{{$svc.Name}}" required />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>URL</label>
+                                                                        <input name="url" type="url" value="{{$svc.URL}}" required />
+                                                                </div>
+                                                                <div class="hg-form-field hg-form-field-span2">
+                                                                        <label>Descripción</label>
+                                                                        <textarea name="description" rows="2">{{if $svc.Description}}{{$svc.Description}}{{end}}</textarea>
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/services/{{$svc.ID}}/delete" data-hg-confirm="¿Eliminar servicio?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="8" class="hg-empty-cell">Sin servicios registrados.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-grid-2">
+                <div class="hg-card">
+                        <h3>Registrar check manual</h3>
+                        <form method="post" action="/superadmin/services/health" class="hg-form-grid">
+                                <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                                <div class="hg-form-field">
+                                        <label for="health-service">Servicio</label>
+                                        <select id="health-service" name="service_id" required>
+                                                <option value="">Selecciona servicio</option>
+                                                {{range .Data.Services}}
+                                                <option value="{{.ID}}">{{.Name}}</option>
+                                                {{end}}
+                                        </select>
+                                </div>
+                                <div class="hg-form-field">
+                                        <label for="health-status">Estatus</label>
+                                        <select id="health-status" name="status_code" required>
+                                                <option value="">Selecciona estatus</option>
+                                                {{range .Data.Statuses}}
+                                                <option value="{{.Code}}">{{.Label}}</option>
+                                                {{end}}
+                                        </select>
+                                </div>
+                                <div class="hg-form-field">
+                                        <label for="health-latency">Latencia (ms)</label>
+                                        <input id="health-latency" name="latency_ms" type="number" min="0" />
+                                </div>
+                                <div class="hg-form-field">
+                                        <label for="health-version">Versión</label>
+                                        <input id="health-version" name="version" type="text" maxlength="40" />
+                                </div>
+                                <div class="hg-form-field hg-form-field-span2">
+                                        <label for="health-checked">Fecha de check</label>
+                                        <input id="health-checked" name="checked_at" type="datetime-local" />
+                                </div>
+                                <div class="hg-form-actions">
+                                        <button type="submit">Registrar check</button>
+                                </div>
+                        </form>
+                </div>
+                <div class="hg-card">
+                        <h3>Importar historial (CSV)</h3>
+                        <form method="post" action="/superadmin/services/health/import" enctype="multipart/form-data" class="hg-form-grid">
+                                <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                                <div class="hg-form-field hg-form-field-span2">
+                                        <label for="health-file">Archivo CSV</label>
+                                        <input id="health-file" name="history_file" type="file" accept=".csv" required />
+                                        <p class="hg-field-hint">Columnas esperadas: service_id,status_code,latency_ms,checked_at,version</p>
+                                </div>
+                                <div class="hg-form-actions">
+                                        <button type="submit">Importar</button>
+                                </div>
+                        </form>
+                </div>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Historial reciente</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Servicio</th>
+                                        <th>Estatus</th>
+                                        <th>Latencia</th>
+                                        <th>Versión</th>
+                                        <th>Fecha</th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.History}}
+                                <tr>
+                                        <td>{{.ServiceName}}</td>
+                                        <td>{{.StatusLabel}}</td>
+                                        <td>{{if .LatencyMs}}{{.LatencyMs}} ms{{else}}—{{end}}</td>
+                                        <td>{{stringValue .Version}}</td>
+                                        <td>{{formatTime .CheckedAt}}</td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="5" class="hg-empty-cell">Sin registros de health.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+{{end}}
