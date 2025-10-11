@@ -592,6 +592,497 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 }
 
 // ------------------------------
+// Care teams and caregivers
+// ------------------------------
+
+func scanCareTeam(row scanTarget) (*models.CareTeam, error) {
+	var (
+		ct      models.CareTeam
+		orgID   sql.NullString
+		orgName sql.NullString
+	)
+	if err := row.Scan(&ct.ID, &orgID, &orgName, &ct.Name, &ct.CreatedAt); err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		ct.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		ct.OrgName = &v
+	}
+	return &ct, nil
+}
+
+func (r *Repo) ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT ct.id::text, ct.org_id::text, o.name, ct.name, ct.created_at
+FROM care_teams ct
+LEFT JOIN organizations o ON o.id = ct.org_id
+ORDER BY ct.created_at DESC, ct.name
+LIMIT $1 OFFSET $2
+`, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.CareTeam
+	for rows.Next() {
+		ct, err := scanCareTeam(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *ct)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateCareTeam(ctx context.Context, input models.CareTeamInput) (*models.CareTeam, error) {
+	row := r.pool.QueryRow(ctx, `
+WITH inserted AS (
+        INSERT INTO care_teams (id, org_id, name, created_at)
+        VALUES (gen_random_uuid(), $1, $2, NOW())
+        RETURNING id, org_id, name, created_at
+)
+SELECT i.id::text, i.org_id::text, o.name, i.name, i.created_at
+FROM inserted i
+LEFT JOIN organizations o ON o.id = i.org_id
+`, stringParam(input.OrgID, true), strings.TrimSpace(input.Name))
+	return scanCareTeam(row)
+}
+
+func (r *Repo) UpdateCareTeam(ctx context.Context, id string, input models.CareTeamUpdateInput) (*models.CareTeam, error) {
+	var (
+		orgParam  any
+		clearOrg  bool
+		nameParam *string
+	)
+	if input.OrgID != nil {
+		trimmed := strings.TrimSpace(*input.OrgID)
+		if trimmed == "" {
+			clearOrg = true
+		} else {
+			orgParam = trimmed
+		}
+	}
+	if input.Name != nil {
+		trimmed := strings.TrimSpace(*input.Name)
+		if trimmed != "" {
+			nameParam = &trimmed
+		}
+	}
+	row := r.pool.QueryRow(ctx, `
+WITH updated AS (
+        UPDATE care_teams SET
+                org_id = CASE
+                        WHEN $3 THEN NULL
+                        WHEN $2 IS NULL THEN org_id
+                        ELSE $2::uuid
+                END,
+                name = COALESCE($4, name)
+        WHERE id = $1
+        RETURNING id, org_id, name, created_at
+)
+SELECT u.id::text, u.org_id::text, o.name, u.name, u.created_at
+FROM updated u
+LEFT JOIN organizations o ON o.id = u.org_id
+`, id, orgParam, clearOrg, nameParam)
+	return scanCareTeam(row)
+}
+
+func (r *Repo) DeleteCareTeam(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM care_teams WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func scanCareTeamMember(row scanTarget) (*models.CareTeamMember, error) {
+	var member models.CareTeamMember
+	if err := row.Scan(&member.CareTeamID, &member.CareTeamName, &member.UserID, &member.UserName, &member.UserEmail, &member.RoleInTeam, &member.JoinedAt); err != nil {
+		return nil, err
+	}
+	return &member, nil
+}
+
+func (r *Repo) ListCareTeamMembers(ctx context.Context, careTeamID string) ([]models.CareTeamMember, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT ctm.care_team_id::text, ct.name, u.id::text, u.name, u.email, ctm.role_in_team, ctm.joined_at
+FROM care_team_member ctm
+JOIN users u ON u.id = ctm.user_id
+JOIN care_teams ct ON ct.id = ctm.care_team_id
+WHERE ctm.care_team_id = $1
+ORDER BY u.name
+`, careTeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.CareTeamMember
+	for rows.Next() {
+		member, err := scanCareTeamMember(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *member)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) AddCareTeamMember(ctx context.Context, careTeamID string, input models.CareTeamMemberInput) (*models.CareTeamMember, error) {
+	row := r.pool.QueryRow(ctx, `
+WITH inserted AS (
+        INSERT INTO care_team_member (care_team_id, user_id, role_in_team)
+        VALUES ($1, $2, $3)
+        RETURNING care_team_id, user_id, role_in_team, joined_at
+)
+SELECT i.care_team_id::text, ct.name, i.user_id::text, u.name, u.email, i.role_in_team, i.joined_at
+FROM inserted i
+JOIN care_teams ct ON ct.id = i.care_team_id
+JOIN users u ON u.id = i.user_id
+`, careTeamID, input.UserID, strings.TrimSpace(input.RoleInTeam))
+	return scanCareTeamMember(row)
+}
+
+func (r *Repo) UpdateCareTeamMember(ctx context.Context, careTeamID, userID string, input models.CareTeamMemberUpdateInput) (*models.CareTeamMember, error) {
+	roleParam := stringParam(input.RoleInTeam, true)
+	row := r.pool.QueryRow(ctx, `
+WITH updated AS (
+        UPDATE care_team_member SET
+                role_in_team = COALESCE(NULLIF($3, ''), role_in_team)
+        WHERE care_team_id = $1 AND user_id = $2
+        RETURNING care_team_id, user_id, role_in_team, joined_at
+)
+SELECT u.care_team_id::text, ct.name, u.user_id::text, usr.name, usr.email, u.role_in_team, u.joined_at
+FROM updated u
+JOIN care_teams ct ON ct.id = u.care_team_id
+JOIN users usr ON usr.id = u.user_id
+`, careTeamID, userID, roleParam)
+	return scanCareTeamMember(row)
+}
+
+func (r *Repo) RemoveCareTeamMember(ctx context.Context, careTeamID, userID string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM care_team_member WHERE care_team_id = $1 AND user_id = $2`, careTeamID, userID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func scanPatientCareTeam(row scanTarget) (*models.PatientCareTeamLink, error) {
+	var link models.PatientCareTeamLink
+	if err := row.Scan(&link.CareTeamID, &link.CareTeamName, &link.PatientID, &link.PatientName); err != nil {
+		return nil, err
+	}
+	return &link, nil
+}
+
+func (r *Repo) ListCareTeamPatients(ctx context.Context, careTeamID string) ([]models.PatientCareTeamLink, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT pct.care_team_id::text, ct.name, pct.patient_id::text, p.person_name
+FROM patient_care_team pct
+JOIN care_teams ct ON ct.id = pct.care_team_id
+JOIN patients p ON p.id = pct.patient_id
+WHERE pct.care_team_id = $1
+ORDER BY p.person_name
+`, careTeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.PatientCareTeamLink
+	for rows.Next() {
+		link, err := scanPatientCareTeam(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *link)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) AddCareTeamPatient(ctx context.Context, careTeamID, patientID string) (*models.PatientCareTeamLink, error) {
+	row := r.pool.QueryRow(ctx, `
+WITH inserted AS (
+        INSERT INTO patient_care_team (patient_id, care_team_id)
+        VALUES ($2, $1)
+        ON CONFLICT DO NOTHING
+        RETURNING care_team_id, patient_id
+)
+SELECT coalesce(i.care_team_id, $1)::text, ct.name, coalesce(i.patient_id, $2)::text, p.person_name
+FROM care_teams ct
+JOIN patients p ON p.id = $2
+LEFT JOIN inserted i ON TRUE
+WHERE ct.id = $1
+`, careTeamID, patientID)
+	return scanPatientCareTeam(row)
+}
+
+func (r *Repo) RemoveCareTeamPatient(ctx context.Context, careTeamID, patientID string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM patient_care_team WHERE care_team_id = $1 AND patient_id = $2`, careTeamID, patientID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListCaregiverRelationshipTypes(ctx context.Context) ([]models.CaregiverRelationshipType, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id::text, code, label
+FROM caregiver_relationship_types
+ORDER BY label
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.CaregiverRelationshipType
+	for rows.Next() {
+		var item models.CaregiverRelationshipType
+		if err := rows.Scan(&item.ID, &item.Code, &item.Label); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateCaregiverRelationshipType(ctx context.Context, input models.CaregiverRelationshipTypeInput) (*models.CaregiverRelationshipType, error) {
+	var item models.CaregiverRelationshipType
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO caregiver_relationship_types (id, code, label)
+VALUES (gen_random_uuid(), $1, $2)
+RETURNING id::text, code, label
+`, strings.TrimSpace(input.Code), strings.TrimSpace(input.Label)).Scan(&item.ID, &item.Code, &item.Label)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repo) UpdateCaregiverRelationshipType(ctx context.Context, id string, input models.CaregiverRelationshipTypeUpdateInput) (*models.CaregiverRelationshipType, error) {
+	var item models.CaregiverRelationshipType
+	err := r.pool.QueryRow(ctx, `
+UPDATE caregiver_relationship_types SET
+        code = COALESCE(NULLIF($2, ''), code),
+        label = COALESCE(NULLIF($3, ''), label)
+WHERE id = $1
+RETURNING id::text, code, label
+`, id, stringParam(input.Code, true), stringParam(input.Label, true)).Scan(&item.ID, &item.Code, &item.Label)
+	if err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repo) DeleteCaregiverRelationshipType(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM caregiver_relationship_types WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func scanCaregiverAssignment(row scanTarget) (*models.CaregiverAssignment, error) {
+	var (
+		assignment models.CaregiverAssignment
+		relID      sql.NullString
+		relCode    sql.NullString
+		relLabel   sql.NullString
+		ended      sql.NullTime
+		note       sql.NullString
+	)
+	if err := row.Scan(&assignment.PatientID, &assignment.PatientName, &assignment.CaregiverID, &assignment.CaregiverName, &assignment.CaregiverEmail, &relID, &relCode, &relLabel, &assignment.IsPrimary, &assignment.StartedAt, &ended, &note); err != nil {
+		return nil, err
+	}
+	if relID.Valid {
+		v := relID.String
+		assignment.RelationshipTypeID = &v
+	}
+	if relCode.Valid {
+		v := relCode.String
+		assignment.RelationshipTypeCode = &v
+	}
+	if relLabel.Valid {
+		v := relLabel.String
+		assignment.RelationshipTypeLabel = &v
+	}
+	if ended.Valid {
+		tm := ended.Time
+		assignment.EndedAt = &tm
+	}
+	if note.Valid {
+		v := note.String
+		assignment.Note = &v
+	}
+	return &assignment, nil
+}
+
+func (r *Repo) ListCaregiverAssignments(ctx context.Context, patientID, caregiverID *string, limit, offset int) ([]models.CaregiverAssignment, error) {
+	where := "WHERE 1=1"
+	args := make([]any, 0, 4)
+	idx := 1
+	if patientID != nil {
+		if v := strings.TrimSpace(*patientID); v != "" {
+			where += fmt.Sprintf(" AND cp.patient_id = $%d", idx)
+			args = append(args, v)
+			idx++
+		}
+	}
+	if caregiverID != nil {
+		if v := strings.TrimSpace(*caregiverID); v != "" {
+			where += fmt.Sprintf(" AND cp.user_id = $%d", idx)
+			args = append(args, v)
+			idx++
+		}
+	}
+
+	query := fmt.Sprintf(`
+SELECT cp.patient_id::text, p.person_name, cp.user_id::text, u.name, u.email, cp.rel_type_id::text, crt.code, crt.label, cp.is_primary, cp.started_at, cp.ended_at, cp.note
+FROM caregiver_patient cp
+JOIN patients p ON p.id = cp.patient_id
+JOIN users u ON u.id = cp.user_id
+LEFT JOIN caregiver_relationship_types crt ON crt.id = cp.rel_type_id
+%s
+ORDER BY p.person_name, u.name
+LIMIT $%d OFFSET $%d
+`, where, idx, idx+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.CaregiverAssignment
+	for rows.Next() {
+		assignment, err := scanCaregiverAssignment(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *assignment)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateCaregiverAssignment(ctx context.Context, input models.CaregiverAssignmentInput) (*models.CaregiverAssignment, error) {
+	started := timeParam(input.StartedAt)
+	ended := timeParam(input.EndedAt)
+	note := stringParam(input.Note, true)
+	isPrimary := boolParam(input.IsPrimary)
+
+	row := r.pool.QueryRow(ctx, `
+WITH inserted AS (
+        INSERT INTO caregiver_patient (patient_id, user_id, rel_type_id, is_primary, started_at, ended_at, note)
+        VALUES ($1, $2, CASE WHEN $3 IS NULL OR $3 = '' THEN NULL ELSE $3::uuid END, COALESCE($4, FALSE), COALESCE($5, NOW()), $6, $7)
+        RETURNING patient_id, user_id, rel_type_id, is_primary, started_at, ended_at, note
+)
+SELECT i.patient_id::text, p.person_name, i.user_id::text, u.name, u.email, i.rel_type_id::text, crt.code, crt.label, i.is_primary, i.started_at, i.ended_at, i.note
+FROM inserted i
+JOIN patients p ON p.id = i.patient_id
+JOIN users u ON u.id = i.user_id
+LEFT JOIN caregiver_relationship_types crt ON crt.id = i.rel_type_id
+`, input.PatientID, input.CaregiverID, stringParam(input.RelationshipTypeID, true), isPrimary, started, ended, note)
+
+	return scanCaregiverAssignment(row)
+}
+
+func (r *Repo) UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error) {
+	started := timeParam(input.StartedAt)
+	ended := timeParam(input.EndedAt)
+
+	var (
+		relParam  any
+		setRel    bool
+		clearRel  bool
+		noteParam *string
+		setNote   bool
+		clearNote bool
+	)
+	if input.RelationshipTypeID != nil {
+		setRel = true
+		trimmed := strings.TrimSpace(*input.RelationshipTypeID)
+		if trimmed == "" {
+			clearRel = true
+		} else {
+			relParam = trimmed
+		}
+	}
+	if input.Note != nil {
+		setNote = true
+		trimmed := strings.TrimSpace(*input.Note)
+		if trimmed == "" {
+			clearNote = true
+		} else {
+			noteParam = &trimmed
+		}
+	}
+
+	row := r.pool.QueryRow(ctx, `
+WITH updated AS (
+        UPDATE caregiver_patient cp SET
+                rel_type_id = CASE
+                        WHEN NOT $3 THEN cp.rel_type_id
+                        WHEN $4 THEN NULL
+                        ELSE $5::uuid
+                END,
+                is_primary = COALESCE($6, cp.is_primary),
+                started_at = COALESCE($7, cp.started_at),
+                ended_at = CASE
+                        WHEN $8 THEN NULL
+                        WHEN $9 IS NULL THEN cp.ended_at
+                        ELSE $9
+                END,
+                note = CASE
+                        WHEN NOT $10 THEN cp.note
+                        WHEN $11 THEN NULL
+                        ELSE $12
+                END
+        WHERE cp.patient_id = $1 AND cp.user_id = $2
+        RETURNING cp.patient_id, cp.user_id, cp.rel_type_id, cp.is_primary, cp.started_at, cp.ended_at, cp.note
+)
+SELECT u.patient_id::text, p.person_name, u.user_id::text, usr.name, usr.email, u.rel_type_id::text, crt.code, crt.label, u.is_primary, u.started_at, u.ended_at, u.note
+FROM updated u
+JOIN patients p ON p.id = u.patient_id
+JOIN users usr ON usr.id = u.user_id
+LEFT JOIN caregiver_relationship_types crt ON crt.id = u.rel_type_id
+`, patientID, caregiverID, setRel, clearRel, relParam, boolParam(input.IsPrimary), started, input.ClearEndedAt, ended, setNote, clearNote, noteParam)
+
+	return scanCaregiverAssignment(row)
+}
+
+func (r *Repo) DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM caregiver_patient WHERE patient_id = $1 AND user_id = $2`, patientID, caregiverID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
 // Push devices
 // ------------------------------
 

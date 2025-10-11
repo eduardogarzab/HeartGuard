@@ -1,0 +1,198 @@
+{{define "superadmin/caregivers.html"}} {{template "layout" .}} {{end}}
+{{define "superadmin/caregivers.html:content"}}
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Cuidadores</h1>
+        </div>
+        <div class="hg-card">
+                <h3>Asignar cuidador a paciente</h3>
+                <form method="post" action="/superadmin/caregivers/assignments" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label>Paciente</label>
+                                <select name="patient_id" required>
+                                        <option value="">Selecciona paciente</option>
+                                        {{range .Data.Patients}}
+                                        <option value="{{.ID}}">{{.Name}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label>Cuidador</label>
+                                <select name="caregiver_id" required>
+                                        <option value="">Selecciona usuario</option>
+                                        {{range .Data.Caregivers}}
+                                        <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label>Relación</label>
+                                <select name="rel_type_id">
+                                        <option value="">Sin relación</option>
+                                        {{range .Data.RelationshipTypes}}
+                                        <option value="{{.ID}}">{{.Label}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label>Rol principal</label>
+                                <select name="is_primary">
+                                        <option value="">No especificar</option>
+                                        <option value="yes">Sí</option>
+                                        <option value="no">No</option>
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label>Inicio</label>
+                                <input type="date" name="started_at" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label>Fin</label>
+                                <input type="date" name="ended_at" />
+                        </div>
+                        <div class="hg-form-field hg-form-field-wide">
+                                <label>Nota</label>
+                                <textarea name="note" rows="2" placeholder="Observaciones"></textarea>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Asignar cuidador</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Asignaciones activas</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Paciente</th>
+                                        <th>Cuidador</th>
+                                        <th>Relación</th>
+                                        <th>Principal</th>
+                                        <th>Inicio</th>
+                                        <th>Fin</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Assignments}}
+                                <tr>
+                                        <td>{{.PatientName}}</td>
+                                        <td>{{.CaregiverName}}</td>
+                                        <td>{{if .RelationshipTypeLabel}}{{.RelationshipTypeLabel}}{{else}}—{{end}}</td>
+                                        <td>{{if .IsPrimary}}Sí{{else}}No{{end}}</td>
+                                        <td>{{formatDate .StartedAt}}</td>
+                                        <td>{{if .EndedAt}}{{formatDatePtr .EndedAt}}{{else}}—{{end}}</td>
+                                        <td>
+                                                <details>
+                                                        <summary>Editar</summary>
+                                                        {{$relID := stringValue .RelationshipTypeID}}
+                                                        <form method="post" action="/superadmin/caregivers/assignments/{{.PatientID}}/{{.CaregiverID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Relación</label>
+                                                                        <select name="rel_type_id">
+                                                                                <option value="">Sin relación</option>
+                                                                                {{range $.Data.RelationshipTypes}}
+                                                                                <option value="{{.ID}}" {{if eq .ID $relID}}selected{{end}}>{{.Label}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Rol principal</label>
+                                                                        <select name="is_primary">
+                                                                                <option value="">Sin cambios</option>
+                                                                                <option value="yes">Sí</option>
+                                                                                <option value="no">No</option>
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Inicio</label>
+                                                                        <input type="date" name="started_at" value="{{formatDate .StartedAt}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Fin</label>
+                                                                        <input type="date" name="ended_at" value="{{formatDatePtr .EndedAt}}" />
+                                                                        <label class="hg-checkbox"><input type="checkbox" name="clear_ended_at" /> Limpiar fecha</label>
+                                                                </div>
+                                                                <div class="hg-form-field hg-form-field-wide">
+                                                                        <label>Nota</label>
+                                                                        <textarea name="note" rows="2">{{stringValue .Note}}</textarea>
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/caregivers/assignments/{{.PatientID}}/{{.CaregiverID}}/delete" data-hg-confirm="¿Eliminar asignación?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="7" class="hg-empty-cell">Sin asignaciones registradas.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Tipos de relación</h3>
+                <div class="hg-grid-2">
+                        <div>
+                                <ul class="hg-list">
+                                        {{range .Data.RelationshipTypes}}
+                                        <li class="hg-list-item">
+                                                <form method="post" action="/superadmin/caregivers/relationship-types/{{.ID}}/update" class="hg-form-grid">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <div class="hg-form-field">
+                                                                <label>Código</label>
+                                                                <input name="code" type="text" value="{{.Code}}" required />
+                                                        </div>
+                                                        <div class="hg-form-field">
+                                                                <label>Etiqueta</label>
+                                                                <input name="label" type="text" value="{{.Label}}" required />
+                                                        </div>
+                                                        <div class="hg-form-actions">
+                                                                <button type="submit">Actualizar</button>
+                                                        </div>
+                                                </form>
+                                                <form method="post" action="/superadmin/caregivers/relationship-types/{{.ID}}/delete" data-hg-confirm="¿Eliminar relación?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </li>
+                                        {{else}}
+                                        <li class="hg-list-item hg-muted">Sin tipos de relación registrados.</li>
+                                        {{end}}
+                                </ul>
+                        </div>
+                        <div>
+                                <h4>Crear relación</h4>
+                                <form method="post" action="/superadmin/caregivers/relationship-types" class="hg-form-grid">
+                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                        <div class="hg-form-field">
+                                                <label>Código</label>
+                                                <input name="code" type="text" required placeholder="familia" />
+                                        </div>
+                                        <div class="hg-form-field">
+                                                <label>Etiqueta</label>
+                                                <input name="label" type="text" required placeholder="Familiar" />
+                                        </div>
+                                        <div class="hg-form-actions">
+                                                <button type="submit">Crear relación</button>
+                                        </div>
+                                </form>
+                        </div>
+                </div>
+        </div>
+</section>
+{{end}}

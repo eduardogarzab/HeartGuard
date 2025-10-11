@@ -65,6 +65,27 @@ type Repository interface {
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
 
+	ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error)
+	CreateCareTeam(ctx context.Context, input models.CareTeamInput) (*models.CareTeam, error)
+	UpdateCareTeam(ctx context.Context, id string, input models.CareTeamUpdateInput) (*models.CareTeam, error)
+	DeleteCareTeam(ctx context.Context, id string) error
+	ListCareTeamMembers(ctx context.Context, careTeamID string) ([]models.CareTeamMember, error)
+	AddCareTeamMember(ctx context.Context, careTeamID string, input models.CareTeamMemberInput) (*models.CareTeamMember, error)
+	UpdateCareTeamMember(ctx context.Context, careTeamID, userID string, input models.CareTeamMemberUpdateInput) (*models.CareTeamMember, error)
+	RemoveCareTeamMember(ctx context.Context, careTeamID, userID string) error
+	ListCareTeamPatients(ctx context.Context, careTeamID string) ([]models.PatientCareTeamLink, error)
+	AddCareTeamPatient(ctx context.Context, careTeamID, patientID string) (*models.PatientCareTeamLink, error)
+	RemoveCareTeamPatient(ctx context.Context, careTeamID, patientID string) error
+
+	ListCaregiverRelationshipTypes(ctx context.Context) ([]models.CaregiverRelationshipType, error)
+	CreateCaregiverRelationshipType(ctx context.Context, input models.CaregiverRelationshipTypeInput) (*models.CaregiverRelationshipType, error)
+	UpdateCaregiverRelationshipType(ctx context.Context, id string, input models.CaregiverRelationshipTypeUpdateInput) (*models.CaregiverRelationshipType, error)
+	DeleteCaregiverRelationshipType(ctx context.Context, id string) error
+	ListCaregiverAssignments(ctx context.Context, patientID, caregiverID *string, limit, offset int) ([]models.CaregiverAssignment, error)
+	CreateCaregiverAssignment(ctx context.Context, input models.CaregiverAssignmentInput) (*models.CaregiverAssignment, error)
+	UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error)
+	DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error
+
 	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
 	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
 	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
@@ -262,27 +283,43 @@ func averagePerDay(total int, days int) float64 {
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":                "Alta de organización",
-	"ORG_UPDATE":                "Actualización de organización",
-	"ORG_DELETE":                "Eliminación de organización",
-	"INVITE_CREATE":             "Emisión de invitación",
-	"INVITE_CANCEL":             "Cancelación de invitación",
-	"INVITE_CONSUME":            "Consumo de invitación",
-	"MEMBER_ADD":                "Alta de miembro",
-	"MEMBER_REMOVE":             "Baja de miembro",
-	"USER_STATUS_UPDATE":        "Actualización de estatus de usuario",
-	"APIKEY_CREATE":             "Creación de API Key",
-	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":             "Revocación de API Key",
+	"ORG_CREATE":         "Alta de organización",
+	"ORG_UPDATE":         "Actualización de organización",
+	"ORG_DELETE":         "Eliminación de organización",
+	"INVITE_CREATE":      "Emisión de invitación",
+	"INVITE_CANCEL":      "Cancelación de invitación",
+	"INVITE_CONSUME":     "Consumo de invitación",
+	"MEMBER_ADD":         "Alta de miembro",
+	"MEMBER_REMOVE":      "Baja de miembro",
+	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
+	"APIKEY_CREATE":      "Creación de API Key",
+	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":      "Revocación de API Key",
 
-	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
-	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
-	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
+	"PUSH_DEVICE_CREATE": "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE": "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE": "Eliminación de dispositivo push",
 
-	"ALERT_ASSIGNMENT_CREATE":   "Registro de asignación de alerta",
-	"ALERT_ACK_CREATE":          "Registro de acuse de alerta",
-	"ALERT_RESOLUTION_CREATE":   "Registro de resolución de alerta",
-	"ALERT_DELIVERY_CREATE":     "Registro de entrega de alerta",
+	"CARE_TEAM_CREATE":         "Alta de equipo de cuidado",
+	"CARE_TEAM_UPDATE":         "Actualización de equipo de cuidado",
+	"CARE_TEAM_DELETE":         "Eliminación de equipo de cuidado",
+	"CARE_TEAM_MEMBER_ADD":     "Asignación a equipo de cuidado",
+	"CARE_TEAM_MEMBER_UPDATE":  "Actualización de miembro de equipo",
+	"CARE_TEAM_MEMBER_REMOVE":  "Baja de miembro de equipo",
+	"CARE_TEAM_PATIENT_ADD":    "Vinculación de paciente a equipo",
+	"CARE_TEAM_PATIENT_REMOVE": "Desvinculación de paciente de equipo",
+
+	"CAREGIVER_RELTYPE_CREATE": "Alta de relación de cuidador",
+	"CAREGIVER_RELTYPE_UPDATE": "Actualización de relación de cuidador",
+	"CAREGIVER_RELTYPE_DELETE": "Eliminación de relación de cuidador",
+	"CAREGIVER_ASSIGN_CREATE":  "Asignación de cuidador",
+	"CAREGIVER_ASSIGN_UPDATE":  "Actualización de cuidador asignado",
+	"CAREGIVER_ASSIGN_DELETE":  "Baja de cuidador asignado",
+
+	"ALERT_ASSIGNMENT_CREATE": "Registro de asignación de alerta",
+	"ALERT_ACK_CREATE":        "Registro de acuse de alerta",
+	"ALERT_RESOLUTION_CREATE": "Registro de resolución de alerta",
+	"ALERT_DELIVERY_CREATE":   "Registro de entrega de alerta",
 
 	"TIMESERIES_BINDING_CREATE": "Alta de binding de series",
 	"TIMESERIES_BINDING_UPDATE": "Actualización de binding de series",
@@ -291,18 +328,17 @@ var operationLabels = map[string]string{
 	"TIMESERIES_TAG_UPDATE":     "Actualización de etiqueta de binding",
 	"TIMESERIES_TAG_DELETE":     "Eliminación de etiqueta de binding",
 
-	"GROUND_TRUTH_CREATE":       "Alta de etiqueta ground truth",
-	"GROUND_TRUTH_UPDATE":       "Actualización de etiqueta ground truth",
-	"GROUND_TRUTH_DELETE":       "Eliminación de etiqueta ground truth",
+	"GROUND_TRUTH_CREATE": "Alta de etiqueta ground truth",
+	"GROUND_TRUTH_UPDATE": "Actualización de etiqueta ground truth",
+	"GROUND_TRUTH_DELETE": "Eliminación de etiqueta ground truth",
 
-	"CATALOG_CREATE":            "Alta en catálogo",
-	"CATALOG_UPDATE":            "Actualización de catálogo",
-	"CATALOG_DELETE":            "Eliminación de catálogo",
+	"CATALOG_CREATE": "Alta en catálogo",
+	"CATALOG_UPDATE": "Actualización de catálogo",
+	"CATALOG_DELETE": "Eliminación de catálogo",
 
-	"DASHBOARD_EXPORT":          "Exportación de panel",
-	"AUDIT_EXPORT":              "Exportación de auditoría",
+	"DASHBOARD_EXPORT": "Exportación de panel",
+	"AUDIT_EXPORT":     "Exportación de auditoría",
 }
-
 
 func operationLabel(code string) string {
 	if code == "" {
@@ -402,6 +438,58 @@ func normalizeStringPtr(ptr *string) *string {
 	}
 	v := trimmed
 	return &v
+}
+
+type careTeamCreateReq struct {
+	OrgID *string `json:"org_id" validate:"omitempty,uuid4"`
+	Name  string  `json:"name" validate:"required,min=3,max=120"`
+}
+
+type careTeamUpdateReq struct {
+	OrgID optionalString `json:"org_id,omitempty"`
+	Name  optionalString `json:"name,omitempty"`
+}
+
+type careTeamMemberReq struct {
+	UserID     string `json:"user_id" validate:"required,uuid4"`
+	RoleInTeam string `json:"role_in_team" validate:"required,min=2,max=80"`
+}
+
+type careTeamMemberUpdateReq struct {
+	RoleInTeam optionalString `json:"role_in_team,omitempty"`
+}
+
+type careTeamPatientReq struct {
+	PatientID string `json:"patient_id" validate:"required,uuid4"`
+}
+
+type caregiverRelTypeReq struct {
+	Code  string `json:"code" validate:"required,min=2,max=40"`
+	Label string `json:"label" validate:"required,min=3,max=80"`
+}
+
+type caregiverRelTypeUpdateReq struct {
+	Code  optionalString `json:"code,omitempty"`
+	Label optionalString `json:"label,omitempty"`
+}
+
+type caregiverAssignmentCreateReq struct {
+	PatientID          string     `json:"patient_id" validate:"required,uuid4"`
+	CaregiverID        string     `json:"caregiver_id" validate:"required,uuid4"`
+	RelationshipTypeID *string    `json:"relationship_type_id" validate:"omitempty,uuid4"`
+	IsPrimary          *bool      `json:"is_primary,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	EndedAt            *time.Time `json:"ended_at,omitempty"`
+	Note               *string    `json:"note,omitempty" validate:"omitempty,max=2000"`
+}
+
+type caregiverAssignmentUpdateReq struct {
+	RelationshipTypeID optionalString `json:"relationship_type_id,omitempty"`
+	IsPrimary          *bool          `json:"is_primary,omitempty"`
+	StartedAt          optionalTime   `json:"started_at,omitempty"`
+	EndedAt            optionalTime   `json:"ended_at,omitempty"`
+	ClearEndedAt       bool           `json:"clear_ended_at,omitempty"`
+	Note               optionalString `json:"note,omitempty"`
 }
 
 // actorPtr recupera el user_id real (desde JWT) para auditoría.
@@ -2200,6 +2288,568 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	var entityID string = "singleton"
 	h.writeAudit(ctx, r, "SYSTEM_SETTINGS_UPDATE", entity, &entityID, map[string]any{"brand_name": updated.BrandName, "maintenance_mode": updated.MaintenanceMode})
 	writeJSON(w, 200, updated)
+}
+
+// Care teams
+
+func (h *Handlers) ListCareTeams(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	teams, err := h.repo.ListCareTeams(ctx, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, teams)
+}
+
+func (h *Handlers) CreateCareTeam(w http.ResponseWriter, r *http.Request) {
+	var req careTeamCreateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.OrgID != nil {
+		trimmed := strings.TrimSpace(*req.OrgID)
+		if trimmed == "" {
+			req.OrgID = nil
+		} else {
+			req.OrgID = &trimmed
+		}
+	}
+	input := models.CareTeamInput{OrgID: req.OrgID, Name: req.Name}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	team, err := h.repo.CreateCareTeam(ctx, input)
+	if err != nil {
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_CREATE", "care_team", &team.ID, map[string]any{"name": team.Name})
+	writeJSON(w, 201, team)
+}
+
+func (h *Handlers) UpdateCareTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req careTeamUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	fields := make(map[string]string)
+	var input models.CareTeamUpdateInput
+	if req.OrgID.Set {
+		if req.OrgID.Value == nil {
+			empty := ""
+			input.OrgID = &empty
+		} else {
+			trimmed := strings.TrimSpace(*req.OrgID.Value)
+			if trimmed == "" {
+				empty := ""
+				input.OrgID = &empty
+			} else if err := h.validate.Var(trimmed, "uuid4"); err != nil {
+				fields["OrgID"] = "uuid4"
+			} else {
+				input.OrgID = &trimmed
+			}
+		}
+	}
+	if req.Name.Set {
+		if req.Name.Value == nil {
+			fields["Name"] = "required"
+		} else {
+			trimmed := strings.TrimSpace(*req.Name.Value)
+			if trimmed == "" {
+				fields["Name"] = "required"
+			} else {
+				input.Name = &trimmed
+			}
+		}
+	}
+	if len(fields) > 0 {
+		writeProblem(w, 422, "validation_error", "invalid fields", fields)
+		return
+	}
+	if input.OrgID == nil && input.Name == nil {
+		writeProblem(w, 400, "bad_request", "no fields to update", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	team, err := h.repo.UpdateCareTeam(ctx, id, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "care team not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_UPDATE", "care_team", &team.ID, map[string]any{"name": team.Name})
+	writeJSON(w, 200, team)
+}
+
+func (h *Handlers) DeleteCareTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCareTeam(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "care team not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_DELETE", "care_team", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListCareTeamMembers(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if careTeamID == "" {
+		writeProblem(w, 400, "bad_request", "care team id required", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	members, err := h.repo.ListCareTeamMembers(ctx, careTeamID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, members)
+}
+
+func (h *Handlers) AddCareTeamMember(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if careTeamID == "" {
+		writeProblem(w, 400, "bad_request", "care team id required", nil)
+		return
+	}
+	var req careTeamMemberReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	req.RoleInTeam = strings.TrimSpace(req.RoleInTeam)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	member, err := h.repo.AddCareTeamMember(ctx, careTeamID, models.CareTeamMemberInput{UserID: req.UserID, RoleInTeam: req.RoleInTeam})
+	if err != nil {
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_ADD", "care_team", &careTeamID, map[string]any{"user_id": member.UserID})
+	writeJSON(w, 201, member)
+}
+
+func (h *Handlers) UpdateCareTeamMember(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	userID := strings.TrimSpace(chi.URLParam(r, "userID"))
+	if careTeamID == "" || userID == "" {
+		writeProblem(w, 400, "bad_request", "missing identifiers", nil)
+		return
+	}
+	var req careTeamMemberUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if !req.RoleInTeam.Set {
+		writeProblem(w, 400, "bad_request", "no fields to update", nil)
+		return
+	}
+	var fields map[string]string
+	var rolePtr *string
+	if req.RoleInTeam.Value == nil {
+		fields = map[string]string{"RoleInTeam": "required"}
+	} else {
+		trimmed := strings.TrimSpace(*req.RoleInTeam.Value)
+		if trimmed == "" {
+			fields = map[string]string{"RoleInTeam": "required"}
+		} else {
+			rolePtr = &trimmed
+		}
+	}
+	if len(fields) > 0 {
+		writeProblem(w, 422, "validation_error", "invalid fields", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	member, err := h.repo.UpdateCareTeamMember(ctx, careTeamID, userID, models.CareTeamMemberUpdateInput{RoleInTeam: rolePtr})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "member not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_UPDATE", "care_team", &careTeamID, map[string]any{"user_id": member.UserID})
+	writeJSON(w, 200, member)
+}
+
+func (h *Handlers) RemoveCareTeamMember(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	userID := strings.TrimSpace(chi.URLParam(r, "userID"))
+	if careTeamID == "" || userID == "" {
+		writeProblem(w, 400, "bad_request", "missing identifiers", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemoveCareTeamMember(ctx, careTeamID, userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "member not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_REMOVE", "care_team", &careTeamID, map[string]any{"user_id": userID})
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListCareTeamPatients(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if careTeamID == "" {
+		writeProblem(w, 400, "bad_request", "care team id required", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	patients, err := h.repo.ListCareTeamPatients(ctx, careTeamID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, patients)
+}
+
+func (h *Handlers) AddCareTeamPatient(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if careTeamID == "" {
+		writeProblem(w, 400, "bad_request", "care team id required", nil)
+		return
+	}
+	var req careTeamPatientReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	link, err := h.repo.AddCareTeamPatient(ctx, careTeamID, req.PatientID)
+	if err != nil {
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_PATIENT_ADD", "care_team", &careTeamID, map[string]any{"patient_id": link.PatientID})
+	writeJSON(w, 201, link)
+}
+
+func (h *Handlers) RemoveCareTeamPatient(w http.ResponseWriter, r *http.Request) {
+	careTeamID := strings.TrimSpace(chi.URLParam(r, "id"))
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientID"))
+	if careTeamID == "" || patientID == "" {
+		writeProblem(w, 400, "bad_request", "missing identifiers", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemoveCareTeamPatient(ctx, careTeamID, patientID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "link not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_PATIENT_REMOVE", "care_team", &careTeamID, map[string]any{"patient_id": patientID})
+	w.WriteHeader(204)
+}
+
+// Caregivers
+
+func (h *Handlers) ListCaregiverRelationshipTypes(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	types, err := h.repo.ListCaregiverRelationshipTypes(ctx)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, types)
+}
+
+func (h *Handlers) CreateCaregiverRelationshipType(w http.ResponseWriter, r *http.Request) {
+	var req caregiverRelTypeReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	req.Code = strings.TrimSpace(req.Code)
+	req.Label = strings.TrimSpace(req.Label)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	rel, err := h.repo.CreateCaregiverRelationshipType(ctx, models.CaregiverRelationshipTypeInput{Code: req.Code, Label: req.Label})
+	if err != nil {
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_RELTYPE_CREATE", "caregiver_relationship_type", &rel.ID, map[string]any{"code": rel.Code})
+	writeJSON(w, 201, rel)
+}
+
+func (h *Handlers) UpdateCaregiverRelationshipType(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req caregiverRelTypeUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	fields := make(map[string]string)
+	var input models.CaregiverRelationshipTypeUpdateInput
+	if req.Code.Set {
+		if req.Code.Value == nil {
+			fields["Code"] = "required"
+		} else {
+			trimmed := strings.TrimSpace(*req.Code.Value)
+			if trimmed == "" {
+				fields["Code"] = "required"
+			} else {
+				input.Code = &trimmed
+			}
+		}
+	}
+	if req.Label.Set {
+		if req.Label.Value == nil {
+			fields["Label"] = "required"
+		} else {
+			trimmed := strings.TrimSpace(*req.Label.Value)
+			if trimmed == "" {
+				fields["Label"] = "required"
+			} else {
+				input.Label = &trimmed
+			}
+		}
+	}
+	if len(fields) > 0 {
+		writeProblem(w, 422, "validation_error", "invalid fields", fields)
+		return
+	}
+	if input.Code == nil && input.Label == nil {
+		writeProblem(w, 400, "bad_request", "no fields to update", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	rel, err := h.repo.UpdateCaregiverRelationshipType(ctx, id, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "relationship type not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_RELTYPE_UPDATE", "caregiver_relationship_type", &rel.ID, map[string]any{"code": rel.Code})
+	writeJSON(w, 200, rel)
+}
+
+func (h *Handlers) DeleteCaregiverRelationshipType(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCaregiverRelationshipType(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "relationship type not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_RELTYPE_DELETE", "caregiver_relationship_type", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListCaregiverAssignments(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	var patientID, caregiverID *string
+	if v := strings.TrimSpace(q.Get("patient_id")); v != "" {
+		patientID = &v
+	}
+	if v := strings.TrimSpace(q.Get("caregiver_id")); v != "" {
+		caregiverID = &v
+	}
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignments, err := h.repo.ListCaregiverAssignments(ctx, patientID, caregiverID, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, assignments)
+}
+
+func (h *Handlers) CreateCaregiverAssignment(w http.ResponseWriter, r *http.Request) {
+	var req caregiverAssignmentCreateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if req.RelationshipTypeID != nil {
+		trimmed := strings.TrimSpace(*req.RelationshipTypeID)
+		if trimmed == "" {
+			req.RelationshipTypeID = nil
+		} else {
+			req.RelationshipTypeID = &trimmed
+		}
+	}
+	if req.Note != nil {
+		req.Note = normalizeStringPtr(req.Note)
+	}
+	input := models.CaregiverAssignmentInput{
+		PatientID:          req.PatientID,
+		CaregiverID:        req.CaregiverID,
+		RelationshipTypeID: req.RelationshipTypeID,
+		IsPrimary:          req.IsPrimary,
+		StartedAt:          req.StartedAt,
+		EndedAt:            req.EndedAt,
+		Note:               req.Note,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignment, err := h.repo.CreateCaregiverAssignment(ctx, input)
+	if err != nil {
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGN_CREATE", "caregiver_assignment", nil, map[string]any{"patient_id": assignment.PatientID, "caregiver_id": assignment.CaregiverID})
+	writeJSON(w, 201, assignment)
+}
+
+func (h *Handlers) UpdateCaregiverAssignment(w http.ResponseWriter, r *http.Request) {
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientID"))
+	caregiverID := strings.TrimSpace(chi.URLParam(r, "caregiverID"))
+	if patientID == "" || caregiverID == "" {
+		writeProblem(w, 400, "bad_request", "missing identifiers", nil)
+		return
+	}
+	var req caregiverAssignmentUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	fields := make(map[string]string)
+	var input models.CaregiverAssignmentUpdateInput
+	if req.RelationshipTypeID.Set {
+		if req.RelationshipTypeID.Value == nil {
+			empty := ""
+			input.RelationshipTypeID = &empty
+		} else {
+			trimmed := strings.TrimSpace(*req.RelationshipTypeID.Value)
+			if trimmed == "" {
+				empty := ""
+				input.RelationshipTypeID = &empty
+			} else if err := h.validate.Var(trimmed, "uuid4"); err != nil {
+				fields["RelationshipTypeID"] = "uuid4"
+			} else {
+				input.RelationshipTypeID = &trimmed
+			}
+		}
+	}
+	if req.Note.Set {
+		if req.Note.Value == nil {
+			empty := ""
+			input.Note = &empty
+		} else {
+			trimmed := strings.TrimSpace(*req.Note.Value)
+			if trimmed == "" {
+				empty := ""
+				input.Note = &empty
+			} else {
+				input.Note = &trimmed
+			}
+		}
+	}
+	if req.StartedAt.Set {
+		input.StartedAt = req.StartedAt.Value
+	}
+	if req.EndedAt.Set {
+		input.EndedAt = req.EndedAt.Value
+	}
+	if req.IsPrimary != nil {
+		input.IsPrimary = req.IsPrimary
+	}
+	input.ClearEndedAt = req.ClearEndedAt
+	if len(fields) > 0 {
+		writeProblem(w, 422, "validation_error", "invalid fields", fields)
+		return
+	}
+	if input.RelationshipTypeID == nil && input.IsPrimary == nil && input.StartedAt == nil && !req.EndedAt.Set && !req.Note.Set && !req.ClearEndedAt {
+		writeProblem(w, 400, "bad_request", "no fields to update", nil)
+		return
+	}
+	if input.StartedAt != nil && input.EndedAt != nil && input.EndedAt.Before(*input.StartedAt) {
+		writeProblem(w, 422, "validation_error", "ended_at before started_at", map[string]string{"EndedAt": "after_start"})
+		return
+	}
+	if input.EndedAt != nil && req.ClearEndedAt {
+		input.ClearEndedAt = false
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignment, err := h.repo.UpdateCaregiverAssignment(ctx, patientID, caregiverID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "assignment not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGN_UPDATE", "caregiver_assignment", nil, map[string]any{"patient_id": assignment.PatientID, "caregiver_id": assignment.CaregiverID})
+	writeJSON(w, 200, assignment)
+}
+
+func (h *Handlers) DeleteCaregiverAssignment(w http.ResponseWriter, r *http.Request) {
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientID"))
+	caregiverID := strings.TrimSpace(chi.URLParam(r, "caregiverID"))
+	if patientID == "" || caregiverID == "" {
+		writeProblem(w, 400, "bad_request", "missing identifiers", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCaregiverAssignment(ctx, patientID, caregiverID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "assignment not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGN_DELETE", "caregiver_assignment", nil, map[string]any{"patient_id": patientID, "caregiver_id": caregiverID})
+	w.WriteHeader(204)
 }
 
 // Push devices

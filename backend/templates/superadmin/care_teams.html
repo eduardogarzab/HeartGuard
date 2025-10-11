@@ -1,0 +1,162 @@
+{{define "superadmin/care_teams.html"}} {{template "layout" .}} {{end}}
+{{define "superadmin/care_teams.html:content"}}
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Equipos de cuidado</h1>
+        </div>
+        <div class="hg-card">
+                <h3>Crear nuevo equipo</h3>
+                <form method="post" action="/superadmin/care-teams" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label for="care-team-name">Nombre</label>
+                                <input id="care-team-name" name="name" type="text" required placeholder="Equipo de atención" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="care-team-org">Organización</label>
+                                <select id="care-team-org" name="org_id">
+                                        <option value="">Sin organización</option>
+                                        {{range .Data.Organizations}}
+                                        <option value="{{.ID}}">{{.Name}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Crear equipo</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        {{range .Data.Teams}}
+        {{$team := .}}
+        <div class="hg-card">
+                <div class="hg-flex-between hg-card-header">
+                        <div>
+                                <h3>{{$team.Name}}</h3>
+                                <p class="hg-muted">{{if $team.OrgName}}{{$team.OrgName}}{{else}}Sin organización{{end}}</p>
+                        </div>
+                        <form method="post" action="/superadmin/care-teams/{{$team.ID}}/delete" data-hg-confirm="¿Eliminar equipo?" class="hg-inline-form">
+                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                        </form>
+                </div>
+                <details class="hg-details">
+                        <summary>Editar equipo</summary>
+                        <form method="post" action="/superadmin/care-teams/{{$team.ID}}/update" class="hg-form-grid">
+                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                <div class="hg-form-field">
+                                        <label>Nombre</label>
+                                        <input name="name" type="text" value="{{$team.Name}}" required />
+                                </div>
+                                <div class="hg-form-field">
+                                        <label>Organización</label>
+                                        <select name="org_id">
+                                                <option value="" {{if not $team.OrgID}}selected{{end}}>Sin organización</option>
+                                                {{range $.Data.Organizations}}
+                                                <option value="{{.ID}}" {{if eq .ID (stringValue $team.OrgID)}}selected{{end}}>{{.Name}}</option>
+                                                {{end}}
+                                        </select>
+                                </div>
+                                <div class="hg-form-actions">
+                                        <button type="submit">Guardar cambios</button>
+                                </div>
+                        </form>
+                </details>
+                <div class="hg-split">
+                        <div class="hg-split-column">
+                                <h4>Miembros</h4>
+                                <ul class="hg-list">
+                                        {{with index $.Data.Members $team.ID}}
+                                        {{range .}}
+                                        <li class="hg-list-item">
+                                                <div>
+                                                        <strong>{{.UserName}}</strong>
+                                                        <div class="hg-muted">{{.UserEmail}}</div>
+                                                        <div class="hg-muted">Rol en equipo: {{.RoleInTeam}}</div>
+                                                </div>
+                                                <div class="hg-list-actions">
+                                                        <details>
+                                                                <summary>Editar rol</summary>
+                                                                <form method="post" action="/superadmin/care-teams/{{$team.ID}}/members/{{.UserID}}/update" class="hg-form-inline">
+                                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                        <input name="role_in_team" type="text" value="{{.RoleInTeam}}" required />
+                                                                        <button type="submit">Actualizar</button>
+                                                                </form>
+                                                        </details>
+                                                        <form method="post" action="/superadmin/care-teams/{{$team.ID}}/members/{{.UserID}}/delete" data-hg-confirm="¿Quitar miembro?" class="hg-inline-form">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <button type="submit" class="hg-link hg-link-danger">Quitar</button>
+                                                        </form>
+                                                </div>
+                                        </li>
+                                        {{end}}
+                                        {{else}}
+                                        <li class="hg-list-item hg-muted">Sin miembros registrados.</li>
+                                        {{end}}
+                                </ul>
+                                <form method="post" action="/superadmin/care-teams/{{$team.ID}}/members" class="hg-form-grid hg-form-inline">
+                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                        <div class="hg-form-field">
+                                                <label>Usuario</label>
+                                                <select name="user_id" required>
+                                                        <option value="">Selecciona usuario</option>
+                                                        {{range $.Data.Users}}
+                                                        <option value="{{.ID}}">{{.Name}} ({{.Email}})</option>
+                                                        {{end}}
+                                                </select>
+                                        </div>
+                                        <div class="hg-form-field">
+                                                <label>Rol en el equipo</label>
+                                                <input name="role_in_team" type="text" placeholder="Coordinador, Especialista..." required />
+                                        </div>
+                                        <div class="hg-form-actions">
+                                                <button type="submit">Agregar miembro</button>
+                                        </div>
+                                </form>
+                        </div>
+                        <div class="hg-split-column">
+                                <h4>Pacientes vinculados</h4>
+                                <ul class="hg-list">
+                                        {{with index $.Data.TeamPatients $team.ID}}
+                                        {{range .}}
+                                        <li class="hg-list-item hg-flex-between">
+                                                <div>
+                                                        <strong>{{.PatientName}}</strong>
+                                                </div>
+                                                <form method="post" action="/superadmin/care-teams/{{$team.ID}}/patients/{{.PatientID}}/delete" data-hg-confirm="¿Desvincular paciente?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Quitar</button>
+                                                </form>
+                                        </li>
+                                        {{end}}
+                                        {{else}}
+                                        <li class="hg-list-item hg-muted">Sin pacientes asociados.</li>
+                                        {{end}}
+                                </ul>
+                                <form method="post" action="/superadmin/care-teams/{{$team.ID}}/patients" class="hg-form-grid hg-form-inline">
+                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                        <div class="hg-form-field">
+                                                <label>Paciente</label>
+                                                <select name="patient_id" required>
+                                                        <option value="">Selecciona paciente</option>
+                                                        {{range $.Data.Patients}}
+                                                        <option value="{{.ID}}">{{.Name}}</option>
+                                                        {{end}}
+                                                </select>
+                                        </div>
+                                        <div class="hg-form-actions">
+                                                <button type="submit">Vincular paciente</button>
+                                        </div>
+                                </form>
+                        </div>
+                </div>
+        </div>
+        {{else}}
+        <div class="hg-card">
+                <p class="hg-empty">Aún no hay equipos registrados.</p>
+        </div>
+        {{end}}
+</section>
+{{end}}

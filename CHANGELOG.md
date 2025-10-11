@@ -4,6 +4,10 @@ All notable changes to this project are documented here.
 
 ## [Unreleased]
 
+### Added
+
+-   Gestión de equipos de cuidado, miembros y cuidadores desde el panel superadmin (API y vistas).
+
 ### Changed
 
 -   Backend HTTP server ahora acepta únicamente conexiones desde localhost, bloqueando cualquier acceso remoto.
