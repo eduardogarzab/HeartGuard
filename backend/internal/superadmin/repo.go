@@ -53,6 +53,8 @@ func (r *Repo) Ping(ctx context.Context) error {
 
 var nowFn = time.Now
 
+var errInvalidPlatform = errors.New("invalid platform")
+
 func stringParam(ptr *string, trim bool) any {
 	if ptr == nil {
 		return nil
@@ -560,6 +562,210 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 		return err
 	}
 	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Push devices
+// ------------------------------
+
+func (r *Repo) ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error) {
+	where := "WHERE 1=1"
+	args := make([]any, 0, 4)
+	idx := 1
+
+	if userID != nil {
+		if v := strings.TrimSpace(*userID); v != "" {
+			where += fmt.Sprintf(" AND pd.user_id = $%d", idx)
+			args = append(args, v)
+			idx++
+		}
+	}
+	if platformCode != nil {
+		if v := strings.TrimSpace(*platformCode); v != "" {
+			where += fmt.Sprintf(" AND p.code = $%d", idx)
+			args = append(args, v)
+			idx++
+		}
+	}
+
+	query := fmt.Sprintf(`
+SELECT
+  pd.id::text,
+  pd.user_id::text,
+  u.name,
+  u.email,
+  p.code,
+  p.label,
+  pd.push_token,
+  pd.last_seen_at,
+  pd.active
+FROM push_devices pd
+JOIN users u ON u.id = pd.user_id
+JOIN platforms p ON p.id = pd.platform_id
+%s
+ORDER BY pd.last_seen_at DESC
+LIMIT $%d OFFSET $%d
+`, where, idx, idx+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.PushDevice, 0, limit)
+	for rows.Next() {
+		var item models.PushDevice
+		if err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.UserName,
+			&item.UserEmail,
+			&item.PlatformCode,
+			&item.PlatformLabel,
+			&item.PushToken,
+			&item.LastSeenAt,
+			&item.Active,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error) {
+	userID := strings.TrimSpace(input.UserID)
+	platformCode := strings.TrimSpace(input.PlatformCode)
+	token := strings.TrimSpace(input.PushToken)
+
+	var item models.PushDevice
+	err := r.pool.QueryRow(ctx, `
+WITH platform AS (
+  SELECT id, code, label
+  FROM platforms
+  WHERE code = $2
+), inserted AS (
+  INSERT INTO push_devices (user_id, platform_id, push_token, last_seen_at, active)
+  SELECT $1::uuid, platform.id, $3, COALESCE($4, NOW()), COALESCE($5::bool, TRUE)
+  FROM platform
+  RETURNING id, user_id, platform_id, push_token, last_seen_at, active
+)
+SELECT
+  ins.id::text,
+  ins.user_id::text,
+  u.name,
+  u.email,
+  p.code,
+  p.label,
+  ins.push_token,
+  ins.last_seen_at,
+  ins.active
+FROM inserted ins
+JOIN users u ON u.id = ins.user_id
+JOIN platforms p ON p.id = ins.platform_id
+`, userID, platformCode, token, timeParam(input.LastSeenAt), boolParam(input.Active)).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.UserName,
+		&item.UserEmail,
+		&item.PlatformCode,
+		&item.PlatformLabel,
+		&item.PushToken,
+		&item.LastSeenAt,
+		&item.Active,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			var exists bool
+			if checkErr := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM platforms WHERE code = $1)`, platformCode).Scan(&exists); checkErr != nil {
+				return nil, checkErr
+			}
+			if !exists {
+				return nil, errInvalidPlatform
+			}
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repo) UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error) {
+	userID := strings.TrimSpace(input.UserID)
+	platformCode := strings.TrimSpace(input.PlatformCode)
+	token := strings.TrimSpace(input.PushToken)
+
+	var item models.PushDevice
+	err := r.pool.QueryRow(ctx, `
+WITH platform AS (
+  SELECT id
+  FROM platforms
+  WHERE code = $2
+), updated AS (
+  UPDATE push_devices pd
+  SET
+    user_id = $1::uuid,
+    platform_id = platform.id,
+    push_token = $3,
+    last_seen_at = COALESCE($4, pd.last_seen_at),
+    active = COALESCE($5::bool, pd.active)
+  FROM platform
+  WHERE pd.id = $6::uuid
+  RETURNING pd.id, pd.user_id, pd.platform_id, pd.push_token, pd.last_seen_at, pd.active
+)
+SELECT
+  upd.id::text,
+  upd.user_id::text,
+  u.name,
+  u.email,
+  p.code,
+  p.label,
+  upd.push_token,
+  upd.last_seen_at,
+  upd.active
+FROM updated upd
+JOIN users u ON u.id = upd.user_id
+JOIN platforms p ON p.id = upd.platform_id
+`, userID, platformCode, token, timeParam(input.LastSeenAt), boolParam(input.Active), id).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.UserName,
+		&item.UserEmail,
+		&item.PlatformCode,
+		&item.PlatformLabel,
+		&item.PushToken,
+		&item.LastSeenAt,
+		&item.Active,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			var exists bool
+			if checkErr := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM platforms WHERE code = $1)`, platformCode).Scan(&exists); checkErr != nil {
+				return nil, checkErr
+			}
+			if !exists {
+				return nil, errInvalidPlatform
+			}
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repo) DeletePushDevice(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM push_devices WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil

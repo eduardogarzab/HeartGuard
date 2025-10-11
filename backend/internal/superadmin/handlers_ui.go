@@ -68,6 +68,11 @@ type Repository interface {
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
 
+	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
+	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
+	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
+	DeletePushDevice(ctx context.Context, id string) error
+
 	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
 	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
@@ -195,6 +200,9 @@ var operationLabels = map[string]string{
 	"APIKEY_CREATE":             "Creación de API Key",
 	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
 	"APIKEY_REVOKE":             "Revocación de API Key",
+	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
 	"CATALOG_CREATE":            "Alta en catálogo",
 	"CATALOG_UPDATE":            "Actualización de catálogo",
 	"CATALOG_DELETE":            "Eliminación de catálogo",
@@ -956,7 +964,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		// ============ PORTADA ============
 		pdf.AddPage()
 		pdf.SetY(60)
-		
+
 		// Logo simulado / Marca
 		pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
 		pdf.Rect(125, 50, 15, 15, "F")
@@ -964,31 +972,31 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetTextColor(255, 255, 255)
 		pdf.SetXY(125, 57)
 		pdf.Cell(15, 5, "HG")
-		
+
 		pdf.SetY(75)
 		pdf.SetFont("Helvetica", "B", 24)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.CellFormat(0, 15, translator("REPORTE EJECUTIVO"), "", 0, "C", false, 0, "")
 		pdf.Ln(15)
-		
+
 		pdf.SetFont("Helvetica", "", 14)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(0, 8, translator("Panel de Administración SuperAdmin"), "", 0, "C", false, 0, "")
 		pdf.Ln(40)
-		
+
 		// Cuadro de información
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.SetLineWidth(0.3)
 		boxY := pdf.GetY()
 		pdf.Rect(80, boxY, 137, 35, "FD")
-		
+
 		pdf.SetY(boxY + 8)
 		pdf.SetFont("Helvetica", "B", 11)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.CellFormat(0, 6, translator("INFORMACIÓN DEL REPORTE"), "", 0, "C", false, 0, "")
 		pdf.Ln(8)
-		
+
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(0, 0, 0)
 		pdf.CellFormat(0, 5, translator(fmt.Sprintf("Fecha de generación: %s", formatLocal(generatedAt))), "", 0, "C", false, 0, "")
@@ -998,19 +1006,19 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFont("Helvetica", "I", 9)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(0, 5, translator("Documento confidencial - Uso interno"), "", 0, "C", false, 0, "")
-		
+
 		pdf.SetTextColor(0, 0, 0)
 
 		// ============ PÁGINA DE CONTENIDO ============
 		pdf.AddPage()
-		
+
 		// Resumen ejecutivo
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 10, translator("RESUMEN EJECUTIVO"), "", 0, "L", true, 0, "")
 		pdf.Ln(12)
-		
+
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(0, 0, 0)
 		summaryText := "Este reporte presenta un análisis detallado de las métricas clave del sistema HeartGuard. "
@@ -1023,18 +1031,18 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			if len(headers) != len(widths) {
 				return
 			}
-			
+
 			// Calcular espacio necesario: título (24mm) + encabezado (7mm) + al menos 3 filas (18mm) = ~50mm
 			minSpaceNeeded := 50.0
 			_, _, _, bottomMargin := pdf.GetMargins()
 			pageHeight := 210.0 // A4 height
 			availableSpace := pageHeight - pdf.GetY() - bottomMargin
-			
+
 			// Si no hay suficiente espacio, crear nueva página
 			if availableSpace < minSpaceNeeded {
 				pdf.AddPage()
 			}
-			
+
 			// Separador de sección
 			pdf.Ln(4)
 			pdf.SetDrawColor(accentColor.R, accentColor.G, accentColor.B)
@@ -1042,13 +1050,13 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			currentY := pdf.GetY()
 			pdf.Line(15, currentY, 40, currentY)
 			pdf.Ln(2)
-			
+
 			// Título de la tabla con estilo destacado
 			pdf.SetFont("Helvetica", "B", 13)
 			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 			pdf.Cell(0, 8, translator(title))
 			pdf.Ln(10)
-			
+
 			if len(rows) == 0 {
 				pdf.SetFont("Helvetica", "I", 10)
 				pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
@@ -1058,7 +1066,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 				pdf.Ln(12)
 				return
 			}
-			
+
 			// Encabezados de tabla mejorados
 			pdf.SetFont("Helvetica", "B", 9)
 			pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
@@ -1078,16 +1086,16 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			fill := false
 			leftMargin, _, _, _ := pdf.GetMargins()
 			lineHeight := 6.0
-			
+
 			for rowIdx, row := range rows {
 				// Verificar si hay espacio para la fila actual (considerando altura máxima posible)
 				maxPossibleRowHeight := 30.0 // Altura máxima estimada para una fila con texto largo
 				availableSpace := pageHeight - pdf.GetY() - bottomMargin
-				
+
 				// Si no hay espacio suficiente para la fila, crear nueva página y redibujar encabezados
 				if availableSpace < maxPossibleRowHeight {
 					pdf.AddPage()
-					
+
 					// Redibujar encabezados de tabla en la nueva página
 					pdf.SetFont("Helvetica", "B", 9)
 					pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
@@ -1104,18 +1112,18 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 					pdf.Ln(-1)
 					pdf.SetFont("Helvetica", "", 9)
 					pdf.SetTextColor(26, 32, 44)
-					
+
 					// Resetear el fill pattern para mantener consistencia
 					fill = (rowIdx % 2) == 1
 				}
-				
+
 				fill = !fill
 				if fill {
 					pdf.SetFillColor(250, 251, 253)
 				} else {
 					pdf.SetFillColor(255, 255, 255)
 				}
-				
+
 				y := pdf.GetY()
 				x := leftMargin
 				rowHeight := lineHeight
@@ -1157,14 +1165,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		if data.Overview != nil {
 			metricsRows = append(metricsRows, []string{"Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
 		}
-		
+
 		// Sección: Indicadores Clave
 		pdf.SetFont("Helvetica", "B", 14)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("1. INDICADORES CLAVE DE RENDIMIENTO"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		renderTable("Resumen general", []string{"Métrica", "Valor", "Detalle"}, []float64{80, 28, 140}, []string{"L", "R", "L"}, metricsRows)
 
 		statusRows := make([][]string, 0, len(data.StatusChart))
@@ -1183,7 +1191,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("2. GESTIÓN DE INVITACIONES"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		invRows := make([][]string, 0, len(data.InvitationChart))
 		for _, item := range data.InvitationChart {
 			invRows = append(invRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
@@ -1200,7 +1208,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("3. ACTIVIDAD DEL SISTEMA"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		opRows := make([][]string, 0, len(data.RecentOperations))
 		for _, op := range data.RecentOperations {
 			opRows = append(opRows, []string{op.Label, op.Code, strconv.Itoa(op.Count)})
@@ -1223,7 +1231,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("4. ANÁLISIS TEMPORAL"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		timelineRows := make([][]string, 0, len(data.ActivitySeries))
 		for _, point := range data.ActivitySeries {
 			timelineRows = append(timelineRows, []string{formatLocal(point.Bucket), strconv.Itoa(point.Count)})
@@ -1233,14 +1241,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		if data.ContentTotals != nil {
 			// Nueva página para contenido
 			pdf.AddPage()
-			
+
 			// Sección: Gestión de Contenido
 			pdf.SetFont("Helvetica", "B", 14)
 			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 			pdf.CellFormat(0, 9, translator("5. GESTIÓN DE CONTENIDO"), "", 0, "L", true, 0, "")
 			pdf.Ln(8)
-			
+
 			totals := data.ContentTotals
 			contentRows := [][]string{
 				{"Total piezas", strconv.Itoa(totals.Total)},
@@ -1282,7 +1290,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 			pdf.CellFormat(0, 9, translator("6. TENDENCIAS DE PRODUCCIÓN"), "", 0, "L", true, 0, "")
 			pdf.Ln(8)
-			
+
 			monthlyRows := make([][]string, 0, len(data.ContentMonthlySeries))
 			for idx, point := range data.ContentMonthlySeries {
 				if idx >= 24 {
@@ -1312,7 +1320,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 10, translator("CONCLUSIONES Y OBSERVACIONES"), "", 0, "L", true, 0, "")
 		pdf.Ln(12)
-		
+
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(0, 0, 0)
 		conclusionText := "Este reporte ha presentado un análisis exhaustivo de las métricas operativas del sistema HeartGuard. "
@@ -1322,7 +1330,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		conclusionText += "detectar anomalías y planificar estrategias de crecimiento."
 		pdf.MultiCell(0, 6, translator(conclusionText), "", "J", false)
 		pdf.Ln(15)
-		
+
 		// Cuadro de firma o aprobación
 		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.SetLineWidth(0.3)
@@ -1331,7 +1339,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFont("Helvetica", "I", 9)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(100, 5, translator("Sistema HeartGuard - Reporte Automatizado"), "", 0, "L", false, 0, "")
-		
+
 		pdf.SetMargins(16, 18, 16)
 		pdf.SetAutoPageBreak(true, 20)
 		pdf.SetFont("Helvetica", "B", 15)
@@ -2299,6 +2307,14 @@ type devicesViewData struct {
 	Organizations []models.Organization
 	DeviceTypes   []models.DeviceType
 	Patients      []models.Patient
+}
+
+type pushDevicesViewData struct {
+	Items          []models.PushDevice
+	Users          []models.User
+	Platforms      []models.CatalogItem
+	FilterUserID   string
+	FilterPlatform string
 }
 
 type signalStreamsViewData struct {
@@ -3274,6 +3290,158 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "DEVICE_DELETE", "device", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
 	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+}
+
+// Push devices
+
+func (h *Handlers) PushDevicesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	query := r.URL.Query()
+	filterUser := strings.TrimSpace(query.Get("user_id"))
+	var userFilter *string
+	if filterUser != "" {
+		userFilter = &filterUser
+	}
+	filterPlatform := strings.TrimSpace(query.Get("platform"))
+	var platformFilter *string
+	if filterPlatform != "" {
+		platformFilter = &filterPlatform
+	}
+
+	devices, err := h.repo.ListPushDevices(ctx, userFilter, platformFilter, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los dispositivos push", http.StatusInternalServerError)
+		return
+	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+	platforms, err := h.repo.ListCatalog(ctx, "platforms", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las plataformas", http.StatusInternalServerError)
+		return
+	}
+
+	data := pushDevicesViewData{Items: devices, Users: users, Platforms: platforms, FilterUserID: filterUser, FilterPlatform: filterPlatform}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Dispositivos push"}}
+	h.render(w, r, "superadmin/push_devices.html", "Dispositivos push", data, crumbs)
+}
+
+func (h *Handlers) PushDevicesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	platformCode := strings.TrimSpace(r.FormValue("platform_code"))
+	if platformCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma requerida"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("push_token"))
+	if token == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Token requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	activeVal := true
+	if r.FormValue("active") == "" {
+		activeVal = false
+	}
+	input := models.PushDeviceInput{UserID: userID, PlatformCode: platformCode, PushToken: token, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.CreatePushDevice(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidPlatform):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma inválida"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_CREATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo push registrado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) PushDevicesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	platformCode := strings.TrimSpace(r.FormValue("platform_code"))
+	if platformCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma requerida"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("push_token"))
+	if token == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Token requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	activeVal := false
+	if r.FormValue("active") != "" {
+		activeVal = true
+	}
+	input := models.PushDeviceInput{UserID: userID, PlatformCode: platformCode, PushToken: token, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.UpdatePushDevice(ctx, id, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidPlatform):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma inválida"})
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_UPDATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo actualizado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) PushDevicesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePushDevice(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_DELETE", "push_device", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
 }
 
 // Signal streams
