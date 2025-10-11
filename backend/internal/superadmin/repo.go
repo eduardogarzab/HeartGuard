@@ -1529,6 +1529,175 @@ func (r *Repo) DeleteInference(ctx context.Context, id string) error {
 	return nil
 }
 
+type groundTruthScanner interface {
+	Scan(dest ...any) error
+}
+
+func scanGroundTruthLabel(scan groundTruthScanner) (models.GroundTruthLabel, error) {
+	var (
+		label         models.GroundTruthLabel
+		eventLabel    sql.NullString
+		offset        sql.NullTime
+		annotatedID   sql.NullString
+		annotatedName sql.NullString
+		source        sql.NullString
+		note          sql.NullString
+	)
+	if err := scan.Scan(&label.ID, &label.PatientID, &label.PatientName, &label.EventTypeID, &label.EventTypeCode, &eventLabel, &label.Onset, &offset, &annotatedID, &annotatedName, &source, &note); err != nil {
+		return models.GroundTruthLabel{}, err
+	}
+	if eventLabel.Valid && eventLabel.String != "" {
+		label.EventTypeLabel = eventLabel.String
+	} else {
+		label.EventTypeLabel = label.EventTypeCode
+	}
+	if offset.Valid {
+		ts := offset.Time
+		label.OffsetAt = &ts
+	}
+	if annotatedID.Valid {
+		v := annotatedID.String
+		label.AnnotatedByUserID = &v
+	}
+	if annotatedName.Valid {
+		v := annotatedName.String
+		label.AnnotatedByName = &v
+	}
+	if source.Valid {
+		v := source.String
+		label.Source = &v
+	}
+	if note.Valid {
+		v := note.String
+		label.Note = &v
+	}
+	return label, nil
+}
+
+// ------------------------------
+// Ground truth labels
+// ------------------------------
+
+func (r *Repo) ListGroundTruthByPatient(ctx context.Context, patientID string, limit, offset int) ([]models.GroundTruthLabel, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT g.id::text,
+       g.patient_id::text,
+       p.person_name,
+       g.event_type_id::text,
+       et.code::text,
+       et.description,
+       g.onset,
+       g.offset_at,
+       g.annotated_by_user_id::text,
+       u.name,
+       g.source,
+       g.note
+FROM heartguard.ground_truth_labels g
+JOIN heartguard.patients p ON p.id = g.patient_id
+JOIN heartguard.event_types et ON et.id = g.event_type_id
+LEFT JOIN heartguard.users u ON u.id = g.annotated_by_user_id
+WHERE g.patient_id = $1
+ORDER BY g.onset DESC
+LIMIT $2 OFFSET $3
+`, patientID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.GroundTruthLabel, 0, limit)
+	for rows.Next() {
+		label, err := scanGroundTruthLabel(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, label)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreateGroundTruthLabel(ctx context.Context, patientID string, input models.GroundTruthLabelCreateInput) (*models.GroundTruthLabel, error) {
+	row := r.pool.QueryRow(ctx, `
+WITH inserted AS (
+    INSERT INTO heartguard.ground_truth_labels (patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    RETURNING id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note
+)
+SELECT i.id::text,
+       i.patient_id::text,
+       p.person_name,
+       i.event_type_id::text,
+       et.code::text,
+       et.description,
+       i.onset,
+       i.offset_at,
+       i.annotated_by_user_id::text,
+       u.name,
+       i.source,
+       i.note
+FROM inserted i
+JOIN heartguard.patients p ON p.id = i.patient_id
+JOIN heartguard.event_types et ON et.id = i.event_type_id
+LEFT JOIN heartguard.users u ON u.id = i.annotated_by_user_id
+`, patientID, input.EventTypeID, input.Onset, timeParam(input.OffsetAt), stringParam(input.AnnotatedByUserID, true), stringParam(input.Source, true), stringParam(input.Note, true))
+	label, err := scanGroundTruthLabel(row)
+	if err != nil {
+		return nil, err
+	}
+	return &label, nil
+}
+
+func (r *Repo) UpdateGroundTruthLabel(ctx context.Context, id string, input models.GroundTruthLabelUpdateInput) (*models.GroundTruthLabel, error) {
+	row := r.pool.QueryRow(ctx, `
+WITH updated AS (
+    UPDATE heartguard.ground_truth_labels SET
+        event_type_id = COALESCE($2, event_type_id),
+        onset = COALESCE($3, onset),
+        offset_at = CASE WHEN $4 THEN $5 ELSE offset_at END,
+        annotated_by_user_id = CASE WHEN $6 THEN $7 ELSE annotated_by_user_id END,
+        source = CASE WHEN $8 THEN $9 ELSE source END,
+        note = CASE WHEN $10 THEN $11 ELSE note END
+    WHERE id = $1
+    RETURNING id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note
+)
+SELECT u.id::text,
+       u.patient_id::text,
+       p.person_name,
+       u.event_type_id::text,
+       et.code::text,
+       et.description,
+       u.onset,
+       u.offset_at,
+       u.annotated_by_user_id::text,
+       usr.name,
+       u.source,
+       u.note
+FROM updated u
+JOIN heartguard.patients p ON p.id = u.patient_id
+JOIN heartguard.event_types et ON et.id = u.event_type_id
+LEFT JOIN heartguard.users usr ON usr.id = u.annotated_by_user_id
+`, id, input.EventTypeID, input.Onset, input.OffsetAtSet, timeParam(input.OffsetAt), input.AnnotatedByUserIDSet, stringParam(input.AnnotatedByUserID, true), input.SourceSet, stringParam(input.Source, true), input.NoteSet, stringParam(input.Note, true))
+	label, err := scanGroundTruthLabel(row)
+	if err != nil {
+		return nil, err
+	}
+	return &label, nil
+}
+
+func (r *Repo) DeleteGroundTruthLabel(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM heartguard.ground_truth_labels WHERE id=$1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 // ------------------------------
 // Alerts
 // ------------------------------

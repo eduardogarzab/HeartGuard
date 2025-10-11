@@ -1,0 +1,153 @@
+{{define "superadmin/ground_truth.html"}} {{template "layout" .}} {{end}}
+{{define "superadmin/ground_truth.html:content"}}
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Seleccionar paciente</h3>
+                <form method="get" action="/superadmin/ground-truth" class="hg-form-grid">
+                        <div class="hg-form-field">
+                                <label for="gt-patient">Paciente</label>
+                                <select id="gt-patient" name="patient_id">
+                                        <option value="">-- Selecciona --</option>
+                                        {{range .Data.Patients}}
+                                        <option value="{{.ID}}" {{if eq $.Data.SelectedPatientID .ID}}selected{{end}}>{{.Name}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Ver etiquetas</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+{{if .Data.SelectedPatient}}
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Nueva etiqueta</h3>
+                <form method="post" action="/superadmin/ground-truth" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <input type="hidden" name="patient_id" value="{{.Data.SelectedPatient.ID}}" />
+                        <div class="hg-form-field">
+                                <label for="gt-event">Evento</label>
+                                <select id="gt-event" name="event_type_id" required>
+                                        <option value="">-- Selecciona --</option>
+                                        {{range .Data.EventTypes}}
+                                        <option value="{{.ID}}">{{if .Description}}{{.Description}}{{else}}{{.Code}}{{end}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="gt-onset">Inicio</label>
+                                <input id="gt-onset" name="onset" type="datetime-local" required />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="gt-offset">Fin</label>
+                                <input id="gt-offset" name="offset_at" type="datetime-local" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="gt-annotated">Usuario anotador (UUID)</label>
+                                <input id="gt-annotated" name="annotated_by_user_id" type="text" placeholder="Opcional" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="gt-source">Fuente</label>
+                                <input id="gt-source" name="source" type="text" placeholder="p. ej. Manual" />
+                        </div>
+                        <div class="hg-form-field hg-form-field-span">
+                                <label for="gt-note">Nota</label>
+                                <textarea id="gt-note" name="note" rows="3" placeholder="Observaciones"></textarea>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Registrar etiqueta</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Etiquetas registradas</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Inicio</th>
+                                        <th>Fin</th>
+                                        <th>Evento</th>
+                                        <th>Fuente</th>
+                                        <th>Anotador</th>
+                                        <th>Nota</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Labels}}
+                                {{$label := .}}
+                                <tr>
+                                        <td>{{formatTimeLocal $label.Onset}}</td>
+                                        <td>{{formatTimeLocalPtr $label.OffsetAt}}</td>
+                                        <td>{{$label.EventTypeLabel}}</td>
+                                        <td>{{if $label.Source}}{{*$label.Source}}{{else}}—{{end}}</td>
+                                        <td>{{if $label.AnnotatedByName}}{{$label.AnnotatedByName}}{{else if $label.AnnotatedByUserID}}{{stringValue $label.AnnotatedByUserID}}{{else}}—{{end}}</td>
+                                        <td>{{if $label.Note}}{{*$label.Note}}{{else}}—{{end}}</td>
+                                        <td class="hg-flex">
+                                                <details>
+                                                        <summary>Editar</summary>
+                                                        <form method="post" action="/superadmin/ground-truth/{{$label.ID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <input type="hidden" name="patient_id" value="{{$.Data.SelectedPatient.ID}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Evento</label>
+                                                                        <select name="event_type_id" required>
+                                                                                {{range $.Data.EventTypes}}
+                                                                                <option value="{{.ID}}" {{if eq .ID $label.EventTypeID}}selected{{end}}>{{if .Description}}{{.Description}}{{else}}{{.Code}}{{end}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Inicio</label>
+                                                                        <input name="onset" type="datetime-local" value="{{formatTimeLocal $label.Onset}}" required />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Fin</label>
+                                                                        <input name="offset_at" type="datetime-local" value="{{formatTimeLocalPtr $label.OffsetAt}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Anotador (UUID)</label>
+                                                                        <input name="annotated_by_user_id" type="text" value="{{stringValue $label.AnnotatedByUserID}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Fuente</label>
+                                                                        <input name="source" type="text" value="{{stringValue $label.Source}}" />
+                                                                </div>
+                                                                <div class="hg-form-field hg-form-field-span">
+                                                                        <label>Nota</label>
+                                                                        <textarea name="note" rows="3">{{stringValue $label.Note}}</textarea>
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/ground-truth/{{$label.ID}}/delete" data-hg-confirm="¿Eliminar etiqueta?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <input type="hidden" name="patient_id" value="{{$.Data.SelectedPatient.ID}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="7" class="hg-empty-cell">Sin etiquetas registradas.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+{{else if .Data.SelectedPatientID}}
+<section class="hg-section">
+        <div class="hg-card">
+                <p>No se encontró información para el paciente seleccionado.</p>
+        </div>
+</section>
+{{end}}
+{{end}}

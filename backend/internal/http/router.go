@@ -74,6 +74,13 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
 		})
 
+		s.Route("/ground-truth", func(gr chi.Router) {
+			gr.Get("/", uiHandlers.GroundTruthIndex)
+			gr.Post("/", uiHandlers.GroundTruthCreate)
+			gr.Post("/{id}/update", uiHandlers.GroundTruthUpdate)
+			gr.Post("/{id}/delete", uiHandlers.GroundTruthDelete)
+		})
+
 		s.Route("/devices", func(dr chi.Router) {
 			dr.Get("/", uiHandlers.DevicesIndex)
 			dr.Post("/", uiHandlers.DevicesCreate)

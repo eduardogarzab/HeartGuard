@@ -301,6 +301,43 @@ type InferenceInput struct {
 	FeatureSnapshot *string   `json:"feature_snapshot,omitempty"`
 }
 
+type GroundTruthLabel struct {
+	ID                string     `json:"id"`
+	PatientID         string     `json:"patient_id"`
+	PatientName       string     `json:"patient_name"`
+	EventTypeID       string     `json:"event_type_id"`
+	EventTypeCode     string     `json:"event_type_code"`
+	EventTypeLabel    string     `json:"event_type_label"`
+	Onset             time.Time  `json:"onset"`
+	OffsetAt          *time.Time `json:"offset_at,omitempty"`
+	AnnotatedByUserID *string    `json:"annotated_by_user_id,omitempty"`
+	AnnotatedByName   *string    `json:"annotated_by_name,omitempty"`
+	Source            *string    `json:"source,omitempty"`
+	Note              *string    `json:"note,omitempty"`
+}
+
+type GroundTruthLabelCreateInput struct {
+	EventTypeID       string     `json:"event_type_id"`
+	Onset             time.Time  `json:"onset"`
+	OffsetAt          *time.Time `json:"offset_at,omitempty"`
+	AnnotatedByUserID *string    `json:"annotated_by_user_id,omitempty"`
+	Source            *string    `json:"source,omitempty"`
+	Note              *string    `json:"note,omitempty"`
+}
+
+type GroundTruthLabelUpdateInput struct {
+	EventTypeID          *string    `json:"event_type_id,omitempty"`
+	Onset                *time.Time `json:"onset,omitempty"`
+	OffsetAt             *time.Time `json:"offset_at,omitempty"`
+	OffsetAtSet          bool       `json:"-"`
+	AnnotatedByUserID    *string    `json:"annotated_by_user_id,omitempty"`
+	AnnotatedByUserIDSet bool       `json:"-"`
+	Source               *string    `json:"source,omitempty"`
+	SourceSet            bool       `json:"-"`
+	Note                 *string    `json:"note,omitempty"`
+	NoteSet              bool       `json:"-"`
+}
+
 type Alert struct {
 	ID             string    `json:"id"`
 	OrgID          *string   `json:"org_id,omitempty"`
