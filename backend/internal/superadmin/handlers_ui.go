@@ -111,6 +111,11 @@ type Repository interface {
 	UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error)
 	DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error
 
+	ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error)
+	CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error)
+	UpdateBatchExportStatus(ctx context.Context, id string, statusCode string, completedAt *time.Time, details map[string]any) (*models.BatchExport, error)
+	DeleteBatchExport(ctx context.Context, id string) error
+
 	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
 	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
 	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
@@ -259,85 +264,88 @@ var allowedCatalogs = map[string]catalogMeta{
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":                "Alta de organización",
-	"ORG_UPDATE":                "Actualización de organización",
-	"ORG_DELETE":                "Eliminación de organización",
-	"INVITE_CREATE":             "Emisión de invitación",
-	"INVITE_CANCEL":             "Cancelación de invitación",
-	"INVITE_CONSUME":            "Consumo de invitación",
-	"MEMBER_ADD":                "Alta de miembro",
-	"MEMBER_REMOVE":             "Baja de miembro",
-	"USER_STATUS_UPDATE":        "Actualización de estatus de usuario",
-	"APIKEY_CREATE":             "Creación de API Key",
-	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":             "Revocación de API Key",
-	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
-	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
-	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
-	"PATIENT_LOCATION_CREATE":   "Registro de ubicación de paciente",
-	"PATIENT_LOCATION_DELETE":   "Eliminación de ubicación de paciente",
-	"USER_LOCATION_CREATE":      "Registro de ubicación de usuario",
-	"USER_LOCATION_DELETE":      "Eliminación de ubicación de usuario",
-	"CARE_TEAM_CREATE":          "Alta de equipo de cuidado",
-	"CARE_TEAM_UPDATE":          "Actualización de equipo de cuidado",
-	"CARE_TEAM_DELETE":          "Eliminación de equipo de cuidado",
-	"CARE_TEAM_MEMBER_ADD":      "Asignación a equipo de cuidado",
-	"CARE_TEAM_MEMBER_UPDATE":   "Actualización de miembro de equipo",
-	"CARE_TEAM_MEMBER_REMOVE":   "Baja de miembro de equipo",
-	"CARE_TEAM_PATIENT_ADD":     "Vinculación de paciente a equipo",
-	"CARE_TEAM_PATIENT_REMOVE":  "Desvinculación de paciente de equipo",
-	"CAREGIVER_RELTYPE_CREATE":  "Alta de relación de cuidador",
-	"CAREGIVER_RELTYPE_UPDATE":  "Actualización de relación de cuidador",
-	"CAREGIVER_RELTYPE_DELETE":  "Eliminación de relación de cuidador",
-	"CAREGIVER_ASSIGN_CREATE":   "Asignación de cuidador",
-	"CAREGIVER_ASSIGN_UPDATE":   "Actualización de cuidador asignado",
-	"CAREGIVER_ASSIGN_DELETE":   "Baja de cuidador asignado",
-	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
-	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
-	"CATALOG_CREATE":            "Alta en catálogo",
-	"CATALOG_UPDATE":            "Actualización de catálogo",
-	"CATALOG_DELETE":            "Eliminación de catálogo",
-	"CONTENT_BLOCK_TYPE_CREATE": "Alta de tipo de bloque",
-	"CONTENT_BLOCK_TYPE_UPDATE": "Actualización de tipo de bloque",
-	"CONTENT_BLOCK_TYPE_DELETE": "Eliminación de tipo de bloque",
-	"PATIENT_CREATE":            "Alta de paciente",
-	"PATIENT_UPDATE":            "Actualización de paciente",
-	"PATIENT_DELETE":            "Eliminación de paciente",
-	"DEVICE_CREATE":             "Alta de dispositivo",
-	"DEVICE_UPDATE":             "Actualización de dispositivo",
-	"DEVICE_DELETE":             "Eliminación de dispositivo",
-	"SIGNAL_STREAM_CREATE":      "Alta de stream de señal",
-	"SIGNAL_STREAM_UPDATE":      "Actualización de stream de señal",
-	"SIGNAL_STREAM_DELETE":      "Eliminación de stream de señal",
-	"TIMESERIES_BINDING_CREATE": "Alta de binding de series",
-	"TIMESERIES_BINDING_UPDATE": "Actualización de binding de series",
-	"TIMESERIES_BINDING_DELETE": "Eliminación de binding de series",
-	"TIMESERIES_TAG_CREATE":     "Alta de etiqueta de binding",
-	"TIMESERIES_TAG_UPDATE":     "Actualización de etiqueta de binding",
-	"TIMESERIES_TAG_DELETE":     "Eliminación de etiqueta de binding",
-	"MODEL_CREATE":              "Alta de modelo ML",
-	"MODEL_UPDATE":              "Actualización de modelo ML",
-	"MODEL_DELETE":              "Eliminación de modelo ML",
-	"EVENT_TYPE_CREATE":         "Alta de tipo de evento",
-	"EVENT_TYPE_UPDATE":         "Actualización de tipo de evento",
-	"EVENT_TYPE_DELETE":         "Eliminación de tipo de evento",
-	"INFERENCE_CREATE":          "Alta de inferencia",
-	"INFERENCE_UPDATE":          "Actualización de inferencia",
-	"INFERENCE_DELETE":          "Eliminación de inferencia",
-	"GROUND_TRUTH_CREATE":       "Alta de etiqueta ground truth",
-	"GROUND_TRUTH_UPDATE":       "Actualización de etiqueta ground truth",
-	"GROUND_TRUTH_DELETE":       "Eliminación de etiqueta ground truth",
-	"ALERT_CREATE":              "Alta de alerta",
-	"ALERT_UPDATE":              "Actualización de alerta",
-	"ALERT_DELETE":              "Eliminación de alerta",
-	"ALERT_ASSIGNMENT_CREATE":   "Registro de asignación de alerta",
-	"ALERT_ACK_CREATE":          "Registro de acuse de alerta",
-	"ALERT_RESOLUTION_CREATE":   "Registro de resolución de alerta",
-	"ALERT_DELIVERY_CREATE":     "Registro de entrega de alerta",
-	"AUDIT_EXPORT":              "Exportación de auditoría",
-	"CONTENT_CREATE":            "Alta de contenido",
-	"CONTENT_UPDATE":            "Actualización de contenido",
-	"CONTENT_DELETE":            "Eliminación de contenido",
+	"ORG_CREATE":                 "Alta de organización",
+	"ORG_UPDATE":                 "Actualización de organización",
+	"ORG_DELETE":                 "Eliminación de organización",
+	"INVITE_CREATE":              "Emisión de invitación",
+	"INVITE_CANCEL":              "Cancelación de invitación",
+	"INVITE_CONSUME":             "Consumo de invitación",
+	"MEMBER_ADD":                 "Alta de miembro",
+	"MEMBER_REMOVE":              "Baja de miembro",
+	"USER_STATUS_UPDATE":         "Actualización de estatus de usuario",
+	"APIKEY_CREATE":              "Creación de API Key",
+	"APIKEY_SET_PERMS":           "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":              "Revocación de API Key",
+	"BATCH_EXPORT_CREATE":        "Creación de lote de exportación",
+	"BATCH_EXPORT_STATUS_UPDATE": "Actualización de estado de lote",
+	"BATCH_EXPORT_DELETE":        "Eliminación de lote de exportación",
+	"PUSH_DEVICE_CREATE":         "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":         "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":         "Eliminación de dispositivo push",
+	"PATIENT_LOCATION_CREATE":    "Registro de ubicación de paciente",
+	"PATIENT_LOCATION_DELETE":    "Eliminación de ubicación de paciente",
+	"USER_LOCATION_CREATE":       "Registro de ubicación de usuario",
+	"USER_LOCATION_DELETE":       "Eliminación de ubicación de usuario",
+	"CARE_TEAM_CREATE":           "Alta de equipo de cuidado",
+	"CARE_TEAM_UPDATE":           "Actualización de equipo de cuidado",
+	"CARE_TEAM_DELETE":           "Eliminación de equipo de cuidado",
+	"CARE_TEAM_MEMBER_ADD":       "Asignación a equipo de cuidado",
+	"CARE_TEAM_MEMBER_UPDATE":    "Actualización de miembro de equipo",
+	"CARE_TEAM_MEMBER_REMOVE":    "Baja de miembro de equipo",
+	"CARE_TEAM_PATIENT_ADD":      "Vinculación de paciente a equipo",
+	"CARE_TEAM_PATIENT_REMOVE":   "Desvinculación de paciente de equipo",
+	"CAREGIVER_RELTYPE_CREATE":   "Alta de relación de cuidador",
+	"CAREGIVER_RELTYPE_UPDATE":   "Actualización de relación de cuidador",
+	"CAREGIVER_RELTYPE_DELETE":   "Eliminación de relación de cuidador",
+	"CAREGIVER_ASSIGN_CREATE":    "Asignación de cuidador",
+	"CAREGIVER_ASSIGN_UPDATE":    "Actualización de cuidador asignado",
+	"CAREGIVER_ASSIGN_DELETE":    "Baja de cuidador asignado",
+	"ROLE_PERMISSION_GRANT":      "Asignación de permiso a rol",
+	"ROLE_PERMISSION_REVOKE":     "Revocación de permiso de rol",
+	"CATALOG_CREATE":             "Alta en catálogo",
+	"CATALOG_UPDATE":             "Actualización de catálogo",
+	"CATALOG_DELETE":             "Eliminación de catálogo",
+	"CONTENT_BLOCK_TYPE_CREATE":  "Alta de tipo de bloque",
+	"CONTENT_BLOCK_TYPE_UPDATE":  "Actualización de tipo de bloque",
+	"CONTENT_BLOCK_TYPE_DELETE":  "Eliminación de tipo de bloque",
+	"PATIENT_CREATE":             "Alta de paciente",
+	"PATIENT_UPDATE":             "Actualización de paciente",
+	"PATIENT_DELETE":             "Eliminación de paciente",
+	"DEVICE_CREATE":              "Alta de dispositivo",
+	"DEVICE_UPDATE":              "Actualización de dispositivo",
+	"DEVICE_DELETE":              "Eliminación de dispositivo",
+	"SIGNAL_STREAM_CREATE":       "Alta de stream de señal",
+	"SIGNAL_STREAM_UPDATE":       "Actualización de stream de señal",
+	"SIGNAL_STREAM_DELETE":       "Eliminación de stream de señal",
+	"TIMESERIES_BINDING_CREATE":  "Alta de binding de series",
+	"TIMESERIES_BINDING_UPDATE":  "Actualización de binding de series",
+	"TIMESERIES_BINDING_DELETE":  "Eliminación de binding de series",
+	"TIMESERIES_TAG_CREATE":      "Alta de etiqueta de binding",
+	"TIMESERIES_TAG_UPDATE":      "Actualización de etiqueta de binding",
+	"TIMESERIES_TAG_DELETE":      "Eliminación de etiqueta de binding",
+	"MODEL_CREATE":               "Alta de modelo ML",
+	"MODEL_UPDATE":               "Actualización de modelo ML",
+	"MODEL_DELETE":               "Eliminación de modelo ML",
+	"EVENT_TYPE_CREATE":          "Alta de tipo de evento",
+	"EVENT_TYPE_UPDATE":          "Actualización de tipo de evento",
+	"EVENT_TYPE_DELETE":          "Eliminación de tipo de evento",
+	"INFERENCE_CREATE":           "Alta de inferencia",
+	"INFERENCE_UPDATE":           "Actualización de inferencia",
+	"INFERENCE_DELETE":           "Eliminación de inferencia",
+	"GROUND_TRUTH_CREATE":        "Alta de etiqueta ground truth",
+	"GROUND_TRUTH_UPDATE":        "Actualización de etiqueta ground truth",
+	"GROUND_TRUTH_DELETE":        "Eliminación de etiqueta ground truth",
+	"ALERT_CREATE":               "Alta de alerta",
+	"ALERT_UPDATE":               "Actualización de alerta",
+	"ALERT_DELETE":               "Eliminación de alerta",
+	"ALERT_ASSIGNMENT_CREATE":    "Registro de asignación de alerta",
+	"ALERT_ACK_CREATE":           "Registro de acuse de alerta",
+	"ALERT_RESOLUTION_CREATE":    "Registro de resolución de alerta",
+	"ALERT_DELIVERY_CREATE":      "Registro de entrega de alerta",
+	"AUDIT_EXPORT":               "Exportación de auditoría",
+	"CONTENT_CREATE":             "Alta de contenido",
+	"CONTENT_UPDATE":             "Actualización de contenido",
+	"CONTENT_DELETE":             "Eliminación de contenido",
 }
 
 func humanizeToken(input string) string {
@@ -2407,6 +2415,19 @@ type timeseriesBindingsViewData struct {
 	Streams          []models.SignalStream
 	SelectedStreamID string
 	Bindings         []models.TimeseriesBinding
+}
+
+type batchExportViewItem struct {
+	models.BatchExport
+	TargetDisplay string
+	TargetURL     *string
+}
+
+type batchExportsViewData struct {
+	Items        []batchExportViewItem
+	Statuses     []models.CatalogItem
+	FilterStatus string
+	Search       string
 }
 
 type pushDevicesViewData struct {
@@ -4594,6 +4615,216 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // Push devices
+
+func (h *Handlers) BatchExportsIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	query := r.URL.Query()
+	statusFilter := strings.TrimSpace(query.Get("status"))
+	var statusPtr *string
+	if statusFilter != "" {
+		statusPtr = &statusFilter
+	}
+	search := strings.TrimSpace(query.Get("q"))
+	var searchPtr *string
+	if search != "" {
+		searchPtr = &search
+	}
+
+	exports, err := h.repo.ListBatchExports(ctx, statusPtr, searchPtr, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los lotes", http.StatusInternalServerError)
+		return
+	}
+	statuses, err := h.repo.ListCatalog(ctx, "batch_export_statuses", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los estados", http.StatusInternalServerError)
+		return
+	}
+
+	items := make([]batchExportViewItem, 0, len(exports))
+	for _, exp := range exports {
+		display := exp.TargetRef
+		var targetURL *string
+		lower := strings.ToLower(display)
+		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
+			url := exp.TargetRef
+			targetURL = &url
+		}
+		if strings.HasPrefix(lower, "file://") {
+			display = strings.TrimPrefix(display, "file://")
+		}
+		items = append(items, batchExportViewItem{
+			BatchExport:   exp,
+			TargetDisplay: display,
+			TargetURL:     targetURL,
+		})
+	}
+
+	data := batchExportsViewData{
+		Items:        items,
+		Statuses:     statuses,
+		FilterStatus: statusFilter,
+		Search:       search,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Exportaciones por lotes"}}
+	h.render(w, r, "superadmin/batch_exports.html", "Exportaciones por lotes", data, crumbs)
+}
+
+func (h *Handlers) BatchExportsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	jti := middleware.SessionJTIFromContext(r.Context())
+	purpose := strings.TrimSpace(r.FormValue("purpose"))
+	if purpose == "" {
+		h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Propósito requerido"})
+		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+		return
+	}
+	statusCode := strings.TrimSpace(r.FormValue("status_code"))
+	detailsStr := strings.TrimSpace(r.FormValue("details_json"))
+	var details map[string]any
+	if detailsStr != "" {
+		if err := json.Unmarshal([]byte(detailsStr), &details); err != nil {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Detalles inválidos (JSON)"})
+			http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+			return
+		}
+	}
+
+	var targetRef string
+	if r.MultipartForm != nil {
+		if files := r.MultipartForm.File["target_file"]; len(files) > 0 {
+			if files[0] != nil && files[0].Filename != "" {
+				var err error
+				targetRef, err = saveBatchExportUpload(files[0])
+				if err != nil {
+					switch {
+					case errors.Is(err, errBatchExportFileTooLarge):
+						h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Archivo demasiado grande"})
+					case errors.Is(err, errBatchExportMissingFile):
+						// sin archivo válido, se intentará con URL
+					default:
+						h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo guardar el archivo"})
+					}
+					if !errors.Is(err, errBatchExportMissingFile) {
+						http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+						return
+					}
+				}
+			}
+		}
+	}
+	if targetRef == "" {
+		targetRef = strings.TrimSpace(r.FormValue("target_url"))
+	}
+	if targetRef == "" {
+		h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Carga un archivo o especifica un enlace"})
+		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+		return
+	}
+
+	input := models.BatchExportInput{Purpose: purpose, TargetRef: targetRef, StatusCode: statusCode}
+	actor := middleware.UserIDFromContext(r.Context())
+	if actor != "" {
+		input.RequestedBy = &actor
+	}
+	if details != nil {
+		input.Details = details
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	export, err := h.repo.CreateBatchExport(ctx, input)
+	if err != nil {
+		if errors.Is(err, errInvalidBatchExportStatus) {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Estado inválido"})
+		} else {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo crear el lote"})
+		}
+		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "BATCH_EXPORT_CREATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
+	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "Lote creado"})
+	http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+}
+
+func (h *Handlers) BatchExportsUpdateStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	jti := middleware.SessionJTIFromContext(r.Context())
+	statusCode := strings.TrimSpace(r.FormValue("status_code"))
+	if statusCode == "" {
+		h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Selecciona un estado"})
+		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+		return
+	}
+	completedStr := strings.TrimSpace(r.FormValue("completed_at"))
+	var completedAt *time.Time
+	if completedStr != "" {
+		if t, err := time.ParseInLocation("2006-01-02T15:04", completedStr, time.Local); err == nil {
+			completedAt = &t
+		} else {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Fecha de finalización inválida"})
+			http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+			return
+		}
+	}
+	detailsStr := strings.TrimSpace(r.FormValue("details_json"))
+	var details map[string]any
+	if detailsStr != "" {
+		if err := json.Unmarshal([]byte(detailsStr), &details); err != nil {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Detalles inválidos (JSON)"})
+			http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+			return
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	export, err := h.repo.UpdateBatchExportStatus(ctx, id, statusCode, completedAt, details)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidBatchExportStatus):
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Estado inválido"})
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Lote no encontrado"})
+		default:
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo actualizar el lote"})
+		}
+		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "BATCH_EXPORT_STATUS_UPDATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
+	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "Lote actualizado"})
+	http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+}
+
+func (h *Handlers) BatchExportsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	jti := middleware.SessionJTIFromContext(r.Context())
+	if err := h.repo.DeleteBatchExport(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Lote no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo eliminar el lote"})
+		}
+		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "BATCH_EXPORT_DELETE", "batch_export", &id, nil)
+	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "Lote eliminado"})
+	http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
+}
 
 func (h *Handlers) PushDevicesIndex(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
