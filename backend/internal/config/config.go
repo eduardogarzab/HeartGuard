@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -57,7 +58,8 @@ func Load() (*Config, error) {
 	}
 
 	// SecureCookies: default true (producción), false solo en dev explícito
-	c.SecureCookies = getenv("SECURE_COOKIES", "true") != "false"
+	secureValue := strings.TrimSpace(strings.ToLower(getenv("SECURE_COOKIES", "true")))
+	c.SecureCookies = secureValue != "false"
 
 	return c, nil
 }

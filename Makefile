@@ -10,6 +10,11 @@ include .env
 export
 endif
 
+# Valores por defecto para desarrollo local
+ENV ?= dev
+HTTP_ADDR ?= :8080
+SECURE_COOKIES ?= false
+
 # Usado por psql (para init/seed con el superuser)
 export PGPASSWORD := $(PGSUPER_PASS)
 
