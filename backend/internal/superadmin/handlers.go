@@ -2757,6 +2757,10 @@ func (h *Handlers) CreateCaregiverAssignment(w http.ResponseWriter, r *http.Requ
 	defer cancel()
 	assignment, err := h.repo.CreateCaregiverAssignment(ctx, input)
 	if err != nil {
+		if errors.Is(err, ErrDuplicateCaregiverAssignment) {
+			writeProblem(w, 409, "duplicate_assignment", "caregiver already assigned to patient", nil)
+			return
+		}
 		writeProblem(w, 400, "db_error", err.Error(), nil)
 		return
 	}

@@ -54,8 +54,9 @@ func (r *Repo) Ping(ctx context.Context) error {
 var nowFn = time.Now
 
 var (
-	errInvalidPlatform          = errors.New("invalid platform")
-	errInvalidBatchExportStatus = errors.New("invalid batch export status")
+	errInvalidPlatform              = errors.New("invalid platform")
+	errInvalidBatchExportStatus     = errors.New("invalid batch export status")
+	ErrDuplicateCaregiverAssignment = errors.New("duplicate caregiver assignment")
 )
 
 func stringParam(ptr *string, trim bool) any {
@@ -1285,7 +1286,15 @@ JOIN users u ON u.id = i.user_id
 LEFT JOIN caregiver_relationship_types crt ON crt.id = i.rel_type_id
 `, input.PatientID, input.CaregiverID, stringParam(input.RelationshipTypeID, true), isPrimary, started, ended, note)
 
-	return scanCaregiverAssignment(row)
+	assignment, err := scanCaregiverAssignment(row)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			return nil, ErrDuplicateCaregiverAssignment
+		}
+		return nil, err
+	}
+	return assignment, nil
 }
 
 func (r *Repo) UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error) {

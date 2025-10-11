@@ -4063,7 +4063,11 @@ func (h *Handlers) CaregiversAssignmentsCreate(w http.ResponseWriter, r *http.Re
 		Note:               notePtr,
 	})
 	if err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo asignar el cuidador"})
+		message := "No se pudo asignar el cuidador"
+		if errors.Is(err, ErrDuplicateCaregiverAssignment) {
+			message = "Este cuidador ya está asignado a este paciente"
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: message})
 		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
 		return
 	}
