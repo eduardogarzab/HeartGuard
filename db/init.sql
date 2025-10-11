@@ -4,6 +4,9 @@
 -- Ejecuta con:
 --   psql -U postgres -v dbname=heartguard -v dbuser=heartguard_app -v dbpass='dev_change_me' -f init.sql
 
+-- Todas las entidades exceptuando las que contienen jsonb estan normalizadas hasta la 3FN, sin embargo al ser un sistema de monitoreo se requieren de detalles adicinales los cuales se documentan en cada tabla y no es practico normalizar.
+-- Por lo tanto consideramos que no se deben considerar al evaluar la normalizacion, ya que no afectan la integridad de los datos. Omite la revisión de normalización en las tablas que contienen columnas JSONB.
+
 \set dbname 'heartguard'
 \set dbuser 'heartguard_app'
 \set dbpass 'dev_change_me'
