@@ -1162,10 +1162,25 @@ CREATE TABLE IF NOT EXISTS models (
   version           VARCHAR(40)  NOT NULL,
   task              VARCHAR(40)  NOT NULL,
   training_data_ref TEXT,
-  hyperparams       JSONB,
   created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
   UNIQUE(name, version)
 );
+
+CREATE TABLE IF NOT EXISTS model_hyperparameters (
+  model_id   UUID NOT NULL REFERENCES models(id) ON DELETE CASCADE,
+  param_key  TEXT NOT NULL,
+  value_json TEXT NOT NULL,
+  PRIMARY KEY (model_id, param_key)
+);
+
+CREATE OR REPLACE FUNCTION heartguard.fn_model_hyperparams(p_model_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+  SELECT jsonb_object_agg(mhp.param_key, mhp.value_json::jsonb)
+  FROM heartguard.model_hyperparameters mhp
+  WHERE mhp.model_id = p_model_id;
+$$;
 
 CREATE OR REPLACE FUNCTION heartguard.sp_models_list(
   p_limit integer DEFAULT 100,
@@ -1191,7 +1206,7 @@ BEGIN
     m.version::text,
     m.task::text,
     m.training_data_ref,
-    CASE WHEN m.hyperparams IS NULL THEN NULL ELSE m.hyperparams::text END,
+    heartguard.fn_model_hyperparams(m.id)::text,
     m.created_at
   FROM heartguard.models m
   ORDER BY m.created_at DESC
@@ -1219,6 +1234,7 @@ DECLARE
   v_name text;
   v_version text;
   v_task text;
+  v_model RECORD;
 BEGIN
   v_name := NULLIF(btrim(p_name), '');
   v_version := NULLIF(btrim(p_version), '');
@@ -1227,17 +1243,25 @@ BEGIN
     RAISE EXCEPTION 'Nombre, versión y tarea son obligatorios' USING ERRCODE = '23514';
   END IF;
 
+  INSERT INTO heartguard.models (name, version, task, training_data_ref)
+  VALUES (v_name, v_version, v_task, NULLIF(btrim(p_training_data_ref), ''))
+  RETURNING * INTO v_model;
+
+  IF p_hyperparams IS NOT NULL THEN
+    INSERT INTO heartguard.model_hyperparameters (model_id, param_key, value_json)
+    SELECT v_model.id, kv.key, kv.value::text
+    FROM jsonb_each(p_hyperparams) AS kv(key, value);
+  END IF;
+
   RETURN QUERY
-  INSERT INTO heartguard.models AS m (name, version, task, training_data_ref, hyperparams)
-  VALUES (v_name, v_version, v_task, NULLIF(btrim(p_training_data_ref), ''), p_hyperparams)
-  RETURNING
-    m.id::text,
-    m.name::text,
-    m.version::text,
-    m.task::text,
-    m.training_data_ref,
-    CASE WHEN m.hyperparams IS NULL THEN NULL ELSE m.hyperparams::text END,
-    m.created_at;
+  SELECT
+    v_model.id::text,
+    v_model.name::text,
+    v_model.version::text,
+    v_model.task::text,
+    v_model.training_data_ref,
+    heartguard.fn_model_hyperparams(v_model.id)::text,
+    v_model.created_at;
 END;
 $$;
 
@@ -1262,6 +1286,7 @@ DECLARE
   v_name text;
   v_version text;
   v_task text;
+  v_model RECORD;
 BEGIN
   v_name := NULLIF(btrim(p_name), '');
   v_version := NULLIF(btrim(p_version), '');
@@ -1270,22 +1295,35 @@ BEGIN
     RAISE EXCEPTION 'Nombre, versión y tarea son obligatorios' USING ERRCODE = '23514';
   END IF;
 
-  RETURN QUERY
   UPDATE heartguard.models AS m
      SET name = v_name,
          version = v_version,
          task = v_task,
-         training_data_ref = NULLIF(btrim(p_training_data_ref), ''),
-         hyperparams = p_hyperparams
+         training_data_ref = NULLIF(btrim(p_training_data_ref), '')
    WHERE m.id = p_id
-  RETURNING
-    m.id::text,
-    m.name::text,
-    m.version::text,
-    m.task::text,
-    m.training_data_ref,
-    CASE WHEN m.hyperparams IS NULL THEN NULL ELSE m.hyperparams::text END,
-    m.created_at;
+  RETURNING * INTO v_model;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  DELETE FROM heartguard.model_hyperparameters WHERE model_id = v_model.id;
+
+  IF p_hyperparams IS NOT NULL THEN
+    INSERT INTO heartguard.model_hyperparameters (model_id, param_key, value_json)
+    SELECT v_model.id, kv.key, kv.value::text
+    FROM jsonb_each(p_hyperparams) AS kv(key, value);
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    v_model.id::text,
+    v_model.name::text,
+    v_model.version::text,
+    v_model.task::text,
+    v_model.training_data_ref,
+    heartguard.fn_model_hyperparams(v_model.id)::text,
+    v_model.created_at;
 END;
 $$;
 
@@ -1454,14 +1492,44 @@ CREATE TABLE IF NOT EXISTS inferences (
   predicted_event_id UUID NOT NULL REFERENCES event_types(id) ON DELETE RESTRICT,
   score              NUMERIC(5,4) CHECK (score >= 0 AND score <= 1),
   threshold          NUMERIC(5,4),
-  metadata           JSONB,
   created_at         TIMESTAMP NOT NULL DEFAULT NOW(),
   series_ref         TEXT,
-  feature_snapshot   JSONB,
   UNIQUE(stream_id, window_start, window_end, predicted_event_id)
 );
 CREATE INDEX IF NOT EXISTS idx_inferences_stream_time
   ON inferences(stream_id, window_start, window_end);
+
+CREATE TABLE IF NOT EXISTS inference_metadata (
+  inference_id UUID NOT NULL REFERENCES inferences(id) ON DELETE CASCADE,
+  entry_key    TEXT NOT NULL,
+  value_json   TEXT NOT NULL,
+  PRIMARY KEY (inference_id, entry_key)
+);
+
+CREATE TABLE IF NOT EXISTS inference_feature_snapshot (
+  inference_id UUID NOT NULL REFERENCES inferences(id) ON DELETE CASCADE,
+  feature_key  TEXT NOT NULL,
+  value_json   TEXT NOT NULL,
+  PRIMARY KEY (inference_id, feature_key)
+);
+
+CREATE OR REPLACE FUNCTION heartguard.fn_inference_metadata(p_inference_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+  SELECT jsonb_object_agg(im.entry_key, im.value_json::jsonb)
+  FROM heartguard.inference_metadata im
+  WHERE im.inference_id = p_inference_id;
+$$;
+
+CREATE OR REPLACE FUNCTION heartguard.fn_inference_feature_snapshot(p_inference_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+  SELECT jsonb_object_agg(ifs.feature_key, ifs.value_json::jsonb)
+  FROM heartguard.inference_feature_snapshot ifs
+  WHERE ifs.inference_id = p_inference_id;
+$$;
 
 CREATE OR REPLACE FUNCTION heartguard.sp_inferences_list(
   p_limit integer DEFAULT 100,
@@ -1544,6 +1612,7 @@ LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_event_id uuid;
+  v_inference RECORD;
 BEGIN
   IF p_window_end <= p_window_start THEN
     RAISE EXCEPTION 'La ventana debe ser válida' USING ERRCODE = '23514';
@@ -1557,24 +1626,38 @@ BEGIN
     RAISE EXCEPTION 'Tipo de evento % no existe', p_event_code USING ERRCODE = '23514';
   END IF;
 
+  INSERT INTO heartguard.inferences (model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, series_ref)
+  VALUES (p_model_id, p_stream_id, p_window_start, p_window_end, v_event_id, p_score, p_threshold, NULLIF(btrim(p_series_ref), ''))
+  RETURNING * INTO v_inference;
+
+  IF p_metadata IS NOT NULL THEN
+    INSERT INTO heartguard.inference_metadata (inference_id, entry_key, value_json)
+    SELECT v_inference.id, kv.key, kv.value::text
+    FROM jsonb_each(p_metadata) AS kv(key, value);
+  END IF;
+
+  IF p_feature_snapshot IS NOT NULL THEN
+    INSERT INTO heartguard.inference_feature_snapshot (inference_id, feature_key, value_json)
+    SELECT v_inference.id, kv.key, kv.value::text
+    FROM jsonb_each(p_feature_snapshot) AS kv(key, value);
+  END IF;
+
   RETURN QUERY
-  INSERT INTO heartguard.inferences AS inf (model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, series_ref, feature_snapshot)
-  VALUES (p_model_id, p_stream_id, p_window_start, p_window_end, v_event_id, p_score, p_threshold, p_metadata, NULLIF(btrim(p_series_ref), ''), p_feature_snapshot)
-  RETURNING
-    inf.id::text,
-    inf.model_id::text,
-    (SELECT m.name::text FROM heartguard.models m WHERE m.id = inf.model_id),
-    inf.stream_id::text,
-    (SELECT pat.person_name::text FROM heartguard.patients pat JOIN heartguard.signal_streams ss ON ss.patient_id = pat.id WHERE ss.id = inf.stream_id),
-    (SELECT dev.serial::text FROM heartguard.devices dev JOIN heartguard.signal_streams ss ON ss.device_id = dev.id WHERE ss.id = inf.stream_id),
-    (SELECT et.code::text FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
-    (SELECT et.description FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
-    inf.window_start,
-    inf.window_end,
-    inf.score,
-    inf.threshold,
-    inf.created_at,
-    inf.series_ref;
+  SELECT
+    v_inference.id::text,
+    v_inference.model_id::text,
+    (SELECT m.name::text FROM heartguard.models m WHERE m.id = v_inference.model_id),
+    v_inference.stream_id::text,
+    (SELECT pat.person_name::text FROM heartguard.patients pat JOIN heartguard.signal_streams ss ON ss.patient_id = pat.id WHERE ss.id = v_inference.stream_id),
+    (SELECT dev.serial::text FROM heartguard.devices dev JOIN heartguard.signal_streams ss ON ss.device_id = dev.id WHERE ss.id = v_inference.stream_id),
+    (SELECT et.code::text FROM heartguard.event_types et WHERE et.id = v_inference.predicted_event_id),
+    (SELECT et.description FROM heartguard.event_types et WHERE et.id = v_inference.predicted_event_id),
+    v_inference.window_start,
+    v_inference.window_end,
+    v_inference.score,
+    v_inference.threshold,
+    v_inference.created_at,
+    v_inference.series_ref;
 END;
 $$;
 
@@ -1609,6 +1692,7 @@ LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_event_id uuid;
+  v_inference RECORD;
 BEGIN
   IF p_window_end <= p_window_start THEN
     RAISE EXCEPTION 'La ventana debe ser válida' USING ERRCODE = '23514';
@@ -1622,7 +1706,6 @@ BEGIN
     RAISE EXCEPTION 'Tipo de evento % no existe', p_event_code USING ERRCODE = '23514';
   END IF;
 
-  RETURN QUERY
   UPDATE heartguard.inferences AS inf
      SET model_id = p_model_id,
          stream_id = p_stream_id,
@@ -1631,25 +1714,45 @@ BEGIN
          predicted_event_id = v_event_id,
          score = p_score,
          threshold = p_threshold,
-         metadata = p_metadata,
-         series_ref = NULLIF(btrim(p_series_ref), ''),
-         feature_snapshot = p_feature_snapshot
+         series_ref = NULLIF(btrim(p_series_ref), '')
    WHERE inf.id = p_id
-  RETURNING
-    inf.id::text,
-    inf.model_id::text,
-    (SELECT m.name::text FROM heartguard.models m WHERE m.id = inf.model_id),
-    inf.stream_id::text,
-    (SELECT pat.person_name::text FROM heartguard.patients pat JOIN heartguard.signal_streams ss ON ss.patient_id = pat.id WHERE ss.id = inf.stream_id),
-    (SELECT dev.serial::text FROM heartguard.devices dev JOIN heartguard.signal_streams ss ON ss.device_id = dev.id WHERE ss.id = inf.stream_id),
-    (SELECT et.code::text FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
-    (SELECT et.description FROM heartguard.event_types et WHERE et.id = inf.predicted_event_id),
-    inf.window_start,
-    inf.window_end,
-    inf.score,
-    inf.threshold,
-    inf.created_at,
-    inf.series_ref;
+  RETURNING * INTO v_inference;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  DELETE FROM heartguard.inference_metadata WHERE inference_id = v_inference.id;
+  DELETE FROM heartguard.inference_feature_snapshot WHERE inference_id = v_inference.id;
+
+  IF p_metadata IS NOT NULL THEN
+    INSERT INTO heartguard.inference_metadata (inference_id, entry_key, value_json)
+    SELECT v_inference.id, kv.key, kv.value::text
+    FROM jsonb_each(p_metadata) AS kv(key, value);
+  END IF;
+
+  IF p_feature_snapshot IS NOT NULL THEN
+    INSERT INTO heartguard.inference_feature_snapshot (inference_id, feature_key, value_json)
+    SELECT v_inference.id, kv.key, kv.value::text
+    FROM jsonb_each(p_feature_snapshot) AS kv(key, value);
+  END IF;
+
+  RETURN QUERY
+  SELECT
+    v_inference.id::text,
+    v_inference.model_id::text,
+    (SELECT m.name::text FROM heartguard.models m WHERE m.id = v_inference.model_id),
+    v_inference.stream_id::text,
+    (SELECT pat.person_name::text FROM heartguard.patients pat JOIN heartguard.signal_streams ss ON ss.patient_id = pat.id WHERE ss.id = v_inference.stream_id),
+    (SELECT dev.serial::text FROM heartguard.devices dev JOIN heartguard.signal_streams ss ON ss.device_id = dev.id WHERE ss.id = v_inference.stream_id),
+    (SELECT et.code::text FROM heartguard.event_types et WHERE et.id = v_inference.predicted_event_id),
+    (SELECT et.description FROM heartguard.event_types et WHERE et.id = v_inference.predicted_event_id),
+    v_inference.window_start,
+    v_inference.window_end,
+    v_inference.score,
+    v_inference.threshold,
+    v_inference.created_at,
+    v_inference.series_ref;
 END;
 $$;
 
@@ -1983,10 +2086,25 @@ CREATE TABLE IF NOT EXISTS alert_delivery (
   channel_id         UUID NOT NULL REFERENCES alert_channels(id) ON DELETE RESTRICT,
   target             VARCHAR(160) NOT NULL,
   sent_at            TIMESTAMP NOT NULL DEFAULT NOW(),
-  delivery_status_id UUID NOT NULL REFERENCES delivery_statuses(id) ON DELETE RESTRICT,
-  response_payload   JSONB
+  delivery_status_id UUID NOT NULL REFERENCES delivery_statuses(id) ON DELETE RESTRICT
 );
 CREATE INDEX IF NOT EXISTS idx_delivery_alert_channel ON alert_delivery(alert_id, channel_id);
+
+CREATE TABLE IF NOT EXISTS alert_delivery_payload (
+  delivery_id UUID NOT NULL REFERENCES alert_delivery(id) ON DELETE CASCADE,
+  payload_key TEXT NOT NULL,
+  value_json  TEXT NOT NULL,
+  PRIMARY KEY (delivery_id, payload_key)
+);
+
+CREATE OR REPLACE FUNCTION heartguard.fn_alert_delivery_payload(p_delivery_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+  SELECT jsonb_object_agg(adp.payload_key, adp.value_json::jsonb)
+  FROM heartguard.alert_delivery_payload adp
+  WHERE adp.delivery_id = p_delivery_id;
+$$;
 
 -- Trigger: poblar alerts.org_id desde patients.org_id
 CREATE OR REPLACE FUNCTION set_alert_org_from_patient()
@@ -2961,7 +3079,7 @@ BEGIN
     a.action::text,
     a.entity::text,
     u.email::text,
-    a.details
+    heartguard.fn_audit_log_details(a.id)
   FROM heartguard.audit_logs a
   LEFT JOIN heartguard.users u ON u.id = a.user_id
   ORDER BY a.ts DESC
@@ -3517,11 +3635,26 @@ CREATE TABLE IF NOT EXISTS audit_logs (
   entity     VARCHAR(80),
   entity_id  UUID,
   ts         TIMESTAMP NOT NULL DEFAULT NOW(),
-  ip         INET,
-  details    JSONB
+  ip         INET
 );
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
+
+CREATE TABLE IF NOT EXISTS audit_log_details (
+  audit_log_id UUID NOT NULL REFERENCES audit_logs(id) ON DELETE CASCADE,
+  detail_key   TEXT NOT NULL,
+  value_json   TEXT NOT NULL,
+  PRIMARY KEY (audit_log_id, detail_key)
+);
+
+CREATE OR REPLACE FUNCTION heartguard.fn_audit_log_details(p_audit_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+  SELECT jsonb_object_agg(ald.detail_key, ald.value_json::jsonb)
+  FROM heartguard.audit_log_details ald
+  WHERE ald.audit_log_id = p_audit_id;
+$$;
 
 -- =========================================================
 -- K) Tokens y API Keys
@@ -3580,9 +3713,24 @@ CREATE TABLE IF NOT EXISTS batch_exports (
   requested_by             UUID REFERENCES users(id) ON DELETE SET NULL,
   requested_at             TIMESTAMP NOT NULL DEFAULT NOW(),
   completed_at             TIMESTAMP,
-  batch_export_status_id   UUID NOT NULL REFERENCES batch_export_statuses(id) ON DELETE RESTRICT,
-  details                  JSONB
+  batch_export_status_id   UUID NOT NULL REFERENCES batch_export_statuses(id) ON DELETE RESTRICT
 );
+
+CREATE TABLE IF NOT EXISTS batch_export_details (
+  export_id  UUID NOT NULL REFERENCES batch_exports(id) ON DELETE CASCADE,
+  detail_key TEXT NOT NULL,
+  value_json TEXT NOT NULL,
+  PRIMARY KEY (export_id, detail_key)
+);
+
+CREATE OR REPLACE FUNCTION heartguard.fn_batch_export_details(p_export_id uuid)
+RETURNS jsonb
+LANGUAGE sql
+AS $$
+  SELECT jsonb_object_agg(bed.detail_key, bed.value_json::jsonb)
+  FROM heartguard.batch_export_details bed
+  WHERE bed.export_id = p_export_id;
+$$;
 
 -- =========================================================
 -- M) Trigger updated_at
