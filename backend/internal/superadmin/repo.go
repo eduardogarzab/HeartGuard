@@ -1886,11 +1886,10 @@ func (r *Repo) MetricsContentSnapshot(ctx context.Context) (*models.ContentMetri
 		statusRaw     []byte
 		roleRaw       []byte
 		cumulativeRaw []byte
-		topAuthorsRaw []byte
 		heatmapRaw    []byte
 	)
 	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_content_snapshot()`).
-		Scan(&totalsRaw, &monthlyRaw, &categoriasRaw, &statusRaw, &roleRaw, &cumulativeRaw, &topAuthorsRaw, &heatmapRaw); err != nil {
+		Scan(&totalsRaw, &monthlyRaw, &categoriasRaw, &statusRaw, &roleRaw, &cumulativeRaw, &heatmapRaw); err != nil {
 		return nil, err
 	}
 	metrics := &models.ContentMetrics{}
@@ -1924,11 +1923,6 @@ func (r *Repo) MetricsContentSnapshot(ctx context.Context) (*models.ContentMetri
 			return nil, err
 		}
 	}
-	if len(topAuthorsRaw) > 0 {
-		if err := json.Unmarshal(topAuthorsRaw, &metrics.TopAuthors); err != nil {
-			return nil, err
-		}
-	}
 	if len(heatmapRaw) > 0 {
 		if err := json.Unmarshal(heatmapRaw, &metrics.UpdateHeatmap); err != nil {
 			return nil, err
@@ -1948,9 +1942,6 @@ func (r *Repo) MetricsContentSnapshot(ctx context.Context) (*models.ContentMetri
 	}
 	if metrics.Cumulative == nil {
 		metrics.Cumulative = make([]models.ContentCumulativePoint, 0)
-	}
-	if metrics.TopAuthors == nil {
-		metrics.TopAuthors = make([]models.ContentTopAuthor, 0)
 	}
 	if metrics.UpdateHeatmap == nil {
 		metrics.UpdateHeatmap = make([]models.ContentUpdateHeatmapPoint, 0)

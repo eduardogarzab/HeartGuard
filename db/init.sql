@@ -3035,7 +3035,6 @@ RETURNS TABLE (
   status_trends jsonb,
   role_activity jsonb,
   cumulative jsonb,
-  top_authors jsonb,
   update_heatmap jsonb)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
@@ -3046,7 +3045,6 @@ DECLARE
   v_status_trends jsonb := '[]'::jsonb;
   v_role_activity jsonb := '[]'::jsonb;
   v_cumulative jsonb := '[]'::jsonb;
-  v_top_authors jsonb := '[]'::jsonb;
   v_heatmap jsonb := '[]'::jsonb;
 BEGIN
   WITH base AS (
@@ -3219,40 +3217,6 @@ BEGIN
 
   SELECT COALESCE(jsonb_agg(
            jsonb_build_object(
-             'user_id', author_user_id,
-             'name', COALESCE(author_name, 'Sin autor'),
-             'email', author_email,
-             'published', published_count,
-             'last_published', CASE WHEN last_published_at IS NULL THEN NULL ELSE to_char(last_published_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') END
-           )
-           ORDER BY published_count DESC, last_published_at DESC
-         ), '[]'::jsonb)
-    INTO v_top_authors
-  FROM (
-    SELECT
-      ag.author_user_id::text AS author_user_id,
-      u.name AS author_name,
-      u.email AS author_email,
-      ag.published_count,
-      ag.last_published_at
-    FROM (
-      SELECT
-        ci.author_user_id,
-        COUNT(*) AS published_count,
-        MAX(COALESCE(ci.published_at, ci.updated_at)) AS last_published_at
-      FROM heartguard.content_items ci
-      JOIN heartguard.content_statuses cs ON cs.id = ci.status_id AND cs.code = 'published'
-      WHERE ci.author_user_id IS NOT NULL
-        AND COALESCE(ci.published_at, ci.updated_at) >= NOW() - INTERVAL '180 days'
-      GROUP BY ci.author_user_id
-      ORDER BY COUNT(*) DESC, MAX(COALESCE(ci.published_at, ci.updated_at)) DESC
-      LIMIT 6
-    ) ag
-    LEFT JOIN heartguard.users u ON u.id = ag.author_user_id
-  ) author_stats;
-
-  SELECT COALESCE(jsonb_agg(
-           jsonb_build_object(
              'date', to_char(day_bucket, 'YYYY-MM-DD'),
              'count', update_count
            )
@@ -3275,7 +3239,6 @@ BEGIN
   status_trends := COALESCE(v_status_trends, '[]'::jsonb);
   role_activity := COALESCE(v_role_activity, '[]'::jsonb);
   cumulative := COALESCE(v_cumulative, '[]'::jsonb);
-  top_authors := COALESCE(v_top_authors, '[]'::jsonb);
   update_heatmap := COALESCE(v_heatmap, '[]'::jsonb);
   RETURN NEXT;
 END;

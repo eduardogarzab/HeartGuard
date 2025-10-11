@@ -289,14 +289,6 @@ type ContentCumulativePoint struct {
 	Count  int    `json:"count"`
 }
 
-type ContentTopAuthor struct {
-	UserID        string  `json:"user_id"`
-	Name          string  `json:"name"`
-	Email         *string `json:"email,omitempty"`
-	Published     int     `json:"published"`
-	LastPublished *string `json:"last_published,omitempty"`
-}
-
 type ContentUpdateHeatmapPoint struct {
 	Date  string `json:"date"`
 	Count int    `json:"count"`
@@ -309,7 +301,6 @@ type ContentMetrics struct {
 	StatusTrends  []ContentStatusTrend        `json:"status_trends"`
 	RoleActivity  []ContentRoleActivity       `json:"role_activity"`
 	Cumulative    []ContentCumulativePoint    `json:"cumulative"`
-	TopAuthors    []ContentTopAuthor          `json:"top_authors"`
 	UpdateHeatmap []ContentUpdateHeatmapPoint `json:"update_heatmap"`
 }
 

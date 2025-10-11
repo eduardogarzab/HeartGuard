@@ -375,7 +375,6 @@ type dashboardViewData struct {
 	ContentStatusChart      []dashboardChartSlice
 	ContentCategoryChart    []dashboardChartSlice
 	ContentRoleChart        []dashboardChartSlice
-	ContentAuthorChart      []dashboardChartSlice
 	ContentMonthlySeries    []dashboardActivitySeriesPoint
 	ContentCumulativeSeries []dashboardActivitySeriesPoint
 }
@@ -534,7 +533,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 		contentStatusChart      []dashboardChartSlice
 		contentCategoryChart    []dashboardChartSlice
 		contentRoleChart        []dashboardChartSlice
-		contentAuthorChart      []dashboardChartSlice
 		contentMonthlySeries    []dashboardActivitySeriesPoint
 		contentCumulativeSeries []dashboardActivitySeriesPoint
 	)
@@ -687,44 +685,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 			contentRoleChart = contentRoleChart[:maxSlices]
 		}
 
-		authorTotal := 0
-		for _, author := range content.TopAuthors {
-			authorTotal += author.Published
-		}
-		for _, author := range content.TopAuthors {
-			if author.Published <= 0 {
-				continue
-			}
-			label := author.Name
-			if label == "" && author.Email != nil {
-				label = *author.Email
-			}
-			if label == "" {
-				label = author.UserID
-			}
-			percent := 0.0
-			if authorTotal > 0 {
-				percent = (float64(author.Published) / float64(authorTotal)) * 100
-			}
-			width := int(math.Round(percent))
-			if width <= 0 && author.Published > 0 {
-				width = 4
-			}
-			if width > 100 {
-				width = 100
-			}
-			contentAuthorChart = append(contentAuthorChart, dashboardChartSlice{
-				Label:   label,
-				Count:   author.Published,
-				Percent: percent,
-				State:   "success",
-				Width:   width,
-			})
-			if len(contentAuthorChart) >= maxSlices {
-				break
-			}
-		}
-
 		for _, point := range content.Monthly {
 			if t, ok := parsePeriod(point.Period); ok {
 				contentMonthlySeries = append(contentMonthlySeries, dashboardActivitySeriesPoint{
@@ -768,7 +728,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 		ContentStatusChart:      contentStatusChart,
 		ContentCategoryChart:    contentCategoryChart,
 		ContentRoleChart:        contentRoleChart,
-		ContentAuthorChart:      contentAuthorChart,
 		ContentMonthlySeries:    contentMonthlySeries,
 		ContentCumulativeSeries: contentCumulativeSeries,
 	}
