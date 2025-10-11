@@ -126,6 +126,7 @@ type Repository interface {
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+	ListServices(ctx context.Context) ([]models.Service, error)
 
 	ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error)
 	CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error)
@@ -2412,6 +2413,55 @@ type devicesViewData struct {
 	Patients      []models.Patient
 }
 
+type serviceStatusSummary struct {
+	Code  string
+	Label string
+	State string
+	Count int
+}
+
+type serviceViewItem struct {
+	Service     models.Service
+	StatusCode  string
+	StatusLabel string
+	StatusClass string
+	HasHealth   bool
+}
+
+type servicesViewData struct {
+	Items         []serviceViewItem
+	StatusSummary []serviceStatusSummary
+	LastUpdated   *time.Time
+}
+
+func serviceStatusState(code string) string {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "up", "healthy", "ok":
+		return "success"
+	case "degraded", "warn", "warning":
+		return "warn"
+	case "down", "error", "critical", "failed":
+		return "danger"
+	default:
+		return "info"
+	}
+}
+
+func serviceStatusPriority(code string) int {
+	switch strings.ToLower(strings.TrimSpace(code)) {
+	case "down", "error", "critical", "failed":
+		return 0
+	case "degraded", "warn", "warning":
+		return 1
+	case "up", "healthy", "ok":
+		return 2
+	case "unknown", "":
+		return 3
+	default:
+		return 4
+	}
+}
+
 type timeseriesBindingsViewData struct {
 	Streams          []models.SignalStream
 	SelectedStreamID string
@@ -4128,6 +4178,13 @@ func (h *Handlers) CaregiversAssignmentsUpdate(w http.ResponseWriter, r *http.Re
 	input := models.CaregiverAssignmentUpdateInput{}
 	if _, ok := r.Form["rel_type_id"]; ok {
 		relRaw := strings.TrimSpace(r.FormValue("rel_type_id"))
+		if h.logger != nil {
+			h.logger.Info("caregiver update rel_type_id", 
+				zap.String("patient_id", patientID),
+				zap.String("caregiver_id", caregiverID),
+				zap.String("rel_type_id_raw", relRaw),
+				zap.Bool("is_empty", relRaw == ""))
+		}
 		if relRaw == "" {
 			empty := ""
 			input.RelationshipTypeID = &empty
@@ -4185,7 +4242,17 @@ func (h *Handlers) CaregiversAssignmentsUpdate(w http.ResponseWriter, r *http.Re
 	defer cancel()
 	assignment, err := h.repo.UpdateCaregiverAssignment(ctx, patientID, caregiverID, input)
 	if err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar la asignación"})
+		if h.logger != nil {
+			h.logger.Error("caregiver assignment update", 
+				zap.String("patient_id", patientID), 
+				zap.String("caregiver_id", caregiverID),
+				zap.Error(err))
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Asignación no encontrada"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar la asignación"})
+		}
 		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
 		return
 	}
@@ -4505,6 +4572,91 @@ func (h *Handlers) GroundTruthDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
+func (h *Handlers) ServicesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	services, err := h.repo.ListServices(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los servicios", http.StatusInternalServerError)
+		return
+	}
+
+	items := make([]serviceViewItem, 0, len(services))
+	summaryMap := make(map[string]serviceStatusSummary)
+	var lastUpdated *time.Time
+
+	for _, svc := range services {
+		code := ""
+		if svc.LatestStatusCode != nil {
+			code = strings.ToLower(strings.TrimSpace(*svc.LatestStatusCode))
+		}
+
+		label := ""
+		if svc.LatestStatusLabel != nil {
+			label = strings.TrimSpace(*svc.LatestStatusLabel)
+		}
+		if label == "" {
+			switch code {
+			case "", "unknown":
+				label = "Sin datos"
+				code = "unknown"
+			default:
+				label = strings.ToUpper(code)
+			}
+		}
+		if code == "" {
+			code = "unknown"
+		}
+
+		state := serviceStatusState(code)
+		statusClass := "hg-status-chip"
+		if state != "" {
+			statusClass += " is-" + state
+		}
+
+		hasHealth := svc.LatestCheckedAt != nil
+		if svc.LatestCheckedAt != nil {
+			if lastUpdated == nil || svc.LatestCheckedAt.After(*lastUpdated) {
+				t := *svc.LatestCheckedAt
+				lastUpdated = &t
+			}
+		}
+
+		items = append(items, serviceViewItem{
+			Service:     svc,
+			StatusCode:  code,
+			StatusLabel: label,
+			StatusClass: statusClass,
+			HasHealth:   hasHealth,
+		})
+
+		summary := summaryMap[code]
+		summary.Code = code
+		summary.Label = label
+		summary.State = state
+		summary.Count++
+		summaryMap[code] = summary
+	}
+
+	summaries := make([]serviceStatusSummary, 0, len(summaryMap))
+	for _, entry := range summaryMap {
+		summaries = append(summaries, entry)
+	}
+	sort.Slice(summaries, func(i, j int) bool {
+		pi := serviceStatusPriority(summaries[i].Code)
+		pj := serviceStatusPriority(summaries[j].Code)
+		if pi == pj {
+			return summaries[i].Label < summaries[j].Label
+		}
+		return pi < pj
+	})
+
+	data := servicesViewData{Items: items, StatusSummary: summaries, LastUpdated: lastUpdated}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Servicios"}}
+	h.render(w, r, "superadmin/services.html", "Servicios", data, crumbs)
+}
+
 // Devices
 
 func (h *Handlers) DevicesIndex(w http.ResponseWriter, r *http.Request) {
@@ -4513,21 +4665,33 @@ func (h *Handlers) DevicesIndex(w http.ResponseWriter, r *http.Request) {
 
 	devices, err := h.repo.ListDevices(ctx, 200, 0)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("devices list", zap.Error(err))
+		}
 		http.Error(w, "No se pudieron cargar los dispositivos", http.StatusInternalServerError)
 		return
 	}
 	orgs, err := h.repo.ListOrganizations(ctx, 200, 0)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("orgs list for devices", zap.Error(err))
+		}
 		http.Error(w, "No se pudieron cargar las organizaciones", http.StatusInternalServerError)
 		return
 	}
 	deviceTypes, err := h.repo.ListDeviceTypes(ctx)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("device types list", zap.Error(err))
+		}
 		http.Error(w, "No se pudieron cargar los tipos de dispositivo", http.StatusInternalServerError)
 		return
 	}
 	patients, err := h.repo.ListPatients(ctx, 200, 0)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("patients list for devices", zap.Error(err))
+		}
 		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
 		return
 	}
@@ -4649,12 +4813,27 @@ func (h *Handlers) DevicesUpdate(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.DeleteDevice(ctx, id); err != nil {
-		http.Error(w, "No se pudo eliminar", http.StatusInternalServerError)
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "Formulario inválido", http.StatusBadRequest)
 		return
 	}
+	
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	
+	if err := h.repo.DeleteDevice(ctx, id); err != nil {
+		if h.logger != nil {
+			h.logger.Error("device delete", zap.String("id", id), zap.Error(err))
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+		return
+	}
+	
 	h.writeAudit(ctx, r, "DEVICE_DELETE", "device", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
 	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)

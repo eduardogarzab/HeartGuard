@@ -321,6 +321,19 @@ type DeviceType struct {
 	Label *string `json:"label,omitempty"`
 }
 
+type Service struct {
+	ID                string     `json:"id"`
+	Name              string     `json:"name"`
+	URL               string     `json:"url"`
+	Description       *string    `json:"description,omitempty"`
+	CreatedAt         time.Time  `json:"created_at"`
+	LatestStatusCode  *string    `json:"latest_status_code,omitempty"`
+	LatestStatusLabel *string    `json:"latest_status_label,omitempty"`
+	LatestCheckedAt   *time.Time `json:"latest_checked_at,omitempty"`
+	LatestLatencyMs   *int       `json:"latest_latency_ms,omitempty"`
+	LatestVersion     *string    `json:"latest_version,omitempty"`
+}
+
 type SignalStream struct {
 	ID           string     `json:"id"`
 	PatientID    string     `json:"patient_id"`

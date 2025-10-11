@@ -2,7 +2,76 @@
 <section class="hg-section">
 	<div class="hg-flex-between">
 		<h1>Servicios</h1>
+		{{if .Data.LastUpdated}}
+		<span class="hg-tag">Última verificación {{formatTimePtr .Data.LastUpdated}}</span>
+		{{end}}
 	</div>
-	<p>Se implementará la gestión de microservicios en los siguientes avances del proyecto.</p>
+	<div class="hg-card">
+		<h3>Resumen de estado</h3>
+		{{if .Data.StatusSummary}}
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Estatus</th>
+					<th class="hg-align-right">Servicios</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.StatusSummary}}
+				<tr>
+					<td>
+						{{$state := .State}}
+						<span class="hg-status-chip{{if eq $state "success"}} is-success{{else if eq $state "warn"}} is-warn{{else if eq $state "danger"}} is-danger{{end}}">{{.Label}}</span>
+					</td>
+					<td class="hg-align-right">{{.Count}}</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+		{{else}}
+		<p class="hg-empty-state">Sin datos de monitoreo recientes.</p>
+		{{end}}
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Servicios monitoreados</h3>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Servicio</th>
+					<th>Estatus</th>
+					<th>Última verificación</th>
+					<th>Latencia</th>
+					<th>Versión</th>
+					<th>URL</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Items}}
+				<tr>
+					<td>
+						<strong>{{.Service.Name}}</strong>
+						{{if .Service.Description}}
+						<div class="hg-muted">{{stringValue .Service.Description}}</div>
+						{{end}}
+					</td>
+					<td>
+						<span class="{{.StatusClass}}">{{.StatusLabel}}</span>
+					</td>
+					<td>{{if .HasHealth}}{{formatTimePtr .Service.LatestCheckedAt}}{{else}}—{{end}}</td>
+					<td>{{if .Service.LatestLatencyMs}}{{formatIntPtr .Service.LatestLatencyMs}} ms{{else}}—{{end}}</td>
+					<td>{{if .Service.LatestVersion}}{{stringValue .Service.LatestVersion}}{{else}}—{{end}}</td>
+					<td><a class="hg-link" href="{{.Service.URL}}" target="_blank" rel="noreferrer">{{.Service.URL}}</a></td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="6" class="hg-empty-cell">Sin servicios registrados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
 </section>
 {{end}}

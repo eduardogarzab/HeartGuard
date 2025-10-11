@@ -17,6 +17,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
 )
@@ -75,9 +76,9 @@ func stringParam(ptr *string, trim bool) any {
 
 func timeParam(ptr *time.Time) any {
 	if ptr == nil {
-		return nil
+		return pgtype.Timestamptz{Valid: false}
 	}
-	return *ptr
+	return pgtype.Timestamptz{Time: *ptr, Valid: true}
 }
 
 func boolParam(ptr *bool) any {
@@ -1354,7 +1355,12 @@ func (r *Repo) UpdateCaregiverAssignment(ctx context.Context, patientID, caregiv
 		trimmed := strings.TrimSpace(*input.RelationshipTypeID)
 		if trimmed == "" {
 			clearRel = true
+			relParam = nil // NULL para limpiar
 		} else {
+			// Validar que sea un UUID válido
+			if _, err := uuid.Parse(trimmed); err != nil {
+				return nil, fmt.Errorf("invalid relationship type UUID: %w", err)
+			}
 			relParam = trimmed
 		}
 	}
@@ -1363,6 +1369,7 @@ func (r *Repo) UpdateCaregiverAssignment(ctx context.Context, patientID, caregiv
 		trimmed := strings.TrimSpace(*input.Note)
 		if trimmed == "" {
 			clearNote = true
+			noteParam = nil
 		} else {
 			noteParam = &trimmed
 		}
@@ -1377,12 +1384,11 @@ WITH updated AS (
                         ELSE $5::uuid
                 END,
                 is_primary = COALESCE($6, cp.is_primary),
-                started_at = COALESCE($7, cp.started_at),
-                ended_at = CASE
-                        WHEN $8 THEN NULL
-                        WHEN $9 IS NULL THEN cp.ended_at
-                        ELSE $9
-                END,
+		started_at = COALESCE($7::timestamptz, cp.started_at),
+		ended_at = CASE
+			WHEN $8 THEN NULL
+			ELSE COALESCE($9::timestamptz, cp.ended_at)
+		END,
                 note = CASE
                         WHEN NOT $10 THEN cp.note
                         WHEN $11 THEN NULL
@@ -1971,6 +1977,86 @@ func (r *Repo) ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
 			d.Label = &v
 		}
 		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+// ------------------------------
+// Services
+// ------------------------------
+
+func (r *Repo) ListServices(ctx context.Context) ([]models.Service, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+	s.id::text,
+	s.name,
+	s.url,
+	s.description,
+	s.created_at,
+	latest.checked_at,
+	latest.status_code,
+	latest.status_label,
+	latest.latency_ms,
+	latest.version
+FROM services s
+LEFT JOIN LATERAL (
+	SELECT h.checked_at,
+	       st.code AS status_code,
+	       st.label AS status_label,
+	       h.latency_ms,
+	       h.version
+	FROM service_health h
+	JOIN service_statuses st ON st.id = h.service_status_id
+	WHERE h.service_id = s.id
+	ORDER BY h.checked_at DESC
+	LIMIT 1
+) latest ON true
+ORDER BY s.name ASC
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.Service
+	for rows.Next() {
+		var (
+			svc         models.Service
+			desc        sql.NullString
+			checkedAt   sql.NullTime
+			statusCode  sql.NullString
+			statusLabel sql.NullString
+			latencyMs   sql.NullInt32
+			version     sql.NullString
+		)
+		if err := rows.Scan(&svc.ID, &svc.Name, &svc.URL, &desc, &svc.CreatedAt, &checkedAt, &statusCode, &statusLabel, &latencyMs, &version); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			v := desc.String
+			svc.Description = &v
+		}
+		if checkedAt.Valid {
+			t := checkedAt.Time
+			svc.LatestCheckedAt = &t
+		}
+		if statusCode.Valid {
+			v := statusCode.String
+			svc.LatestStatusCode = &v
+		}
+		if statusLabel.Valid {
+			v := statusLabel.String
+			svc.LatestStatusLabel = &v
+		}
+		if latencyMs.Valid {
+			val := int(latencyMs.Int32)
+			svc.LatestLatencyMs = &val
+		}
+		if version.Valid {
+			v := version.String
+			svc.LatestVersion = &v
+		}
+		out = append(out, svc)
 	}
 	return out, rows.Err()
 }

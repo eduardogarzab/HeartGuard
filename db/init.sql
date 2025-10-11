@@ -1153,6 +1153,10 @@ AS $$
 DECLARE
   rows_deleted integer;
 BEGIN
+  -- Primero eliminar los signal_streams asociados (y sus cascadas: timeseries_binding, etc.)
+  DELETE FROM heartguard.signal_streams WHERE device_id = p_id;
+  
+  -- Ahora eliminar el dispositivo
   DELETE FROM heartguard.devices WHERE id = p_id;
   GET DIAGNOSTICS rows_deleted = ROW_COUNT;
   RETURN rows_deleted > 0;
