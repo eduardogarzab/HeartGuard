@@ -90,6 +90,13 @@ func float32Param(ptr *float32) any {
 	return *ptr
 }
 
+func float64Param(ptr *float64) any {
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
 type scanTarget interface {
 	Scan(dest ...any) error
 }
@@ -586,6 +593,240 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 		return err
 	}
 	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Locations
+// ------------------------------
+
+func (r *Repo) ListPatientLocations(ctx context.Context, filters models.PatientLocationFilters, limit, offset int) ([]models.PatientLocation, error) {
+	query := `SELECT pl.id::text, pl.patient_id::text, p.name, pl.ts, ST_Y(pl.geom), ST_X(pl.geom), pl.source, pl.accuracy_m
+FROM patient_locations pl
+LEFT JOIN patients p ON p.id = pl.patient_id`
+	var (
+		clauses []string
+		args    []any
+	)
+	idx := 1
+	if filters.PatientID != nil {
+		clauses = append(clauses, fmt.Sprintf("pl.patient_id = $%d", idx))
+		args = append(args, *filters.PatientID)
+		idx++
+	}
+	if filters.From != nil {
+		clauses = append(clauses, fmt.Sprintf("pl.ts >= $%d", idx))
+		args = append(args, *filters.From)
+		idx++
+	}
+	if filters.To != nil {
+		clauses = append(clauses, fmt.Sprintf("pl.ts <= $%d", idx))
+		args = append(args, *filters.To)
+		idx++
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY pl.ts DESC LIMIT $%d OFFSET $%d", idx, idx+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.PatientLocation
+	for rows.Next() {
+		var (
+			loc      models.PatientLocation
+			name     sql.NullString
+			source   sql.NullString
+			accuracy sql.NullFloat64
+		)
+		if err := rows.Scan(&loc.ID, &loc.PatientID, &name, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			v := name.String
+			loc.PatientName = &v
+		}
+		if source.Valid {
+			v := strings.TrimSpace(source.String)
+			if v != "" {
+				loc.Source = &v
+			}
+		}
+		if accuracy.Valid {
+			val := accuracy.Float64
+			loc.AccuracyM = &val
+		}
+		out = append(out, loc)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreatePatientLocation(ctx context.Context, input models.PatientLocationInput) (*models.PatientLocation, error) {
+	var (
+		loc      models.PatientLocation
+		name     sql.NullString
+		source   sql.NullString
+		accuracy sql.NullFloat64
+	)
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO patient_locations (patient_id, ts, geom, source, accuracy_m)
+VALUES ($1, COALESCE($2, NOW()), ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6)
+RETURNING id::text, patient_id::text, (SELECT name FROM patients WHERE id = patient_id), ts, ST_Y(geom), ST_X(geom), source, accuracy_m
+`, input.PatientID, timeParam(input.RecordedAt), input.Longitude, input.Latitude, stringParam(input.Source, true), float64Param(input.AccuracyM)).
+		Scan(&loc.ID, &loc.PatientID, &name, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy)
+	if err != nil {
+		return nil, err
+	}
+	if name.Valid {
+		v := name.String
+		loc.PatientName = &v
+	}
+	if source.Valid {
+		v := strings.TrimSpace(source.String)
+		if v != "" {
+			loc.Source = &v
+		}
+	}
+	if accuracy.Valid {
+		val := accuracy.Float64
+		loc.AccuracyM = &val
+	}
+	return &loc, nil
+}
+
+func (r *Repo) DeletePatientLocation(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM patient_locations WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error) {
+	query := `SELECT ul.id::text, ul.user_id::text, u.name, u.email, ul.ts, ST_Y(ul.geom), ST_X(ul.geom), ul.source, ul.accuracy_m
+FROM user_locations ul
+LEFT JOIN users u ON u.id = ul.user_id`
+	var (
+		clauses []string
+		args    []any
+	)
+	idx := 1
+	if filters.UserID != nil {
+		clauses = append(clauses, fmt.Sprintf("ul.user_id = $%d", idx))
+		args = append(args, *filters.UserID)
+		idx++
+	}
+	if filters.From != nil {
+		clauses = append(clauses, fmt.Sprintf("ul.ts >= $%d", idx))
+		args = append(args, *filters.From)
+		idx++
+	}
+	if filters.To != nil {
+		clauses = append(clauses, fmt.Sprintf("ul.ts <= $%d", idx))
+		args = append(args, *filters.To)
+		idx++
+	}
+	if len(clauses) > 0 {
+		query += " WHERE " + strings.Join(clauses, " AND ")
+	}
+	query += fmt.Sprintf(" ORDER BY ul.ts DESC LIMIT $%d OFFSET $%d", idx, idx+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.UserLocation
+	for rows.Next() {
+		var (
+			loc      models.UserLocation
+			name     sql.NullString
+			email    sql.NullString
+			source   sql.NullString
+			accuracy sql.NullFloat64
+		)
+		if err := rows.Scan(&loc.ID, &loc.UserID, &name, &email, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			v := name.String
+			loc.UserName = &v
+		}
+		if email.Valid {
+			v := email.String
+			loc.UserEmail = &v
+		}
+		if source.Valid {
+			v := strings.TrimSpace(source.String)
+			if v != "" {
+				loc.Source = &v
+			}
+		}
+		if accuracy.Valid {
+			val := accuracy.Float64
+			loc.AccuracyM = &val
+		}
+		out = append(out, loc)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error) {
+	var (
+		loc      models.UserLocation
+		name     sql.NullString
+		email    sql.NullString
+		source   sql.NullString
+		accuracy sql.NullFloat64
+	)
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO user_locations (user_id, ts, geom, source, accuracy_m)
+VALUES ($1, COALESCE($2, NOW()), ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6)
+RETURNING id::text, user_id::text, (SELECT name FROM users WHERE id = user_id), (SELECT email FROM users WHERE id = user_id), ts, ST_Y(geom), ST_X(geom), source, accuracy_m
+`, input.UserID, timeParam(input.RecordedAt), input.Longitude, input.Latitude, stringParam(input.Source, true), float64Param(input.AccuracyM)).
+		Scan(&loc.ID, &loc.UserID, &name, &email, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy)
+	if err != nil {
+		return nil, err
+	}
+	if name.Valid {
+		v := name.String
+		loc.UserName = &v
+	}
+	if email.Valid {
+		v := email.String
+		loc.UserEmail = &v
+	}
+	if source.Valid {
+		v := strings.TrimSpace(source.String)
+		if v != "" {
+			loc.Source = &v
+		}
+	}
+	if accuracy.Valid {
+		val := accuracy.Float64
+		loc.AccuracyM = &val
+	}
+	return &loc, nil
+}
+
+func (r *Repo) DeleteUserLocation(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM user_locations WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil

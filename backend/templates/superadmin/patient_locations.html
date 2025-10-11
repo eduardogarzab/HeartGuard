@@ -1,0 +1,180 @@
+{{define "superadmin/patient_locations.html"}} {{template "layout" .}} {{end}} {{define "superadmin/patient_locations.html:content"}}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Ubicaciones de pacientes</h1>
+        </div>
+        <div class="hg-card">
+                <form method="get" action="/superadmin/locations/patients" class="hg-form-grid">
+                        <div class="hg-form-field">
+                                <label for="patient-filter">Paciente</label>
+                                <select id="patient-filter" name="patient_id">
+                                        <option value="">Todos</option>
+                                        {{range .Data.Patients}}
+                                        <option value="{{.ID}}" {{if eq $.Data.SelectedPatientID .ID}}selected{{end}}>{{.Name}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="from-date">Desde</label>
+                                <input id="from-date" name="from" type="date" value="{{.Data.From}}" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="to-date">Hasta</label>
+                                <input id="to-date" name="to" type="date" value="{{.Data.To}}" />
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Filtrar</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Mapa</h3>
+                <div id="patientLocationsMap" class="hg-map"></div>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Registrar ubicación manual</h3>
+                <form method="post" action="/superadmin/locations/patients" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <input type="hidden" name="from" value="{{.Data.From}}" />
+                        <input type="hidden" name="to" value="{{.Data.To}}" />
+                        <div class="hg-form-field">
+                                <label for="patient-select">Paciente</label>
+                                <select id="patient-select" name="patient_id" required>
+                                        <option value="">Seleccione un paciente</option>
+                                        {{range .Data.Patients}}
+                                        <option value="{{.ID}}" {{if eq $.Data.SelectedPatientID .ID}}selected{{end}}>{{.Name}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="recorded-at">Fecha y hora</label>
+                                <input id="recorded-at" name="recorded_at" type="datetime-local" />
+                                <span class="hg-field-hint">Opcional. Si se omite se usará la hora actual.</span>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="latitude">Latitud</label>
+                                <input id="latitude" name="latitude" type="number" step="any" min="-90" max="90" required />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="longitude">Longitud</label>
+                                <input id="longitude" name="longitude" type="number" step="any" min="-180" max="180" required />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="accuracy">Precisión (m)</label>
+                                <input id="accuracy" name="accuracy_m" type="number" step="any" min="0" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="source">Fuente</label>
+                                <input id="source" name="source" type="text" maxlength="40" placeholder="GPS, manual, etc." />
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Guardar ubicación</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Historial de ubicaciones</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Paciente</th>
+                                        <th>Registrada</th>
+                                        <th>Latitud</th>
+                                        <th>Longitud</th>
+                                        <th>Fuente</th>
+                                        <th>Precisión (m)</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Items}}
+                                <tr>
+                                        <td>{{if .PatientName}}{{.PatientName}}{{else}}—{{end}}</td>
+                                        <td>{{formatTime .RecordedAt}}</td>
+                                        <td>{{printf "%.6f" .Latitude}}</td>
+                                        <td>{{printf "%.6f" .Longitude}}</td>
+                                        <td>{{if .Source}}{{.Source}}{{else}}—{{end}}</td>
+                                        <td>{{if .AccuracyM}}{{formatFloat64 .AccuracyM 2}}{{else}}—{{end}}</td>
+                                        <td class="hg-actions">
+                                                <form method="post" action="/superadmin/locations/patients/{{.ID}}/delete" data-hg-confirm="¿Eliminar ubicación?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <input type="hidden" name="patient_id" value="{{$.Data.SelectedPatientID}}" />
+                                                        <input type="hidden" name="from" value="{{$.Data.From}}" />
+                                                        <input type="hidden" name="to" value="{{$.Data.To}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="7" class="hg-empty-cell">Sin ubicaciones registradas.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+
+<script type="application/json" id="patientLocationsData">{{toJSON .Data.Items}}</script>
+<script>
+        document.addEventListener("DOMContentLoaded", function () {
+                var container = document.getElementById("patientLocationsMap");
+                if (!container || !window.L) {
+                        return;
+                }
+                var raw = document.getElementById("patientLocationsData");
+                var dataset = [];
+                if (raw) {
+                        try {
+                                dataset = JSON.parse(raw.textContent || "[]");
+                        } catch (err) {
+                                console.error("locations parse", err);
+                        }
+                }
+                var map = L.map(container).setView([19.4326, -99.1332], 5);
+                L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+                        attribution: "&copy; OpenStreetMap colaboradores",
+                        maxZoom: 18,
+                }).addTo(map);
+                if (Array.isArray(dataset) && dataset.length > 0) {
+                        var bounds = [];
+                        dataset.forEach(function (entry) {
+                                if (!entry || typeof entry.latitude !== "number" || typeof entry.longitude !== "number") {
+                                        return;
+                                }
+                                var marker = L.marker([entry.latitude, entry.longitude]).addTo(map);
+                                var content = "";
+                                if (entry.patient_name) {
+                                        content += "<strong>" + entry.patient_name + "</strong><br />";
+                                }
+                                if (entry.recorded_at) {
+                                        content += new Date(entry.recorded_at).toLocaleString("es-MX") + "<br />";
+                                }
+                                content += "Lat: " + entry.latitude.toFixed(6) + "<br />Lng: " + entry.longitude.toFixed(6);
+                                if (entry.accuracy_m) {
+                                        content += "<br />±" + Number(entry.accuracy_m).toFixed(2) + " m";
+                                }
+                                if (entry.source) {
+                                        content += "<br />Fuente: " + entry.source;
+                                }
+                                marker.bindPopup(content);
+                                bounds.push([entry.latitude, entry.longitude]);
+                        });
+                        if (bounds.length > 0) {
+                                map.fitBounds(bounds, { padding: [24, 24] });
+                        }
+                }
+        });
+</script>
+{{end}}

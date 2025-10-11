@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,6 +66,10 @@ type Repository interface {
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
 
+	ListPatientLocations(ctx context.Context, filters models.PatientLocationFilters, limit, offset int) ([]models.PatientLocation, error)
+	CreatePatientLocation(ctx context.Context, input models.PatientLocationInput) (*models.PatientLocation, error)
+	DeletePatientLocation(ctx context.Context, id string) error
+
 	ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error)
 	CreateCareTeam(ctx context.Context, input models.CareTeamInput) (*models.CareTeam, error)
 	UpdateCareTeam(ctx context.Context, id string, input models.CareTeamUpdateInput) (*models.CareTeam, error)
@@ -96,6 +101,10 @@ type Repository interface {
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+
+	ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error)
+	CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error)
+	DeleteUserLocation(ctx context.Context, id string) error
 
 	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
 	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
@@ -299,6 +308,11 @@ var operationLabels = map[string]string{
 	"PUSH_DEVICE_CREATE": "Registro de dispositivo push",
 	"PUSH_DEVICE_UPDATE": "Actualización de dispositivo push",
 	"PUSH_DEVICE_DELETE": "Eliminación de dispositivo push",
+
+	"PATIENT_LOCATION_CREATE": "Registro de ubicación de paciente",
+	"PATIENT_LOCATION_DELETE": "Eliminación de ubicación de paciente",
+	"USER_LOCATION_CREATE":    "Registro de ubicación de usuario",
+	"USER_LOCATION_DELETE":    "Eliminación de ubicación de usuario",
 
 	"CARE_TEAM_CREATE":         "Alta de equipo de cuidado",
 	"CARE_TEAM_UPDATE":         "Actualización de equipo de cuidado",
@@ -2980,6 +2994,235 @@ func (h *Handlers) ListPushDevices(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	list, err := h.repo.ListPushDevices(ctx, userID, platform, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+type patientLocationReq struct {
+	PatientID  string     `json:"patient_id" validate:"required,uuid4"`
+	Latitude   float64    `json:"latitude" validate:"required,gte=-90,lte=90"`
+	Longitude  float64    `json:"longitude" validate:"required,gte=-180,lte=180"`
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Source     *string    `json:"source,omitempty" validate:"omitempty,max=40"`
+	AccuracyM  *float64   `json:"accuracy_m,omitempty" validate:"omitempty,gte=0,lte=100000"`
+}
+
+func validateCoordinates(lat, lng float64) map[string]string {
+	fields := make(map[string]string)
+	if math.IsNaN(lat) || math.IsInf(lat, 0) || lat < -90 || lat > 90 {
+		fields["latitude"] = "invalid"
+	}
+	if math.IsNaN(lng) || math.IsInf(lng, 0) || lng < -180 || lng > 180 {
+		fields["longitude"] = "invalid"
+	}
+	if len(fields) == 0 {
+		return nil
+	}
+	return fields
+}
+
+func validateAccuracy(acc *float64) bool {
+	if acc == nil {
+		return true
+	}
+	if math.IsNaN(*acc) || math.IsInf(*acc, 0) {
+		return false
+	}
+	if *acc < 0 || *acc > 100000 {
+		return false
+	}
+	return true
+}
+
+func (h *Handlers) CreatePatientLocation(w http.ResponseWriter, r *http.Request) {
+	var req patientLocationReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if coordErrs := validateCoordinates(req.Latitude, req.Longitude); coordErrs != nil {
+		writeProblem(w, 422, "validation_error", "invalid coordinates", coordErrs)
+		return
+	}
+	if !validateAccuracy(req.AccuracyM) {
+		writeProblem(w, 422, "validation_error", "invalid accuracy", map[string]string{"accuracy_m": "invalid"})
+		return
+	}
+	input := models.PatientLocationInput{
+		PatientID:  req.PatientID,
+		RecordedAt: req.RecordedAt,
+		Latitude:   req.Latitude,
+		Longitude:  req.Longitude,
+		Source:     normalizeStringPtr(req.Source),
+		AccuracyM:  req.AccuracyM,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	location, err := h.repo.CreatePatientLocation(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23503" {
+				writeProblem(w, 404, "not_found", "patient not found", map[string]string{"patient_id": "unknown"})
+				return
+			}
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"patient_id": location.PatientID}
+	if location.Source != nil {
+		details["source"] = *location.Source
+	}
+	h.writeAudit(ctx, r, "PATIENT_LOCATION_CREATE", "patient_location", &location.ID, details)
+	writeJSON(w, 201, location)
+}
+
+func (h *Handlers) DeletePatientLocation(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeProblem(w, 400, "bad_request", "missing id", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePatientLocation(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "location not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "PATIENT_LOCATION_DELETE", "patient_location", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListPatientLocations(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+	filters := models.PatientLocationFilters{}
+	if v := strings.TrimSpace(q.Get("patient_id")); v != "" {
+		filters.PatientID = &v
+	}
+	if v := strings.TrimSpace(q.Get("from")); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			filters.From = &t
+		}
+	}
+	if v := strings.TrimSpace(q.Get("to")); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			filters.To = &t
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListPatientLocations(ctx, filters, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+type userLocationReq struct {
+	UserID     string     `json:"user_id" validate:"required,uuid4"`
+	Latitude   float64    `json:"latitude" validate:"required,gte=-90,lte=90"`
+	Longitude  float64    `json:"longitude" validate:"required,gte=-180,lte=180"`
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Source     *string    `json:"source,omitempty" validate:"omitempty,max=40"`
+	AccuracyM  *float64   `json:"accuracy_m,omitempty" validate:"omitempty,gte=0,lte=100000"`
+}
+
+func (h *Handlers) CreateUserLocation(w http.ResponseWriter, r *http.Request) {
+	var req userLocationReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if coordErrs := validateCoordinates(req.Latitude, req.Longitude); coordErrs != nil {
+		writeProblem(w, 422, "validation_error", "invalid coordinates", coordErrs)
+		return
+	}
+	if !validateAccuracy(req.AccuracyM) {
+		writeProblem(w, 422, "validation_error", "invalid accuracy", map[string]string{"accuracy_m": "invalid"})
+		return
+	}
+	input := models.UserLocationInput{
+		UserID:     req.UserID,
+		RecordedAt: req.RecordedAt,
+		Latitude:   req.Latitude,
+		Longitude:  req.Longitude,
+		Source:     normalizeStringPtr(req.Source),
+		AccuracyM:  req.AccuracyM,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	location, err := h.repo.CreateUserLocation(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			if pgErr.Code == "23503" {
+				writeProblem(w, 404, "not_found", "user not found", map[string]string{"user_id": "unknown"})
+				return
+			}
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"user_id": location.UserID}
+	if location.Source != nil {
+		details["source"] = *location.Source
+	}
+	h.writeAudit(ctx, r, "USER_LOCATION_CREATE", "user_location", &location.ID, details)
+	writeJSON(w, 201, location)
+}
+
+func (h *Handlers) DeleteUserLocation(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeProblem(w, 400, "bad_request", "missing id", nil)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteUserLocation(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "location not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "USER_LOCATION_DELETE", "user_location", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListUserLocations(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+	filters := models.UserLocationFilters{}
+	if v := strings.TrimSpace(q.Get("user_id")); v != "" {
+		filters.UserID = &v
+	}
+	if v := strings.TrimSpace(q.Get("from")); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			filters.From = &t
+		}
+	}
+	if v := strings.TrimSpace(q.Get("to")); v != "" {
+		if t, err := time.Parse(time.RFC3339, v); err == nil {
+			filters.To = &t
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListUserLocations(ctx, filters, limit, offset)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return

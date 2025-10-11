@@ -167,6 +167,59 @@ type PatientCareTeamLink struct {
 	PatientName  string `json:"patient_name"`
 }
 
+type PatientLocation struct {
+	ID          string    `json:"id"`
+	PatientID   string    `json:"patient_id"`
+	PatientName *string   `json:"patient_name,omitempty"`
+	RecordedAt  time.Time `json:"recorded_at"`
+	Latitude    float64   `json:"latitude"`
+	Longitude   float64   `json:"longitude"`
+	Source      *string   `json:"source,omitempty"`
+	AccuracyM   *float64  `json:"accuracy_m,omitempty"`
+}
+
+type PatientLocationInput struct {
+	PatientID  string     `json:"patient_id"`
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Latitude   float64    `json:"latitude"`
+	Longitude  float64    `json:"longitude"`
+	Source     *string    `json:"source,omitempty"`
+	AccuracyM  *float64   `json:"accuracy_m,omitempty"`
+}
+
+type PatientLocationFilters struct {
+	PatientID *string    `json:"patient_id,omitempty"`
+	From      *time.Time `json:"from,omitempty"`
+	To        *time.Time `json:"to,omitempty"`
+}
+
+type UserLocation struct {
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	UserName   *string   `json:"user_name,omitempty"`
+	UserEmail  *string   `json:"user_email,omitempty"`
+	RecordedAt time.Time `json:"recorded_at"`
+	Latitude   float64   `json:"latitude"`
+	Longitude  float64   `json:"longitude"`
+	Source     *string   `json:"source,omitempty"`
+	AccuracyM  *float64  `json:"accuracy_m,omitempty"`
+}
+
+type UserLocationInput struct {
+	UserID     string     `json:"user_id"`
+	RecordedAt *time.Time `json:"recorded_at,omitempty"`
+	Latitude   float64    `json:"latitude"`
+	Longitude  float64    `json:"longitude"`
+	Source     *string    `json:"source,omitempty"`
+	AccuracyM  *float64   `json:"accuracy_m,omitempty"`
+}
+
+type UserLocationFilters struct {
+	UserID *string    `json:"user_id,omitempty"`
+	From   *time.Time `json:"from,omitempty"`
+	To     *time.Time `json:"to,omitempty"`
+}
+
 type CaregiverRelationshipType struct {
 	ID    string `json:"id"`
 	Code  string `json:"code"`
