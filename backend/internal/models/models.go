@@ -530,6 +530,22 @@ type Role struct {
 	Permissions []string  `json:"permissions,omitempty"`
 }
 
+type RolePermission struct {
+	RoleID      string    `json:"role_id"`
+	Code        string    `json:"code"`
+	Description string    `json:"description,omitempty"`
+	GrantedAt   time.Time `json:"granted_at"`
+}
+
+type RolePermissionRequest struct {
+	Permission string `json:"permission" validate:"required"`
+}
+
+type RolePermissionsResponse struct {
+	RoleID      string           `json:"role_id"`
+	Permissions []RolePermission `json:"permissions"`
+}
+
 type UserRole struct {
 	RoleID      string     `json:"role_id"`
 	RoleName    string     `json:"role_name"`

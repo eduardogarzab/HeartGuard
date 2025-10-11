@@ -126,12 +126,15 @@ type Repository interface {
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
 	ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error)
+	ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error)
 	CreateRole(ctx context.Context, name string, description *string) (*models.Role, error)
 	UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error)
 	DeleteRole(ctx context.Context, id string) error
 	ListUserRoles(ctx context.Context, userID string) ([]models.UserRole, error)
 	AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error)
 	RemoveRoleFromUser(ctx context.Context, userID, roleID string) error
+	GrantRolePermission(ctx context.Context, roleID, permissionCode string) (*models.RolePermission, error)
+	RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error
 
 	GetUserSummary(ctx context.Context, userID string) (*models.User, error)
 	IsSuperadmin(ctx context.Context, userID string) (bool, error)
@@ -195,6 +198,8 @@ var operationLabels = map[string]string{
 	"APIKEY_CREATE":             "Creación de API Key",
 	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
 	"APIKEY_REVOKE":             "Revocación de API Key",
+	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
+	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
 	"CATALOG_CREATE":            "Alta en catálogo",
 	"CATALOG_UPDATE":            "Actualización de catálogo",
 	"CATALOG_DELETE":            "Eliminación de catálogo",
@@ -956,7 +961,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		// ============ PORTADA ============
 		pdf.AddPage()
 		pdf.SetY(60)
-		
+
 		// Logo simulado / Marca
 		pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
 		pdf.Rect(125, 50, 15, 15, "F")
@@ -964,31 +969,31 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetTextColor(255, 255, 255)
 		pdf.SetXY(125, 57)
 		pdf.Cell(15, 5, "HG")
-		
+
 		pdf.SetY(75)
 		pdf.SetFont("Helvetica", "B", 24)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.CellFormat(0, 15, translator("REPORTE EJECUTIVO"), "", 0, "C", false, 0, "")
 		pdf.Ln(15)
-		
+
 		pdf.SetFont("Helvetica", "", 14)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(0, 8, translator("Panel de Administración SuperAdmin"), "", 0, "C", false, 0, "")
 		pdf.Ln(40)
-		
+
 		// Cuadro de información
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.SetLineWidth(0.3)
 		boxY := pdf.GetY()
 		pdf.Rect(80, boxY, 137, 35, "FD")
-		
+
 		pdf.SetY(boxY + 8)
 		pdf.SetFont("Helvetica", "B", 11)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.CellFormat(0, 6, translator("INFORMACIÓN DEL REPORTE"), "", 0, "C", false, 0, "")
 		pdf.Ln(8)
-		
+
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(0, 0, 0)
 		pdf.CellFormat(0, 5, translator(fmt.Sprintf("Fecha de generación: %s", formatLocal(generatedAt))), "", 0, "C", false, 0, "")
@@ -998,19 +1003,19 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFont("Helvetica", "I", 9)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(0, 5, translator("Documento confidencial - Uso interno"), "", 0, "C", false, 0, "")
-		
+
 		pdf.SetTextColor(0, 0, 0)
 
 		// ============ PÁGINA DE CONTENIDO ============
 		pdf.AddPage()
-		
+
 		// Resumen ejecutivo
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 10, translator("RESUMEN EJECUTIVO"), "", 0, "L", true, 0, "")
 		pdf.Ln(12)
-		
+
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(0, 0, 0)
 		summaryText := "Este reporte presenta un análisis detallado de las métricas clave del sistema HeartGuard. "
@@ -1023,18 +1028,18 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			if len(headers) != len(widths) {
 				return
 			}
-			
+
 			// Calcular espacio necesario: título (24mm) + encabezado (7mm) + al menos 3 filas (18mm) = ~50mm
 			minSpaceNeeded := 50.0
 			_, _, _, bottomMargin := pdf.GetMargins()
 			pageHeight := 210.0 // A4 height
 			availableSpace := pageHeight - pdf.GetY() - bottomMargin
-			
+
 			// Si no hay suficiente espacio, crear nueva página
 			if availableSpace < minSpaceNeeded {
 				pdf.AddPage()
 			}
-			
+
 			// Separador de sección
 			pdf.Ln(4)
 			pdf.SetDrawColor(accentColor.R, accentColor.G, accentColor.B)
@@ -1042,13 +1047,13 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			currentY := pdf.GetY()
 			pdf.Line(15, currentY, 40, currentY)
 			pdf.Ln(2)
-			
+
 			// Título de la tabla con estilo destacado
 			pdf.SetFont("Helvetica", "B", 13)
 			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 			pdf.Cell(0, 8, translator(title))
 			pdf.Ln(10)
-			
+
 			if len(rows) == 0 {
 				pdf.SetFont("Helvetica", "I", 10)
 				pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
@@ -1058,7 +1063,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 				pdf.Ln(12)
 				return
 			}
-			
+
 			// Encabezados de tabla mejorados
 			pdf.SetFont("Helvetica", "B", 9)
 			pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
@@ -1078,16 +1083,16 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			fill := false
 			leftMargin, _, _, _ := pdf.GetMargins()
 			lineHeight := 6.0
-			
+
 			for rowIdx, row := range rows {
 				// Verificar si hay espacio para la fila actual (considerando altura máxima posible)
 				maxPossibleRowHeight := 30.0 // Altura máxima estimada para una fila con texto largo
 				availableSpace := pageHeight - pdf.GetY() - bottomMargin
-				
+
 				// Si no hay espacio suficiente para la fila, crear nueva página y redibujar encabezados
 				if availableSpace < maxPossibleRowHeight {
 					pdf.AddPage()
-					
+
 					// Redibujar encabezados de tabla en la nueva página
 					pdf.SetFont("Helvetica", "B", 9)
 					pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
@@ -1104,18 +1109,18 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 					pdf.Ln(-1)
 					pdf.SetFont("Helvetica", "", 9)
 					pdf.SetTextColor(26, 32, 44)
-					
+
 					// Resetear el fill pattern para mantener consistencia
 					fill = (rowIdx % 2) == 1
 				}
-				
+
 				fill = !fill
 				if fill {
 					pdf.SetFillColor(250, 251, 253)
 				} else {
 					pdf.SetFillColor(255, 255, 255)
 				}
-				
+
 				y := pdf.GetY()
 				x := leftMargin
 				rowHeight := lineHeight
@@ -1157,14 +1162,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		if data.Overview != nil {
 			metricsRows = append(metricsRows, []string{"Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
 		}
-		
+
 		// Sección: Indicadores Clave
 		pdf.SetFont("Helvetica", "B", 14)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("1. INDICADORES CLAVE DE RENDIMIENTO"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		renderTable("Resumen general", []string{"Métrica", "Valor", "Detalle"}, []float64{80, 28, 140}, []string{"L", "R", "L"}, metricsRows)
 
 		statusRows := make([][]string, 0, len(data.StatusChart))
@@ -1183,7 +1188,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("2. GESTIÓN DE INVITACIONES"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		invRows := make([][]string, 0, len(data.InvitationChart))
 		for _, item := range data.InvitationChart {
 			invRows = append(invRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
@@ -1200,7 +1205,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("3. ACTIVIDAD DEL SISTEMA"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		opRows := make([][]string, 0, len(data.RecentOperations))
 		for _, op := range data.RecentOperations {
 			opRows = append(opRows, []string{op.Label, op.Code, strconv.Itoa(op.Count)})
@@ -1223,7 +1228,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 9, translator("4. ANÁLISIS TEMPORAL"), "", 0, "L", true, 0, "")
 		pdf.Ln(8)
-		
+
 		timelineRows := make([][]string, 0, len(data.ActivitySeries))
 		for _, point := range data.ActivitySeries {
 			timelineRows = append(timelineRows, []string{formatLocal(point.Bucket), strconv.Itoa(point.Count)})
@@ -1233,14 +1238,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		if data.ContentTotals != nil {
 			// Nueva página para contenido
 			pdf.AddPage()
-			
+
 			// Sección: Gestión de Contenido
 			pdf.SetFont("Helvetica", "B", 14)
 			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 			pdf.CellFormat(0, 9, translator("5. GESTIÓN DE CONTENIDO"), "", 0, "L", true, 0, "")
 			pdf.Ln(8)
-			
+
 			totals := data.ContentTotals
 			contentRows := [][]string{
 				{"Total piezas", strconv.Itoa(totals.Total)},
@@ -1282,7 +1287,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 			pdf.CellFormat(0, 9, translator("6. TENDENCIAS DE PRODUCCIÓN"), "", 0, "L", true, 0, "")
 			pdf.Ln(8)
-			
+
 			monthlyRows := make([][]string, 0, len(data.ContentMonthlySeries))
 			for idx, point := range data.ContentMonthlySeries {
 				if idx >= 24 {
@@ -1312,7 +1317,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.CellFormat(0, 10, translator("CONCLUSIONES Y OBSERVACIONES"), "", 0, "L", true, 0, "")
 		pdf.Ln(12)
-		
+
 		pdf.SetFont("Helvetica", "", 10)
 		pdf.SetTextColor(0, 0, 0)
 		conclusionText := "Este reporte ha presentado un análisis exhaustivo de las métricas operativas del sistema HeartGuard. "
@@ -1322,7 +1327,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		conclusionText += "detectar anomalías y planificar estrategias de crecimiento."
 		pdf.MultiCell(0, 6, translator(conclusionText), "", "J", false)
 		pdf.Ln(15)
-		
+
 		// Cuadro de firma o aprobación
 		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.SetLineWidth(0.3)
@@ -1331,7 +1336,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetFont("Helvetica", "I", 9)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(100, 5, translator("Sistema HeartGuard - Reporte Automatizado"), "", 0, "L", false, 0, "")
-		
+
 		pdf.SetMargins(16, 18, 16)
 		pdf.SetAutoPageBreak(true, 20)
 		pdf.SetFont("Helvetica", "B", 15)
@@ -2265,10 +2270,16 @@ type usersViewData struct {
 }
 
 type rolesViewData struct {
-	Roles     []models.Role
-	FormError string
-	FormName  string
-	FormDesc  string
+	Roles       []models.Role
+	Permissions map[string]rolePermissionsView
+	FormError   string
+	FormName    string
+	FormDesc    string
+}
+
+type rolePermissionsView struct {
+	Assigned  []models.RolePermission
+	Available []models.Permission
 }
 
 type catalogNavItem struct {
@@ -2545,7 +2556,32 @@ func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
 		return
 	}
-	data := rolesViewData{Roles: roles}
+	allPerms, err := h.repo.ListPermissions(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los permisos", http.StatusInternalServerError)
+		return
+	}
+	permMap := make(map[string]rolePermissionsView, len(roles))
+	for _, role := range roles {
+		assigned, err := h.repo.ListRolePermissions(ctx, role.ID)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los permisos del rol", http.StatusInternalServerError)
+			return
+		}
+		assignedSet := make(map[string]struct{}, len(assigned))
+		for _, rp := range assigned {
+			assignedSet[rp.Code] = struct{}{}
+		}
+		available := make([]models.Permission, 0, len(allPerms))
+		for _, perm := range allPerms {
+			if _, ok := assignedSet[perm.Code]; ok {
+				continue
+			}
+			available = append(available, perm)
+		}
+		permMap[role.ID] = rolePermissionsView{Assigned: assigned, Available: available}
+	}
+	data := rolesViewData{Roles: roles, Permissions: permMap}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Roles"}}
 	h.render(w, r, "superadmin/roles.html", "Roles", data, crumbs)
 }
@@ -2619,6 +2655,83 @@ func (h *Handlers) RolesDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "ROLE_DELETE", "role", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Rol eliminado"})
 	http.Redirect(w, r, "/superadmin/roles", http.StatusSeeOther)
+}
+
+func (h *Handlers) RolesGrantPermission(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	roleID := chi.URLParam(r, "id")
+	permission := strings.TrimSpace(r.FormValue("permission"))
+	redirect := strings.TrimSpace(r.FormValue("redirect"))
+	if redirect == "" || !strings.HasPrefix(redirect, "/") {
+		redirect = "/superadmin/roles"
+	}
+	if permission == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un permiso"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.repo.GrantRolePermission(ctx, roleID, permission); err != nil {
+		msg := "No se pudo asignar el permiso"
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			msg = "Permiso no encontrado"
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "23503":
+					msg = "Rol no encontrado"
+				case "22P02":
+					msg = "Identificador de rol inválido"
+				}
+			}
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "ROLE_PERMISSION_GRANT", "role", &roleID, map[string]any{"permission": permission})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso asignado"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) RolesRevokePermission(w http.ResponseWriter, r *http.Request) {
+	roleID := chi.URLParam(r, "id")
+	permission := chi.URLParam(r, "code")
+	redirect := strings.TrimSpace(r.URL.Query().Get("redirect"))
+	if redirect == "" || !strings.HasPrefix(redirect, "/") {
+		redirect = "/superadmin/roles"
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RevokeRolePermission(ctx, roleID, permission); err != nil {
+		msg := "No se pudo revocar el permiso"
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			msg = "El permiso no está asignado"
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "23503":
+					msg = "Rol no encontrado"
+				case "22P02":
+					msg = "Identificador de rol inválido"
+				}
+			}
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "ROLE_PERMISSION_REVOKE", "role", &roleID, map[string]any{"permission": permission})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso revocado"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 func (h *Handlers) RolesUpdateUserAssignment(w http.ResponseWriter, r *http.Request) {
