@@ -221,7 +221,9 @@ func (m *Manager) SessionCookie(token string, ttl time.Duration) *http.Cookie {
 		Path:     "/",
 		Expires:  time.Now().Add(ttl),
 	}
-}func (m *Manager) ClearCookie() *http.Cookie {
+}
+
+func (m *Manager) ClearCookie() *http.Cookie {
     return &http.Cookie{
         Name:     cookieName,
         Value:    "",
@@ -282,7 +284,9 @@ func (m *Manager) GuestCSRFCookie(token string, ttl time.Duration) *http.Cookie 
 		Path:     "/login",
 		Expires:  time.Now().Add(ttl),
 	}
-}func (m *Manager) ClearGuestCSRFCookie() *http.Cookie {
+}
+
+func (m *Manager) ClearGuestCSRFCookie() *http.Cookie {
     return &http.Cookie{
         Name:     guestCSRFCookie,
         Value:    "",
