@@ -74,6 +74,19 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
 		})
 
+		s.Route("/locations", func(lr chi.Router) {
+			lr.Route("/patients", func(pr chi.Router) {
+				pr.Get("/", uiHandlers.PatientLocationsIndex)
+				pr.Post("/", uiHandlers.PatientLocationsCreate)
+				pr.Post("/{id}/delete", uiHandlers.PatientLocationsDelete)
+			})
+			lr.Route("/users", func(ur chi.Router) {
+				ur.Get("/", uiHandlers.UserLocationsIndex)
+				ur.Post("/", uiHandlers.UserLocationsCreate)
+				ur.Post("/{id}/delete", uiHandlers.UserLocationsDelete)
+			})
+		})
+
 		s.Route("/care-teams", func(ct chi.Router) {
 			ct.Get("/", uiHandlers.CareTeamsIndex)
 			ct.Post("/", uiHandlers.CareTeamsCreate)

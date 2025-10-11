@@ -41,6 +41,23 @@ func min(a, b int) int {
 	return b
 }
 
+func buildLocationRedirect(base, idKey, idValue, from, to string) string {
+	values := url.Values{}
+	if idValue != "" {
+		values.Set(idKey, idValue)
+	}
+	if from != "" {
+		values.Set("from", from)
+	}
+	if to != "" {
+		values.Set("to", to)
+	}
+	if len(values) == 0 {
+		return base
+	}
+	return base + "?" + values.Encode()
+}
+
 type Repository interface {
 	AuditPool() *pgxpool.Pool
 	Ping(context.Context) error
@@ -68,6 +85,10 @@ type Repository interface {
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
+
+	ListPatientLocations(ctx context.Context, filters models.PatientLocationFilters, limit, offset int) ([]models.PatientLocation, error)
+	CreatePatientLocation(ctx context.Context, input models.PatientLocationInput) (*models.PatientLocation, error)
+	DeletePatientLocation(ctx context.Context, id string) error
 
 	ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error)
 	CreateCareTeam(ctx context.Context, input models.CareTeamInput) (*models.CareTeam, error)
@@ -100,6 +121,10 @@ type Repository interface {
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
+
+	ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error)
+	CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error)
+	DeleteUserLocation(ctx context.Context, id string) error
 
 	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
 	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
@@ -249,6 +274,10 @@ var operationLabels = map[string]string{
 	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
 	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
 	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
+	"PATIENT_LOCATION_CREATE":   "Registro de ubicación de paciente",
+	"PATIENT_LOCATION_DELETE":   "Eliminación de ubicación de paciente",
+	"USER_LOCATION_CREATE":      "Registro de ubicación de usuario",
+	"USER_LOCATION_DELETE":      "Eliminación de ubicación de usuario",
 	"CARE_TEAM_CREATE":          "Alta de equipo de cuidado",
 	"CARE_TEAM_UPDATE":          "Actualización de equipo de cuidado",
 	"CARE_TEAM_DELETE":          "Eliminación de equipo de cuidado",
@@ -2351,6 +2380,14 @@ type patientsViewData struct {
 	Sexes         []models.CatalogItem
 }
 
+type patientLocationsViewData struct {
+	Items             []models.PatientLocation
+	Patients          []models.Patient
+	SelectedPatientID string
+	From              string
+	To                string
+}
+
 type groundTruthViewData struct {
 	Patients          []models.Patient
 	EventTypes        []models.EventType
@@ -2378,6 +2415,14 @@ type pushDevicesViewData struct {
 	Platforms      []models.CatalogItem
 	FilterUserID   string
 	FilterPlatform string
+}
+
+type userLocationsViewData struct {
+	Items          []models.UserLocation
+	Users          []models.User
+	SelectedUserID string
+	From           string
+	To             string
 }
 
 type signalStreamsViewData struct {
@@ -3326,6 +3371,346 @@ func (h *Handlers) PatientsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "PATIENT_DELETE", "patient", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente eliminado"})
 	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientLocationsIndex(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	patientID := strings.TrimSpace(q.Get("patient_id"))
+	fromStr := strings.TrimSpace(q.Get("from"))
+	toStr := strings.TrimSpace(q.Get("to"))
+
+	var fromTime *time.Time
+	if fromStr != "" {
+		if t, err := time.ParseInLocation("2006-01-02", fromStr, time.Local); err == nil {
+			utc := t.In(time.UTC)
+			fromTime = &utc
+		}
+	}
+	var toTime *time.Time
+	if toStr != "" {
+		if t, err := time.ParseInLocation("2006-01-02", toStr, time.Local); err == nil {
+			end := t.Add(24 * time.Hour).Add(-time.Nanosecond).In(time.UTC)
+			toTime = &end
+		}
+	}
+
+	filters := models.PatientLocationFilters{From: fromTime, To: toTime}
+	if patientID != "" {
+		filters.PatientID = &patientID
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	locations, err := h.repo.ListPatientLocations(ctx, filters, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+
+	data := patientLocationsViewData{
+		Items:             locations,
+		Patients:          patients,
+		SelectedPatientID: patientID,
+		From:              fromStr,
+		To:                toStr,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Ubicaciones de pacientes"}}
+	h.render(w, r, "superadmin/patient_locations.html", "Ubicaciones de pacientes", data, crumbs)
+}
+
+func (h *Handlers) PatientLocationsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	fromFilter := strings.TrimSpace(r.FormValue("from"))
+	toFilter := strings.TrimSpace(r.FormValue("to"))
+	redirect := buildLocationRedirect("/superadmin/locations/patients", "patient_id", patientID, fromFilter, toFilter)
+
+	if patientID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente requerido"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+
+	lat, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("latitude")), 64)
+	if err != nil || math.IsNaN(lat) || math.IsInf(lat, 0) || lat < -90 || lat > 90 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Latitud inválida"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	lng, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("longitude")), 64)
+	if err != nil || math.IsNaN(lng) || math.IsInf(lng, 0) || lng < -180 || lng > 180 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Longitud inválida"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+
+	recordedRaw := strings.TrimSpace(r.FormValue("recorded_at"))
+	var recordedAt *time.Time
+	if recordedRaw != "" {
+		ts, err := parseDateTimeLocal(recordedRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha y hora inválidas"})
+			http.Redirect(w, r, redirect, http.StatusSeeOther)
+			return
+		}
+		if ts != nil {
+			utc := ts.In(time.UTC)
+			recordedAt = &utc
+		}
+	}
+
+	accuracyRaw := strings.TrimSpace(r.FormValue("accuracy_m"))
+	var accuracy *float64
+	if accuracyRaw != "" {
+		val, err := strconv.ParseFloat(accuracyRaw, 64)
+		if err != nil || math.IsNaN(val) || math.IsInf(val, 0) || val < 0 {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Precisión inválida"})
+			http.Redirect(w, r, redirect, http.StatusSeeOther)
+			return
+		}
+		accuracy = &val
+	}
+
+	sourceRaw := strings.TrimSpace(r.FormValue("source"))
+	if len(sourceRaw) > 40 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fuente demasiado larga"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	source := optionalString(sourceRaw)
+
+	input := models.PatientLocationInput{
+		PatientID:  patientID,
+		RecordedAt: recordedAt,
+		Latitude:   lat,
+		Longitude:  lng,
+		Source:     source,
+		AccuracyM:  accuracy,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	location, err := h.repo.CreatePatientLocation(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente no encontrado"})
+			http.Redirect(w, r, redirect, http.StatusSeeOther)
+			return
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la ubicación"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	details := map[string]any{"patient_id": location.PatientID}
+	if location.Source != nil {
+		details["source"] = *location.Source
+	}
+	h.writeAudit(ctx, r, "PATIENT_LOCATION_CREATE", "patient_location", &location.ID, details)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación registrada"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientLocationsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	fromFilter := strings.TrimSpace(r.FormValue("from"))
+	toFilter := strings.TrimSpace(r.FormValue("to"))
+	redirect := buildLocationRedirect("/superadmin/locations/patients", "patient_id", patientID, fromFilter, toFilter)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePatientLocation(ctx, id); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la ubicación"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PATIENT_LOCATION_DELETE", "patient_location", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación eliminada"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) UserLocationsIndex(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	userID := strings.TrimSpace(q.Get("user_id"))
+	fromStr := strings.TrimSpace(q.Get("from"))
+	toStr := strings.TrimSpace(q.Get("to"))
+
+	var fromTime *time.Time
+	if fromStr != "" {
+		if t, err := time.ParseInLocation("2006-01-02", fromStr, time.Local); err == nil {
+			utc := t.In(time.UTC)
+			fromTime = &utc
+		}
+	}
+	var toTime *time.Time
+	if toStr != "" {
+		if t, err := time.ParseInLocation("2006-01-02", toStr, time.Local); err == nil {
+			end := t.Add(24 * time.Hour).Add(-time.Nanosecond).In(time.UTC)
+			toTime = &end
+		}
+	}
+
+	filters := models.UserLocationFilters{From: fromTime, To: toTime}
+	if userID != "" {
+		filters.UserID = &userID
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	locations, err := h.repo.ListUserLocations(ctx, filters, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
+		return
+	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+
+	data := userLocationsViewData{
+		Items:          locations,
+		Users:          users,
+		SelectedUserID: userID,
+		From:           fromStr,
+		To:             toStr,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Ubicaciones de usuarios"}}
+	h.render(w, r, "superadmin/user_locations.html", "Ubicaciones de usuarios", data, crumbs)
+}
+
+func (h *Handlers) UserLocationsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	fromFilter := strings.TrimSpace(r.FormValue("from"))
+	toFilter := strings.TrimSpace(r.FormValue("to"))
+	redirect := buildLocationRedirect("/superadmin/locations/users", "user_id", userID, fromFilter, toFilter)
+
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+
+	lat, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("latitude")), 64)
+	if err != nil || math.IsNaN(lat) || math.IsInf(lat, 0) || lat < -90 || lat > 90 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Latitud inválida"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	lng, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("longitude")), 64)
+	if err != nil || math.IsNaN(lng) || math.IsInf(lng, 0) || lng < -180 || lng > 180 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Longitud inválida"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+
+	recordedRaw := strings.TrimSpace(r.FormValue("recorded_at"))
+	var recordedAt *time.Time
+	if recordedRaw != "" {
+		ts, err := parseDateTimeLocal(recordedRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha y hora inválidas"})
+			http.Redirect(w, r, redirect, http.StatusSeeOther)
+			return
+		}
+		if ts != nil {
+			utc := ts.In(time.UTC)
+			recordedAt = &utc
+		}
+	}
+
+	accuracyRaw := strings.TrimSpace(r.FormValue("accuracy_m"))
+	var accuracy *float64
+	if accuracyRaw != "" {
+		val, err := strconv.ParseFloat(accuracyRaw, 64)
+		if err != nil || math.IsNaN(val) || math.IsInf(val, 0) || val < 0 {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Precisión inválida"})
+			http.Redirect(w, r, redirect, http.StatusSeeOther)
+			return
+		}
+		accuracy = &val
+	}
+
+	sourceRaw := strings.TrimSpace(r.FormValue("source"))
+	if len(sourceRaw) > 40 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fuente demasiado larga"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	source := optionalString(sourceRaw)
+
+	input := models.UserLocationInput{
+		UserID:     userID,
+		RecordedAt: recordedAt,
+		Latitude:   lat,
+		Longitude:  lng,
+		Source:     source,
+		AccuracyM:  accuracy,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	location, err := h.repo.CreateUserLocation(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario no encontrado"})
+			http.Redirect(w, r, redirect, http.StatusSeeOther)
+			return
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la ubicación"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	details := map[string]any{"user_id": location.UserID}
+	if location.Source != nil {
+		details["source"] = *location.Source
+	}
+	h.writeAudit(ctx, r, "USER_LOCATION_CREATE", "user_location", &location.ID, details)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación registrada"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) UserLocationsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	fromFilter := strings.TrimSpace(r.FormValue("from"))
+	toFilter := strings.TrimSpace(r.FormValue("to"))
+	redirect := buildLocationRedirect("/superadmin/locations/users", "user_id", userID, fromFilter, toFilter)
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteUserLocation(ctx, id); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la ubicación"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "USER_LOCATION_DELETE", "user_location", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación eliminada"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 // Care teams

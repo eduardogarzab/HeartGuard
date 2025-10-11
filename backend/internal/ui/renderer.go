@@ -81,6 +81,15 @@ func NewRenderer() (*Renderer, error) {
 			}
 			return strconv.FormatFloat(float64(*v), 'f', 4, 32)
 		},
+		"formatFloat64": func(v *float64, prec int) string {
+			if v == nil {
+				return ""
+			}
+			if prec < 0 {
+				prec = 2
+			}
+			return strconv.FormatFloat(*v, 'f', prec, 64)
+		},
 		"stringValue": func(ptr *string) string {
 			if ptr == nil {
 				return ""
