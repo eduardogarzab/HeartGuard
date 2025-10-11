@@ -80,12 +80,20 @@ func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 	formToken := r.FormValue("_csrf")
 	cookie, err := r.Cookie(h.sessions.GuestCookieName())
 	if err != nil || cookie.Value == "" {
+		if h.cfg.Env != "dev" {
+			http.Error(w, "csrf inválido", http.StatusForbidden)
+			return
+		}
+	}
+	if err := h.sessions.ValidateGuestCSRF(r.Context(), formToken); err != nil {
 		http.Error(w, "csrf inválido", http.StatusForbidden)
 		return
 	}
-	if err := h.sessions.ValidateGuestCSRF(r.Context(), formToken); err != nil || cookie.Value != formToken {
-		http.Error(w, "csrf inválido", http.StatusForbidden)
-		return
+	if cookie != nil && cookie.Value != "" && cookie.Value != formToken {
+		if h.cfg.Env != "dev" {
+			http.Error(w, "csrf inválido", http.StatusForbidden)
+			return
+		}
 	}
 	h.sessions.ConsumeGuestCSRF(r.Context(), formToken)
 	http.SetCookie(w, h.sessions.ClearGuestCSRFCookie())
