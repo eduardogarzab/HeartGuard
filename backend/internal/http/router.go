@@ -74,6 +74,28 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
 		})
 
+		s.Route("/care-teams", func(ct chi.Router) {
+			ct.Get("/", uiHandlers.CareTeamsIndex)
+			ct.Post("/", uiHandlers.CareTeamsCreate)
+			ct.Post("/{id}/update", uiHandlers.CareTeamsUpdate)
+			ct.Post("/{id}/delete", uiHandlers.CareTeamsDelete)
+			ct.Post("/{id}/members", uiHandlers.CareTeamMembersAdd)
+			ct.Post("/{id}/members/{userID}/update", uiHandlers.CareTeamMembersUpdate)
+			ct.Post("/{id}/members/{userID}/delete", uiHandlers.CareTeamMembersDelete)
+			ct.Post("/{id}/patients", uiHandlers.CareTeamPatientsAdd)
+			ct.Post("/{id}/patients/{patientID}/delete", uiHandlers.CareTeamPatientsDelete)
+		})
+
+		s.Route("/caregivers", func(cr chi.Router) {
+			cr.Get("/", uiHandlers.CaregiversIndex)
+			cr.Post("/assignments", uiHandlers.CaregiversAssignmentsCreate)
+			cr.Post("/assignments/{patientID}/{caregiverID}/update", uiHandlers.CaregiversAssignmentsUpdate)
+			cr.Post("/assignments/{patientID}/{caregiverID}/delete", uiHandlers.CaregiversAssignmentsDelete)
+			cr.Post("/relationship-types", uiHandlers.CaregiversRelationshipTypeCreate)
+			cr.Post("/relationship-types/{id}/update", uiHandlers.CaregiversRelationshipTypeUpdate)
+			cr.Post("/relationship-types/{id}/delete", uiHandlers.CaregiversRelationshipTypeDelete)
+		})
+
 		s.Route("/ground-truth", func(gr chi.Router) {
 			gr.Get("/", uiHandlers.GroundTruthIndex)
 			gr.Post("/", uiHandlers.GroundTruthCreate)

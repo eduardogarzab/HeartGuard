@@ -123,6 +123,100 @@ type PatientInput struct {
 	RiskLevel *string    `json:"risk_level,omitempty"`
 }
 
+type CareTeam struct {
+	ID        string    `json:"id"`
+	OrgID     *string   `json:"org_id,omitempty"`
+	OrgName   *string   `json:"org_name,omitempty"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+type CareTeamInput struct {
+	OrgID *string `json:"org_id,omitempty"`
+	Name  string  `json:"name"`
+}
+
+type CareTeamUpdateInput struct {
+	OrgID *string `json:"org_id,omitempty"`
+	Name  *string `json:"name,omitempty"`
+}
+
+type CareTeamMember struct {
+	CareTeamID   string    `json:"care_team_id"`
+	CareTeamName string    `json:"care_team_name"`
+	UserID       string    `json:"user_id"`
+	UserName     string    `json:"user_name"`
+	UserEmail    string    `json:"user_email"`
+	RoleInTeam   string    `json:"role_in_team"`
+	JoinedAt     time.Time `json:"joined_at"`
+}
+
+type CareTeamMemberInput struct {
+	UserID     string `json:"user_id"`
+	RoleInTeam string `json:"role_in_team"`
+}
+
+type CareTeamMemberUpdateInput struct {
+	RoleInTeam *string `json:"role_in_team,omitempty"`
+}
+
+type PatientCareTeamLink struct {
+	CareTeamID   string `json:"care_team_id"`
+	CareTeamName string `json:"care_team_name"`
+	PatientID    string `json:"patient_id"`
+	PatientName  string `json:"patient_name"`
+}
+
+type CaregiverRelationshipType struct {
+	ID    string `json:"id"`
+	Code  string `json:"code"`
+	Label string `json:"label"`
+}
+
+type CaregiverRelationshipTypeInput struct {
+	Code  string `json:"code"`
+	Label string `json:"label"`
+}
+
+type CaregiverRelationshipTypeUpdateInput struct {
+	Code  *string `json:"code,omitempty"`
+	Label *string `json:"label,omitempty"`
+}
+
+type CaregiverAssignment struct {
+	PatientID             string     `json:"patient_id"`
+	PatientName           string     `json:"patient_name"`
+	CaregiverID           string     `json:"caregiver_id"`
+	CaregiverName         string     `json:"caregiver_name"`
+	CaregiverEmail        string     `json:"caregiver_email"`
+	RelationshipTypeID    *string    `json:"relationship_type_id,omitempty"`
+	RelationshipTypeCode  *string    `json:"relationship_type_code,omitempty"`
+	RelationshipTypeLabel *string    `json:"relationship_type_label,omitempty"`
+	IsPrimary             bool       `json:"is_primary"`
+	StartedAt             time.Time  `json:"started_at"`
+	EndedAt               *time.Time `json:"ended_at,omitempty"`
+	Note                  *string    `json:"note,omitempty"`
+}
+
+type CaregiverAssignmentInput struct {
+	PatientID          string     `json:"patient_id"`
+	CaregiverID        string     `json:"caregiver_id"`
+	RelationshipTypeID *string    `json:"relationship_type_id,omitempty"`
+	IsPrimary          *bool      `json:"is_primary,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	EndedAt            *time.Time `json:"ended_at,omitempty"`
+	Note               *string    `json:"note,omitempty"`
+}
+
+type CaregiverAssignmentUpdateInput struct {
+	RelationshipTypeID *string    `json:"relationship_type_id,omitempty"`
+	IsPrimary          *bool      `json:"is_primary,omitempty"`
+	StartedAt          *time.Time `json:"started_at,omitempty"`
+	EndedAt            *time.Time `json:"ended_at,omitempty"`
+	Note               *string    `json:"note,omitempty"`
+	ClearEndedAt       bool       `json:"clear_ended_at"`
+}
+
 type Device struct {
 	ID               string    `json:"id"`
 	OrgID            *string   `json:"org_id,omitempty"`
