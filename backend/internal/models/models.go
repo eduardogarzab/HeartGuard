@@ -279,6 +279,48 @@ type AlertStatus struct {
 	StepOrder   int    `json:"step_order"`
 }
 
+type AlertAssignment struct {
+	AlertID          string    `json:"alert_id"`
+	AssigneeUserID   string    `json:"assignee_user_id"`
+	AssigneeName     *string   `json:"assignee_name,omitempty"`
+	AssignedByUserID *string   `json:"assigned_by_user_id,omitempty"`
+	AssignedByName   *string   `json:"assigned_by_name,omitempty"`
+	AssignedAt       time.Time `json:"assigned_at"`
+}
+
+type AlertAck struct {
+	ID          string    `json:"id"`
+	AlertID     string    `json:"alert_id"`
+	AckByUserID *string   `json:"ack_by_user_id,omitempty"`
+	AckByName   *string   `json:"ack_by_name,omitempty"`
+	AckAt       time.Time `json:"ack_at"`
+	Note        *string   `json:"note,omitempty"`
+}
+
+type AlertResolution struct {
+	ID               string    `json:"id"`
+	AlertID          string    `json:"alert_id"`
+	ResolvedByUserID *string   `json:"resolved_by_user_id,omitempty"`
+	ResolvedByName   *string   `json:"resolved_by_name,omitempty"`
+	ResolvedAt       time.Time `json:"resolved_at"`
+	Outcome          *string   `json:"outcome,omitempty"`
+	Note             *string   `json:"note,omitempty"`
+}
+
+type AlertDelivery struct {
+	ID                  string    `json:"id"`
+	AlertID             string    `json:"alert_id"`
+	ChannelID           string    `json:"channel_id"`
+	ChannelCode         string    `json:"channel_code"`
+	ChannelLabel        string    `json:"channel_label"`
+	Target              string    `json:"target"`
+	SentAt              time.Time `json:"sent_at"`
+	DeliveryStatusID    string    `json:"delivery_status_id"`
+	DeliveryStatusCode  string    `json:"delivery_status_code"`
+	DeliveryStatusLabel string    `json:"delivery_status_label"`
+	ResponsePayload     *string   `json:"response_payload,omitempty"`
+}
+
 type ContentRoleActivity struct {
 	Role  string `json:"role"`
 	Count int    `json:"count"`

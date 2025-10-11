@@ -97,6 +97,14 @@ type Repository interface {
 	DeleteAlert(ctx context.Context, id string) error
 	ListAlertTypes(ctx context.Context) ([]models.AlertType, error)
 	ListAlertStatuses(ctx context.Context) ([]models.AlertStatus, error)
+	ListAlertAssignments(ctx context.Context, alertID string) ([]models.AlertAssignment, error)
+	CreateAlertAssignment(ctx context.Context, alertID, assigneeUserID string, assignedBy *string) (*models.AlertAssignment, error)
+	ListAlertAcks(ctx context.Context, alertID string) ([]models.AlertAck, error)
+	CreateAlertAck(ctx context.Context, alertID string, ackBy *string, note *string) (*models.AlertAck, error)
+	ListAlertResolutions(ctx context.Context, alertID string) ([]models.AlertResolution, error)
+	CreateAlertResolution(ctx context.Context, alertID string, resolvedBy *string, outcome, note *string) (*models.AlertResolution, error)
+	ListAlertDeliveries(ctx context.Context, alertID string) ([]models.AlertDelivery, error)
+	CreateAlertDelivery(ctx context.Context, alertID, channelID, target, deliveryStatusID string, responsePayload *string) (*models.AlertDelivery, error)
 	ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error)
 	GetContent(ctx context.Context, id string) (*models.ContentDetail, error)
 	CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error)
@@ -235,23 +243,27 @@ func averagePerDay(total int, days int) float64 {
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":         "Alta de organización",
-	"ORG_UPDATE":         "Actualización de organización",
-	"ORG_DELETE":         "Eliminación de organización",
-	"INVITE_CREATE":      "Emisión de invitación",
-	"INVITE_CANCEL":      "Cancelación de invitación",
-	"INVITE_CONSUME":     "Consumo de invitación",
-	"MEMBER_ADD":         "Alta de miembro",
-	"MEMBER_REMOVE":      "Baja de miembro",
-	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
-	"APIKEY_CREATE":      "Creación de API Key",
-	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":      "Revocación de API Key",
-	"CATALOG_CREATE":     "Alta en catálogo",
-	"CATALOG_UPDATE":     "Actualización de catálogo",
-	"CATALOG_DELETE":     "Eliminación de catálogo",
-	"DASHBOARD_EXPORT":   "Exportación de panel",
-	"AUDIT_EXPORT":       "Exportación de auditoría",
+	"ORG_CREATE":              "Alta de organización",
+	"ORG_UPDATE":              "Actualización de organización",
+	"ORG_DELETE":              "Eliminación de organización",
+	"INVITE_CREATE":           "Emisión de invitación",
+	"INVITE_CANCEL":           "Cancelación de invitación",
+	"INVITE_CONSUME":          "Consumo de invitación",
+	"MEMBER_ADD":              "Alta de miembro",
+	"MEMBER_REMOVE":           "Baja de miembro",
+	"USER_STATUS_UPDATE":      "Actualización de estatus de usuario",
+	"APIKEY_CREATE":           "Creación de API Key",
+	"APIKEY_SET_PERMS":        "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":           "Revocación de API Key",
+	"ALERT_ASSIGNMENT_CREATE": "Registro de asignación de alerta",
+	"ALERT_ACK_CREATE":        "Registro de acuse de alerta",
+	"ALERT_RESOLUTION_CREATE": "Registro de resolución de alerta",
+	"ALERT_DELIVERY_CREATE":   "Registro de entrega de alerta",
+	"CATALOG_CREATE":          "Alta en catálogo",
+	"CATALOG_UPDATE":          "Actualización de catálogo",
+	"CATALOG_DELETE":          "Eliminación de catálogo",
+	"DASHBOARD_EXPORT":        "Exportación de panel",
+	"AUDIT_EXPORT":            "Exportación de auditoría",
 }
 
 func operationLabel(code string) string {
@@ -263,6 +275,18 @@ func operationLabel(code string) string {
 		return label
 	}
 	return humanizeToken(upper)
+}
+
+func trimmedOptional(input *string) *string {
+	if input == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*input)
+	if trimmed == "" {
+		return nil
+	}
+	val := trimmed
+	return &val
 }
 
 func decodeAndValidate[T any](r *http.Request, v *T, validate *validator.Validate) (map[string]string, error) {
@@ -502,6 +526,230 @@ func (h *Handlers) CancelInvitation(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeAudit(ctx, r, "INVITE_CANCEL", "org_invitation", &invitationID, nil)
 	w.WriteHeader(204)
+}
+
+// Alerts
+
+type alertAssignmentReq struct {
+	AssigneeUserID string `json:"assignee_user_id" validate:"required,uuid4"`
+}
+
+type alertAckReq struct {
+	AckByUserID *string `json:"ack_by_user_id" validate:"omitempty,uuid4"`
+	Note        *string `json:"note"`
+}
+
+type alertResolutionReq struct {
+	ResolvedByUserID *string `json:"resolved_by_user_id" validate:"omitempty,uuid4"`
+	Outcome          *string `json:"outcome"`
+	Note             *string `json:"note"`
+}
+
+type alertDeliveryReq struct {
+	ChannelID        string  `json:"channel_id" validate:"required,uuid4"`
+	Target           string  `json:"target" validate:"required"`
+	DeliveryStatusID string  `json:"delivery_status_id" validate:"required,uuid4"`
+	ResponsePayload  *string `json:"response_payload"`
+}
+
+func (h *Handlers) ListAlertAssignments(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListAlertAssignments(ctx, alertID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	if list == nil {
+		list = make([]models.AlertAssignment, 0)
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateAlertAssignment(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	var req alertAssignmentReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	assignee := strings.TrimSpace(req.AssigneeUserID)
+	if assignee == "" {
+		writeProblem(w, 422, "validation_error", "assignee_user_id is required", map[string]string{"assignee_user_id": "required"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignment, err := h.repo.CreateAlertAssignment(ctx, alertID, assignee, actorPtr(r))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"assignee_user_id": assignment.AssigneeUserID}
+	if assignment.AssignedByUserID != nil {
+		details["assigned_by_user_id"] = *assignment.AssignedByUserID
+	}
+	h.writeAudit(ctx, r, "ALERT_ASSIGNMENT_CREATE", "alert", &assignment.AlertID, details)
+	writeJSON(w, 201, assignment)
+}
+
+func (h *Handlers) ListAlertAcks(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListAlertAcks(ctx, alertID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	if list == nil {
+		list = make([]models.AlertAck, 0)
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateAlertAck(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	var req alertAckReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ackBy := trimmedOptional(req.AckByUserID)
+	if ackBy == nil {
+		ackBy = actorPtr(r)
+	}
+	note := trimmedOptional(req.Note)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	ack, err := h.repo.CreateAlertAck(ctx, alertID, ackBy, note)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"alert_id": ack.AlertID}
+	if ack.AckByUserID != nil {
+		details["ack_by_user_id"] = *ack.AckByUserID
+	}
+	h.writeAudit(ctx, r, "ALERT_ACK_CREATE", "alert_ack", &ack.ID, details)
+	writeJSON(w, 201, ack)
+}
+
+func (h *Handlers) ListAlertResolutions(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListAlertResolutions(ctx, alertID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	if list == nil {
+		list = make([]models.AlertResolution, 0)
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateAlertResolution(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	var req alertResolutionReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	resolvedBy := trimmedOptional(req.ResolvedByUserID)
+	if resolvedBy == nil {
+		resolvedBy = actorPtr(r)
+	}
+	outcome := trimmedOptional(req.Outcome)
+	note := trimmedOptional(req.Note)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	res, err := h.repo.CreateAlertResolution(ctx, alertID, resolvedBy, outcome, note)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"alert_id": res.AlertID}
+	if res.ResolvedByUserID != nil {
+		details["resolved_by_user_id"] = *res.ResolvedByUserID
+	}
+	if res.Outcome != nil {
+		details["outcome"] = *res.Outcome
+	}
+	h.writeAudit(ctx, r, "ALERT_RESOLUTION_CREATE", "alert_resolution", &res.ID, details)
+	writeJSON(w, 201, res)
+}
+
+func (h *Handlers) ListAlertDeliveries(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListAlertDeliveries(ctx, alertID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	if list == nil {
+		list = make([]models.AlertDelivery, 0)
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateAlertDelivery(w http.ResponseWriter, r *http.Request) {
+	alertID := chi.URLParam(r, "id")
+	var req alertDeliveryReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	channelID := strings.TrimSpace(req.ChannelID)
+	statusID := strings.TrimSpace(req.DeliveryStatusID)
+	target := strings.TrimSpace(req.Target)
+	if channelID == "" || statusID == "" || target == "" {
+		writeProblem(w, 422, "validation_error", "channel_id, delivery_status_id and target are required", map[string]string{"channel_id": "required", "delivery_status_id": "required", "target": "required"})
+		return
+	}
+	response := trimmedOptional(req.ResponsePayload)
+	if response != nil && !json.Valid([]byte(*response)) {
+		writeProblem(w, 422, "validation_error", "response_payload must be valid JSON", map[string]string{"response_payload": "invalid"})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	delivery, err := h.repo.CreateAlertDelivery(ctx, alertID, channelID, target, statusID, response)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"alert_id": delivery.AlertID, "channel_id": delivery.ChannelID, "delivery_status_id": delivery.DeliveryStatusID}
+	h.writeAudit(ctx, r, "ALERT_DELIVERY_CREATE", "alert_delivery", &delivery.ID, details)
+	writeJSON(w, 201, delivery)
 }
 
 // Catalogs

@@ -101,49 +101,200 @@
 					<td>{{$alert.StatusLabel}}</td>
 					<td>{{if $alert.OrgName}}{{$alert.OrgName}}{{else}}—{{end}}</td>
 					<td>{{formatTime $alert.CreatedAt}}</td>
-					<td class="hg-flex">
-						<details>
-							<summary>Editar</summary>
-							<form method="post" action="/superadmin/alerts/{{$alert.ID}}/update" class="hg-form-grid">
-								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-								<div class="hg-form-field">
-									<label>Tipo</label>
-									<select name="alert_type" required>
-										{{range $.Data.AlertTypes}}
-										<option value="{{.Code}}" {{if eq .Code $alert.AlertTypeCode}}selected{{end}}>{{.Code}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Nivel</label>
-									<select name="alert_level" required>
-										{{range $.Data.AlertLevels}}
-										<option value="{{.Code}}" {{if eq .Code $alert.LevelCode}}selected{{end}}>{{.Label}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Estatus</label>
-									<select name="status" required>
-										{{range $.Data.AlertStatuses}}
-										<option value="{{.Code}}" {{if eq .Code $alert.StatusCode}}selected{{end}}>{{.Description}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Descripción</label>
-									<textarea name="description" rows="2">{{if $alert.Description}}{{$alert.Description}}{{end}}</textarea>
-								</div>
-								<div class="hg-form-actions">
-									<button type="submit">Guardar</button>
-								</div>
-							</form>
-						</details>
-						<form method="post" action="/superadmin/alerts/{{$alert.ID}}/delete" data-hg-confirm="¿Eliminar alerta?" class="hg-inline-form">
-							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
-						</form>
-					</td>
+                                        <td class="hg-flex">
+                                                <details>
+                                                        <summary>Gestionar</summary>
+                                                        <div class="hg-alert-manage">
+                                                                <div class="hg-alert-section">
+                                                                        <h4>Actualizar alerta</h4>
+                                                                        <form method="post" action="/superadmin/alerts/{{$alert.ID}}/update" class="hg-form-grid">
+                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Tipo</label>
+                                                                                        <select name="alert_type" required>
+                                                                                                {{range $.Data.AlertTypes}}
+                                                                                                <option value="{{.Code}}" {{if eq .Code $alert.AlertTypeCode}}selected{{end}}>{{.Code}}</option>
+                                                                                                {{end}}
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Nivel</label>
+                                                                                        <select name="alert_level" required>
+                                                                                                {{range $.Data.AlertLevels}}
+                                                                                                <option value="{{.Code}}" {{if eq .Code $alert.LevelCode}}selected{{end}}>{{.Label}}</option>
+                                                                                                {{end}}
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Estatus</label>
+                                                                                        <select name="status" required>
+                                                                                                {{range $.Data.AlertStatuses}}
+                                                                                                <option value="{{.Code}}" {{if eq .Code $alert.StatusCode}}selected{{end}}>{{.Description}}</option>
+                                                                                                {{end}}
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Descripción</label>
+                                                                                        <textarea name="description" rows="2">{{if $alert.Description}}{{$alert.Description}}{{end}}</textarea>
+                                                                                </div>
+                                                                                <div class="hg-form-actions">
+                                                                                        <button type="submit">Guardar</button>
+                                                                                </div>
+                                                                        </form>
+                                                                </div>
+                                                                <div class="hg-alert-section">
+                                                                        <h4>Asignaciones</h4>
+                                                                        <form method="post" action="/superadmin/alerts/{{$alert.ID}}/assignments" class="hg-form-inline hg-gap">
+                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                <select name="assignee_user_id" required>
+                                                                                        <option value="">Selecciona responsable</option>
+                                                                                        {{range $user := $.Data.Users}}
+                                                                                        <option value="{{$user.ID}}">{{$user.Name}} · {{$user.Email}}</option>
+                                                                                        {{end}}
+                                                                                </select>
+                                                                                <button type="submit">Asignar</button>
+                                                                        </form>
+                                                                        {{$assignments := index $.Data.Assignments $alert.ID}}
+                                                                        {{if $assignments}}
+                                                                        <ul class="hg-list-compact">
+                                                                                {{range $assignments}}
+                                                                                <li>
+                                                                                        {{if .AssigneeName}}{{.AssigneeName}}{{else}}Usuario {{.AssigneeUserID}}{{end}}
+                                                                                        {{if .AssignedByName}} · asignado por {{.AssignedByName}}{{else if .AssignedByUserID}} · asignado por {{.AssignedByUserID}}{{end}}
+                                                                                        · {{formatTime .AssignedAt}}
+                                                                                </li>
+                                                                                {{end}}
+                                                                        </ul>
+                                                                        {{else}}
+                                                                        <p class="hg-empty-cell">Sin asignaciones registradas.</p>
+                                                                        {{end}}
+                                                                </div>
+                                                                <div class="hg-alert-section">
+                                                                        <h4>Acuses</h4>
+                                                                        <form method="post" action="/superadmin/alerts/{{$alert.ID}}/acks" class="hg-form-inline hg-gap">
+                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                <select name="ack_by_user_id">
+                                                                                        <option value="" {{if eq $.Data.CurrentUserID ""}}selected{{end}}>Yo mismo</option>
+                                                                                        {{range $user := $.Data.Users}}
+                                                                                        <option value="{{$user.ID}}" {{if eq $user.ID $.Data.CurrentUserID}}selected{{end}}>{{$user.Name}} · {{$user.Email}}</option>
+                                                                                        {{end}}
+                                                                                </select>
+                                                                                <input name="note" placeholder="Nota (opcional)" />
+                                                                                <button type="submit">Registrar acuse</button>
+                                                                        </form>
+                                                                        {{$acks := index $.Data.Acks $alert.ID}}
+                                                                        {{if $acks}}
+                                                                        <ul class="hg-list-compact">
+                                                                                {{range $acks}}
+                                                                                <li>
+                                                                                        {{if .AckByName}}{{.AckByName}}{{else if .AckByUserID}}Usuario {{.AckByUserID}}{{else}}—{{end}}
+                                                                                        · {{formatTime .AckAt}}
+                                                                                        {{if .Note}} — {{.Note}}{{end}}
+                                                                                </li>
+                                                                                {{end}}
+                                                                        </ul>
+                                                                        {{else}}
+                                                                        <p class="hg-empty-cell">Sin acuses registrados.</p>
+                                                                        {{end}}
+                                                                </div>
+                                                                <div class="hg-alert-section">
+                                                                        <h4>Resoluciones</h4>
+                                                                        <form method="post" action="/superadmin/alerts/{{$alert.ID}}/resolutions" class="hg-form-grid">
+                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Resuelto por</label>
+                                                                                        <select name="resolved_by_user_id">
+                                                                                                <option value="">Yo mismo</option>
+                                                                                                {{range $user := $.Data.Users}}
+                                                                                                <option value="{{$user.ID}}" {{if eq $user.ID $.Data.CurrentUserID}}selected{{end}}>{{$user.Name}} · {{$user.Email}}</option>
+                                                                                                {{end}}
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Resultado</label>
+                                                                                        <input name="outcome" placeholder="Resultado" />
+                                                                                </div>
+                                                                                <div class="hg-form-field hg-form-field--full">
+                                                                                        <label>Nota</label>
+                                                                                        <textarea name="note" rows="2"></textarea>
+                                                                                </div>
+                                                                                <div class="hg-form-actions">
+                                                                                        <button type="submit">Registrar resolución</button>
+                                                                                </div>
+                                                                        </form>
+                                                                        {{$res := index $.Data.Resolutions $alert.ID}}
+                                                                        {{if $res}}
+                                                                        <ul class="hg-list-compact">
+                                                                                {{range $res}}
+                                                                                <li>
+                                                                                        {{if .ResolvedByName}}{{.ResolvedByName}}{{else if .ResolvedByUserID}}Usuario {{.ResolvedByUserID}}{{else}}—{{end}}
+                                                                                        · {{formatTime .ResolvedAt}}
+                                                                                        {{if .Outcome}} · {{.Outcome}}{{end}}
+                                                                                        {{if .Note}} — {{.Note}}{{end}}
+                                                                                </li>
+                                                                                {{end}}
+                                                                        </ul>
+                                                                        {{else}}
+                                                                        <p class="hg-empty-cell">Sin resoluciones registradas.</p>
+                                                                        {{end}}
+                                                                </div>
+                                                                <div class="hg-alert-section">
+                                                                        <h4>Entregas</h4>
+                                                                        <form method="post" action="/superadmin/alerts/{{$alert.ID}}/deliveries" class="hg-form-grid">
+                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Canal</label>
+                                                                                        <select name="channel_id" required>
+                                                                                                <option value="">Selecciona canal</option>
+                                                                                                {{range $.Data.AlertChannels}}
+                                                                                                <option value="{{.ID}}">{{.Label}} ({{.Code}})</option>
+                                                                                                {{end}}
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Estado</label>
+                                                                                        <select name="delivery_status_id" required>
+                                                                                                <option value="">Selecciona estado</option>
+                                                                                                {{range $.Data.DeliveryStatuses}}
+                                                                                                <option value="{{.ID}}">{{.Label}} ({{.Code}})</option>
+                                                                                                {{end}}
+                                                                                        </select>
+                                                                                </div>
+                                                                                <div class="hg-form-field">
+                                                                                        <label>Destino</label>
+                                                                                        <input name="target" required placeholder="Destino" />
+                                                                                </div>
+                                                                                <div class="hg-form-field hg-form-field--full">
+                                                                                        <label>Respuesta (JSON)</label>
+                                                                                        <textarea name="response_payload" rows="2" placeholder="{&quot;status&quot;:&quot;sent&quot;}"></textarea>
+                                                                                </div>
+                                                                                <div class="hg-form-actions">
+                                                                                        <button type="submit">Registrar entrega</button>
+                                                                                </div>
+                                                                        </form>
+                                                                        {{$deliveries := index $.Data.Deliveries $alert.ID}}
+                                                                        {{if $deliveries}}
+                                                                        <ul class="hg-list-compact">
+                                                                                {{range $deliveries}}
+                                                                                <li>
+                                                                                        {{.ChannelLabel}} → {{.Target}} · {{.DeliveryStatusLabel}} · {{formatTime .SentAt}}
+                                                                                        {{if .ResponsePayload}}
+                                                                                        <pre>{{.ResponsePayload}}</pre>
+                                                                                        {{end}}
+                                                                                </li>
+                                                                                {{end}}
+                                                                        </ul>
+                                                                        {{else}}
+                                                                        <p class="hg-empty-cell">Sin entregas registradas.</p>
+                                                                        {{end}}
+                                                                </div>
+                                                        </div>
+                                                </details>
+                                                <form method="post" action="/superadmin/alerts/{{$alert.ID}}/delete" data-hg-confirm="¿Eliminar alerta?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
 				</tr>
 				{{else}}
 				<tr>
