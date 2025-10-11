@@ -1,10 +1,46 @@
-const HG_CHART_PALETTE = ["#38bdf8", "#34d399", "#fbbf24", "#f87171", "#a855f7", "#22d3ee", "#fb7185", "#f97316", "#2dd4bf", "#6366f1"];
+const HG_COLOR_BASE = "#38bdf8";
+const HG_COLOR_PALETTE = ["#38bdf8", "#0ea5e9", "#0284c7", "#0369a1", "#075985", "#0c4a6e", "#1d7ed6", "#60a5fa", "#1dc7ff", "#4db5ff"];
 const HG_STATE_COLORS = {
-	success: "#34d399",
-	warn: "#fbbf24",
+	success: "#22c55e",
+	warn: "#eab308",
 	danger: "#f87171",
-	info: "#38bdf8",
+	info: HG_COLOR_BASE,
 };
+
+function hgGetPaletteColor(index, offset = 0) {
+	const paletteLength = HG_COLOR_PALETTE.length || 1;
+	const normalizedIndex = ((offset + index) % paletteLength + paletteLength) % paletteLength;
+	return HG_COLOR_PALETTE[normalizedIndex];
+}
+
+function hgHexToRgb(hex) {
+	const normalized = hex.replace(/[^0-9a-f]/gi, "");
+	if (normalized.length === 3) {
+		const r = normalized[0];
+		const g = normalized[1];
+		const b = normalized[2];
+		return {
+			r: parseInt(`${r}${r}`, 16),
+			g: parseInt(`${g}${g}`, 16),
+			b: parseInt(`${b}${b}`, 16),
+		};
+	}
+	if (normalized.length >= 6) {
+		return {
+			r: parseInt(normalized.slice(0, 2), 16),
+			g: parseInt(normalized.slice(2, 4), 16),
+			b: parseInt(normalized.slice(4, 6), 16),
+		};
+	}
+	return { r: 56, g: 189, b: 248 };
+}
+
+function hgColorWithAlpha(hex, alpha) {
+	const { r, g, b } = hgHexToRgb(hex);
+	return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+let hgTooltipEl = null;
 
 function hgParseChartDataset(raw) {
 	if (!raw) return null;
@@ -16,10 +52,12 @@ function hgParseChartDataset(raw) {
 	}
 }
 
-function hgPickColor(entry, index) {
+function hgPickColor(entry, index, offset) {
 	const state = (entry?.State || entry?.state || "").toLowerCase();
-	if (state && HG_STATE_COLORS[state]) return HG_STATE_COLORS[state];
-	return HG_CHART_PALETTE[index % HG_CHART_PALETTE.length];
+	if (state && state !== "info" && HG_STATE_COLORS[state]) {
+		return HG_STATE_COLORS[state];
+	}
+	return hgGetPaletteColor(index, offset);
 }
 
 function hgSafeValue(value) {
@@ -33,6 +71,57 @@ function hgFormatBucketLabel(bucket) {
 	const date = new Date(bucket);
 	if (Number.isNaN(date.getTime())) return String(bucket);
 	return date.toLocaleString();
+}
+
+function hgFormatBucketLabelParts(bucket) {
+	const fallback = { primary: bucket ? String(bucket) : "", secondary: "", raw: bucket };
+	if (!bucket) return fallback;
+	const date = new Date(bucket);
+	if (Number.isNaN(date.getTime())) {
+		return fallback;
+	}
+	return {
+		primary: date.toLocaleDateString("es-MX"),
+		secondary: date.toLocaleTimeString("es-MX"),
+		raw: date,
+	};
+}
+
+function hgEnsureTooltip() {
+	if (!hgTooltipEl) {
+		hgTooltipEl = document.createElement("div");
+		hgTooltipEl.className = "hg-chart-tooltip";
+		document.body.appendChild(hgTooltipEl);
+	}
+	return hgTooltipEl;
+}
+
+function hgShowTooltip(x, y, html) {
+	const tooltip = hgEnsureTooltip();
+	tooltip.innerHTML = html;
+	tooltip.style.transform = `translate3d(${x + 14}px, ${y + 18}px, 0)`;
+	tooltip.classList.add("is-visible");
+}
+
+function hgHideTooltip() {
+	if (!hgTooltipEl) return;
+	hgTooltipEl.classList.remove("is-visible");
+	hgTooltipEl.style.transform = "translate3d(-9999px, -9999px, 0)";
+}
+
+function hgNormalizeAngle(angle) {
+	const tau = Math.PI * 2;
+	return ((angle % tau) + tau) % tau;
+}
+
+function hgEllipsize(ctx, text, maxWidth) {
+	if (!text) return "";
+	if (ctx.measureText(text).width <= maxWidth) return text;
+	let truncated = text;
+	while (truncated.length > 1 && ctx.measureText(`${truncated}…`).width > maxWidth) {
+		truncated = truncated.slice(0, -1);
+	}
+	return `${truncated}…`;
 }
 
 function hgPrepareCanvas(canvas) {
@@ -55,38 +144,99 @@ function hgPrepareCanvas(canvas) {
 	};
 }
 
-function hgDrawDoughnut(canvas, entries, colors) {
+function hgDrawDoughnut(canvas, dataset, activeIndex) {
 	const prepared = hgPrepareCanvas(canvas);
-	if (!prepared) return false;
+	if (!prepared) return null;
 	const { ctx, width, height } = prepared;
-	const total = entries.reduce((sum, entry) => sum + Math.max(0, hgSafeValue(entry)), 0);
-	if (total <= 0) return false;
+	const { values, colors, labels } = dataset;
+	const total = values.reduce((sum, entry) => sum + Math.max(0, hgSafeValue(entry)), 0);
+	if (total <= 0) return null;
 	const cx = width / 2;
 	const cy = height / 2;
-	const radius = Math.min(width, height) / 2 - 12;
+	const baseOuter = Math.max(Math.min(width, height) / 2 - 18, 48);
+	const baseInner = Math.max(baseOuter * 0.6, baseOuter - 46);
+	const activeIdx = Number.isFinite(activeIndex) ? activeIndex : null;
 	let start = -Math.PI / 2;
-	entries.forEach((value, idx) => {
+	const segments = [];
+	values.forEach((value, idx) => {
 		const safeValue = Math.max(0, hgSafeValue(value));
-		if (safeValue <= 0) return;
+		if (safeValue <= 0) {
+			return;
+		}
 		const angle = (safeValue / total) * Math.PI * 2;
+		const end = start + angle;
+		const startNorm = hgNormalizeAngle(start);
+		const endNorm = hgNormalizeAngle(end);
+		const isActive = activeIdx === idx;
+		const outer = baseOuter + (isActive ? 10 : 0);
+		const inner = Math.max(baseInner - (isActive ? 8 : 0), baseInner * 0.75);
+		ctx.save();
 		ctx.beginPath();
-		ctx.moveTo(cx, cy);
+		if (isActive) {
+			ctx.shadowColor = "rgba(56, 189, 248, 0.45)";
+			ctx.shadowBlur = 28;
+		} else {
+			ctx.shadowColor = "transparent";
+			ctx.shadowBlur = 0;
+		}
 		ctx.fillStyle = colors[idx];
-		ctx.arc(cx, cy, radius, start, start + angle, false);
+		ctx.arc(cx, cy, outer, start, end, false);
+		ctx.arc(cx, cy, inner, end, start, true);
 		ctx.closePath();
 		ctx.fill();
-		start += angle;
+		ctx.restore();
+		if (isActive) {
+			ctx.save();
+			ctx.lineWidth = 2;
+			ctx.strokeStyle = "rgba(255, 255, 255, 0.85)";
+			ctx.beginPath();
+			ctx.arc(cx, cy, outer, start, end, false);
+			ctx.stroke();
+			ctx.restore();
+		}
+		segments.push({
+			index: idx,
+			start: startNorm,
+			end: endNorm,
+			wrap: endNorm < startNorm,
+			value: safeValue,
+			percent: safeValue / total,
+			label: labels[idx],
+			color: colors[idx],
+		});
+		start = end;
 	});
+	const innerCircle = baseInner * 0.82;
 	ctx.beginPath();
-	ctx.fillStyle = "rgba(15, 23, 42, 0.9)";
-	ctx.arc(cx, cy, radius * 0.55, 0, Math.PI * 2, false);
+	ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+	ctx.arc(cx, cy, innerCircle, 0, Math.PI * 2, false);
 	ctx.fill();
-	ctx.fillStyle = "#e2e8f0";
-	ctx.font = "600 16px 'Inter', 'Segoe UI', sans-serif";
+	const activeSegment = Number.isFinite(activeIdx) ? segments.find((segment) => segment.index === activeIdx) : null;
+	const primaryValue = (activeSegment ? activeSegment.value : total).toLocaleString("es-MX");
 	ctx.textAlign = "center";
 	ctx.textBaseline = "middle";
-	ctx.fillText(total.toLocaleString("es-MX"), cx, cy);
-	return true;
+	ctx.fillStyle = "#f8fafc";
+	ctx.font = "600 17px 'Inter', 'Segoe UI', sans-serif";
+	ctx.fillText(primaryValue, cx, cy - (activeSegment ? 8 : 4));
+	ctx.textBaseline = "top";
+	ctx.font = "500 11px 'Inter', 'Segoe UI', sans-serif";
+	ctx.fillStyle = "rgba(148, 163, 184, 0.84)";
+	const labelText = activeSegment ? hgEllipsize(ctx, activeSegment.label || "", innerCircle * 1.6) : "Total";
+	ctx.fillText(labelText || "Total", cx, cy + 2);
+	if (activeSegment) {
+		ctx.font = "500 10px 'Inter', 'Segoe UI', sans-serif";
+		ctx.fillStyle = "rgba(148, 163, 184, 0.7)";
+		const percentText = `${Math.round(activeSegment.percent * 1000) / 10}%`;
+		ctx.fillText(percentText, cx, cy + 16);
+	}
+	return {
+		cx,
+		cy,
+		innerRadius: baseInner,
+		outerRadius: baseOuter,
+		segments,
+		total,
+	};
 }
 
 function hgDrawHorizontalBar(canvas, labels, values, colors) {
@@ -98,19 +248,21 @@ function hgDrawHorizontalBar(canvas, labels, values, colors) {
 	const maxValue = Math.max(...values, 1);
 	const padding = 28;
 	ctx.font = "600 13px 'Inter', 'Segoe UI', sans-serif";
-	const labelWidth = Math.min(width * 0.45, Math.max(...labels.map((label) => ctx.measureText(label).width), 60) + 16);
+	const measured = labels.map((label) => ctx.measureText(label).width);
+	const labelWidth = Math.min(width * 0.45, Math.max(...measured, 60) + 24);
 	const barGap = 12;
 	const availableHeight = height - padding * 2;
-	const barHeight = Math.max(8, (availableHeight - barGap * (count - 1)) / count);
+	const barHeight = Math.max(12, (availableHeight - barGap * (count - 1)) / count);
 	ctx.textBaseline = "middle";
-	ctx.fillStyle = "rgba(148, 163, 184, 0.25)";
-	ctx.fillRect(labelWidth + padding, padding - 4, 1, height - padding * 2 + 8);
+	ctx.fillStyle = "rgba(148, 163, 184, 0.18)";
+	ctx.fillRect(labelWidth + padding, padding - 6, 1, height - padding * 2 + 12);
 	values.forEach((value, idx) => {
 		const safeValue = Math.max(0, hgSafeValue(value));
 		const barLength = (safeValue / maxValue) * (width - padding * 2 - labelWidth);
 		const y = padding + idx * (barHeight + barGap);
 		ctx.fillStyle = "rgba(226, 232, 240, 0.82)";
-		ctx.fillText(labels[idx], padding, y + barHeight / 2);
+		const text = hgEllipsize(ctx, labels[idx], labelWidth - 16);
+		ctx.fillText(text, padding, y + barHeight / 2);
 		ctx.fillStyle = colors[idx];
 		const barX = labelWidth + padding + 4;
 		const barY = y;
@@ -140,22 +292,37 @@ function hgDrawLine(canvas, labels, values, color) {
 	const { ctx, width, height } = prepared;
 	const count = values.length;
 	if (!count) return false;
-	const padding = 36;
+	const paddingX = 56;
+	const paddingY = 48;
 	const sanitized = values.map((value) => hgSafeValue(value));
 	const maxValue = Math.max(...sanitized);
 	const minValue = Math.min(...sanitized);
 	const range = maxValue - minValue || Math.max(maxValue, 1);
-	const areaWidth = width - padding * 2;
-	const areaHeight = height - padding * 2;
-	ctx.strokeStyle = "rgba(148, 163, 184, 0.35)";
+	const chartLeft = paddingX;
+	const chartRight = width - paddingX;
+	const chartTop = paddingY;
+	const chartBottom = height - paddingY;
+	const areaWidth = chartRight - chartLeft;
+	const areaHeight = chartBottom - chartTop;
 	ctx.lineWidth = 1;
+	ctx.strokeStyle = "rgba(148, 163, 184, 0.28)";
+	const gridLines = 4;
+	for (let i = 0; i <= gridLines; i += 1) {
+		const ratio = i / gridLines;
+		const y = chartBottom - areaHeight * ratio;
+		ctx.beginPath();
+		ctx.moveTo(chartLeft, y);
+		ctx.lineTo(chartRight, y);
+		ctx.stroke();
+	}
 	ctx.beginPath();
-	ctx.moveTo(padding, height - padding);
-	ctx.lineTo(width - padding, height - padding);
+	ctx.moveTo(chartLeft, chartBottom);
+	ctx.lineTo(chartRight, chartBottom);
+	ctx.strokeStyle = "rgba(148, 163, 184, 0.45)";
 	ctx.stroke();
 	ctx.beginPath();
-	ctx.moveTo(padding, padding);
-	ctx.lineTo(padding, height - padding);
+	ctx.moveTo(chartLeft, chartTop);
+	ctx.lineTo(chartLeft, chartBottom);
 	ctx.stroke();
 	const stepX = count > 1 ? areaWidth / (count - 1) : 0;
 	ctx.lineWidth = 2.5;
@@ -163,8 +330,8 @@ function hgDrawLine(canvas, labels, values, color) {
 	ctx.beginPath();
 	sanitized.forEach((value, idx) => {
 		const normalized = (value - minValue) / range;
-		const x = padding + stepX * idx;
-		const y = height - padding - normalized * areaHeight;
+		const x = chartLeft + stepX * idx;
+		const y = chartBottom - normalized * areaHeight;
 		if (idx === 0) {
 			ctx.moveTo(x, y);
 		} else {
@@ -172,48 +339,68 @@ function hgDrawLine(canvas, labels, values, color) {
 		}
 	});
 	ctx.stroke();
+	ctx.lineTo(chartRight, chartBottom);
+	ctx.lineTo(chartLeft, chartBottom);
+	ctx.closePath();
+	const gradient = ctx.createLinearGradient(0, chartTop, 0, chartBottom);
+	gradient.addColorStop(0, hgColorWithAlpha(color, 0.28));
+	gradient.addColorStop(1, hgColorWithAlpha(color, 0));
+	ctx.fillStyle = gradient;
+	ctx.fill();
 	ctx.fillStyle = color;
 	ctx.strokeStyle = "#0f172a";
 	sanitized.forEach((value, idx) => {
 		const normalized = (value - minValue) / range;
-		const x = padding + stepX * idx;
-		const y = height - padding - normalized * areaHeight;
+		const x = chartLeft + stepX * idx;
+		const y = chartBottom - normalized * areaHeight;
 		ctx.beginPath();
 		ctx.arc(x, y, 4, 0, Math.PI * 2);
 		ctx.fill();
 		ctx.stroke();
 	});
-	ctx.fillStyle = "rgba(226, 232, 240, 0.72)";
+	ctx.fillStyle = "rgba(148, 163, 184, 0.75)";
 	ctx.font = "600 11px 'Inter', 'Segoe UI', sans-serif";
+	ctx.textAlign = "right";
+	ctx.textBaseline = "middle";
+	const tickCount = Math.min(5, Math.max(2, sanitized.length));
+	for (let i = 0; i <= tickCount; i += 1) {
+		const ratio = i / tickCount;
+		const value = minValue + range * ratio;
+		const y = chartBottom - areaHeight * ratio;
+		ctx.fillText(Math.round(value).toLocaleString("es-MX"), chartLeft - 8, y);
+	}
+	ctx.fillStyle = "rgba(226, 232, 240, 0.82)";
+	ctx.textAlign = "center";
+	ctx.textBaseline = "top";
 	labels.forEach((label, idx) => {
-		const x = padding + stepX * idx;
-		const y = height - padding + 16;
-		ctx.save();
-		ctx.translate(x, y);
-		ctx.rotate(-Math.PI / 6);
-		ctx.textAlign = "right";
-		ctx.fillText(label, 0, 0);
-		ctx.restore();
+		const x = chartLeft + stepX * idx;
+		const text = hgEllipsize(ctx, label, Math.max(stepX - 12, 60));
+		ctx.fillText(text, x, chartBottom + 10);
 	});
 	return true;
 }
 
 function hgRenderDatasetChart(canvas, chartType, rawEntries, indexAxis, paletteIndex) {
 	const entries = rawEntries || [];
-	if (!entries.length) return false;
+	if (!entries.length) return null;
 	if (chartType === "line") {
 		const labels = entries.map((entry) => hgFormatBucketLabel(entry.Bucket || entry.bucket));
 		const values = entries.map((entry) => hgSafeValue(entry.Count ?? entry.count ?? 0));
-		return hgDrawLine(canvas, labels, values, HG_CHART_PALETTE[paletteIndex % HG_CHART_PALETTE.length]);
+		const color = hgGetPaletteColor(0, paletteIndex);
+		const success = hgDrawLine(canvas, labels, values, color);
+		return success ? { success: true, colors: values.map(() => color) } : null;
 	}
 	const labels = entries.map((entry, idx) => entry.Label || entry.label || entry.Code || entry.code || entry.Bucket || entry.bucket || `Item ${idx + 1}`);
 	const values = entries.map((entry) => hgSafeValue(entry.Count ?? entry.count ?? 0));
-	const colors = entries.map((entry, idx) => hgPickColor(entry, idx));
+	const colors = entries.map((entry, idx) => hgPickColor(entry, idx, paletteIndex));
 	if (chartType === "doughnut") {
-		return hgDrawDoughnut(canvas, values, colors);
+		const dataset = { values, colors, labels };
+		const meta = hgDrawDoughnut(canvas, dataset, null);
+		return meta ? { success: true, colors, meta: { type: "doughnut", dataset, activeIndex: null, ...meta } } : null;
 	}
 	const horizontal = indexAxis === "y";
-	return horizontal ? hgDrawHorizontalBar(canvas, labels, values, colors) : hgDrawHorizontalBar(canvas, labels, values, colors);
+	const success = horizontal ? hgDrawHorizontalBar(canvas, labels, values, colors) : hgDrawHorizontalBar(canvas, labels, values, colors);
+	return success ? { success: true, colors } : null;
 }
 
 function hgInitDashboardCharts() {
@@ -225,14 +412,126 @@ function hgInitDashboardCharts() {
 		}
 		const chartType = canvas.dataset.hgType || "bar";
 		const indexAxis = canvas.dataset.hgIndexAxis || "x";
-		const rendered = hgRenderDatasetChart(canvas, chartType, entries, indexAxis, index);
-		if (rendered) {
-			const card = canvas.closest(".hg-chart-card");
-			if (card) {
-				card.classList.add("has-chart");
+		const card = canvas.closest(".hg-chart-card");
+		let measuring = false;
+		if (card && !card.classList.contains("has-chart")) {
+			card.classList.add("is-measuring");
+			measuring = true;
+		}
+		const result = hgRenderDatasetChart(canvas, chartType, entries, indexAxis, index);
+		if (card && measuring) {
+			card.classList.remove("is-measuring");
+		}
+		if (result && result.success && card) {
+			card.classList.add("has-chart");
+			if (Array.isArray(result.colors)) {
+				const fallbackItems = card.querySelectorAll(".hg-chart-fallback [data-hg-entry-index]");
+				fallbackItems.forEach((item) => {
+					const idx = Number(item.dataset.hgEntryIndex);
+					if (!Number.isFinite(idx)) return;
+					const color = result.colors[idx];
+					if (color) {
+						item.style.setProperty("--hg-bar-color", color);
+						const fill = item.querySelector(".hg-chart-bar-fill");
+						if (fill) {
+							fill.style.background = color;
+						}
+					}
+				});
+			}
+			if (result.meta && result.meta.type === "doughnut") {
+				canvas.__hgMeta = result.meta;
+				hgAttachDoughnutInteractions(canvas);
+			} else {
+				canvas.__hgMeta = null;
 			}
 		}
 	});
+}
+
+function hgAttachDoughnutInteractions(canvas) {
+	if (canvas.__hgHasHover) return;
+	const rerender = (activeIdx) => {
+		const meta = canvas.__hgMeta;
+		if (!meta || !meta.dataset) {
+			return null;
+		}
+		const next = hgDrawDoughnut(canvas, meta.dataset, Number.isFinite(activeIdx) ? activeIdx : null);
+		if (!next) {
+			return null;
+		}
+		const finalMeta = {
+			...meta,
+			...next,
+			type: "doughnut",
+			dataset: meta.dataset,
+			activeIndex: Number.isFinite(activeIdx) ? activeIdx : null,
+		};
+		canvas.__hgMeta = finalMeta;
+		return finalMeta;
+	};
+	const handleMove = (event) => {
+		const meta = canvas.__hgMeta;
+		if (!meta || !meta.segments || !meta.segments.length) {
+			if (meta && meta.activeIndex !== null) {
+				rerender(null);
+			}
+			hgHideTooltip();
+			canvas.style.cursor = "default";
+			return;
+		}
+		const rect = canvas.getBoundingClientRect();
+		const x = event.clientX - rect.left;
+		const y = event.clientY - rect.top;
+		const dx = x - meta.cx;
+		const dy = y - meta.cy;
+		const distance = Math.sqrt(dx * dx + dy * dy);
+		if (distance < meta.innerRadius * 0.92 || distance > meta.outerRadius + 2) {
+			if (meta.activeIndex !== null) {
+				rerender(null);
+			}
+			hgHideTooltip();
+			canvas.style.cursor = "default";
+			return;
+		}
+		let angle = Math.atan2(dy, dx);
+		if (angle < 0) {
+			angle += Math.PI * 2;
+		}
+		const segment = meta.segments.find((seg) => (seg.wrap ? angle >= seg.start || angle <= seg.end : angle >= seg.start && angle <= seg.end));
+		if (!segment) {
+			if (meta.activeIndex !== null) {
+				rerender(null);
+			}
+			hgHideTooltip();
+			canvas.style.cursor = "default";
+			return;
+		}
+		canvas.style.cursor = "pointer";
+		let segmentInfo = segment;
+		if (meta.activeIndex !== segment.index) {
+			const refreshed = rerender(segment.index);
+			if (refreshed && Array.isArray(refreshed.segments)) {
+				const match = refreshed.segments.find((seg) => seg.index === segment.index);
+				if (match) {
+					segmentInfo = match;
+				}
+			}
+		}
+		const percent = Math.round(segmentInfo.percent * 1000) / 10;
+		const valueText = segmentInfo.value.toLocaleString("es-MX");
+		hgShowTooltip(event.clientX, event.clientY, `<strong>${segmentInfo.label || "Elemento"}</strong><span>${valueText} · ${percent}%</span>`);
+	};
+	canvas.addEventListener("mousemove", handleMove);
+	canvas.addEventListener("mouseleave", () => {
+		const meta = canvas.__hgMeta;
+		if (meta && meta.activeIndex !== null) {
+			rerender(null);
+		}
+		hgHideTooltip();
+		canvas.style.cursor = "default";
+	});
+	canvas.__hgHasHover = true;
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -285,3 +584,11 @@ document.addEventListener("DOMContentLoaded", () => {
 
 	hgInitDashboardCharts();
 });
+
+window.addEventListener(
+	"scroll",
+	() => {
+		hgHideTooltip();
+	},
+	true
+);

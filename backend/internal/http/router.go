@@ -42,6 +42,7 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 		s.Use(authmw.CSRF(sessions))
 
 		s.Get("/dashboard", uiHandlers.Dashboard)
+		s.Get("/dashboard/export", uiHandlers.DashboardExport)
 
 		s.Route("/organizations", func(or chi.Router) {
 			or.Get("/", uiHandlers.OrganizationsIndex)

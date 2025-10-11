@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/csv"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -22,6 +23,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	gofpdf "github.com/jung-kurt/gofpdf"
 	"go.uber.org/zap"
 
 	"heartguard-superadmin/internal/audit"
@@ -30,6 +32,13 @@ import (
 	"heartguard-superadmin/internal/session"
 	"heartguard-superadmin/internal/ui"
 )
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
 
 type Repository interface {
 	AuditPool() *pgxpool.Pool
@@ -371,10 +380,7 @@ type dashboardViewData struct {
 	ContentCumulativeSeries []dashboardActivitySeriesPoint
 }
 
-func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
+func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData {
 	overview, err := h.repo.MetricsOverview(ctx)
 	if err != nil && h.logger != nil {
 		h.logger.Error("metrics overview", zap.Error(err))
@@ -748,7 +754,7 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	data := dashboardViewData{
+	return dashboardViewData{
 		Overview:                overview,
 		Metrics:                 metrics,
 		StatusChart:             statusChart,
@@ -766,8 +772,523 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 		ContentMonthlySeries:    contentMonthlySeries,
 		ContentCumulativeSeries: contentCumulativeSeries,
 	}
+}
+
+func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	data := h.buildDashboardViewData(ctx)
 
 	h.render(w, r, "superadmin/dashboard.html", "Panel", data, []ui.Breadcrumb{{Label: "Panel"}})
+}
+
+func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+	defer cancel()
+
+	data := h.buildDashboardViewData(ctx)
+	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
+	if format != "csv" {
+		format = "pdf"
+	}
+
+	generatedAt := time.Now()
+	filename := fmt.Sprintf("dashboard-%s", generatedAt.Format("20060102-150405"))
+
+	formatLocal := func(ts time.Time) string {
+		return ts.In(time.Local).Format("2006-01-02 15:04")
+	}
+	formatPercent := func(val float64) string {
+		return fmt.Sprintf("%.2f%%", val)
+	}
+
+	switch format {
+	case "csv":
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.csv\"", filename))
+		if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+			if h.logger != nil {
+				h.logger.Error("csv bom write error", zap.Error(err))
+			}
+		}
+		writer := csv.NewWriter(w)
+		write := func(record []string) {
+			if err := writer.Write(record); err != nil && h.logger != nil {
+				h.logger.Error("csv write error", zap.Error(err))
+			}
+		}
+		write([]string{"Reporte de métricas del panel superadmin"})
+		write([]string{"Generado", formatLocal(generatedAt)})
+		write([]string{})
+		write([]string{"Sección", "Métrica", "Valor", "Detalle"})
+		sectionName := "Resumen"
+		for _, metric := range data.Metrics {
+			write([]string{sectionName, metric.Label, metric.Value, metric.Caption})
+		}
+		if data.Overview != nil {
+			write([]string{sectionName, "Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
+		}
+		write([]string{})
+		write([]string{"Sección", "Estatus", "Total", "Participación"})
+		for _, item := range data.StatusChart {
+			write([]string{"Usuarios", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		if data.StatusTotal > 0 {
+			write([]string{"Usuarios", "Total", strconv.Itoa(data.StatusTotal), ""})
+		}
+		write([]string{})
+		write([]string{"Sección", "Estatus", "Total", "Participación"})
+		for _, item := range data.InvitationChart {
+			write([]string{"Invitaciones", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		if data.InvitationTotal > 0 {
+			write([]string{"Invitaciones", "Total", strconv.Itoa(data.InvitationTotal), ""})
+		}
+		write([]string{})
+		write([]string{"Sección", "Acción", "Código", "Eventos"})
+		for _, op := range data.RecentOperations {
+			write([]string{"Operaciones", op.Label, op.Code, strconv.Itoa(op.Count)})
+		}
+		write([]string{})
+		write([]string{"Sección", "Fecha/Hora", "Eventos"})
+		for _, bucket := range data.ActivitySeries {
+			write([]string{"Actividad por hora", formatLocal(bucket.Bucket), strconv.Itoa(bucket.Count)})
+		}
+		write([]string{})
+		write([]string{"Sección", "Fecha", "Evento", "Actor", "Entidad"})
+		for _, entry := range data.RecentActivity {
+			write([]string{"Actividad reciente", formatLocal(entry.Timestamp), entry.Label, entry.Actor, entry.Entity})
+		}
+		if data.ContentTotals != nil {
+			write([]string{})
+			write([]string{"Sección", "Indicador", "Valor"})
+			totals := data.ContentTotals
+			write([]string{"Contenido", "Total piezas", strconv.Itoa(totals.Total)})
+			write([]string{"Contenido", "Publicados", strconv.Itoa(totals.Published)})
+			write([]string{"Contenido", "En revisión", strconv.Itoa(totals.InReview)})
+			write([]string{"Contenido", "Borradores", strconv.Itoa(totals.Drafts)})
+			write([]string{"Contenido", "Programados", strconv.Itoa(totals.Scheduled)})
+			write([]string{"Contenido", "Archivados", strconv.Itoa(totals.Archived)})
+			write([]string{"Contenido", "Obsoletos", strconv.Itoa(totals.Stale)})
+			write([]string{"Contenido", "Autores activos", strconv.Itoa(totals.ActiveAuthors)})
+			write([]string{"Contenido", "Actualizaciones 30 días", strconv.Itoa(totals.UpdatesLast30Days)})
+			write([]string{})
+			write([]string{"Sección", "Categoria", "Total", "Participación"})
+			for _, item := range data.ContentCategoryChart {
+				write([]string{"Categorías", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+			}
+			write([]string{})
+			write([]string{"Sección", "Rol", "Total", "Participación"})
+			for _, item := range data.ContentRoleChart {
+				write([]string{"Actividad por rol", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+			}
+			write([]string{})
+			write([]string{"Sección", "Estatus", "Total", "Participación"})
+			for _, item := range data.ContentStatusChart {
+				write([]string{"Estatus de contenido", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+			}
+		}
+		if len(data.ContentMonthlySeries) > 0 {
+			write([]string{})
+			write([]string{"Sección", "Periodo", "Total"})
+			for _, point := range data.ContentMonthlySeries {
+				write([]string{"Producción mensual", point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
+			}
+		}
+		if len(data.ContentCumulativeSeries) > 0 {
+			write([]string{})
+			write([]string{"Sección", "Periodo", "Acumulado"})
+			for _, point := range data.ContentCumulativeSeries {
+				write([]string{"Crecimiento acumulado", point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
+			}
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil && h.logger != nil {
+			h.logger.Error("csv export error", zap.Error(err))
+		}
+		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "csv", "rows": len(data.RecentActivity)})
+		return
+	case "pdf":
+		w.Header().Set("Content-Type", "application/pdf")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pdf\"", filename))
+		pdf := gofpdf.New("L", "mm", "A4", "")
+		pdf.SetTitle("Reporte del panel superadmin", false)
+		pdf.SetMargins(12, 16, 12)
+		pdf.SetAutoPageBreak(true, 18)
+		pdf.AddPage()
+		translator := pdf.UnicodeTranslatorFromDescriptor("")
+
+		pdf.SetFont("Helvetica", "B", 16)
+		pdf.Cell(0, 10, translator("Reporte del panel superadmin"))
+		pdf.Ln(12)
+		pdf.SetFont("Helvetica", "", 11)
+		pdf.Cell(0, 7, translator(fmt.Sprintf("Generado %s", formatLocal(generatedAt))))
+		pdf.Ln(10)
+
+		renderTable := func(title string, headers []string, widths []float64, aligns []string, rows [][]string) {
+			if len(headers) != len(widths) {
+				return
+			}
+			pdf.Ln(2)
+			pdf.SetFont("Helvetica", "B", 12)
+			pdf.SetTextColor(26, 32, 44)
+			pdf.Cell(0, 7, translator(title))
+			pdf.Ln(8)
+			if len(rows) == 0 {
+				pdf.SetFont("Helvetica", "", 9)
+				pdf.SetTextColor(120, 128, 148)
+				pdf.Cell(0, 6, translator("Sin datos disponibles"))
+				pdf.SetTextColor(0, 0, 0)
+				pdf.Ln(4)
+				return
+			}
+			pdf.SetFont("Helvetica", "B", 9)
+			pdf.SetFillColor(40, 64, 96)
+			pdf.SetDrawColor(210, 218, 235)
+			pdf.SetLineWidth(0.15)
+			pdf.SetTextColor(255, 255, 255)
+			for i, head := range headers {
+				align := "L"
+				if i < len(aligns) && aligns[i] != "" {
+					align = aligns[i]
+				}
+				pdf.CellFormat(widths[i], 7, translator(head), "1", 0, align, true, 0, "")
+			}
+			pdf.Ln(-1)
+			pdf.SetFont("Helvetica", "", 8.7)
+			pdf.SetTextColor(0, 0, 0)
+			fill := false
+			leftMargin, _, _, _ := pdf.GetMargins()
+			lineHeight := 5.6
+			for _, row := range rows {
+				fill = !fill
+				if fill {
+					pdf.SetFillColor(245, 247, 252)
+				} else {
+					pdf.SetFillColor(255, 255, 255)
+				}
+				y := pdf.GetY()
+				x := leftMargin
+				rowHeight := lineHeight
+				texts := make([]string, len(headers))
+				heights := make([]float64, len(headers))
+				for i := range headers {
+					text := ""
+					if i < len(row) {
+						text = translator(row[i])
+					}
+					texts[i] = text
+					lines := pdf.SplitLines([]byte(text), widths[i])
+					if len(lines) == 0 {
+						heights[i] = lineHeight
+					} else {
+						heights[i] = float64(len(lines)) * lineHeight
+					}
+					if heights[i] > rowHeight {
+						rowHeight = heights[i]
+					}
+				}
+				for i, text := range texts {
+					pdf.SetXY(x, y)
+					align := "L"
+					if i < len(aligns) && aligns[i] != "" {
+						align = aligns[i]
+					}
+					pdf.MultiCell(widths[i], lineHeight, text, "1", align, fill)
+					x += widths[i]
+				}
+				pdf.SetXY(leftMargin, y+rowHeight)
+			}
+		}
+
+		metricsRows := make([][]string, 0, len(data.Metrics)+1)
+		for _, metric := range data.Metrics {
+			metricsRows = append(metricsRows, []string{metric.Label, metric.Value, metric.Caption})
+		}
+		if data.Overview != nil {
+			metricsRows = append(metricsRows, []string{"Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
+		}
+		renderTable("Resumen general", []string{"Métrica", "Valor", "Detalle"}, []float64{80, 28, 140}, []string{"L", "R", "L"}, metricsRows)
+
+		statusRows := make([][]string, 0, len(data.StatusChart))
+		for _, item := range data.StatusChart {
+			statusRows = append(statusRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		if data.StatusTotal > 0 {
+			statusRows = append(statusRows, []string{"Total", strconv.Itoa(data.StatusTotal), ""})
+		}
+		renderTable("Usuarios por estatus", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, statusRows)
+
+		invRows := make([][]string, 0, len(data.InvitationChart))
+		for _, item := range data.InvitationChart {
+			invRows = append(invRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		if data.InvitationTotal > 0 {
+			invRows = append(invRows, []string{"Total", strconv.Itoa(data.InvitationTotal), ""})
+		}
+		renderTable("Invitaciones", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, invRows)
+
+		opRows := make([][]string, 0, len(data.RecentOperations))
+		for _, op := range data.RecentOperations {
+			opRows = append(opRows, []string{op.Label, op.Code, strconv.Itoa(op.Count)})
+		}
+		renderTable("Operaciones recientes (30 días)", []string{"Acción", "Código", "Eventos"}, []float64{140, 40, 28}, []string{"L", "L", "R"}, opRows)
+
+		activityRows := make([][]string, 0, len(data.RecentActivity))
+		for idx, entry := range data.RecentActivity {
+			if idx >= 25 {
+				break
+			}
+			activityRows = append(activityRows, []string{formatLocal(entry.Timestamp), entry.Label, entry.Actor, entry.Entity})
+		}
+		renderTable("Actividad más reciente", []string{"Fecha", "Evento", "Actor", "Entidad"}, []float64{40, 110, 60, 60}, []string{"L", "L", "L", "L"}, activityRows)
+
+		timelineRows := make([][]string, 0, len(data.ActivitySeries))
+		for _, point := range data.ActivitySeries {
+			timelineRows = append(timelineRows, []string{formatLocal(point.Bucket), strconv.Itoa(point.Count)})
+		}
+		renderTable("Actividad por hora", []string{"Fecha/Hora", "Eventos"}, []float64{60, 28}, []string{"L", "R"}, timelineRows)
+
+		if data.ContentTotals != nil {
+			totals := data.ContentTotals
+			contentRows := [][]string{
+				{"Total piezas", strconv.Itoa(totals.Total)},
+				{"Publicados", strconv.Itoa(totals.Published)},
+				{"En revisión", strconv.Itoa(totals.InReview)},
+				{"Borradores", strconv.Itoa(totals.Drafts)},
+				{"Programados", strconv.Itoa(totals.Scheduled)},
+				{"Archivados", strconv.Itoa(totals.Archived)},
+				{"Obsoletos", strconv.Itoa(totals.Stale)},
+				{"Autores activos", strconv.Itoa(totals.ActiveAuthors)},
+				{"Actualizaciones 30 días", strconv.Itoa(totals.UpdatesLast30Days)},
+			}
+			renderTable("Resumen de contenido", []string{"Indicador", "Valor"}, []float64{120, 35}, []string{"L", "R"}, contentRows)
+
+			statusRows := make([][]string, 0, len(data.ContentStatusChart))
+			for _, item := range data.ContentStatusChart {
+				statusRows = append(statusRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+			}
+			renderTable("Estatus de contenido", []string{"Estatus", "Total", "Participación"}, []float64{110, 30, 30}, []string{"L", "R", "R"}, statusRows)
+
+			categoryRows := make([][]string, 0, len(data.ContentCategoryChart))
+			for _, item := range data.ContentCategoryChart {
+				categoryRows = append(categoryRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+			}
+			renderTable("Categorías principales", []string{"Categoría", "Total", "Participación"}, []float64{110, 30, 30}, []string{"L", "R", "R"}, categoryRows)
+
+			roleRows := make([][]string, 0, len(data.ContentRoleChart))
+			for _, item := range data.ContentRoleChart {
+				roleRows = append(roleRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+			}
+			renderTable("Actividad por rol", []string{"Rol", "Total", "Participación"}, []float64{110, 30, 30}, []string{"L", "R", "R"}, roleRows)
+		}
+
+		if len(data.ContentMonthlySeries) > 0 {
+			monthlyRows := make([][]string, 0, len(data.ContentMonthlySeries))
+			for idx, point := range data.ContentMonthlySeries {
+				if idx >= 24 {
+					break
+				}
+				monthlyRows = append(monthlyRows, []string{point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
+			}
+			renderTable("Producción mensual", []string{"Periodo", "Total"}, []float64{60, 28}, []string{"L", "R"}, monthlyRows)
+		}
+
+		if len(data.ContentCumulativeSeries) > 0 {
+			cumulativeRows := make([][]string, 0, len(data.ContentCumulativeSeries))
+			for idx, point := range data.ContentCumulativeSeries {
+				if idx >= 24 {
+					break
+				}
+				cumulativeRows = append(cumulativeRows, []string{point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
+			}
+			renderTable("Crecimiento acumulado", []string{"Periodo", "Acumulado"}, []float64{60, 28}, []string{"L", "R"}, cumulativeRows)
+		}
+
+		pdf.AddPage()
+		pdf.SetMargins(16, 18, 16)
+		pdf.SetAutoPageBreak(true, 20)
+		pdf.SetFont("Helvetica", "B", 15)
+		pdf.Cell(0, 9, translator("Resumen narrativo"))
+		pdf.Ln(11)
+		pdf.SetFont("Helvetica", "", 10)
+
+		writeParagraph := func(text string) {
+			if strings.TrimSpace(text) == "" {
+				return
+			}
+			pdf.SetFont("Helvetica", "", 10)
+			pdf.SetTextColor(68, 76, 96)
+			pdf.MultiCell(0, 5.2, translator(text), "", "L", false)
+			pdf.SetTextColor(0, 0, 0)
+			pdf.Ln(1.5)
+		}
+
+		writeSection := func(title, subtitle string, lines []string) {
+			pdf.Ln(2)
+			pdf.SetFont("Helvetica", "B", 12)
+			pdf.SetTextColor(26, 32, 44)
+			pdf.Cell(0, 6.5, translator(title))
+			pdf.Ln(6)
+			if strings.TrimSpace(subtitle) != "" {
+				pdf.SetFont("Helvetica", "", 9.3)
+				pdf.SetTextColor(90, 99, 120)
+				pdf.MultiCell(0, 5, translator(subtitle), "", "L", false)
+				pdf.Ln(1)
+			}
+			if len(lines) == 0 {
+				pdf.SetFont("Helvetica", "I", 9)
+				pdf.SetTextColor(120, 128, 148)
+				pdf.Cell(0, 4.8, translator("Sin datos disponibles"))
+				pdf.SetTextColor(0, 0, 0)
+				pdf.Ln(4)
+				return
+			}
+			pdf.SetFont("Helvetica", "", 9.3)
+			pdf.SetTextColor(33, 37, 41)
+			for _, line := range lines {
+				trimmed := strings.TrimSpace(line)
+				if trimmed == "" {
+					continue
+				}
+				pdf.MultiCell(0, 4.8, translator(fmt.Sprintf("• %s", trimmed)), "", "L", false)
+			}
+			pdf.SetTextColor(0, 0, 0)
+			pdf.Ln(1)
+		}
+
+		intro := "Este documento consolida las principales métricas operativas del panel de administración para brindar una visión ejecutiva del estado actual de usuarios, invitaciones, operaciones y contenido."
+		writeParagraph(intro)
+
+		metricsLines := make([]string, 0, len(data.Metrics)+1)
+		for _, metric := range data.Metrics {
+			caption := strings.TrimSpace(metric.Caption)
+			if caption != "" {
+				metricsLines = append(metricsLines, fmt.Sprintf("%s: %s (%s)", metric.Label, metric.Value, caption))
+			} else {
+				metricsLines = append(metricsLines, fmt.Sprintf("%s: %s", metric.Label, metric.Value))
+			}
+		}
+		if data.Overview != nil {
+			metricsLines = append(metricsLines, fmt.Sprintf("Invitaciones pendientes: %d (invitaciones abiertas sin usar)", data.Overview.PendingInvitations))
+		}
+		writeSection("Resumen ejecutivo", "Indicadores claves de actividad y capacidad operativa.", metricsLines)
+
+		statusLines := make([]string, 0, len(data.StatusChart)+1)
+		for _, item := range data.StatusChart {
+			statusLines = append(statusLines, fmt.Sprintf("%s: %d usuarios (%s del total)", item.Label, item.Count, formatPercent(item.Percent)))
+		}
+		if data.StatusTotal > 0 {
+			statusLines = append(statusLines, fmt.Sprintf("Total reportado: %d usuarios", data.StatusTotal))
+		}
+		writeSection("Distribución de usuarios", "Panorama por estatus de cuenta y participación relativa.", statusLines)
+
+		invLines := make([]string, 0, len(data.InvitationChart)+1)
+		for _, item := range data.InvitationChart {
+			invLines = append(invLines, fmt.Sprintf("%s: %d invitaciones (%s)", item.Label, item.Count, formatPercent(item.Percent)))
+		}
+		if data.InvitationTotal > 0 {
+			invLines = append(invLines, fmt.Sprintf("Total de invitaciones activas: %d", data.InvitationTotal))
+		}
+		writeSection("Estatus de invitaciones", "Seguimiento del ciclo de invitaciones emitidas a nivel global.", invLines)
+
+		opLines := make([]string, 0, len(data.RecentOperations))
+		for _, op := range data.RecentOperations {
+			opLines = append(opLines, fmt.Sprintf("%s (%s): %d eventos registrados", op.Label, strings.ToUpper(op.Code), op.Count))
+		}
+		writeSection("Operaciones destacadas (30 días)", "Actividades más frecuentes capturadas por el sistema de auditoría.", opLines)
+
+		recentLines := make([]string, 0, min(len(data.RecentActivity), 25))
+		for idx, entry := range data.RecentActivity {
+			if idx >= 25 {
+				break
+			}
+			actor := entry.Actor
+			if actor == "" {
+				actor = "Actor no identificado"
+			}
+			entity := entry.Entity
+			if entity == "" {
+				entity = "Sin referencia"
+			}
+			recentLines = append(recentLines, fmt.Sprintf("%s · %s · %s · %s", formatLocal(entry.Timestamp), entry.Label, actor, entity))
+		}
+		writeSection("Actividad reciente", "Detalle cronológico de los últimos eventos relevantes.", recentLines)
+
+		timelineLines := make([]string, 0, len(data.ActivitySeries))
+		for _, point := range data.ActivitySeries {
+			timelineLines = append(timelineLines, fmt.Sprintf("%s: %d eventos", formatLocal(point.Bucket), point.Count))
+		}
+		writeSection("Curva de actividad horaria", "Concentración de eventos a lo largo de las últimas jornadas.", timelineLines)
+
+		if data.ContentTotals != nil {
+			totals := data.ContentTotals
+			summaryLines := []string{
+				fmt.Sprintf("Total de piezas gestionadas: %d", totals.Total),
+				fmt.Sprintf("Publicados: %d", totals.Published),
+				fmt.Sprintf("En revisión: %d", totals.InReview),
+				fmt.Sprintf("Borradores: %d", totals.Drafts),
+				fmt.Sprintf("Programados: %d", totals.Scheduled),
+				fmt.Sprintf("Archivados: %d", totals.Archived),
+			}
+			if totals.Stale > 0 {
+				summaryLines = append(summaryLines, fmt.Sprintf("Obsoletos identificados: %d", totals.Stale))
+			}
+			summaryLines = append(summaryLines,
+				fmt.Sprintf("Autores activos: %d", totals.ActiveAuthors),
+				fmt.Sprintf("Actualizaciones en los últimos 30 días: %d", totals.UpdatesLast30Days),
+			)
+			writeSection("Panorama de contenidos", "Inventario actualizado de activos editoriales.", summaryLines)
+
+			statusContentLines := make([]string, 0, len(data.ContentStatusChart))
+			for _, item := range data.ContentStatusChart {
+				statusContentLines = append(statusContentLines, fmt.Sprintf("%s: %d elementos (%s)", item.Label, item.Count, formatPercent(item.Percent)))
+			}
+			writeSection("Estatus editorial", "Distribución actual de los contenidos según su ciclo de vida.", statusContentLines)
+
+			categoryLines := make([]string, 0, len(data.ContentCategoryChart))
+			for _, item := range data.ContentCategoryChart {
+				categoryLines = append(categoryLines, fmt.Sprintf("%s: %d piezas (%s)", item.Label, item.Count, formatPercent(item.Percent)))
+			}
+			writeSection("Categorías con mayor actividad", "Participación de cada categoría sobre el total publicado.", categoryLines)
+
+			roleLines := make([]string, 0, len(data.ContentRoleChart))
+			for _, item := range data.ContentRoleChart {
+				roleLines = append(roleLines, fmt.Sprintf("%s: %d colaboraciones (%s del total reportado)", item.Label, item.Count, formatPercent(item.Percent)))
+			}
+			writeSection("Participación por rol", "Colaboración de los distintos roles en la generación de contenido.", roleLines)
+		}
+
+		if len(data.ContentMonthlySeries) > 0 {
+			monthlyLines := make([]string, 0, min(len(data.ContentMonthlySeries), 24))
+			for idx, point := range data.ContentMonthlySeries {
+				if idx >= 24 {
+					break
+				}
+				monthlyLines = append(monthlyLines, fmt.Sprintf("%s: %d piezas nuevas", point.Bucket.Format("2006-01"), point.Count))
+			}
+			writeSection("Producción mensual", "Evolución de piezas generadas mes contra mes.", monthlyLines)
+		}
+
+		if len(data.ContentCumulativeSeries) > 0 {
+			cumulativeLines := make([]string, 0, min(len(data.ContentCumulativeSeries), 24))
+			acum := 0
+			for idx, point := range data.ContentCumulativeSeries {
+				if idx >= 24 {
+					break
+				}
+				acum = point.Count
+				cumulativeLines = append(cumulativeLines, fmt.Sprintf("%s: %d piezas acumuladas", point.Bucket.Format("2006-01"), acum))
+			}
+			writeSection("Crecimiento acumulado", "Sumatoria histórica de contenido publicado.", cumulativeLines)
+		}
+
+		if err := pdf.Output(w); err != nil && h.logger != nil {
+			h.logger.Error("pdf export error", zap.Error(err))
+		}
+		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "pdf", "rows": len(data.RecentActivity)})
+	}
 }
 
 type contentListFilters struct {

@@ -247,6 +247,7 @@ var operationLabels = map[string]string{
 	"CATALOG_CREATE":     "Alta en catálogo",
 	"CATALOG_UPDATE":     "Actualización de catálogo",
 	"CATALOG_DELETE":     "Eliminación de catálogo",
+	"DASHBOARD_EXPORT":   "Exportación de panel",
 	"AUDIT_EXPORT":       "Exportación de auditoría",
 }
 
