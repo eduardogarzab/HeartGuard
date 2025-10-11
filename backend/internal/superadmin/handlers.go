@@ -91,6 +91,11 @@ type Repository interface {
 	UpdateInference(ctx context.Context, id string, input models.InferenceInput) (*models.Inference, error)
 	DeleteInference(ctx context.Context, id string) error
 
+	ListGroundTruthByPatient(ctx context.Context, patientID string, limit, offset int) ([]models.GroundTruthLabel, error)
+	CreateGroundTruthLabel(ctx context.Context, patientID string, input models.GroundTruthLabelCreateInput) (*models.GroundTruthLabel, error)
+	UpdateGroundTruthLabel(ctx context.Context, id string, input models.GroundTruthLabelUpdateInput) (*models.GroundTruthLabel, error)
+	DeleteGroundTruthLabel(ctx context.Context, id string) error
+
 	ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error)
 	CreateAlert(ctx context.Context, patientID string, input models.AlertInput) (*models.Alert, error)
 	UpdateAlert(ctx context.Context, id string, input models.AlertInput) (*models.Alert, error)
@@ -235,23 +240,26 @@ func averagePerDay(total int, days int) float64 {
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":         "Alta de organización",
-	"ORG_UPDATE":         "Actualización de organización",
-	"ORG_DELETE":         "Eliminación de organización",
-	"INVITE_CREATE":      "Emisión de invitación",
-	"INVITE_CANCEL":      "Cancelación de invitación",
-	"INVITE_CONSUME":     "Consumo de invitación",
-	"MEMBER_ADD":         "Alta de miembro",
-	"MEMBER_REMOVE":      "Baja de miembro",
-	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
-	"APIKEY_CREATE":      "Creación de API Key",
-	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":      "Revocación de API Key",
-	"CATALOG_CREATE":     "Alta en catálogo",
-	"CATALOG_UPDATE":     "Actualización de catálogo",
-	"CATALOG_DELETE":     "Eliminación de catálogo",
-	"DASHBOARD_EXPORT":   "Exportación de panel",
-	"AUDIT_EXPORT":       "Exportación de auditoría",
+	"ORG_CREATE":          "Alta de organización",
+	"ORG_UPDATE":          "Actualización de organización",
+	"ORG_DELETE":          "Eliminación de organización",
+	"INVITE_CREATE":       "Emisión de invitación",
+	"INVITE_CANCEL":       "Cancelación de invitación",
+	"INVITE_CONSUME":      "Consumo de invitación",
+	"MEMBER_ADD":          "Alta de miembro",
+	"MEMBER_REMOVE":       "Baja de miembro",
+	"USER_STATUS_UPDATE":  "Actualización de estatus de usuario",
+	"APIKEY_CREATE":       "Creación de API Key",
+	"APIKEY_SET_PERMS":    "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":       "Revocación de API Key",
+	"CATALOG_CREATE":      "Alta en catálogo",
+	"CATALOG_UPDATE":      "Actualización de catálogo",
+	"CATALOG_DELETE":      "Eliminación de catálogo",
+	"GROUND_TRUTH_CREATE": "Alta de etiqueta ground truth",
+	"GROUND_TRUTH_UPDATE": "Actualización de etiqueta ground truth",
+	"GROUND_TRUTH_DELETE": "Eliminación de etiqueta ground truth",
+	"DASHBOARD_EXPORT":    "Exportación de panel",
+	"AUDIT_EXPORT":        "Exportación de auditoría",
 }
 
 func operationLabel(code string) string {
@@ -282,6 +290,64 @@ func decodeAndValidate[T any](r *http.Request, v *T, validate *validator.Validat
 		return nil, err
 	}
 	return nil, nil
+}
+
+type optionalString struct {
+	Set   bool
+	Value *string
+}
+
+func (o *optionalString) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	o.Value = &s
+	return nil
+}
+
+type optionalTime struct {
+	Set   bool
+	Value *time.Time
+}
+
+func (o *optionalTime) UnmarshalJSON(data []byte) error {
+	o.Set = true
+	if string(data) == "null" {
+		o.Value = nil
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	if strings.TrimSpace(s) == "" {
+		o.Value = nil
+		return nil
+	}
+	parsed, err := time.Parse(time.RFC3339, s)
+	if err != nil {
+		return err
+	}
+	o.Value = &parsed
+	return nil
+}
+
+func normalizeStringPtr(ptr *string) *string {
+	if ptr == nil {
+		return nil
+	}
+	trimmed := strings.TrimSpace(*ptr)
+	if trimmed == "" {
+		return nil
+	}
+	v := trimmed
+	return &v
 }
 
 // actorPtr recupera el user_id real (desde JWT) para auditoría.
@@ -1961,6 +2027,195 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, list)
+}
+
+// Ground truth labels
+
+type groundTruthCreateReq struct {
+	EventTypeID       string     `json:"event_type_id" validate:"required,uuid4"`
+	Onset             time.Time  `json:"onset" validate:"required"`
+	OffsetAt          *time.Time `json:"offset_at,omitempty"`
+	AnnotatedByUserID *string    `json:"annotated_by_user_id,omitempty" validate:"omitempty,uuid4"`
+	Source            *string    `json:"source,omitempty" validate:"omitempty,max=40"`
+	Note              *string    `json:"note,omitempty" validate:"omitempty,max=2000"`
+}
+
+type groundTruthUpdateReq struct {
+	EventTypeID       *string        `json:"event_type_id,omitempty"`
+	Onset             *time.Time     `json:"onset,omitempty"`
+	OffsetAt          optionalTime   `json:"offset_at,omitempty"`
+	AnnotatedByUserID optionalString `json:"annotated_by_user_id,omitempty"`
+	Source            optionalString `json:"source,omitempty"`
+	Note              optionalString `json:"note,omitempty"`
+}
+
+func (h *Handlers) ListGroundTruthByPatient(w http.ResponseWriter, r *http.Request) {
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientID"))
+	if patientID == "" {
+		writeProblem(w, 400, "bad_request", "patient id required", nil)
+		return
+	}
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	labels, err := h.repo.ListGroundTruthByPatient(ctx, patientID, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, labels)
+}
+
+func (h *Handlers) CreateGroundTruthLabel(w http.ResponseWriter, r *http.Request) {
+	patientID := strings.TrimSpace(chi.URLParam(r, "patientID"))
+	if patientID == "" {
+		writeProblem(w, 400, "bad_request", "patient id required", nil)
+		return
+	}
+	var req groundTruthCreateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if req.OffsetAt != nil && req.OffsetAt.Before(req.Onset) {
+		writeProblem(w, 400, "bad_request", "offset must be after onset", map[string]string{"OffsetAt": "before_onset"})
+		return
+	}
+	annotated := normalizeStringPtr(req.AnnotatedByUserID)
+	source := normalizeStringPtr(req.Source)
+	note := normalizeStringPtr(req.Note)
+
+	input := models.GroundTruthLabelCreateInput{
+		EventTypeID:       req.EventTypeID,
+		Onset:             req.Onset,
+		OffsetAt:          req.OffsetAt,
+		AnnotatedByUserID: annotated,
+		Source:            source,
+		Note:              note,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	label, err := h.repo.CreateGroundTruthLabel(ctx, patientID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503":
+				writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+				return
+			}
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	details := map[string]any{"patient_id": patientID, "event_type_id": label.EventTypeID}
+	h.writeAudit(ctx, r, "GROUND_TRUTH_CREATE", "ground_truth_label", &label.ID, details)
+	writeJSON(w, 201, label)
+}
+
+func (h *Handlers) UpdateGroundTruthLabel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req groundTruthUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+
+	fields := make(map[string]string)
+	if req.EventTypeID != nil {
+		trimmed := strings.TrimSpace(*req.EventTypeID)
+		if trimmed == "" {
+			fields["EventTypeID"] = "uuid4"
+		} else if err := h.validate.Var(trimmed, "uuid4"); err != nil {
+			fields["EventTypeID"] = "uuid4"
+		} else {
+			req.EventTypeID = &trimmed
+		}
+	}
+	if req.Onset != nil && req.OffsetAt.Set && req.OffsetAt.Value != nil && req.OffsetAt.Value.Before(*req.Onset) {
+		fields["OffsetAt"] = "before_onset"
+	}
+	req.AnnotatedByUserID.Value = normalizeStringPtr(req.AnnotatedByUserID.Value)
+	if req.AnnotatedByUserID.Set && req.AnnotatedByUserID.Value != nil {
+		if err := h.validate.Var(*req.AnnotatedByUserID.Value, "uuid4"); err != nil {
+			fields["AnnotatedByUserID"] = "uuid4"
+		}
+	}
+	req.Source.Value = normalizeStringPtr(req.Source.Value)
+	if req.Source.Set && req.Source.Value != nil {
+		if err := h.validate.Var(*req.Source.Value, "max=40"); err != nil {
+			fields["Source"] = "max=40"
+		}
+	}
+	req.Note.Value = normalizeStringPtr(req.Note.Value)
+	if len(fields) > 0 {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	if req.EventTypeID == nil && req.Onset == nil && !req.OffsetAt.Set && !req.AnnotatedByUserID.Set && !req.Source.Set && !req.Note.Set {
+		writeProblem(w, 400, "bad_request", "no updates provided", nil)
+		return
+	}
+
+	input := models.GroundTruthLabelUpdateInput{EventTypeID: req.EventTypeID, Onset: req.Onset}
+	if req.OffsetAt.Set {
+		input.OffsetAtSet = true
+		input.OffsetAt = req.OffsetAt.Value
+	}
+	if req.AnnotatedByUserID.Set {
+		input.AnnotatedByUserIDSet = true
+		input.AnnotatedByUserID = req.AnnotatedByUserID.Value
+	}
+	if req.Source.Set {
+		input.SourceSet = true
+		input.Source = req.Source.Value
+	}
+	if req.Note.Set {
+		input.NoteSet = true
+		input.Note = req.Note.Value
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	label, err := h.repo.UpdateGroundTruthLabel(ctx, id, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "label not found", nil)
+			return
+		}
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503":
+				writeProblem(w, 400, "constraint_violation", pgErr.Message, nil)
+				return
+			}
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "GROUND_TRUTH_UPDATE", "ground_truth_label", &label.ID, map[string]any{"patient_id": label.PatientID})
+	writeJSON(w, 200, label)
+}
+
+func (h *Handlers) DeleteGroundTruthLabel(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteGroundTruthLabel(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "label not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "GROUND_TRUTH_DELETE", "ground_truth_label", &id, nil)
+	w.WriteHeader(204)
 }
 
 // Healthz

@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -93,6 +94,11 @@ type Repository interface {
 	CreateInference(ctx context.Context, input models.InferenceInput) (*models.Inference, error)
 	UpdateInference(ctx context.Context, id string, input models.InferenceInput) (*models.Inference, error)
 	DeleteInference(ctx context.Context, id string) error
+
+	ListGroundTruthByPatient(ctx context.Context, patientID string, limit, offset int) ([]models.GroundTruthLabel, error)
+	CreateGroundTruthLabel(ctx context.Context, patientID string, input models.GroundTruthLabelCreateInput) (*models.GroundTruthLabel, error)
+	UpdateGroundTruthLabel(ctx context.Context, id string, input models.GroundTruthLabelUpdateInput) (*models.GroundTruthLabel, error)
+	DeleteGroundTruthLabel(ctx context.Context, id string) error
 
 	ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error)
 	CreateAlert(ctx context.Context, patientID string, input models.AlertInput) (*models.Alert, error)
@@ -224,6 +230,9 @@ var operationLabels = map[string]string{
 	"INFERENCE_CREATE":          "Alta de inferencia",
 	"INFERENCE_UPDATE":          "Actualización de inferencia",
 	"INFERENCE_DELETE":          "Eliminación de inferencia",
+	"GROUND_TRUTH_CREATE":       "Alta de etiqueta ground truth",
+	"GROUND_TRUTH_UPDATE":       "Actualización de etiqueta ground truth",
+	"GROUND_TRUTH_DELETE":       "Eliminación de etiqueta ground truth",
 	"ALERT_CREATE":              "Alta de alerta",
 	"ALERT_UPDATE":              "Actualización de alerta",
 	"ALERT_DELETE":              "Eliminación de alerta",
@@ -259,6 +268,15 @@ func operationLabel(code string) string {
 		return label
 	}
 	return humanizeToken(upper)
+}
+
+func formStringPtr(raw string) *string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return nil
+	}
+	v := trimmed
+	return &v
 }
 
 func parseBoolDefault(s string, def bool) bool {
@@ -2264,6 +2282,14 @@ type patientsViewData struct {
 	Sexes         []models.CatalogItem
 }
 
+type groundTruthViewData struct {
+	Patients          []models.Patient
+	EventTypes        []models.EventType
+	Labels            []models.GroundTruthLabel
+	SelectedPatient   *models.Patient
+	SelectedPatientID string
+}
+
 type devicesViewData struct {
 	Items         []models.Device
 	Organizations []models.Organization
@@ -3191,6 +3217,236 @@ func (h *Handlers) PatientsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "PATIENT_DELETE", "patient", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente eliminado"})
 	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+// Ground truth labels
+
+func (h *Handlers) GroundTruthIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	eventTypes, err := h.repo.ListEventTypes(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los eventos", http.StatusInternalServerError)
+		return
+	}
+
+	selectedID := strings.TrimSpace(r.URL.Query().Get("patient_id"))
+	var labels []models.GroundTruthLabel
+	var selectedPatient *models.Patient
+	if selectedID != "" {
+		labels, err = h.repo.ListGroundTruthByPatient(ctx, selectedID, 200, 0)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar las etiquetas", http.StatusInternalServerError)
+			return
+		}
+		for i := range patients {
+			if patients[i].ID == selectedID {
+				selectedPatient = &patients[i]
+				break
+			}
+		}
+	}
+
+	data := groundTruthViewData{
+		Patients:          patients,
+		EventTypes:        eventTypes,
+		Labels:            labels,
+		SelectedPatient:   selectedPatient,
+		SelectedPatientID: selectedID,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Etiquetas Ground Truth"}}
+	h.render(w, r, "superadmin/ground_truth.html", "Etiquetas Ground Truth", data, crumbs)
+}
+
+func (h *Handlers) GroundTruthCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	redirectURL := "/superadmin/ground-truth"
+	if patientID != "" {
+		redirectURL = fmt.Sprintf("/superadmin/ground-truth?patient_id=%s", url.QueryEscape(patientID))
+	}
+	if patientID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un paciente"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	eventTypeID := strings.TrimSpace(r.FormValue("event_type_id"))
+	if eventTypeID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un evento"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	onsetRaw := strings.TrimSpace(r.FormValue("onset"))
+	if onsetRaw == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Indica el inicio"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	const layout = "2006-01-02T15:04"
+	onset, err := time.Parse(layout, onsetRaw)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Inicio inválido"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	offsetRaw := strings.TrimSpace(r.FormValue("offset_at"))
+	var offset *time.Time
+	if offsetRaw != "" {
+		parsed, err := time.Parse(layout, offsetRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fin inválido"})
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+		if !parsed.After(onset) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El fin debe ser posterior"})
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+		offset = &parsed
+	}
+	annotated := formStringPtr(r.FormValue("annotated_by_user_id"))
+	source := formStringPtr(r.FormValue("source"))
+	note := formStringPtr(r.FormValue("note"))
+
+	input := models.GroundTruthLabelCreateInput{EventTypeID: eventTypeID, Onset: onset, OffsetAt: offset, AnnotatedByUserID: annotated, Source: source, Note: note}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	label, err := h.repo.CreateGroundTruthLabel(ctx, patientID, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente o evento inválido"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la etiqueta"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "GROUND_TRUTH_CREATE", "ground_truth_label", &label.ID, map[string]any{"patient_id": patientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Etiqueta registrada"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) GroundTruthUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	redirectURL := "/superadmin/ground-truth"
+	if patientID != "" {
+		redirectURL = fmt.Sprintf("/superadmin/ground-truth?patient_id=%s", url.QueryEscape(patientID))
+	}
+	eventTypeID := strings.TrimSpace(r.FormValue("event_type_id"))
+	if eventTypeID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un evento"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	onsetRaw := strings.TrimSpace(r.FormValue("onset"))
+	if onsetRaw == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Indica el inicio"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	const layout = "2006-01-02T15:04"
+	onset, err := time.Parse(layout, onsetRaw)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Inicio inválido"})
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	offsetRaw := strings.TrimSpace(r.FormValue("offset_at"))
+	var offset *time.Time
+	if offsetRaw != "" {
+		parsed, err := time.Parse(layout, offsetRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fin inválido"})
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+		if !parsed.After(onset) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El fin debe ser posterior"})
+			http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+			return
+		}
+		offset = &parsed
+	}
+	annotated := formStringPtr(r.FormValue("annotated_by_user_id"))
+	source := formStringPtr(r.FormValue("source"))
+	note := formStringPtr(r.FormValue("note"))
+
+	eventType := eventTypeID
+	input := models.GroundTruthLabelUpdateInput{
+		EventTypeID:          &eventType,
+		Onset:                &onset,
+		OffsetAt:             offset,
+		OffsetAtSet:          true,
+		AnnotatedByUserID:    annotated,
+		AnnotatedByUserIDSet: true,
+		Source:               source,
+		SourceSet:            true,
+		Note:                 note,
+		NoteSet:              true,
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	label, err := h.repo.UpdateGroundTruthLabel(ctx, id, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Etiqueta no encontrada"})
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Referencias inválidas"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar la etiqueta"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "GROUND_TRUTH_UPDATE", "ground_truth_label", &label.ID, map[string]any{"patient_id": label.PatientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Etiqueta actualizada"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) GroundTruthDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	redirectURL := "/superadmin/ground-truth"
+	if patientID != "" {
+		redirectURL = fmt.Sprintf("/superadmin/ground-truth?patient_id=%s", url.QueryEscape(patientID))
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteGroundTruthLabel(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Etiqueta no encontrada"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la etiqueta"})
+		}
+		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "GROUND_TRUTH_DELETE", "ground_truth_label", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Etiqueta eliminada"})
+	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
 // Devices
