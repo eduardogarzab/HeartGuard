@@ -1,0 +1,177 @@
+{{define "superadmin/timeseries_bindings.html"}}
+{{if .Data.Bindings.Streams}}
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Selecciona stream</h3>
+                <form method="get" action="/superadmin/signal-streams" class="hg-form-grid hg-autoform">
+                        <input type="hidden" name="tab" value="bindings" />
+                        <div class="hg-form-field">
+                                <label for="binding-stream">Stream</label>
+                                <select id="binding-stream" name="stream" data-hg-stream-selector>
+                                        <option value="">Selecciona stream</option>
+                                        {{range .Data.Bindings.Streams}}
+                                        <option value="{{.ID}}" {{if eq .ID $.Data.Bindings.SelectedStreamID}}selected{{end}}>
+                                                {{.PatientName}} — {{if .SignalLabel}}{{.SignalLabel}}{{else}}{{.SignalType}}{{end}} · {{.DeviceSerial}}
+                                        </option>
+                                        {{end}}
+                                </select>
+                        </div>
+                </form>
+        </div>
+</section>
+{{end}}
+
+{{if .Data.Bindings.SelectedStreamID}}
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Registrar binding</h3>
+                <form method="post" action="/superadmin/signal-streams/{{.Data.Bindings.SelectedStreamID}}/bindings" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label for="binding-org">Organización Influx</label>
+                                <input id="binding-org" name="influx_org" maxlength="120" placeholder="Opcional" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="binding-bucket">Bucket</label>
+                                <input id="binding-bucket" name="influx_bucket" maxlength="120" required />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="binding-measurement">Measurement</label>
+                                <input id="binding-measurement" name="measurement" maxlength="120" required />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="binding-retention">Retención sugerida</label>
+                                <input id="binding-retention" name="retention_hint" maxlength="60" placeholder="Ej. 30d" />
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Crear binding</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Bindings registrados</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Bucket</th>
+                                        <th>Measurement</th>
+                                        <th>Retención</th>
+                                        <th>Creado</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Bindings.Bindings}}
+                                {{$binding := .}}
+                                <tr>
+                                        <td>{{$binding.InfluxBucket}}</td>
+                                        <td>{{$binding.Measurement}}</td>
+                                        <td>{{if $binding.RetentionHint}}{{$binding.RetentionHint}}{{else}}—{{end}}</td>
+                                        <td>{{formatTime $binding.CreatedAt}}</td>
+                                        <td>
+                                                <details>
+                                                        <summary>Configurar</summary>
+                                                        <form method="post" action="/superadmin/signal-streams/{{$.Data.Bindings.SelectedStreamID}}/bindings/{{$binding.ID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Organización Influx</label>
+                                                                        <input name="influx_org" maxlength="120" value="{{if $binding.InfluxOrg}}{{$binding.InfluxOrg}}{{end}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Bucket</label>
+                                                                        <input name="influx_bucket" maxlength="120" required value="{{$binding.InfluxBucket}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Measurement</label>
+                                                                        <input name="measurement" maxlength="120" required value="{{$binding.Measurement}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Retención sugerida</label>
+                                                                        <input name="retention_hint" maxlength="60" value="{{if $binding.RetentionHint}}{{$binding.RetentionHint}}{{end}}" />
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                        <h4>Etiquetas</h4>
+                                                        <table class="hg-table">
+                                                                <thead>
+                                                                        <tr>
+                                                                                <th>Configuración</th>
+                                                                                <th></th>
+                                                                        </tr>
+                                                                </thead>
+                                                                <tbody>
+                                                                        {{range $binding.Tags}}
+                                                                        <tr>
+                                                                                <td>
+                                                                                        <form method="post" action="/superadmin/signal-streams/{{$.Data.Bindings.SelectedStreamID}}/bindings/{{$binding.ID}}/tags/{{.ID}}/update" class="hg-form-grid">
+                                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                                <div class="hg-form-field">
+                                                                                                        <label>Clave</label>
+                                                                                                        <input name="tag_key" maxlength="120" required value="{{.TagKey}}" />
+                                                                                                </div>
+                                                                                                <div class="hg-form-field">
+                                                                                                        <label>Valor</label>
+                                                                                                        <input name="tag_value" maxlength="240" required value="{{.TagValue}}" />
+                                                                                                </div>
+                                                                                                <div class="hg-form-actions">
+                                                                                                        <button type="submit">Actualizar</button>
+                                                                                                </div>
+                                                                                        </form>
+                                                                                </td>
+                                                                                <td class="hg-align-right">
+                                                                                        <form method="post" action="/superadmin/signal-streams/{{$.Data.Bindings.SelectedStreamID}}/bindings/{{$binding.ID}}/tags/{{.ID}}/delete" data-hg-confirm="¿Eliminar etiqueta?" class="hg-inline-form">
+                                                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                                                <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                                                        </form>
+                                                                                </td>
+                                                                        </tr>
+                                                                        {{else}}
+                                                                        <tr>
+                                                                                <td colspan="2" class="hg-empty-cell">Sin etiquetas.</td>
+                                                                        </tr>
+                                                                        {{end}}
+                                                                </tbody>
+                                                        </table>
+                                                        <form method="post" action="/superadmin/signal-streams/{{$.Data.Bindings.SelectedStreamID}}/bindings/{{$binding.ID}}/tags" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Nueva clave</label>
+                                                                        <input name="tag_key" maxlength="120" required />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Nuevo valor</label>
+                                                                        <input name="tag_value" maxlength="240" required />
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Agregar etiqueta</button>
+                                                                </div>
+                                                        </form>
+                                                        <form method="post" action="/superadmin/signal-streams/{{$.Data.Bindings.SelectedStreamID}}/bindings/{{$binding.ID}}/delete" data-hg-confirm="¿Eliminar binding?" class="hg-inline-form">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <button type="submit" class="hg-link hg-link-danger">Eliminar binding</button>
+                                                        </form>
+                                                </details>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="5" class="hg-empty-cell">Sin bindings registrados.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+{{else}}
+<section class="hg-section">
+        <div class="hg-card">
+                <p>Selecciona un stream para administrar sus bindings.</p>
+        </div>
+</section>
+{{end}}
+{{end}}

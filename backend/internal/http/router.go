@@ -88,11 +88,24 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			dr.Post("/{id}/delete", uiHandlers.DevicesDelete)
 		})
 
+		s.Route("/push-devices", func(pr chi.Router) {
+			pr.Get("/", uiHandlers.PushDevicesIndex)
+			pr.Post("/", uiHandlers.PushDevicesCreate)
+			pr.Post("/{id}/update", uiHandlers.PushDevicesUpdate)
+			pr.Post("/{id}/delete", uiHandlers.PushDevicesDelete)
+		})
+
 		s.Route("/signal-streams", func(sr chi.Router) {
 			sr.Get("/", uiHandlers.SignalStreamsIndex)
 			sr.Post("/", uiHandlers.SignalStreamsCreate)
 			sr.Post("/{id}/update", uiHandlers.SignalStreamsUpdate)
 			sr.Post("/{id}/delete", uiHandlers.SignalStreamsDelete)
+			sr.Post("/{id}/bindings", uiHandlers.SignalStreamsBindingsCreate)
+			sr.Post("/{id}/bindings/{bindingID}/update", uiHandlers.SignalStreamsBindingsUpdate)
+			sr.Post("/{id}/bindings/{bindingID}/delete", uiHandlers.SignalStreamsBindingsDelete)
+			sr.Post("/{id}/bindings/{bindingID}/tags", uiHandlers.SignalStreamsBindingTagsCreate)
+			sr.Post("/{id}/bindings/{bindingID}/tags/{tagID}/update", uiHandlers.SignalStreamsBindingTagsUpdate)
+			sr.Post("/{id}/bindings/{bindingID}/tags/{tagID}/delete", uiHandlers.SignalStreamsBindingTagsDelete)
 		})
 
 		s.Route("/models", func(mr chi.Router) {
@@ -120,6 +133,10 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			ar.Get("/", uiHandlers.AlertsIndex)
 			ar.Post("/", uiHandlers.AlertsCreate)
 			ar.Post("/{id}/update", uiHandlers.AlertsUpdate)
+			ar.Post("/{id}/assignments", uiHandlers.AlertAssignmentsCreate)
+			ar.Post("/{id}/acks", uiHandlers.AlertAcksCreate)
+			ar.Post("/{id}/resolutions", uiHandlers.AlertResolutionsCreate)
+			ar.Post("/{id}/deliveries", uiHandlers.AlertDeliveriesCreate)
 			ar.Post("/{id}/delete", uiHandlers.AlertsDelete)
 		})
 

@@ -138,6 +138,18 @@ type Device struct {
 	Active           bool      `json:"active"`
 }
 
+type PushDevice struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id"`
+	UserName      string    `json:"user_name"`
+	UserEmail     string    `json:"user_email"`
+	PlatformCode  string    `json:"platform_code"`
+	PlatformLabel string    `json:"platform_label"`
+	PushToken     string    `json:"push_token"`
+	LastSeenAt    time.Time `json:"last_seen_at"`
+	Active        bool      `json:"active"`
+}
+
 type DeviceInput struct {
 	OrgID          *string `json:"org_id,omitempty"`
 	Serial         string  `json:"serial"`
@@ -146,6 +158,14 @@ type DeviceInput struct {
 	DeviceTypeCode string  `json:"device_type_code"`
 	OwnerPatientID *string `json:"owner_patient_id,omitempty"`
 	Active         *bool   `json:"active,omitempty"`
+}
+
+type PushDeviceInput struct {
+	UserID       string     `json:"user_id"`
+	PlatformCode string     `json:"platform_code"`
+	PushToken    string     `json:"push_token"`
+	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
+	Active       *bool      `json:"active,omitempty"`
 }
 
 type DeviceType struct {
@@ -174,6 +194,48 @@ type SignalStreamInput struct {
 	SampleRateHz float64    `json:"sample_rate_hz"`
 	StartedAt    time.Time  `json:"started_at"`
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
+}
+
+type TimeseriesBinding struct {
+	ID            string                 `json:"id"`
+	StreamID      string                 `json:"stream_id"`
+	InfluxOrg     *string                `json:"influx_org,omitempty"`
+	InfluxBucket  string                 `json:"influx_bucket"`
+	Measurement   string                 `json:"measurement"`
+	RetentionHint *string                `json:"retention_hint,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+	Tags          []TimeseriesBindingTag `json:"tags,omitempty"`
+}
+
+type TimeseriesBindingInput struct {
+	InfluxOrg     *string `json:"influx_org,omitempty"`
+	InfluxBucket  string  `json:"influx_bucket"`
+	Measurement   string  `json:"measurement"`
+	RetentionHint *string `json:"retention_hint,omitempty"`
+}
+
+type TimeseriesBindingUpdateInput struct {
+	InfluxOrg     *string `json:"influx_org,omitempty"`
+	InfluxBucket  *string `json:"influx_bucket,omitempty"`
+	Measurement   *string `json:"measurement,omitempty"`
+	RetentionHint *string `json:"retention_hint,omitempty"`
+}
+
+type TimeseriesBindingTag struct {
+	ID        string `json:"id"`
+	BindingID string `json:"binding_id"`
+	TagKey    string `json:"tag_key"`
+	TagValue  string `json:"tag_value"`
+}
+
+type TimeseriesBindingTagInput struct {
+	TagKey   string `json:"tag_key"`
+	TagValue string `json:"tag_value"`
+}
+
+type TimeseriesBindingTagUpdateInput struct {
+	TagKey   *string `json:"tag_key,omitempty"`
+	TagValue *string `json:"tag_value,omitempty"`
 }
 
 type MLModel struct {
@@ -314,6 +376,48 @@ type AlertStatus struct {
 	Code        string `json:"code"`
 	Description string `json:"description"`
 	StepOrder   int    `json:"step_order"`
+}
+
+type AlertAssignment struct {
+	AlertID          string    `json:"alert_id"`
+	AssigneeUserID   string    `json:"assignee_user_id"`
+	AssigneeName     *string   `json:"assignee_name,omitempty"`
+	AssignedByUserID *string   `json:"assigned_by_user_id,omitempty"`
+	AssignedByName   *string   `json:"assigned_by_name,omitempty"`
+	AssignedAt       time.Time `json:"assigned_at"`
+}
+
+type AlertAck struct {
+	ID          string    `json:"id"`
+	AlertID     string    `json:"alert_id"`
+	AckByUserID *string   `json:"ack_by_user_id,omitempty"`
+	AckByName   *string   `json:"ack_by_name,omitempty"`
+	AckAt       time.Time `json:"ack_at"`
+	Note        *string   `json:"note,omitempty"`
+}
+
+type AlertResolution struct {
+	ID               string    `json:"id"`
+	AlertID          string    `json:"alert_id"`
+	ResolvedByUserID *string   `json:"resolved_by_user_id,omitempty"`
+	ResolvedByName   *string   `json:"resolved_by_name,omitempty"`
+	ResolvedAt       time.Time `json:"resolved_at"`
+	Outcome          *string   `json:"outcome,omitempty"`
+	Note             *string   `json:"note,omitempty"`
+}
+
+type AlertDelivery struct {
+	ID                  string    `json:"id"`
+	AlertID             string    `json:"alert_id"`
+	ChannelID           string    `json:"channel_id"`
+	ChannelCode         string    `json:"channel_code"`
+	ChannelLabel        string    `json:"channel_label"`
+	Target              string    `json:"target"`
+	SentAt              time.Time `json:"sent_at"`
+	DeliveryStatusID    string    `json:"delivery_status_id"`
+	DeliveryStatusCode  string    `json:"delivery_status_code"`
+	DeliveryStatusLabel string    `json:"delivery_status_label"`
+	ResponsePayload     *string   `json:"response_payload,omitempty"`
 }
 
 type ContentRoleActivity struct {

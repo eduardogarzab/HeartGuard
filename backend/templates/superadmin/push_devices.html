@@ -1,0 +1,149 @@
+{{define "superadmin/push_devices.html"}} {{template "layout" .}} {{end}} {{define "superadmin/push_devices.html:content"}}
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Dispositivos push</h1>
+        </div>
+        <div class="hg-card">
+                <h3>Registrar dispositivo</h3>
+                <form method="post" action="/superadmin/push-devices" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label for="push-user">Usuario</label>
+                                <select id="push-user" name="user_id" required>
+                                        <option value="">Selecciona usuario</option>
+                                        {{range .Data.Users}}
+                                        <option value="{{.ID}}">{{.Name}} · {{.Email}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="push-platform">Plataforma</label>
+                                <select id="push-platform" name="platform_code" required>
+                                        <option value="">Selecciona plataforma</option>
+                                        {{range .Data.Platforms}}
+                                        <option value="{{.Code}}">{{.Label}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field hg-form-field-span2">
+                                <label for="push-token">Token</label>
+                                <textarea id="push-token" name="push_token" rows="2" required placeholder="Token FCM o APNS"></textarea>
+                        </div>
+                        <div class="hg-form-field">
+                                <label class="hg-checkbox">
+                                        <input type="checkbox" name="active" value="1" checked />
+                                        <span>Activo</span>
+                                </label>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Registrar</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Filtros</h3>
+                <form method="get" action="/superadmin/push-devices" class="hg-form-grid">
+                        <div class="hg-form-field">
+                                <label for="filter-user">Usuario</label>
+                                <select id="filter-user" name="user_id">
+                                        <option value="">Todos</option>
+                                        {{range .Data.Users}}
+                                        <option value="{{.ID}}" {{if eq $.Data.FilterUserID .ID}}selected{{end}}>{{.Name}} · {{.Email}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="filter-platform">Plataforma</label>
+                                <select id="filter-platform" name="platform">
+                                        <option value="">Todas</option>
+                                        {{range .Data.Platforms}}
+                                        <option value="{{.Code}}" {{if eq $.Data.FilterPlatform .Code}}selected{{end}}>{{.Label}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Aplicar filtros</button>
+                                <a class="hg-link" href="/superadmin/push-devices">Limpiar</a>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Dispositivos registrados</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Usuario</th>
+                                        <th>Plataforma</th>
+                                        <th>Token</th>
+                                        <th>Última conexión</th>
+                                        <th>Activo</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Items}}
+                                {{$device := .}}
+                                <tr>
+                                        <td>{{$device.UserName}}<br /><small>{{$device.UserEmail}}</small></td>
+                                        <td>{{$device.PlatformLabel}}</td>
+                                        <td><span class="hg-mono">{{$device.PushToken}}</span></td>
+                                        <td>{{formatTime $device.LastSeenAt}}</td>
+                                        <td>{{if $device.Active}}Sí{{else}}No{{end}}</td>
+                                        <td class="hg-flex">
+                                                <details>
+                                                        <summary>Editar</summary>
+                                                        <form method="post" action="/superadmin/push-devices/{{$device.ID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Usuario</label>
+                                                                        <select name="user_id" required>
+                                                                                {{range $.Data.Users}}
+                                                                                <option value="{{.ID}}" {{if eq .ID $device.UserID}}selected{{end}}>{{.Name}} · {{.Email}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Plataforma</label>
+                                                                        <select name="platform_code" required>
+                                                                                {{range $.Data.Platforms}}
+                                                                                <option value="{{.Code}}" {{if eq .Code $device.PlatformCode}}selected{{end}}>{{.Label}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field hg-form-field-span2">
+                                                                        <label>Token</label>
+                                                                        <textarea name="push_token" rows="2" required>{{$device.PushToken}}</textarea>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label class="hg-checkbox">
+                                                                                <input type="checkbox" name="active" value="1" {{if $device.Active}}checked{{end}} />
+                                                                                <span>Activo</span>
+                                                                        </label>
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/push-devices/{{$device.ID}}/delete" data-hg-confirm="¿Eliminar dispositivo?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="6" class="hg-empty-cell">Sin registros.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+{{end}}
