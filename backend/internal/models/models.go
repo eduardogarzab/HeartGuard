@@ -138,6 +138,18 @@ type Device struct {
 	Active           bool      `json:"active"`
 }
 
+type PushDevice struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"user_id"`
+	UserName      string    `json:"user_name"`
+	UserEmail     string    `json:"user_email"`
+	PlatformCode  string    `json:"platform_code"`
+	PlatformLabel string    `json:"platform_label"`
+	PushToken     string    `json:"push_token"`
+	LastSeenAt    time.Time `json:"last_seen_at"`
+	Active        bool      `json:"active"`
+}
+
 type DeviceInput struct {
 	OrgID          *string `json:"org_id,omitempty"`
 	Serial         string  `json:"serial"`
@@ -146,6 +158,14 @@ type DeviceInput struct {
 	DeviceTypeCode string  `json:"device_type_code"`
 	OwnerPatientID *string `json:"owner_patient_id,omitempty"`
 	Active         *bool   `json:"active,omitempty"`
+}
+
+type PushDeviceInput struct {
+	UserID       string     `json:"user_id"`
+	PlatformCode string     `json:"platform_code"`
+	PushToken    string     `json:"push_token"`
+	LastSeenAt   *time.Time `json:"last_seen_at,omitempty"`
+	Active       *bool      `json:"active,omitempty"`
 }
 
 type DeviceType struct {

@@ -68,6 +68,11 @@ type Repository interface {
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
 
+	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
+	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
+	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
+	DeletePushDevice(ctx context.Context, id string) error
+
 	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
 	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
@@ -198,6 +203,9 @@ var operationLabels = map[string]string{
 	"APIKEY_CREATE":             "Creación de API Key",
 	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
 	"APIKEY_REVOKE":             "Revocación de API Key",
+	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
 	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
 	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
 	"CATALOG_CREATE":            "Alta en catálogo",
@@ -2271,6 +2279,14 @@ type devicesViewData struct {
 	Patients      []models.Patient
 }
 
+type pushDevicesViewData struct {
+	Items          []models.PushDevice
+	Users          []models.User
+	Platforms      []models.CatalogItem
+	FilterUserID   string
+	FilterPlatform string
+}
+
 type signalStreamsViewData struct {
 	Items       []models.SignalStream
 	Patients    []models.Patient
@@ -3346,6 +3362,158 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "DEVICE_DELETE", "device", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
 	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
+}
+
+// Push devices
+
+func (h *Handlers) PushDevicesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	query := r.URL.Query()
+	filterUser := strings.TrimSpace(query.Get("user_id"))
+	var userFilter *string
+	if filterUser != "" {
+		userFilter = &filterUser
+	}
+	filterPlatform := strings.TrimSpace(query.Get("platform"))
+	var platformFilter *string
+	if filterPlatform != "" {
+		platformFilter = &filterPlatform
+	}
+
+	devices, err := h.repo.ListPushDevices(ctx, userFilter, platformFilter, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los dispositivos push", http.StatusInternalServerError)
+		return
+	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+	platforms, err := h.repo.ListCatalog(ctx, "platforms", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las plataformas", http.StatusInternalServerError)
+		return
+	}
+
+	data := pushDevicesViewData{Items: devices, Users: users, Platforms: platforms, FilterUserID: filterUser, FilterPlatform: filterPlatform}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Dispositivos push"}}
+	h.render(w, r, "superadmin/push_devices.html", "Dispositivos push", data, crumbs)
+}
+
+func (h *Handlers) PushDevicesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	platformCode := strings.TrimSpace(r.FormValue("platform_code"))
+	if platformCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma requerida"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("push_token"))
+	if token == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Token requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	activeVal := true
+	if r.FormValue("active") == "" {
+		activeVal = false
+	}
+	input := models.PushDeviceInput{UserID: userID, PlatformCode: platformCode, PushToken: token, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.CreatePushDevice(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidPlatform):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma inválida"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_CREATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo push registrado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) PushDevicesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	platformCode := strings.TrimSpace(r.FormValue("platform_code"))
+	if platformCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma requerida"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("push_token"))
+	if token == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Token requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	activeVal := false
+	if r.FormValue("active") != "" {
+		activeVal = true
+	}
+	input := models.PushDeviceInput{UserID: userID, PlatformCode: platformCode, PushToken: token, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.UpdatePushDevice(ctx, id, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidPlatform):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma inválida"})
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_UPDATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo actualizado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) PushDevicesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePushDevice(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_DELETE", "push_device", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
 }
 
 // Signal streams
