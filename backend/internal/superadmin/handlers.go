@@ -65,6 +65,11 @@ type Repository interface {
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
 
+	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
+	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
+	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
+	DeletePushDevice(ctx context.Context, id string) error
+
 	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
 	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
@@ -255,6 +260,9 @@ var operationLabels = map[string]string{
 	"APIKEY_CREATE":           "Creación de API Key",
 	"APIKEY_SET_PERMS":        "Configuración de permisos de API Key",
 	"APIKEY_REVOKE":           "Revocación de API Key",
+	"PUSH_DEVICE_CREATE":      "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":      "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":      "Eliminación de dispositivo push",
 	"ALERT_ASSIGNMENT_CREATE": "Registro de asignación de alerta",
 	"ALERT_ACK_CREATE":        "Registro de acuse de alerta",
 	"ALERT_RESOLUTION_CREATE": "Registro de resolución de alerta",
@@ -263,7 +271,7 @@ var operationLabels = map[string]string{
 	"CATALOG_UPDATE":          "Actualización de catálogo",
 	"CATALOG_DELETE":          "Eliminación de catálogo",
 	"DASHBOARD_EXPORT":        "Exportación de panel",
-	"AUDIT_EXPORT":            "Exportación de auditoría",
+	"AUDIT_EXPORT":            "Exportación de auditoría"
 }
 
 func operationLabel(code string) string {
@@ -2104,6 +2112,141 @@ func (h *Handlers) UpdateSystemSettings(w http.ResponseWriter, r *http.Request) 
 	var entityID string = "singleton"
 	h.writeAudit(ctx, r, "SYSTEM_SETTINGS_UPDATE", entity, &entityID, map[string]any{"brand_name": updated.BrandName, "maintenance_mode": updated.MaintenanceMode})
 	writeJSON(w, 200, updated)
+}
+
+// Push devices
+
+type pushDeviceReq struct {
+	UserID       string     `json:"user_id" validate:"required,uuid4"`
+	PlatformCode string     `json:"platform_code" validate:"required"`
+	PushToken    string     `json:"push_token" validate:"required"`
+	LastSeenAt   *time.Time `json:"last_seen_at"`
+	Active       *bool      `json:"active"`
+}
+
+func (h *Handlers) CreatePushDevice(w http.ResponseWriter, r *http.Request) {
+	var req pushDeviceReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	req.PlatformCode = strings.TrimSpace(req.PlatformCode)
+	req.PushToken = strings.TrimSpace(req.PushToken)
+	req.UserID = strings.TrimSpace(req.UserID)
+	if req.PlatformCode == "" {
+		writeProblem(w, 422, "validation_error", "platform is required", map[string]string{"platform_code": "required"})
+		return
+	}
+	if req.PushToken == "" {
+		writeProblem(w, 422, "validation_error", "push token is required", map[string]string{"push_token": "required"})
+		return
+	}
+	input := models.PushDeviceInput{
+		UserID:       req.UserID,
+		PlatformCode: req.PlatformCode,
+		PushToken:    req.PushToken,
+		LastSeenAt:   req.LastSeenAt,
+		Active:       req.Active,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.CreatePushDevice(ctx, input)
+	if err != nil {
+		if errors.Is(err, errInvalidPlatform) {
+			writeProblem(w, 400, "invalid_platform", "platform not found", map[string]string{"platform_code": "invalid"})
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 400, "invalid_platform", "platform not found", map[string]string{"platform_code": "invalid"})
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_CREATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	writeJSON(w, 201, device)
+}
+
+func (h *Handlers) UpdatePushDevice(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req pushDeviceReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	req.PlatformCode = strings.TrimSpace(req.PlatformCode)
+	req.PushToken = strings.TrimSpace(req.PushToken)
+	req.UserID = strings.TrimSpace(req.UserID)
+	if req.PlatformCode == "" {
+		writeProblem(w, 422, "validation_error", "platform is required", map[string]string{"platform_code": "required"})
+		return
+	}
+	if req.PushToken == "" {
+		writeProblem(w, 422, "validation_error", "push token is required", map[string]string{"push_token": "required"})
+		return
+	}
+	input := models.PushDeviceInput{
+		UserID:       req.UserID,
+		PlatformCode: req.PlatformCode,
+		PushToken:    req.PushToken,
+		LastSeenAt:   req.LastSeenAt,
+		Active:       req.Active,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.UpdatePushDevice(ctx, id, input)
+	if err != nil {
+		if errors.Is(err, errInvalidPlatform) {
+			writeProblem(w, 400, "invalid_platform", "platform not found", map[string]string{"platform_code": "invalid"})
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "push device not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_UPDATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	writeJSON(w, 200, device)
+}
+
+func (h *Handlers) DeletePushDevice(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePushDevice(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "push device not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_DELETE", "push_device", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListPushDevices(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	q := r.URL.Query()
+	var userID, platform *string
+	if v := strings.TrimSpace(q.Get("user_id")); v != "" {
+		userID = &v
+	}
+	if v := strings.TrimSpace(q.Get("platform")); v != "" {
+		platform = &v
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListPushDevices(ctx, userID, platform, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
 }
 
 // API Keys
