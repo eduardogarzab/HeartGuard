@@ -1,142 +1,153 @@
 {{define "superadmin/signal_streams.html"}} {{template "layout" .}} {{end}} {{define "superadmin/signal_streams.html:content"}}
 <section class="hg-section">
-	<div class="hg-flex-between">
-		<h1>Streams de señal</h1>
-	</div>
-	<div class="hg-card">
-		<h3>Registrar stream</h3>
-		<form method="post" action="/superadmin/signal-streams" class="hg-form-grid">
-			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
-			<div class="hg-form-field">
-				<label for="stream-patient">Paciente</label>
-				<select id="stream-patient" name="patient_id" required>
-					<option value="">Selecciona paciente</option>
-					{{range .Data.Patients}}
-					<option value="{{.ID}}">{{.Name}}{{if .OrgName}} — {{.OrgName}}{{end}}</option>
-					{{end}}
-				</select>
-			</div>
-			<div class="hg-form-field">
-				<label for="stream-device">Dispositivo</label>
-				<select id="stream-device" name="device_id" required>
-					<option value="">Selecciona dispositivo</option>
-					{{range .Data.Devices}}
-					<option value="{{.ID}}">{{.Serial}}{{if .DeviceTypeLabel}} — {{.DeviceTypeLabel}}{{end}}</option>
-					{{end}}
-				</select>
-			</div>
-			<div class="hg-form-field">
-				<label for="stream-type">Tipo de señal</label>
-				<select id="stream-type" name="signal_type" required>
-					<option value="">Selecciona tipo</option>
-					{{range .Data.SignalTypes}}
-					<option value="{{.Code}}">{{.Label}}</option>
-					{{end}}
-				</select>
-			</div>
-			<div class="hg-form-field">
-				<label for="stream-rate">Frecuencia (Hz)</label>
-				<input id="stream-rate" name="sample_rate" type="number" min="0" step="0.01" required placeholder="128" />
-			</div>
-			<div class="hg-form-field">
-				<label for="stream-start">Inicio</label>
-				<input id="stream-start" name="started_at" type="datetime-local" required />
-			</div>
-			<div class="hg-form-field">
-				<label for="stream-end">Fin</label>
-				<input id="stream-end" name="ended_at" type="datetime-local" />
-			</div>
-			<div class="hg-form-actions">
-				<button type="submit">Crear stream</button>
-			</div>
-		</form>
-	</div>
+        <div class="hg-flex-between">
+                <h1>Streams de señal</h1>
+        </div>
+        <nav class="hg-tabs">
+                <a href="/superadmin/signal-streams" class="{{if ne .Data.ActiveTab "bindings"}}active{{end}}">Streams</a>
+                <a href="/superadmin/signal-streams?tab=bindings" class="{{if eq .Data.ActiveTab "bindings"}}active{{end}}">Bindings</a>
+        </nav>
+</section>
+
+{{if eq .Data.ActiveTab "bindings"}}
+{{template "superadmin/timeseries_bindings.html" .}}
+{{else}}
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Registrar stream</h3>
+                <form method="post" action="/superadmin/signal-streams" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label for="stream-patient">Paciente</label>
+                                <select id="stream-patient" name="patient_id" required>
+                                        <option value="">Selecciona paciente</option>
+                                        {{range .Data.Patients}}
+                                        <option value="{{.ID}}">{{.Name}}{{if .OrgName}} — {{.OrgName}}{{end}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="stream-device">Dispositivo</label>
+                                <select id="stream-device" name="device_id" required>
+                                        <option value="">Selecciona dispositivo</option>
+                                        {{range .Data.Devices}}
+                                        <option value="{{.ID}}">{{.Serial}}{{if .DeviceTypeLabel}} — {{.DeviceTypeLabel}}{{end}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="stream-type">Tipo de señal</label>
+                                <select id="stream-type" name="signal_type" required>
+                                        <option value="">Selecciona tipo</option>
+                                        {{range .Data.SignalTypes}}
+                                        <option value="{{.Code}}">{{.Label}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="stream-rate">Frecuencia (Hz)</label>
+                                <input id="stream-rate" name="sample_rate" type="number" min="0" step="0.01" required placeholder="128" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="stream-start">Inicio</label>
+                                <input id="stream-start" name="started_at" type="datetime-local" required />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="stream-end">Fin</label>
+                                <input id="stream-end" name="ended_at" type="datetime-local" />
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Crear stream</button>
+                        </div>
+                </form>
+        </div>
 </section>
 
 <section class="hg-section">
-	<div class="hg-card">
-		<h3>Streams registrados</h3>
-		<table class="hg-table">
-			<thead>
-				<tr>
-					<th>Paciente</th>
-					<th>Dispositivo</th>
-					<th>Tipo</th>
-					<th>Frecuencia</th>
-					<th>Inicio</th>
-					<th>Fin</th>
-					<th></th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Data.Items}}
-				{{$stream := .}}
-				<tr>
-					<td>{{$stream.PatientName}}</td>
-					<td>{{$stream.DeviceSerial}}</td>
-					<td>{{if $stream.SignalLabel}}{{$stream.SignalLabel}}{{else}}{{$stream.SignalType}}{{end}}</td>
-					<td>{{printf "%.2f" $stream.SampleRateHz}}</td>
-					<td>{{formatTime $stream.StartedAt}}</td>
-					<td>{{formatTimePtr $stream.EndedAt}}</td>
-					<td class="hg-flex">
-						<details>
-							<summary>Editar</summary>
-							<form method="post" action="/superadmin/signal-streams/{{$stream.ID}}/update" class="hg-form-grid">
-								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-								<div class="hg-form-field">
-									<label>Paciente</label>
-									<select name="patient_id" required>
-										{{range $.Data.Patients}}
-										<option value="{{.ID}}" {{if eq .ID $stream.PatientID}}selected{{end}}>{{.Name}}{{if .OrgName}} — {{.OrgName}}{{end}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Dispositivo</label>
-									<select name="device_id" required>
-										{{range $.Data.Devices}}
-										<option value="{{.ID}}" {{if eq .ID $stream.DeviceID}}selected{{end}}>{{.Serial}}{{if .DeviceTypeLabel}} — {{.DeviceTypeLabel}}{{end}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Tipo</label>
-									<select name="signal_type" required>
-										{{range $.Data.SignalTypes}}
-										<option value="{{.Code}}" {{if eq .Code $stream.SignalType}}selected{{end}}>{{.Label}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Frecuencia (Hz)</label>
-									<input name="sample_rate" type="number" step="0.01" min="0" value="{{printf "%.2f" $stream.SampleRateHz}}" required />
-								</div>
-								<div class="hg-form-field">
-									<label>Inicio</label>
-									<input name="started_at" type="datetime-local" value="{{formatTimeLocal $stream.StartedAt}}" required />
-								</div>
-								<div class="hg-form-field">
-									<label>Fin</label>
-									<input name="ended_at" type="datetime-local" value="{{formatTimeLocalPtr $stream.EndedAt}}" />
-								</div>
-								<div class="hg-form-actions">
-									<button type="submit">Guardar</button>
-								</div>
-							</form>
-						</details>
-						<form method="post" action="/superadmin/signal-streams/{{$stream.ID}}/delete" data-hg-confirm="¿Eliminar stream?" class="hg-inline-form">
-							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
-						</form>
-					</td>
-				</tr>
-				{{else}}
-				<tr>
-					<td colspan="7" class="hg-empty-cell">Sin streams registrados.</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
-	</div>
+        <div class="hg-card">
+                <h3>Streams registrados</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Paciente</th>
+                                        <th>Dispositivo</th>
+                                        <th>Tipo</th>
+                                        <th>Frecuencia</th>
+                                        <th>Inicio</th>
+                                        <th>Fin</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Items}}
+                                {{$stream := .}}
+                                <tr>
+                                        <td>{{$stream.PatientName}}</td>
+                                        <td>{{$stream.DeviceSerial}}</td>
+                                        <td>{{if $stream.SignalLabel}}{{$stream.SignalLabel}}{{else}}{{$stream.SignalType}}{{end}}</td>
+                                        <td>{{printf "%.2f" $stream.SampleRateHz}}</td>
+                                        <td>{{formatTime $stream.StartedAt}}</td>
+                                        <td>{{formatTimePtr $stream.EndedAt}}</td>
+                                        <td class="hg-flex">
+                                                <details>
+                                                        <summary>Editar</summary>
+                                                        <form method="post" action="/superadmin/signal-streams/{{$stream.ID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Paciente</label>
+                                                                        <select name="patient_id" required>
+                                                                                {{range $.Data.Patients}}
+                                                                                <option value="{{.ID}}" {{if eq .ID $stream.PatientID}}selected{{end}}>{{.Name}}{{if .OrgName}} — {{.OrgName}}{{end}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Dispositivo</label>
+                                                                        <select name="device_id" required>
+                                                                                {{range $.Data.Devices}}
+                                                                                <option value="{{.ID}}" {{if eq .ID $stream.DeviceID}}selected{{end}}>{{.Serial}}{{if .DeviceTypeLabel}} — {{.DeviceTypeLabel}}{{end}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Tipo</label>
+                                                                        <select name="signal_type" required>
+                                                                                {{range $.Data.SignalTypes}}
+                                                                                <option value="{{.Code}}" {{if eq .Code $stream.SignalType}}selected{{end}}>{{.Label}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Frecuencia (Hz)</label>
+                                                                        <input name="sample_rate" type="number" step="0.01" min="0" value="{{printf "%.2f" $stream.SampleRateHz}}" required />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Inicio</label>
+                                                                        <input name="started_at" type="datetime-local" value="{{formatTimeLocal $stream.StartedAt}}" required />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Fin</label>
+                                                                        <input name="ended_at" type="datetime-local" value="{{formatTimeLocalPtr $stream.EndedAt}}" />
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/signal-streams/{{$stream.ID}}/delete" data-hg-confirm="¿Eliminar stream?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="7" class="hg-empty-cell">Sin streams registrados.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
 </section>
+{{end}}
 {{end}}

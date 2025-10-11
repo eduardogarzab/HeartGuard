@@ -88,6 +88,30 @@ func float32Param(ptr *float32) any {
 	return *ptr
 }
 
+type scanTarget interface {
+	Scan(dest ...any) error
+}
+
+func scanTimeseriesBinding(scanner scanTarget) (*models.TimeseriesBinding, error) {
+	var (
+		binding   models.TimeseriesBinding
+		influxOrg sql.NullString
+		retention sql.NullString
+	)
+	if err := scanner.Scan(&binding.ID, &binding.StreamID, &influxOrg, &binding.InfluxBucket, &binding.Measurement, &retention, &binding.CreatedAt); err != nil {
+		return nil, err
+	}
+	if influxOrg.Valid {
+		v := influxOrg.String
+		binding.InfluxOrg = &v
+	}
+	if retention.Valid {
+		v := retention.String
+		binding.RetentionHint = &v
+	}
+	return &binding, nil
+}
+
 func jsonParam(ptr *string) any {
 	if ptr == nil {
 		return nil
@@ -807,6 +831,143 @@ func (r *Repo) DeleteSignalStream(ctx context.Context, id string) error {
 		return err
 	}
 	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListTimeseriesBindings(ctx context.Context, streamID string) ([]models.TimeseriesBinding, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id, stream_id, influx_org, influx_bucket, measurement, retention_hint, created_at
+FROM timeseries_binding
+WHERE stream_id = $1
+ORDER BY created_at DESC
+`, streamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.TimeseriesBinding
+	for rows.Next() {
+		binding, err := scanTimeseriesBinding(rows)
+		if err != nil {
+			return nil, err
+		}
+		tags, err := r.ListTimeseriesBindingTags(ctx, binding.ID)
+		if err != nil {
+			return nil, err
+		}
+		binding.Tags = tags
+		out = append(out, *binding)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateTimeseriesBinding(ctx context.Context, streamID string, input models.TimeseriesBindingInput) (*models.TimeseriesBinding, error) {
+	row := r.pool.QueryRow(ctx, `
+INSERT INTO timeseries_binding (stream_id, influx_org, influx_bucket, measurement, retention_hint)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id, stream_id, influx_org, influx_bucket, measurement, retention_hint, created_at
+`, streamID, stringParam(input.InfluxOrg, true), input.InfluxBucket, input.Measurement, stringParam(input.RetentionHint, true))
+	binding, err := scanTimeseriesBinding(row)
+	if err != nil {
+		return nil, err
+	}
+	binding.Tags = []models.TimeseriesBindingTag{}
+	return binding, nil
+}
+
+func (r *Repo) UpdateTimeseriesBinding(ctx context.Context, id string, input models.TimeseriesBindingUpdateInput) (*models.TimeseriesBinding, error) {
+	row := r.pool.QueryRow(ctx, `
+UPDATE timeseries_binding SET
+  influx_org = COALESCE($2, influx_org),
+  influx_bucket = COALESCE($3, influx_bucket),
+  measurement = COALESCE($4, measurement),
+  retention_hint = COALESCE($5, retention_hint)
+WHERE id = $1
+RETURNING id, stream_id, influx_org, influx_bucket, measurement, retention_hint, created_at
+`, id, stringParam(input.InfluxOrg, true), stringParam(input.InfluxBucket, true), stringParam(input.Measurement, true), stringParam(input.RetentionHint, true))
+	binding, err := scanTimeseriesBinding(row)
+	if err != nil {
+		return nil, err
+	}
+	tags, err := r.ListTimeseriesBindingTags(ctx, binding.ID)
+	if err != nil {
+		return nil, err
+	}
+	binding.Tags = tags
+	return binding, nil
+}
+
+func (r *Repo) DeleteTimeseriesBinding(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM timeseries_binding WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) ListTimeseriesBindingTags(ctx context.Context, bindingID string) ([]models.TimeseriesBindingTag, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT id, binding_id, tag_key, tag_value
+FROM timeseries_binding_tag
+WHERE binding_id = $1
+ORDER BY tag_key ASC
+`, bindingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.TimeseriesBindingTag
+	for rows.Next() {
+		var tag models.TimeseriesBindingTag
+		if err := rows.Scan(&tag.ID, &tag.BindingID, &tag.TagKey, &tag.TagValue); err != nil {
+			return nil, err
+		}
+		out = append(out, tag)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateTimeseriesBindingTag(ctx context.Context, bindingID string, input models.TimeseriesBindingTagInput) (*models.TimeseriesBindingTag, error) {
+	var tag models.TimeseriesBindingTag
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO timeseries_binding_tag (binding_id, tag_key, tag_value)
+VALUES ($1, $2, $3)
+RETURNING id, binding_id, tag_key, tag_value
+`, bindingID, input.TagKey, input.TagValue).Scan(&tag.ID, &tag.BindingID, &tag.TagKey, &tag.TagValue)
+	if err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
+func (r *Repo) UpdateTimeseriesBindingTag(ctx context.Context, id string, input models.TimeseriesBindingTagUpdateInput) (*models.TimeseriesBindingTag, error) {
+	var tag models.TimeseriesBindingTag
+	err := r.pool.QueryRow(ctx, `
+UPDATE timeseries_binding_tag SET
+  tag_key = COALESCE($2, tag_key),
+  tag_value = COALESCE($3, tag_value)
+WHERE id = $1
+RETURNING id, binding_id, tag_key, tag_value
+`, id, stringParam(input.TagKey, true), stringParam(input.TagValue, true)).Scan(&tag.ID, &tag.BindingID, &tag.TagKey, &tag.TagValue)
+	if err != nil {
+		return nil, err
+	}
+	return &tag, nil
+}
+
+func (r *Repo) DeleteTimeseriesBindingTag(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM timeseries_binding_tag WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil

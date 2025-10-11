@@ -176,6 +176,48 @@ type SignalStreamInput struct {
 	EndedAt      *time.Time `json:"ended_at,omitempty"`
 }
 
+type TimeseriesBinding struct {
+	ID            string                 `json:"id"`
+	StreamID      string                 `json:"stream_id"`
+	InfluxOrg     *string                `json:"influx_org,omitempty"`
+	InfluxBucket  string                 `json:"influx_bucket"`
+	Measurement   string                 `json:"measurement"`
+	RetentionHint *string                `json:"retention_hint,omitempty"`
+	CreatedAt     time.Time              `json:"created_at"`
+	Tags          []TimeseriesBindingTag `json:"tags,omitempty"`
+}
+
+type TimeseriesBindingInput struct {
+	InfluxOrg     *string `json:"influx_org,omitempty"`
+	InfluxBucket  string  `json:"influx_bucket"`
+	Measurement   string  `json:"measurement"`
+	RetentionHint *string `json:"retention_hint,omitempty"`
+}
+
+type TimeseriesBindingUpdateInput struct {
+	InfluxOrg     *string `json:"influx_org,omitempty"`
+	InfluxBucket  *string `json:"influx_bucket,omitempty"`
+	Measurement   *string `json:"measurement,omitempty"`
+	RetentionHint *string `json:"retention_hint,omitempty"`
+}
+
+type TimeseriesBindingTag struct {
+	ID        string `json:"id"`
+	BindingID string `json:"binding_id"`
+	TagKey    string `json:"tag_key"`
+	TagValue  string `json:"tag_value"`
+}
+
+type TimeseriesBindingTagInput struct {
+	TagKey   string `json:"tag_key"`
+	TagValue string `json:"tag_value"`
+}
+
+type TimeseriesBindingTagUpdateInput struct {
+	TagKey   *string `json:"tag_key,omitempty"`
+	TagValue *string `json:"tag_value,omitempty"`
+}
+
 type MLModel struct {
 	ID              string    `json:"id"`
 	Name            string    `json:"name"`
