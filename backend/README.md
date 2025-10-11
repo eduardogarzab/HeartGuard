@@ -1,6 +1,6 @@
 # HeartGuard Superadmin
 
-Servicio en Go que renderiza el panel de superadministración de HeartGuard completamente del lado del servidor (SSR). Utiliza sesiones firmadas (JWT corto almacenado en cookie HttpOnly), Redis para rate limiting y PostgreSQL/PostGIS como persistencia.
+Servicio en Go que renderiza el panel de superadministración de HeartGuard completamente del lado del servidor (SSR). Utiliza sesiones firmadas (JWT corto almacenado en cookie HttpOnly), Redis para rate limiting y revocaciones de sesión, y PostgreSQL/PostGIS como persistencia.
 
 > ℹ️ La antigua API JSON permanece en el repositorio bajo el build tag `rest_api_legacy` únicamente como referencia histórica. No participa en el binario por defecto.
 
@@ -11,6 +11,7 @@ Servicio en Go que renderiza el panel de superadministración de HeartGuard comp
 -   Redis para sesiones, flash messages y rate limiting per-IP.
 -   PostgreSQL 14 + PostGIS (schema `heartguard`).
 -   Archivos estáticos (`ui/assets`) servidos desde el mismo proceso.
+-   Middleware de seguridad: `LoopbackOnly`, cabeceras seguras, CSRF compatible con formularios `multipart/form-data` y `application/x-www-form-urlencoded`.
 
 ## Variables de entorno
 
@@ -42,7 +43,6 @@ make dev            # go run ./cmd/superadmin-api
 Comandos útiles:
 
 -   `make lint` ⇒ `go vet ./...`
--   `make test` ⇒ `go test ./...`
 -   `make build` ⇒ binario Linux (`GOOS=linux`, `GOARCH=amd64`).
 -   `make reset-all` ⇒ reinicia contenedores y vuelve a aplicar init/seed.
 
@@ -67,30 +67,44 @@ Comandos útiles:
 
 -   Requiere CSRF válido. Almacena el JTI en lista de revocación en Redis y limpia la cookie.
 
-La cookie de sesión es HttpOnly/SameSite Strict. Los formularios internos incluyen `input name="_csrf"` obtenido vía middleware.
+La cookie de sesión es HttpOnly/SameSite Strict. Los formularios internos incluyen `input name="_csrf"` obtenido vía middleware; las protecciones CSRF aplican también a formularios `multipart/form-data` (por ejemplo, cargas de CSV para exports).
 
-## Módulos del panel SSR
+## Rutas y vistas SSR
 
-Todas las rutas están bajo `/superadmin` y exigen sesión con rol `superadmin`. Los templates viven en `templates/superadmin/`.
+Todas las rutas están bajo `/superadmin` y exigen sesión con rol `superadmin`. Los templates viven en `templates/superadmin/`. A continuación un resumen actualizado de módulos y vistas:
 
-| Ruta                             | Vista                      | Descripción breve                                                 |
-| -------------------------------- | -------------------------- | ----------------------------------------------------------------- |
-| `/superadmin/dashboard`          | `dashboard.html`           | Métricas resumidas, actividad reciente y estado de invitaciones.  |
-| `/superadmin/organizations`      | `organizations_list.html`  | Listado, alta rápida y navegación a detalle.                      |
-| `/superadmin/organizations/{id}` | `organization_detail.html` | Miembros, invitaciones activas y acciones de alta/baja.           |
-| `/superadmin/invitations`        | `invitations.html`         | Gestión de invitaciones con filtro por organización.              |
-| `/superadmin/users`              | `users.html`               | Buscador + cambio de estatus (`active`, `pending`, `blocked`).    |
-| `/superadmin/roles`              | `roles.html`               | Alta y baja de roles globales.                                    |
-| `/superadmin/catalogs/{slug}`    | `catalogs.html`            | CRUD sobre catálogos permitidos (`allowedCatalogs`).              |
-| `/superadmin/api-keys`           | `api_keys.html`            | Creación, permisos y revocación de API Keys.                      |
-| `/superadmin/settings/system`    | `settings.html`            | Edición de configuración global (marca, contacto, mantenimiento). |
-| `/superadmin/audit`              | `audit.html`               | Consulta filtrable del log de auditoría.                          |
+| Ruta base             | Vista(s)                                              | Contenido                                                                            |
+| --------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `/dashboard`          | `dashboard.html`                                      | Métricas, actividad reciente y export CSV (`/dashboard/export`).                     |
+| `/organizations`      | `organizations_list.html`, `organization_detail.html` | Alta rápida, detalle, baja lógica y gestión de miembros.                             |
+| `/content`            | `content_list.html`, `content_edit.html`, etc.        | CMS SSR para contenido estático; incluye catálogo de tipos (`/content-block-types`). |
+| `/patients`           | `patients.html`                                       | CRUD de pacientes demo con validaciones reforzadas.                                  |
+| `/locations/patients` | `patient_locations.html`                              | Registro manual y timeline tabular de ubicaciones (sin componente de mapa).          |
+| `/locations/users`    | `user_locations.html`                                 | Historial de ubicaciones de usuarios finales con filtros y carga manual.             |
+| `/care-teams`         | `care_teams.html`                                     | Gestión integral de equipos, miembros y pacientes asociados.                         |
+| `/caregivers`         | `caregivers.html`                                     | Assignments cuidador-paciente, tipos de relación y auditoría asociada.               |
+| `/ground-truth`       | `ground_truth.html`                                   | Etiquetas de verdad terreno para datasets de entrenamiento.                          |
+| `/devices`            | `devices.html`                                        | Inventario de dispositivos físicos.                                                  |
+| `/push-devices`       | `push_devices.html`                                   | Tokens push con asignaciones a usuarios/orgs.                                        |
+| `/batch-exports`      | `batch_exports.html`                                  | Solicitud, seguimiento y gestión de exports (soporta formularios multipart).         |
+| `/signal-streams`     | `signal_streams.html`, `timeseries_bindings.html`     | CRUD de streams, bindings y etiquetas por binding.                                   |
+| `/models`             | `models.html`                                         | Catálogo de modelos ML demo.                                                         |
+| `/event-types`        | `event_types.html`                                    | Administración de tipos de evento clínico.                                           |
+| `/inferences`         | `inferences.html`                                     | Registro de inferencias con metadatos.                                               |
+| `/alerts`             | `alerts.html`                                         | Creación, asignaciones, ACKs, resoluciones y entregas.                               |
+| `/invitations`        | `invitations.html`                                    | Invitaciones, filtros por organización, cancelación.                                 |
+| `/users`              | `users.html`                                          | Listado de usuarios y cambio de estatus (`active`, `pending`, `blocked`).            |
+| `/roles`              | `roles.html`                                          | Alta/baja de roles, asignación de permisos y usuarios.                               |
+| `/catalogs`           | `catalogs.html`                                       | CRUD unificado para catálogos parametrizables (`?catalog=...`).                      |
+| `/api-keys`           | `api_keys.html`                                       | Generación, actualización de permisos y revocación de API keys.                      |
+| `/audit`              | `audit.html`                                          | Visor con filtros de acciones y entidades.                                           |
+| `/settings/system`    | `settings.html`                                       | Configuración global (branding, contacto, mensajes de mantenimiento).                |
 
 > Los breadcrumbs y flashes se resuelven a través de `ui.ViewData` y utilidades CSS en `ui/assets/css/app.css`.
 
 ## Assets estáticos
 
-`ui/assets` contiene el CSS y JS del panel. El router expone `/ui-assets/*` con `http.FileServer`. Personaliza estilos en `ui/assets/css/app.css`.
+`ui/assets` contiene el CSS y JS del panel. El router expone `/ui-assets/*` con `http.FileServer`. Personaliza estilos en `ui/assets/css/app.css`; los módulos de ubicaciones ya no dependen de librerías de mapas de terceros.
 
 ## Auditoría
 
@@ -98,7 +112,6 @@ Las operaciones de mutación (creación/actualización/eliminación) invocan `Ha
 
 ## Pruebas y mantenimiento
 
--   `go test ./...` ejecuta la suite del repositorio (pendiente de habilitar en CI).
 -   `go fmt ./...` mantiene el formato estándar (recuerda ejecutarlo antes de subir cambios).
 -   Para inspeccionar consultas, utiliza `make db-psql` o habilita logging en Postgres.
 

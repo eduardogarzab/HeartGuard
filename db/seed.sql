@@ -571,3 +571,553 @@ VALUES
     '{"token":"INVITE-DEMO-003"}'::jsonb
   )
 ON CONFLICT (id) DO NOTHING;
+
+-- =========================================================
+-- Datos demo clínicos y operativos
+-- =========================================================
+
+INSERT INTO patients (id, org_id, person_name, birthdate, sex_id, risk_level, created_at)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000501',
+    (SELECT id FROM organizations WHERE code='FAM-001'),
+    'María Delgado',
+    '1978-03-22',
+    (SELECT id FROM sexes WHERE code='F'),
+    'high',
+    NOW() - INTERVAL '120 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000502',
+    (SELECT id FROM organizations WHERE code='CLIN-001'),
+    'José Hernández',
+    '1965-11-04',
+    (SELECT id FROM sexes WHERE code='M'),
+    'medium',
+    NOW() - INTERVAL '180 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000503',
+    (SELECT id FROM organizations WHERE code='FAM-001'),
+    'Valeria Ortiz',
+    '1992-07-15',
+    (SELECT id FROM sexes WHERE code='F'),
+    'low',
+    NOW() - INTERVAL '45 days'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO care_teams (id, org_id, name, created_at)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000601',
+    (SELECT id FROM organizations WHERE code='FAM-001'),
+    'Equipo Cardiología Familiar',
+    NOW() - INTERVAL '140 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000602',
+    (SELECT id FROM organizations WHERE code='CLIN-001'),
+    'Unidad Telemetría Clínica',
+    NOW() - INTERVAL '200 days'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO care_team_member (care_team_id, user_id, role_in_team, joined_at)
+SELECT '00000000-0000-0000-0000-000000000601'::uuid, u.id, 'Cardióloga tratante', NOW() - INTERVAL '120 days'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO care_team_member (care_team_id, user_id, role_in_team, joined_at)
+SELECT '00000000-0000-0000-0000-000000000601'::uuid, u.id, 'Analista de monitoreo', NOW() - INTERVAL '100 days'
+FROM users u
+WHERE u.email='martin.ops@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO care_team_member (care_team_id, user_id, role_in_team, joined_at)
+SELECT '00000000-0000-0000-0000-000000000602'::uuid, u.id, 'Supervisor clínico', NOW() - INTERVAL '150 days'
+FROM users u
+WHERE u.email='admin@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO patient_care_team (patient_id, care_team_id)
+VALUES
+  ('00000000-0000-0000-0000-000000000501'::uuid, '00000000-0000-0000-0000-000000000601'::uuid),
+  ('00000000-0000-0000-0000-000000000502'::uuid, '00000000-0000-0000-0000-000000000602'::uuid),
+  ('00000000-0000-0000-0000-000000000503'::uuid, '00000000-0000-0000-0000-000000000601'::uuid)
+ON CONFLICT DO NOTHING;
+
+INSERT INTO caregiver_patient (patient_id, user_id, rel_type_id, is_primary, started_at, note)
+SELECT
+  '00000000-0000-0000-0000-000000000501'::uuid,
+  u.id,
+  (SELECT id FROM caregiver_relationship_types WHERE code='spouse'),
+  TRUE,
+  NOW() - INTERVAL '45 days',
+  'Contacto principal domiciliario'
+FROM users u
+WHERE u.email='sofia.care@heartguard.com'
+ON CONFLICT (patient_id, user_id) DO NOTHING;
+
+INSERT INTO caregiver_patient (patient_id, user_id, rel_type_id, is_primary, started_at, note)
+SELECT
+  '00000000-0000-0000-0000-000000000503'::uuid,
+  u.id,
+  (SELECT id FROM caregiver_relationship_types WHERE code='friend'),
+  FALSE,
+  NOW() - INTERVAL '20 days',
+  'Contacto auxiliar para turnos nocturnos'
+FROM users u
+WHERE u.email='carlos.vega@heartguard.com'
+ON CONFLICT (patient_id, user_id) DO NOTHING;
+
+INSERT INTO patient_locations (id, patient_id, ts, geom, source, accuracy_m)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000701',
+    '00000000-0000-0000-0000-000000000501',
+    NOW() - INTERVAL '10 hours',
+    ST_SetSRID(ST_MakePoint(-99.1332, 19.4326), 4326),
+    'manual',
+    35.50
+  ),
+  (
+    '00000000-0000-0000-0000-000000000702',
+    '00000000-0000-0000-0000-000000000501',
+    NOW() - INTERVAL '2 hours',
+    ST_SetSRID(ST_MakePoint(-99.1400, 19.4305), 4326),
+    'caregiver',
+    18.00
+  ),
+  (
+    '00000000-0000-0000-0000-000000000703',
+    '00000000-0000-0000-0000-000000000502',
+    NOW() - INTERVAL '1 day',
+    ST_SetSRID(ST_MakePoint(-98.2063, 19.0413), 4326),
+    'sync',
+    12.40
+  ),
+  (
+    '00000000-0000-0000-0000-000000000704',
+    '00000000-0000-0000-0000-000000000503',
+    NOW() - INTERVAL '3 days',
+    ST_SetSRID(ST_MakePoint(-100.3161, 25.6866), 4326),
+    'manual',
+    42.00
+  )
+ON CONFLICT (patient_id, ts) DO NOTHING;
+
+INSERT INTO user_locations (id, user_id, ts, geom, source, accuracy_m)
+SELECT
+  '00000000-0000-0000-0000-000000000710',
+  u.id,
+  NOW() - INTERVAL '3 hours',
+  ST_SetSRID(ST_MakePoint(-99.1100, 19.4400), 4326),
+  'mobile-app',
+  15.20
+FROM users u
+WHERE u.email='martin.ops@heartguard.com'
+ON CONFLICT (user_id, ts) DO NOTHING;
+
+INSERT INTO user_locations (id, user_id, ts, geom, source, accuracy_m)
+SELECT
+  '00000000-0000-0000-0000-000000000711',
+  u.id,
+  NOW() - INTERVAL '5 hours',
+  ST_SetSRID(ST_MakePoint(-99.1500, 19.4200), 4326),
+  'caregiver-app',
+  22.00
+FROM users u
+WHERE u.email='sofia.care@heartguard.com'
+ON CONFLICT (user_id, ts) DO NOTHING;
+
+INSERT INTO user_locations (id, user_id, ts, geom, source, accuracy_m)
+SELECT
+  '00000000-0000-0000-0000-000000000712',
+  u.id,
+  NOW() - INTERVAL '1 day',
+  ST_SetSRID(ST_MakePoint(-99.2000, 19.4000), 4326),
+  'vpn-monitor',
+  9.80
+FROM users u
+WHERE u.email='admin@heartguard.com'
+ON CONFLICT (user_id, ts) DO NOTHING;
+
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  '00000000-0000-0000-0000-000000000720',
+  '00000000-0000-0000-0000-000000000501'::uuid,
+  et.id,
+  NOW() - INTERVAL '26 hours',
+  NOW() - INTERVAL '25 hours 30 minutes',
+  (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+  'manual-review',
+  'Arritmia confirmada en monitoreo nocturno'
+FROM event_types et
+WHERE et.code='AFIB'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  '00000000-0000-0000-0000-000000000721',
+  '00000000-0000-0000-0000-000000000502'::uuid,
+  et.id,
+  NOW() - INTERVAL '32 hours',
+  NOW() - INTERVAL '31 hours 15 minutes',
+  (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+  'device-sync',
+  'Evento de desaturación confirmado con oxímetro domiciliario'
+FROM event_types et
+WHERE et.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO devices (id, org_id, serial, brand, model, device_type_id, owner_patient_id, registered_at, active)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000730',
+    (SELECT id FROM organizations WHERE code='FAM-001'),
+    'HG-ECG-001',
+    'Cardia',
+    'Wave Pro',
+    (SELECT id FROM device_types WHERE code='ECG_1LEAD'),
+    '00000000-0000-0000-0000-000000000501',
+    NOW() - INTERVAL '200 days',
+    TRUE
+  ),
+  (
+    '00000000-0000-0000-0000-000000000731',
+    (SELECT id FROM organizations WHERE code='CLIN-001'),
+    'HG-PUL-201',
+    'OxyCare',
+    'PulseSat Mini',
+    (SELECT id FROM device_types WHERE code='PULSE_OX'),
+    '00000000-0000-0000-0000-000000000502',
+    NOW() - INTERVAL '90 days',
+    TRUE
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO signal_streams (id, patient_id, device_id, signal_type_id, sample_rate_hz, started_at, ended_at)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000740',
+    '00000000-0000-0000-0000-000000000501',
+    '00000000-0000-0000-0000-000000000730',
+    (SELECT id FROM signal_types WHERE code='ECG'),
+    256,
+    NOW() - INTERVAL '7 days',
+    NULL
+  ),
+  (
+    '00000000-0000-0000-0000-000000000741',
+    '00000000-0000-0000-0000-000000000502',
+    '00000000-0000-0000-0000-000000000731',
+    (SELECT id FROM signal_types WHERE code='SpO2'),
+    1,
+    NOW() - INTERVAL '3 days',
+    NOW() - INTERVAL '1 day'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO timeseries_binding (id, stream_id, influx_org, influx_bucket, measurement, retention_hint, created_at)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000750',
+    '00000000-0000-0000-0000-000000000740',
+    'heartguard-lab',
+    'telemetria',
+    'ecg_waveform',
+    '30d',
+    NOW() - INTERVAL '7 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000751',
+    '00000000-0000-0000-0000-000000000741',
+    'heartguard-lab',
+    'telemetria',
+    'spo2_series',
+    '14d',
+    NOW() - INTERVAL '3 days'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO timeseries_binding_tag (id, binding_id, tag_key, tag_value)
+VALUES
+  ('00000000-0000-0000-0000-000000000760', '00000000-0000-0000-0000-000000000750', 'patient_uuid', '00000000-0000-0000-0000-000000000501'),
+  ('00000000-0000-0000-0000-000000000761', '00000000-0000-0000-0000-000000000750', 'org_code', 'FAM-001'),
+  ('00000000-0000-0000-0000-000000000762', '00000000-0000-0000-0000-000000000751', 'patient_uuid', '00000000-0000-0000-0000-000000000502')
+ON CONFLICT (binding_id, tag_key) DO NOTHING;
+
+INSERT INTO models (id, name, version, task, training_data_ref, hyperparams, created_at)
+VALUES
+  (
+    '00000000-0000-0000-0000-000000000770',
+    'CardioNet Arrhythmia',
+    '1.3.0',
+    'arrhythmia_detection',
+    's3://heartguard-models/cardionet/v1.3.0',
+    '{"threshold":0.80,"window_s":120}'::jsonb,
+    NOW() - INTERVAL '120 days'
+  ),
+  (
+    '00000000-0000-0000-0000-000000000771',
+    'Oxymap Guardian',
+    '0.9.2',
+    'desaturation_detection',
+    's3://heartguard-models/oxymap/v0.9.2',
+    '{"min_spo2":0.9}'::jsonb,
+    NOW() - INTERVAL '80 days'
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT
+  '00000000-0000-0000-0000-000000000780',
+  '00000000-0000-0000-0000-000000000770',
+  '00000000-0000-0000-0000-000000000740',
+  NOW() - INTERVAL '2 hours',
+  NOW() - INTERVAL '1 hour 55 minutes',
+  et.id,
+  0.873,
+  0.800,
+  '{"lead_quality":"good"}'::jsonb,
+  NOW() - INTERVAL '1 hour 54 minutes',
+  'streams/000000000740/chunk-001'
+FROM event_types et
+WHERE et.code='AFIB'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT
+  '00000000-0000-0000-0000-000000000781',
+  '00000000-0000-0000-0000-000000000771',
+  '00000000-0000-0000-0000-000000000741',
+  NOW() - INTERVAL '32 hours',
+  NOW() - INTERVAL '31 hours 55 minutes',
+  et.id,
+  0.642,
+  0.600,
+  '{"min_spo2":0.88}'::jsonb,
+  NOW() - INTERVAL '31 hours 50 minutes',
+  'streams/000000000741/chunk-014'
+FROM event_types et
+WHERE et.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  '00000000-0000-0000-0000-000000000790',
+  '00000000-0000-0000-0000-000000000501'::uuid,
+  at.id,
+  '00000000-0000-0000-0000-000000000770',
+  '00000000-0000-0000-0000-000000000780',
+  (SELECT id FROM alert_levels WHERE code='high'),
+  (SELECT id FROM alert_status WHERE code='ack'),
+  NOW() - INTERVAL '1 hour 52 minutes',
+  'Posible fibrilación detectada por CardioNet',
+  ST_SetSRID(ST_MakePoint(-99.1350, 19.4320), 4326)
+FROM alert_types at
+WHERE at.code='ARRHYTHMIA'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  '00000000-0000-0000-0000-000000000791',
+  '00000000-0000-0000-0000-000000000502'::uuid,
+  at.id,
+  '00000000-0000-0000-0000-000000000771',
+  '00000000-0000-0000-0000-000000000781',
+  (SELECT id FROM alert_levels WHERE code='medium'),
+  (SELECT id FROM alert_status WHERE code='resolved'),
+  NOW() - INTERVAL '31 hours 45 minutes',
+  'Episodio de desaturación nocturna',
+  ST_SetSRID(ST_MakePoint(-98.2000, 19.0400), 4326)
+FROM alert_types at
+WHERE at.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_assignment (alert_id, assignee_user_id, assigned_by_user_id, assigned_at)
+SELECT
+  '00000000-0000-0000-0000-000000000790'::uuid,
+  assignee.id,
+  assigner.id,
+  NOW() - INTERVAL '90 minutes'
+FROM users assignee
+CROSS JOIN users assigner
+WHERE assignee.email='ana.ruiz@heartguard.com'
+  AND assigner.email='admin@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO alert_assignment (alert_id, assignee_user_id, assigned_by_user_id, assigned_at)
+SELECT
+  '00000000-0000-0000-0000-000000000791'::uuid,
+  assignee.id,
+  assigner.id,
+  NOW() - INTERVAL '31 hours'
+FROM users assignee
+CROSS JOIN users assigner
+WHERE assignee.email='martin.ops@heartguard.com'
+  AND assigner.email='admin@heartguard.com'
+ON CONFLICT DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  '00000000-0000-0000-0000-0000000007A0',
+  '00000000-0000-0000-0000-000000000790'::uuid,
+  u.id,
+  NOW() - INTERVAL '80 minutes',
+  'Revisando telemetría en tiempo real'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  '00000000-0000-0000-0000-0000000007A1',
+  '00000000-0000-0000-0000-000000000791'::uuid,
+  u.id,
+  NOW() - INTERVAL '30 hours',
+  'Confirmado con paciente, escalado a guardia médica'
+FROM users u
+WHERE u.email='martin.ops@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT
+  '00000000-0000-0000-0000-0000000007B0',
+  '00000000-0000-0000-0000-000000000791'::uuid,
+  u.id,
+  NOW() - INTERVAL '30 hours 30 minutes',
+  'Stabilized',
+  'Paciente respondió favorablemente a intervención remota'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
+SELECT
+  '00000000-0000-0000-0000-0000000007C0',
+  '00000000-0000-0000-0000-000000000790'::uuid,
+  ch.id,
+  'HG-APP-ANA',
+  NOW() - INTERVAL '95 minutes',
+  (SELECT id FROM delivery_statuses WHERE code='DELIVERED'),
+  NULL
+FROM alert_channels ch
+WHERE ch.code='PUSH'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
+SELECT
+  '00000000-0000-0000-0000-0000000007C1',
+  '00000000-0000-0000-0000-000000000790'::uuid,
+  ch.id,
+  'ana.ruiz@heartguard.com',
+  NOW() - INTERVAL '94 minutes',
+  (SELECT id FROM delivery_statuses WHERE code='DELIVERED'),
+  NULL
+FROM alert_channels ch
+WHERE ch.code='EMAIL'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
+SELECT
+  '00000000-0000-0000-0000-0000000007C2',
+  '00000000-0000-0000-0000-000000000791'::uuid,
+  ch.id,
+  '+52 555 123 4567',
+  NOW() - INTERVAL '32 hours',
+  (SELECT id FROM delivery_statuses WHERE code='SENT'),
+  NULL
+FROM alert_channels ch
+WHERE ch.code='SMS'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO push_devices (id, user_id, platform_id, push_token, last_seen_at, active)
+SELECT
+  '00000000-0000-0000-0000-0000000007D0',
+  u.id,
+  p.id,
+  'ANA-DEVICE-TOKEN',
+  NOW() - INTERVAL '1 hour',
+  TRUE
+FROM users u
+CROSS JOIN platforms p
+WHERE u.email='ana.ruiz@heartguard.com'
+  AND p.code='ios'
+ON CONFLICT (user_id, platform_id, push_token) DO NOTHING;
+
+INSERT INTO push_devices (id, user_id, platform_id, push_token, last_seen_at, active)
+SELECT
+  '00000000-0000-0000-0000-0000000007D1',
+  u.id,
+  p.id,
+  'MARTIN-NEO-01',
+  NOW() - INTERVAL '12 hours',
+  TRUE
+FROM users u
+CROSS JOIN platforms p
+WHERE u.email='martin.ops@heartguard.com'
+  AND p.code='android'
+ON CONFLICT (user_id, platform_id, push_token) DO NOTHING;
+
+INSERT INTO batch_exports (id, purpose, target_ref, requested_by, requested_at, completed_at, batch_export_status_id, details)
+VALUES
+  (
+    '00000000-0000-0000-0000-0000000007E0',
+    'alerts_csv',
+    's3://demo-exports/alerts-2025-10-10.csv',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    NOW() - INTERVAL '1 day',
+    NOW() - INTERVAL '23 hours',
+    (SELECT id FROM batch_export_statuses WHERE code='done'),
+    '{"row_count":52,"filters":{"status":["ack","resolved"]}}'::jsonb
+  ),
+  (
+    '00000000-0000-0000-0000-0000000007E1',
+    'patients_snapshot',
+    's3://demo-exports/patients-queue.csv',
+    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+    NOW() - INTERVAL '6 hours',
+    NULL,
+    (SELECT id FROM batch_export_statuses WHERE code='running'),
+    '{"org":"FAM-001"}'::jsonb
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO api_keys (id, owner_user_id, key_hash, label, created_at, expires_at, revoked_at, scopes)
+VALUES
+  (
+    '00000000-0000-0000-0000-0000000007F0',
+    (SELECT id FROM users WHERE email='admin@heartguard.com'),
+    encode(digest('HGDEMO-KEY-1', 'sha256'), 'hex'),
+    'Demo - Integración CLI',
+    NOW() - INTERVAL '15 days',
+    NOW() + INTERVAL '15 days',
+    NULL,
+    ARRAY['alerts.read','patients.read']
+  ),
+  (
+    '00000000-0000-0000-0000-0000000007F1',
+    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+    encode(digest('HGDEMO-KEY-2', 'sha256'), 'hex'),
+    'Integración Operaciones (revocada)',
+    NOW() - INTERVAL '120 days',
+    NOW() - INTERVAL '30 days',
+    NOW() - INTERVAL '10 days',
+    ARRAY['alerts.manage']
+  )
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO api_key_permission (api_key_id, permission_id)
+SELECT '00000000-0000-0000-0000-0000000007F0'::uuid, p.id
+FROM permissions p
+WHERE p.code IN ('alerts.read','patients.read')
+ON CONFLICT DO NOTHING;
+
+INSERT INTO api_key_permission (api_key_id, permission_id)
+SELECT '00000000-0000-0000-0000-0000000007F1'::uuid, p.id
+FROM permissions p
+WHERE p.code IN ('alerts.manage')
+ON CONFLICT DO NOTHING;

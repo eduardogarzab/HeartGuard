@@ -1,6 +1,6 @@
 # HeartGuard Database (PostgreSQL + PostGIS)
 
-Esquema relacional que soporta la plataforma HeartGuard: catálogos configurables, RBAC, auditoría, métricas y objetos clínicos básicos. Todo el ciclo de vida (creación, seeds y health checks) se orquesta con el `Makefile` raíz.
+Esquema relacional que soporta la plataforma HeartGuard: catálogos configurables, RBAC, auditoría, métricas, ubicaciones geográficas y objetos clínicos básicos. Todo el ciclo de vida (creación, seeds y health checks) se orquesta con el `Makefile` raíz.
 
 ## Stack y extensiones
 
@@ -56,7 +56,13 @@ Tablas como `user_statuses`, `alert_channels`, `alert_levels`, `service_statuses
 -   `roles`, `permissions`, `role_permission`
 -   `users`, `user_role`
 -   `organizations`, `org_roles`, `user_org_membership`
--   Refresh tokens (`refresh_tokens`) y API keys (`api_keys`, `api_key_permission`)
+-   Refresh tokens (`refresh_tokens`), revocaciones (`session_revocations`) y API keys (`api_keys`, `api_key_permission`)
+
+### Ubicaciones y movilidad
+
+-   `patient_locations` almacena localizaciones manuales o importadas para pacientes demo.
+-   `user_locations` registra ubicaciones reportadas por usuarios finales.
+-   Ambas tablas guardan metadatos (`source`, `accuracy_m`, `recorded_at`) para reporting.
 
 ### Dominio clínico demo
 
@@ -77,6 +83,7 @@ Incluye entidades base (`patients`, `care_teams`, `caregiver_patient`, `alert_ty
 -   Invitaciones demo en varios estados (pendiente, usada, revocada).
 -   Servicios y health checks históricos.
 -   Auditoría de los últimos días.
+-   Ubicaciones de prueba para pacientes y usuarios (coordenadas con metadatos de fuente y precisión).
 
 La semilla es idempotente: usa `ON CONFLICT DO NOTHING` o actualizaciones para asegurar que re-ejecutar `make db-seed` mantenga la coherencia.
 
