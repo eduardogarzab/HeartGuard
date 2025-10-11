@@ -85,9 +85,9 @@
                                         <td>{{formatTimeLocal $label.Onset}}</td>
                                         <td>{{formatTimeLocalPtr $label.OffsetAt}}</td>
                                         <td>{{$label.EventTypeLabel}}</td>
-                                        <td>{{if $label.Source}}{{*$label.Source}}{{else}}—{{end}}</td>
+                                        <td>{{if $label.Source}}{{stringValue $label.Source}}{{else}}—{{end}}</td>
                                         <td>{{if $label.AnnotatedByName}}{{$label.AnnotatedByName}}{{else if $label.AnnotatedByUserID}}{{stringValue $label.AnnotatedByUserID}}{{else}}—{{end}}</td>
-                                        <td>{{if $label.Note}}{{*$label.Note}}{{else}}—{{end}}</td>
+                                        <td>{{if $label.Note}}{{stringValue $label.Note}}{{else}}—{{end}}</td>
                                         <td class="hg-flex">
                                                 <details>
                                                         <summary>Editar</summary>
