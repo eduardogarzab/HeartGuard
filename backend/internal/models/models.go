@@ -879,6 +879,29 @@ type AuditLog struct {
 	IP       *string        `json:"ip,omitempty"`        // inet -> string
 }
 
+type BatchExport struct {
+	ID               string         `json:"id"`
+	Purpose          string         `json:"purpose"`
+	TargetRef        string         `json:"target_ref"`
+	RequestedBy      *string        `json:"requested_by,omitempty"`
+	RequestedByName  *string        `json:"requested_by_name,omitempty"`
+	RequestedByEmail *string        `json:"requested_by_email,omitempty"`
+	RequestedAt      time.Time      `json:"requested_at"`
+	CompletedAt      *time.Time     `json:"completed_at,omitempty"`
+	StatusID         string         `json:"status_id"`
+	StatusCode       string         `json:"status_code"`
+	StatusLabel      string         `json:"status_label"`
+	Details          map[string]any `json:"details,omitempty"`
+}
+
+type BatchExportInput struct {
+	Purpose     string         `json:"purpose"`
+	TargetRef   string         `json:"target_ref"`
+	RequestedBy *string        `json:"requested_by,omitempty"`
+	StatusCode  string         `json:"status_code,omitempty"`
+	Details     map[string]any `json:"details,omitempty"`
+}
+
 type OperationCount struct {
 	Action string `json:"action"`
 	Count  int    `json:"count"`

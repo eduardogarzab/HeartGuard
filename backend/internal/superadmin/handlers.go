@@ -91,6 +91,11 @@ type Repository interface {
 	UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error)
 	DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error
 
+	ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error)
+	CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error)
+	UpdateBatchExportStatus(ctx context.Context, id string, statusCode string, completedAt *time.Time, details map[string]any) (*models.BatchExport, error)
+	DeleteBatchExport(ctx context.Context, id string) error
+
 	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
 	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
 	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
@@ -2863,6 +2868,187 @@ func (h *Handlers) DeleteCaregiverAssignment(w http.ResponseWriter, r *http.Requ
 		return
 	}
 	h.writeAudit(ctx, r, "CAREGIVER_ASSIGN_DELETE", "caregiver_assignment", nil, map[string]any{"patient_id": patientID, "caregiver_id": caregiverID})
+	w.WriteHeader(204)
+}
+
+// Push devices
+
+type batchExportCreateReq struct {
+	Purpose    string         `json:"purpose" validate:"required"`
+	TargetRef  string         `json:"target_ref" validate:"required"`
+	StatusCode string         `json:"status_code"`
+	Details    map[string]any `json:"details,omitempty"`
+}
+
+type batchExportStatusReq struct {
+	StatusCode  string         `json:"status_code" validate:"required"`
+	CompletedAt *time.Time     `json:"completed_at,omitempty"`
+	Details     map[string]any `json:"details,omitempty"`
+}
+
+// Batch exports
+
+func (h *Handlers) ListBatchExports(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	query := r.URL.Query()
+	var (
+		statusPtr *string
+		searchPtr *string
+	)
+	if status := strings.TrimSpace(query.Get("status")); status != "" {
+		statusPtr = &status
+	}
+	if q := strings.TrimSpace(query.Get("q")); q != "" {
+		searchPtr = &q
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListBatchExports(ctx, statusPtr, searchPtr, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateBatchExport(w http.ResponseWriter, r *http.Request) {
+	ct := r.Header.Get("Content-Type")
+	requestedBy := actorPtr(r)
+
+	var (
+		purpose    string
+		targetRef  string
+		statusCode string
+		details    map[string]any
+	)
+
+	if strings.HasPrefix(ct, "multipart/form-data") {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			writeProblem(w, 400, "bad_request", "invalid multipart form", nil)
+			return
+		}
+		purpose = strings.TrimSpace(r.FormValue("purpose"))
+		statusCode = strings.TrimSpace(r.FormValue("status_code"))
+		detailsRaw := strings.TrimSpace(r.FormValue("details_json"))
+		if detailsRaw != "" {
+			if err := json.Unmarshal([]byte(detailsRaw), &details); err != nil {
+				writeProblem(w, 422, "validation_error", "details_json must be valid JSON", map[string]string{"details_json": "invalid"})
+				return
+			}
+		}
+		if r.MultipartForm != nil {
+			if files := r.MultipartForm.File["target_file"]; len(files) > 0 {
+				if files[0] != nil && files[0].Filename != "" {
+					var err error
+					targetRef, err = saveBatchExportUpload(files[0])
+					if err != nil {
+						switch {
+						case errors.Is(err, errBatchExportMissingFile):
+							// ignore, we'll fallback to URL
+						case errors.Is(err, errBatchExportFileTooLarge):
+							writeProblem(w, 413, "file_too_large", "uploaded file is too large", map[string]string{"target_file": "too_large"})
+							return
+						default:
+							writeProblem(w, 500, "upload_error", err.Error(), nil)
+							return
+						}
+					}
+				}
+			}
+		}
+		if targetRef == "" {
+			targetRef = strings.TrimSpace(r.FormValue("target_url"))
+		}
+	} else {
+		var req batchExportCreateReq
+		fields, err := decodeAndValidate(r, &req, h.validate)
+		if err != nil {
+			writeProblem(w, 400, "bad_request", "invalid payload", fields)
+			return
+		}
+		purpose = strings.TrimSpace(req.Purpose)
+		targetRef = strings.TrimSpace(req.TargetRef)
+		statusCode = strings.TrimSpace(req.StatusCode)
+		if req.Details != nil {
+			details = req.Details
+		}
+	}
+
+	if purpose == "" {
+		writeProblem(w, 422, "validation_error", "purpose is required", map[string]string{"purpose": "required"})
+		return
+	}
+	if targetRef == "" {
+		writeProblem(w, 422, "validation_error", "target_ref is required", map[string]string{"target_ref": "required"})
+		return
+	}
+
+	input := models.BatchExportInput{
+		Purpose:     purpose,
+		TargetRef:   targetRef,
+		RequestedBy: requestedBy,
+		StatusCode:  statusCode,
+	}
+	if details != nil {
+		input.Details = details
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	export, err := h.repo.CreateBatchExport(ctx, input)
+	if err != nil {
+		if errors.Is(err, errInvalidBatchExportStatus) {
+			writeProblem(w, 400, "invalid_status", "unknown status code", map[string]string{"status_code": "invalid"})
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "BATCH_EXPORT_CREATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
+	writeJSON(w, 201, export)
+}
+
+func (h *Handlers) UpdateBatchExportStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req batchExportStatusReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	export, err := h.repo.UpdateBatchExportStatus(ctx, id, req.StatusCode, req.CompletedAt, req.Details)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidBatchExportStatus):
+			writeProblem(w, 400, "invalid_status", "unknown status code", map[string]string{"status_code": "invalid"})
+			return
+		case errors.Is(err, pgx.ErrNoRows):
+			writeProblem(w, 404, "not_found", "batch export not found", nil)
+			return
+		default:
+			writeProblem(w, 400, "db_error", err.Error(), nil)
+			return
+		}
+	}
+	h.writeAudit(ctx, r, "BATCH_EXPORT_STATUS_UPDATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
+	writeJSON(w, 200, export)
+}
+
+func (h *Handlers) DeleteBatchExport(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteBatchExport(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "batch export not found", nil)
+			return
+		}
+		writeProblem(w, 400, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "BATCH_EXPORT_DELETE", "batch_export", &id, nil)
 	w.WriteHeader(204)
 }
 

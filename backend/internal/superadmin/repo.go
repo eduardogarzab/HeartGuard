@@ -53,7 +53,10 @@ func (r *Repo) Ping(ctx context.Context) error {
 
 var nowFn = time.Now
 
-var errInvalidPlatform = errors.New("invalid platform")
+var (
+	errInvalidPlatform          = errors.New("invalid platform")
+	errInvalidBatchExportStatus = errors.New("invalid batch export status")
+)
 
 func stringParam(ptr *string, trim bool) any {
 	if ptr == nil {
@@ -119,6 +122,43 @@ func scanTimeseriesBinding(scanner scanTarget) (*models.TimeseriesBinding, error
 		binding.RetentionHint = &v
 	}
 	return &binding, nil
+}
+
+func scanBatchExport(scanner scanTarget) (*models.BatchExport, error) {
+	var (
+		exp            models.BatchExport
+		requestedBy    sql.NullString
+		requestedName  sql.NullString
+		requestedEmail sql.NullString
+		completedAt    sql.NullTime
+		detailsRaw     []byte
+	)
+	if err := scanner.Scan(&exp.ID, &exp.Purpose, &exp.TargetRef, &requestedBy, &requestedName, &requestedEmail, &exp.RequestedAt, &completedAt, &exp.StatusID, &exp.StatusCode, &exp.StatusLabel, &detailsRaw); err != nil {
+		return nil, err
+	}
+	if requestedBy.Valid {
+		v := requestedBy.String
+		exp.RequestedBy = &v
+	}
+	if requestedName.Valid {
+		v := requestedName.String
+		exp.RequestedByName = &v
+	}
+	if requestedEmail.Valid {
+		v := requestedEmail.String
+		exp.RequestedByEmail = &v
+	}
+	if completedAt.Valid {
+		t := completedAt.Time
+		exp.CompletedAt = &t
+	}
+	if len(detailsRaw) > 0 {
+		var details map[string]any
+		if err := json.Unmarshal(detailsRaw, &details); err == nil {
+			exp.Details = details
+		}
+	}
+	return &exp, nil
 }
 
 func jsonParam(ptr *string) any {
@@ -1314,6 +1354,192 @@ LEFT JOIN caregiver_relationship_types crt ON crt.id = u.rel_type_id
 
 func (r *Repo) DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM caregiver_patient WHERE patient_id = $1 AND user_id = $2`, patientID, caregiverID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// ------------------------------
+// Batch exports
+// ------------------------------
+
+func (r *Repo) batchExportStatusID(ctx context.Context, code string) (string, error) {
+	var id string
+	if err := r.pool.QueryRow(ctx, `SELECT id FROM batch_export_statuses WHERE code = $1`, strings.TrimSpace(code)).Scan(&id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", errInvalidBatchExportStatus
+		}
+		return "", err
+	}
+	return id, nil
+}
+
+func (r *Repo) getBatchExport(ctx context.Context, id string) (*models.BatchExport, error) {
+	row := r.pool.QueryRow(ctx, `
+SELECT be.id, be.purpose, be.target_ref, be.requested_by, u.name, u.email,
+       be.requested_at, be.completed_at, s.id, s.code, s.label, be.details
+FROM batch_exports be
+JOIN batch_export_statuses s ON s.id = be.batch_export_status_id
+LEFT JOIN users u ON u.id = be.requested_by
+WHERE be.id = $1
+`, id)
+	return scanBatchExport(row)
+}
+
+func (r *Repo) ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error) {
+	query := `
+SELECT be.id, be.purpose, be.target_ref, be.requested_by, u.name, u.email,
+       be.requested_at, be.completed_at, s.id, s.code, s.label, be.details
+FROM batch_exports be
+JOIN batch_export_statuses s ON s.id = be.batch_export_status_id
+LEFT JOIN users u ON u.id = be.requested_by
+`
+	var (
+		clauses []string
+		args    []any
+		idx     = 1
+	)
+	if statusCode != nil {
+		sc := strings.TrimSpace(*statusCode)
+		if sc != "" {
+			clauses = append(clauses, fmt.Sprintf("s.code = $%d", idx))
+			args = append(args, sc)
+			idx++
+		}
+	}
+	if search != nil {
+		term := strings.TrimSpace(*search)
+		if term != "" {
+			clauses = append(clauses, fmt.Sprintf("(be.purpose ILIKE $%d OR be.target_ref ILIKE $%d)", idx, idx))
+			args = append(args, "%"+term+"%")
+			idx++
+		}
+	}
+	if len(clauses) > 0 {
+		query += "WHERE " + strings.Join(clauses, " AND ") + "\n"
+	}
+	query += fmt.Sprintf("ORDER BY be.requested_at DESC LIMIT $%d OFFSET $%d", idx, idx+1)
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	exports := make([]models.BatchExport, 0, limit)
+	for rows.Next() {
+		exp, err := scanBatchExport(rows)
+		if err != nil {
+			return nil, err
+		}
+		exports = append(exports, *exp)
+	}
+	return exports, rows.Err()
+}
+
+func (r *Repo) CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error) {
+	purpose := strings.TrimSpace(input.Purpose)
+	if purpose == "" {
+		return nil, fmt.Errorf("purpose is required")
+	}
+	targetRef := strings.TrimSpace(input.TargetRef)
+	if targetRef == "" {
+		return nil, fmt.Errorf("target_ref is required")
+	}
+
+	statusCode := strings.TrimSpace(input.StatusCode)
+	if statusCode == "" {
+		statusCode = "queued"
+	}
+	statusID, err := r.batchExportStatusID(ctx, statusCode)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		detailsJSON []byte
+		detailsVal  any
+	)
+	if input.Details != nil {
+		detailsJSON, err = json.Marshal(input.Details)
+		if err != nil {
+			return nil, err
+		}
+		if len(detailsJSON) > 0 {
+			detailsVal = detailsJSON
+		}
+	}
+
+	var id string
+	err = r.pool.QueryRow(ctx, `
+INSERT INTO batch_exports (purpose, target_ref, requested_by, batch_export_status_id, details)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id
+`, purpose, targetRef, stringParam(input.RequestedBy, true), statusID, detailsVal).Scan(&id)
+	if err != nil {
+		return nil, err
+	}
+	return r.getBatchExport(ctx, id)
+}
+
+func (r *Repo) UpdateBatchExportStatus(ctx context.Context, id string, statusCode string, completedAt *time.Time, details map[string]any) (*models.BatchExport, error) {
+	status := strings.TrimSpace(statusCode)
+	if status == "" {
+		return nil, fmt.Errorf("status is required")
+	}
+	statusID, err := r.batchExportStatusID(ctx, status)
+	if err != nil {
+		return nil, err
+	}
+
+	var (
+		detailsJSON     []byte
+		detailsProvided bool
+	)
+	if details != nil {
+		detailsJSON, err = json.Marshal(details)
+		if err != nil {
+			return nil, err
+		}
+		detailsProvided = true
+	}
+
+	var completedVal any
+	if completedAt != nil {
+		completedVal = *completedAt
+	} else if status == "done" {
+		completedVal = nowFn()
+	}
+
+	query := "UPDATE batch_exports SET batch_export_status_id = $1, completed_at = $2"
+	params := []any{statusID, completedVal}
+	idx := 3
+	if detailsProvided {
+		query += fmt.Sprintf(", details = $%d", idx)
+		params = append(params, detailsJSON)
+		idx++
+	}
+	query += fmt.Sprintf(" WHERE id = $%d", idx)
+	params = append(params, id)
+
+	tag, err := r.pool.Exec(ctx, query, params...)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, pgx.ErrNoRows
+	}
+	return r.getBatchExport(ctx, id)
+}
+
+func (r *Repo) DeleteBatchExport(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM batch_exports WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}

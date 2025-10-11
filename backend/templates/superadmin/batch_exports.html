@@ -1,0 +1,149 @@
+{{define "superadmin/batch_exports.html"}} {{template "layout" .}} {{end}} {{define "superadmin/batch_exports.html:content"}}
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Exportaciones por lotes</h1>
+        </div>
+        <div class="hg-card">
+                <h3>Nuevo lote</h3>
+                <form method="post" action="/superadmin/batch-exports" enctype="multipart/form-data" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field hg-form-field-span2">
+                                <label for="batch-purpose">Propósito</label>
+                                <input type="text" id="batch-purpose" name="purpose" required placeholder="Descripción del lote" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="batch-status">Estado inicial</label>
+                                <select id="batch-status" name="status_code">
+                                        <option value="">Automático</option>
+                                        {{range .Data.Statuses}}
+                                        <option value="{{.Code}}" {{if eq .Code "queued"}}selected{{end}}>{{.Label}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field hg-form-field-span2">
+                                <label for="batch-file">Archivo (opcional)</label>
+                                <input type="file" id="batch-file" name="target_file" />
+                                <small class="hg-field-help">Si cargas un archivo se almacenará localmente.</small>
+                        </div>
+                        <div class="hg-form-field hg-form-field-span2">
+                                <label for="batch-url">Enlace (opcional)</label>
+                                <input type="url" id="batch-url" name="target_url" placeholder="https://..." />
+                                <small class="hg-field-help">Se usará únicamente cuando no se adjunte archivo.</small>
+                        </div>
+                        <div class="hg-form-field hg-form-field-span2">
+                                <label for="batch-details">Detalles (JSON)</label>
+                                <textarea id="batch-details" name="details_json" rows="2" placeholder='{"nota":"opcional"}'></textarea>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Crear lote</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Filtros</h3>
+                <form method="get" action="/superadmin/batch-exports" class="hg-form-grid">
+                        <div class="hg-form-field">
+                                <label for="filter-status">Estado</label>
+                                <select id="filter-status" name="status">
+                                        <option value="">Todos</option>
+                                        {{range .Data.Statuses}}
+                                        <option value="{{.Code}}" {{if eq $.Data.FilterStatus .Code}}selected{{end}}>{{.Label}}</option>
+                                        {{end}}
+                                </select>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="filter-q">Buscar</label>
+                                <input type="text" id="filter-q" name="q" value="{{.Data.Search}}" placeholder="Propósito o destino" />
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Aplicar filtros</button>
+                                <a class="hg-link" href="/superadmin/batch-exports">Limpiar</a>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Lotes registrados</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Propósito</th>
+                                        <th>Destino</th>
+                                        <th>Estado</th>
+                                        <th>Solicitado por</th>
+                                        <th>Solicitado</th>
+                                        <th>Completado</th>
+                                        <th>Detalles</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Items}}
+                                {{$item := .}}
+                                <tr>
+                                        <td>{{$item.Purpose}}</td>
+                                        <td>
+                                                {{if $item.TargetURL}}
+                                                <a href="{{stringValue $item.TargetURL}}" target="_blank" rel="noopener">{{$item.TargetDisplay}}</a>
+                                                {{else}}
+                                                <span class="hg-mono">{{$item.TargetDisplay}}</span>
+                                                {{end}}
+                                        </td>
+                                        <td>{{$item.StatusLabel}}</td>
+                                        <td>{{if $item.RequestedByName}}{{$item.RequestedByName}}{{else}}—{{end}}{{if $item.RequestedByEmail}}<br /><small>{{$item.RequestedByEmail}}</small>{{end}}</td>
+                                        <td>{{formatTime $item.RequestedAt}}</td>
+                                        <td>{{formatTimePtr $item.CompletedAt}}</td>
+                                        <td>
+                                                {{if $item.Details}}
+                                                <pre class="hg-pre">{{toJSON $item.Details}}</pre>
+                                                {{else}}
+                                                —
+                                                {{end}}
+                                        </td>
+                                        <td class="hg-flex">
+                                                <details>
+                                                        <summary>Actualizar</summary>
+                                                        <form method="post" action="/superadmin/batch-exports/{{$item.ID}}/status" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Estado</label>
+                                                                        <select name="status_code" required>
+                                                                                {{range $.Data.Statuses}}
+                                                                                <option value="{{.Code}}" {{if eq .Code $item.StatusCode}}selected{{end}}>{{.Label}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Completado</label>
+                                                                        <input type="datetime-local" name="completed_at" value="{{formatTimeLocalPtr $item.CompletedAt}}" />
+                                                                </div>
+                                                                <div class="hg-form-field hg-form-field-span2">
+                                                                        <label>Detalles (JSON)</label>
+                                                                        <textarea name="details_json" rows="3">{{if $item.Details}}{{toJSON $item.Details}}{{end}}</textarea>
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/batch-exports/{{$item.ID}}/delete" data-hg-confirm="¿Eliminar lote?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="8" class="hg-empty-cell">Sin registros.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+{{end}}

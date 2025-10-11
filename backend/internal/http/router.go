@@ -130,6 +130,13 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			pr.Post("/{id}/delete", uiHandlers.PushDevicesDelete)
 		})
 
+		s.Route("/batch-exports", func(br chi.Router) {
+			br.Get("/", uiHandlers.BatchExportsIndex)
+			br.Post("/", uiHandlers.BatchExportsCreate)
+			br.Post("/{id}/status", uiHandlers.BatchExportsUpdateStatus)
+			br.Post("/{id}/delete", uiHandlers.BatchExportsDelete)
+		})
+
 		s.Route("/signal-streams", func(sr chi.Router) {
 			sr.Get("/", uiHandlers.SignalStreamsIndex)
 			sr.Post("/", uiHandlers.SignalStreamsCreate)
