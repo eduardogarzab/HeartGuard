@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -20,17 +21,47 @@ func Write(
 	details map[string]any,
 	ip *string,
 ) error {
-	var b []byte
-	if details != nil {
-		if bb, err := json.Marshal(details); err == nil {
-			b = bb
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx) // safe even after commit
+
+	var logID string
+	if err := tx.QueryRow(ctx, `
+INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip)
+VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5)
+RETURNING id::text
+`, userID, action, entity, entityID, ip).Scan(&logID); err != nil {
+		return err
+	}
+
+	if len(details) > 0 {
+		batch := &pgx.Batch{}
+		for key, val := range details {
+			raw, err := json.Marshal(val)
+			if err != nil {
+				return err
+			}
+			batch.Queue(`
+INSERT INTO audit_log_details (audit_log_id, detail_key, value_json)
+VALUES ($1, $2, $3)
+ON CONFLICT (audit_log_id, detail_key) DO UPDATE SET value_json = EXCLUDED.value_json
+`, logID, key, string(raw))
+		}
+		br := tx.SendBatch(ctx, batch)
+		for i := 0; i < batch.Len(); i++ {
+			if _, err := br.Exec(); err != nil {
+				br.Close()
+				return err
+			}
+		}
+		if err := br.Close(); err != nil {
+			return err
 		}
 	}
-	_, err := pool.Exec(ctx, `
-INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, details, ip)
-VALUES (gen_random_uuid(), $1, $2, $3, $4, NOW(), $5, $6)
-`, userID, action, entity, entityID, b, ip)
-	return err
+
+	return tx.Commit(ctx)
 }
 
 // Ctx limita la operación de auditoría a 2s para no colgar el request principal.

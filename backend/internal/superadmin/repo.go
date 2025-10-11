@@ -133,9 +133,9 @@ func scanBatchExport(scanner scanTarget) (*models.BatchExport, error) {
 		requestedName  sql.NullString
 		requestedEmail sql.NullString
 		completedAt    sql.NullTime
-		detailsRaw     []byte
+		detailsText    sql.NullString
 	)
-	if err := scanner.Scan(&exp.ID, &exp.Purpose, &exp.TargetRef, &requestedBy, &requestedName, &requestedEmail, &exp.RequestedAt, &completedAt, &exp.StatusID, &exp.StatusCode, &exp.StatusLabel, &detailsRaw); err != nil {
+	if err := scanner.Scan(&exp.ID, &exp.Purpose, &exp.TargetRef, &requestedBy, &requestedName, &requestedEmail, &exp.RequestedAt, &completedAt, &exp.StatusID, &exp.StatusCode, &exp.StatusLabel, &detailsText); err != nil {
 		return nil, err
 	}
 	if requestedBy.Valid {
@@ -154,9 +154,9 @@ func scanBatchExport(scanner scanTarget) (*models.BatchExport, error) {
 		t := completedAt.Time
 		exp.CompletedAt = &t
 	}
-	if len(detailsRaw) > 0 {
+	if detailsText.Valid && detailsText.String != "" {
 		var details map[string]any
-		if err := json.Unmarshal(detailsRaw, &details); err == nil {
+		if err := json.Unmarshal([]byte(detailsText.String), &details); err == nil {
 			exp.Details = details
 		}
 	}
@@ -1437,7 +1437,8 @@ func (r *Repo) batchExportStatusID(ctx context.Context, code string) (string, er
 func (r *Repo) getBatchExport(ctx context.Context, id string) (*models.BatchExport, error) {
 	row := r.pool.QueryRow(ctx, `
 SELECT be.id, be.purpose, be.target_ref, be.requested_by, u.name, u.email,
-       be.requested_at, be.completed_at, s.id, s.code, s.label, be.details
+       be.requested_at, be.completed_at, s.id, s.code, s.label,
+       heartguard.fn_batch_export_details(be.id)::text
 FROM batch_exports be
 JOIN batch_export_statuses s ON s.id = be.batch_export_status_id
 LEFT JOIN users u ON u.id = be.requested_by
@@ -1449,7 +1450,8 @@ WHERE be.id = $1
 func (r *Repo) ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error) {
 	query := `
 SELECT be.id, be.purpose, be.target_ref, be.requested_by, u.name, u.email,
-       be.requested_at, be.completed_at, s.id, s.code, s.label, be.details
+       be.requested_at, be.completed_at, s.id, s.code, s.label,
+       heartguard.fn_batch_export_details(be.id)::text
 FROM batch_exports be
 JOIN batch_export_statuses s ON s.id = be.batch_export_status_id
 LEFT JOIN users u ON u.id = be.requested_by
@@ -1498,6 +1500,25 @@ LEFT JOIN users u ON u.id = be.requested_by
 	return exports, rows.Err()
 }
 
+func (r *Repo) replaceBatchExportDetails(ctx context.Context, exportID string, details map[string]any) error {
+	if _, err := r.pool.Exec(ctx, `DELETE FROM batch_export_details WHERE export_id = $1`, exportID); err != nil {
+		return err
+	}
+	if len(details) == 0 {
+		return nil
+	}
+	for key, val := range details {
+		raw, err := json.Marshal(val)
+		if err != nil {
+			return err
+		}
+		if _, err := r.pool.Exec(ctx, `INSERT INTO batch_export_details (export_id, detail_key, value_json) VALUES ($1, $2, $3)`, exportID, key, string(raw)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (r *Repo) CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error) {
 	purpose := strings.TrimSpace(input.Purpose)
 	if purpose == "" {
@@ -1517,28 +1538,19 @@ func (r *Repo) CreateBatchExport(ctx context.Context, input models.BatchExportIn
 		return nil, err
 	}
 
-	var (
-		detailsJSON []byte
-		detailsVal  any
-	)
-	if input.Details != nil {
-		detailsJSON, err = json.Marshal(input.Details)
-		if err != nil {
-			return nil, err
-		}
-		if len(detailsJSON) > 0 {
-			detailsVal = detailsJSON
-		}
-	}
-
 	var id string
 	err = r.pool.QueryRow(ctx, `
-INSERT INTO batch_exports (purpose, target_ref, requested_by, batch_export_status_id, details)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO batch_exports (purpose, target_ref, requested_by, batch_export_status_id)
+VALUES ($1, $2, $3, $4)
 RETURNING id
-`, purpose, targetRef, stringParam(input.RequestedBy, true), statusID, detailsVal).Scan(&id)
+`, purpose, targetRef, stringParam(input.RequestedBy, true), statusID).Scan(&id)
 	if err != nil {
 		return nil, err
+	}
+	if input.Details != nil {
+		if err := r.replaceBatchExportDetails(ctx, id, input.Details); err != nil {
+			return nil, err
+		}
 	}
 	return r.getBatchExport(ctx, id)
 }
@@ -1553,18 +1565,6 @@ func (r *Repo) UpdateBatchExportStatus(ctx context.Context, id string, statusCod
 		return nil, err
 	}
 
-	var (
-		detailsJSON     []byte
-		detailsProvided bool
-	)
-	if details != nil {
-		detailsJSON, err = json.Marshal(details)
-		if err != nil {
-			return nil, err
-		}
-		detailsProvided = true
-	}
-
 	var completedVal any
 	if completedAt != nil {
 		completedVal = *completedAt
@@ -1575,11 +1575,6 @@ func (r *Repo) UpdateBatchExportStatus(ctx context.Context, id string, statusCod
 	query := "UPDATE batch_exports SET batch_export_status_id = $1, completed_at = $2"
 	params := []any{statusID, completedVal}
 	idx := 3
-	if detailsProvided {
-		query += fmt.Sprintf(", details = $%d", idx)
-		params = append(params, detailsJSON)
-		idx++
-	}
 	query += fmt.Sprintf(" WHERE id = $%d", idx)
 	params = append(params, id)
 
@@ -1589,6 +1584,11 @@ func (r *Repo) UpdateBatchExportStatus(ctx context.Context, id string, statusCod
 	}
 	if tag.RowsAffected() == 0 {
 		return nil, pgx.ErrNoRows
+	}
+	if details != nil {
+		if err := r.replaceBatchExportDetails(ctx, id, details); err != nil {
+			return nil, err
+		}
 	}
 	return r.getBatchExport(ctx, id)
 }
@@ -3207,7 +3207,7 @@ SELECT ad.id::text,
        ad.delivery_status_id::text,
        ds.code,
        ds.label,
-       ad.response_payload::text
+       heartguard.fn_alert_delivery_payload(ad.id)::text
 FROM heartguard.alert_delivery ad
 JOIN heartguard.alert_channels ac ON ac.id = ad.channel_id
 JOIN heartguard.delivery_statuses ds ON ds.id = ad.delivery_status_id
@@ -3255,19 +3255,30 @@ func (r *Repo) CreateAlertDelivery(ctx context.Context, alertID, channelID, targ
 		payloadStr sql.NullString
 	)
 	err := r.pool.QueryRow(ctx, `
-INSERT INTO heartguard.alert_delivery (alert_id, channel_id, target, delivery_status_id, response_payload)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id::text,
-          alert_id::text,
-          channel_id::text,
-          (SELECT code FROM heartguard.alert_channels WHERE id = channel_id),
-          (SELECT label FROM heartguard.alert_channels WHERE id = channel_id),
-          target,
-          sent_at,
-          delivery_status_id::text,
-          (SELECT code FROM heartguard.delivery_statuses WHERE id = delivery_status_id),
-          (SELECT label FROM heartguard.delivery_statuses WHERE id = delivery_status_id),
-          response_payload::text
+WITH new_delivery AS (
+    INSERT INTO heartguard.alert_delivery (alert_id, channel_id, target, delivery_status_id)
+    VALUES ($1, $2, $3, $4)
+    RETURNING *
+), payload AS (
+    INSERT INTO heartguard.alert_delivery_payload (delivery_id, payload_key, value_json)
+    SELECT nd.id, kv.key, kv.value::text
+    FROM new_delivery nd,
+         jsonb_each(COALESCE($5::jsonb, '{}'::jsonb)) AS kv(key, value)
+)
+SELECT nd.id::text,
+       nd.alert_id::text,
+       nd.channel_id::text,
+       ac.code,
+       ac.label,
+       nd.target,
+       nd.sent_at,
+       nd.delivery_status_id::text,
+       ds.code,
+       ds.label,
+       heartguard.fn_alert_delivery_payload(nd.id)::text
+FROM new_delivery nd
+JOIN heartguard.alert_channels ac ON ac.id = nd.channel_id
+JOIN heartguard.delivery_statuses ds ON ds.id = nd.delivery_status_id
 `, alertID, channelID, target, deliveryStatusID, jsonParam(responsePayload)).
 		Scan(
 			&delivery.ID,
@@ -4957,7 +4968,7 @@ SELECT
   user_id,
   entity,
   entity_id,
-	details
+  heartguard.fn_audit_log_details(id)::text
 FROM audit_logs
 %s
 ORDER BY ts DESC
@@ -4975,13 +4986,13 @@ LIMIT $%d OFFSET $%d
 	out := make([]models.AuditLog, 0, limit)
 	for rows.Next() {
 		var (
-			idText     string
-			actionStr  string
-			ts         time.Time
-			userUUID   *uuid.UUID
-			entity     *string
-			entityUUID *uuid.UUID
-			detailsRaw []byte
+			idText      string
+			actionStr   string
+			ts          time.Time
+			userUUID    *uuid.UUID
+			entity      *string
+			entityUUID  *uuid.UUID
+			detailsText sql.NullString
 		)
 		if err := rows.Scan(
 			&idText,
@@ -4990,7 +5001,7 @@ LIMIT $%d OFFSET $%d
 			&userUUID,
 			&entity,
 			&entityUUID,
-			&detailsRaw,
+			&detailsText,
 		); err != nil {
 			return nil, err
 		}
@@ -5007,8 +5018,8 @@ LIMIT $%d OFFSET $%d
 		}
 
 		var details map[string]any
-		if len(detailsRaw) > 0 {
-			_ = json.Unmarshal(detailsRaw, &details)
+		if detailsText.Valid && detailsText.String != "" {
+			_ = json.Unmarshal([]byte(detailsText.String), &details)
 		}
 
 		out = append(out, models.AuditLog{

@@ -518,7 +518,7 @@ VALUES
 ON CONFLICT (id) DO NOTHING;
 
 -- Auditoría demo (últimos 30 días)
-INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip, details)
+INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip)
 VALUES
   (
     '2b39b9fe-9c6e-4ac5-a6a8-106164b35835',
@@ -527,8 +527,7 @@ VALUES
     'organization',
     (SELECT id FROM organizations WHERE code='CLIN-001'),
     NOW() - INTERVAL '6 days',
-    '10.0.0.10',
-    '{"code":"CLIN-001"}'::jsonb
+    '10.0.0.10'
   ),
   (
     'b40ab4a5-7ff3-4e40-bdd2-28ba606f1a27',
@@ -537,8 +536,7 @@ VALUES
     'org_invitation',
     (SELECT id FROM org_invitations WHERE token='INVITE-DEMO-001'),
     NOW() - INTERVAL '5 days',
-    '10.0.0.10',
-    '{"token":"INVITE-DEMO-001"}'::jsonb
+    '10.0.0.10'
   ),
   (
     'ae3b6423-0a96-4a4a-8d96-1cc23c871e0c',
@@ -547,8 +545,7 @@ VALUES
     'membership',
     (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
     NOW() - INTERVAL '3 days',
-    '10.0.0.10',
-    '{"org":"FAM-001","user":"ana.ruiz@heartguard.com"}'::jsonb
+    '10.0.0.10'
   ),
   (
     '6d752c42-d99e-4c90-a4ee-b863d961eb25',
@@ -557,8 +554,7 @@ VALUES
     'user',
     (SELECT id FROM users WHERE email='carlos.vega@heartguard.com'),
     NOW() - INTERVAL '1 day',
-    '10.0.0.11',
-    '{"email":"carlos.vega@heartguard.com","status":"blocked"}'::jsonb
+    '10.0.0.11'
   ),
   (
     '178f6b31-89a3-4f75-8828-e34bc5594046',
@@ -567,10 +563,20 @@ VALUES
     'org_invitation',
     (SELECT id FROM org_invitations WHERE token='INVITE-DEMO-003'),
     NOW() - INTERVAL '2 days',
-    '10.0.0.12',
-    '{"token":"INVITE-DEMO-003"}'::jsonb
+    '10.0.0.12'
   )
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO audit_log_details (audit_log_id, detail_key, value_json)
+VALUES
+  ('00000000-0000-0000-0000-00000000B101', 'code', '"CLIN-001"'),
+  ('00000000-0000-0000-0000-00000000B102', 'token', '"INVITE-DEMO-001"'),
+  ('00000000-0000-0000-0000-00000000B103', 'org', '"FAM-001"'),
+  ('00000000-0000-0000-0000-00000000B103', 'user', '"ana.ruiz@heartguard.com"'),
+  ('00000000-0000-0000-0000-00000000B104', 'email', '"carlos.vega@heartguard.com"'),
+  ('00000000-0000-0000-0000-00000000B104', 'status', '"blocked"'),
+  ('00000000-0000-0000-0000-00000000B105', 'token', '"INVITE-DEMO-003"')
+ON CONFLICT (audit_log_id, detail_key) DO NOTHING;
 
 -- =========================================================
 -- Datos demo clínicos y operativos
@@ -849,7 +855,7 @@ VALUES
   ('b9c0aea5-c49c-4f5d-a1ad-8383479e8257'::uuid, '333d08ad-b521-4d3b-9259-9013ff6aa360'::uuid, 'patient_uuid', 'fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21')
 ON CONFLICT (binding_id, tag_key) DO NOTHING;
 
-INSERT INTO models (id, name, version, task, training_data_ref, hyperparams, created_at)
+INSERT INTO models (id, name, version, task, training_data_ref, created_at)
 VALUES
   (
     '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
@@ -857,7 +863,6 @@ VALUES
     '1.3.0',
     'arrhythmia_detection',
     's3://heartguard-models/cardionet/v1.3.0',
-    '{"threshold":0.80,"window_s":120}'::jsonb,
     NOW() - INTERVAL '120 days'
   ),
   (
@@ -866,12 +871,18 @@ VALUES
     '0.9.2',
     'desaturation_detection',
     's3://heartguard-models/oxymap/v0.9.2',
-    '{"min_spo2":0.9}'::jsonb,
     NOW() - INTERVAL '80 days'
   )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+INSERT INTO model_hyperparameters (model_id, param_key, value_json)
+VALUES
+  ('00000000-0000-0000-0000-000000000770', 'threshold', '0.80'),
+  ('00000000-0000-0000-0000-000000000770', 'window_s', '120'),
+  ('00000000-0000-0000-0000-000000000771', 'min_spo2', '0.9')
+ON CONFLICT (model_id, param_key) DO NOTHING;
+
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, created_at, series_ref)
 SELECT
   '4f5f27ff-b251-4e72-82cc-4ae1b8ee1dab'::uuid,
   '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
@@ -881,14 +892,13 @@ SELECT
   et.id,
   0.873,
   0.800,
-  '{"lead_quality":"good"}'::jsonb,
   NOW() - INTERVAL '1 hour 54 minutes',
   'streams/000000000740/chunk-001'
 FROM event_types et
 WHERE et.code='AFIB'
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, created_at, series_ref)
 SELECT
   '7e4b8ccd-57c8-460f-bfb9-ff96cff54b0c'::uuid,
   'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
@@ -898,12 +908,17 @@ SELECT
   et.id,
   0.642,
   0.600,
-  '{"min_spo2":0.88}'::jsonb,
   NOW() - INTERVAL '31 hours 50 minutes',
   'streams/000000000741/chunk-014'
 FROM event_types et
 WHERE et.code='DESAT'
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO inference_metadata (inference_id, entry_key, value_json)
+VALUES
+  ('00000000-0000-0000-0000-000000000780', 'lead_quality', '"good"'),
+  ('00000000-0000-0000-0000-000000000781', 'min_spo2', '0.88')
+ON CONFLICT (inference_id, entry_key) DO NOTHING;
 
 INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
 SELECT
@@ -995,41 +1010,38 @@ FROM users u
 WHERE u.email='ana.ruiz@heartguard.com'
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
+INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id)
 SELECT
   'c7e07f0a-eafb-49cb-b203-603f718bf251'::uuid,
   'c20277df-7c2f-417c-902e-776bf4bf74c3'::uuid,
   ch.id,
   'HG-APP-ANA',
   NOW() - INTERVAL '95 minutes',
-  (SELECT id FROM delivery_statuses WHERE code='DELIVERED'),
-  NULL
+  (SELECT id FROM delivery_statuses WHERE code='DELIVERED')
 FROM alert_channels ch
 WHERE ch.code='PUSH'
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
+INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id)
 SELECT
   '01acc92e-fbb2-4a82-ad4d-fb7e56f4659e'::uuid,
   'c20277df-7c2f-417c-902e-776bf4bf74c3'::uuid,
   ch.id,
   'ana.ruiz@heartguard.com',
   NOW() - INTERVAL '94 minutes',
-  (SELECT id FROM delivery_statuses WHERE code='DELIVERED'),
-  NULL
+  (SELECT id FROM delivery_statuses WHERE code='DELIVERED')
 FROM alert_channels ch
 WHERE ch.code='EMAIL'
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
+INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id)
 SELECT
   '7af2936b-1898-414a-9800-14a6a1febaf0'::uuid,
   'e9154dc9-73eb-4306-bfe2-eaa0d7de9dd0'::uuid,
   ch.id,
   '+52 555 123 4567',
   NOW() - INTERVAL '32 hours',
-  (SELECT id FROM delivery_statuses WHERE code='SENT'),
-  NULL
+  (SELECT id FROM delivery_statuses WHERE code='SENT')
 FROM alert_channels ch
 WHERE ch.code='SMS'
 ON CONFLICT (id) DO NOTHING;
@@ -1062,7 +1074,7 @@ WHERE u.email='martin.ops@heartguard.com'
   AND p.code='android'
 ON CONFLICT (user_id, platform_id, push_token) DO NOTHING;
 
-INSERT INTO batch_exports (id, purpose, target_ref, requested_by, requested_at, completed_at, batch_export_status_id, details)
+INSERT INTO batch_exports (id, purpose, target_ref, requested_by, requested_at, completed_at, batch_export_status_id)
 VALUES
   (
     '791771c7-d51d-4d05-9e56-2ebfd2ff343a'::uuid,
@@ -1071,8 +1083,7 @@ VALUES
     (SELECT id FROM users WHERE email='admin@heartguard.com'),
     NOW() - INTERVAL '1 day',
     NOW() - INTERVAL '23 hours',
-    (SELECT id FROM batch_export_statuses WHERE code='done'),
-    '{"row_count":52,"filters":{"status":["ack","resolved"]}}'::jsonb
+    (SELECT id FROM batch_export_statuses WHERE code='done')
   ),
   (
     '9f063660-1e77-4dd3-aacc-36aeddab5d06'::uuid,
@@ -1081,10 +1092,16 @@ VALUES
     (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
     NOW() - INTERVAL '6 hours',
     NULL,
-    (SELECT id FROM batch_export_statuses WHERE code='running'),
-    '{"org":"FAM-001"}'::jsonb
+    (SELECT id FROM batch_export_statuses WHERE code='running')
   )
 ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO batch_export_details (export_id, detail_key, value_json)
+VALUES
+  ('00000000-0000-0000-0000-0000000007E0', 'row_count', '52'),
+  ('00000000-0000-0000-0000-0000000007E0', 'filters', '{"status":["ack","resolved"]}'),
+  ('00000000-0000-0000-0000-0000000007E1', 'org', '"FAM-001"')
+ON CONFLICT (export_id, detail_key) DO NOTHING;
 
 INSERT INTO api_keys (id, owner_user_id, key_hash, label, created_at, expires_at, revoked_at, scopes)
 VALUES
