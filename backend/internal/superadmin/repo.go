@@ -1764,14 +1764,14 @@ ORDER BY LOWER(u.name), LOWER(u.email)
 func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
 	var (
 		avg         sql.NullFloat64
-		activeUsers int
-		activeOrgs  int
+		totalUsers  int
+		totalOrgs   int
 		memberships int
 		pending     int
 		opsRaw      []byte
 	)
 	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_overview()`).
-		Scan(&avg, &activeUsers, &activeOrgs, &memberships, &pending, &opsRaw); err != nil {
+		Scan(&avg, &totalUsers, &totalOrgs, &memberships, &pending, &opsRaw); err != nil {
 		return nil, err
 	}
 	var ops []models.OperationStat
@@ -1781,12 +1781,12 @@ func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, er
 		}
 	}
 	res := &models.MetricsOverview{
-		AvgResponseMs:       avg.Float64,
-		ActiveUsers:         activeUsers,
-		ActiveOrganizations: activeOrgs,
-		ActiveMemberships:   memberships,
-		PendingInvitations:  pending,
-		RecentOperations:    ops,
+		AvgResponseMs:      avg.Float64,
+		TotalUsers:         totalUsers,
+		TotalOrganizations: totalOrgs,
+		TotalMemberships:   memberships,
+		PendingInvitations: pending,
+		RecentOperations:   ops,
 	}
 	return res, nil
 }

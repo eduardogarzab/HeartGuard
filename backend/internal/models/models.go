@@ -56,12 +56,12 @@ type InvitationBreakdown struct {
 }
 
 type MetricsOverview struct {
-	AvgResponseMs       float64         `json:"avg_response_ms"`
-	ActiveUsers         int             `json:"active_users"`
-	ActiveOrganizations int             `json:"active_organizations"`
-	ActiveMemberships   int             `json:"active_memberships"`
-	PendingInvitations  int             `json:"pending_invitations"`
-	RecentOperations    []OperationStat `json:"recent_operations"`
+	AvgResponseMs      float64         `json:"avg_response_ms"`
+	TotalUsers         int             `json:"total_users"`
+	TotalOrganizations int             `json:"total_organizations"`
+	TotalMemberships   int             `json:"total_memberships"`
+	PendingInvitations int             `json:"pending_invitations"`
+	RecentOperations   []OperationStat `json:"recent_operations"`
 }
 
 type ContentTotals struct {

@@ -2898,9 +2898,9 @@ EXECUTE FUNCTION touch_content_item();
 CREATE OR REPLACE FUNCTION heartguard.sp_metrics_overview()
 RETURNS TABLE (
   avg_response_ms numeric,
-  active_users integer,
-  active_orgs integer,
-  active_memberships integer,
+  total_users integer,
+  total_orgs integer,
+  total_memberships integer,
   pending_invitations integer,
   operations jsonb)
 LANGUAGE plpgsql SECURITY DEFINER
@@ -2934,9 +2934,9 @@ BEGIN
   ) AS recent_ops;
 
   avg_response_ms := COALESCE(v_avg, 0);
-  active_users := COALESCE(v_users, 0);
-  active_orgs := COALESCE(v_orgs, 0);
-  active_memberships := COALESCE(v_memberships, 0);
+  total_users := COALESCE(v_users, 0);
+  total_orgs := COALESCE(v_orgs, 0);
+  total_memberships := COALESCE(v_memberships, 0);
   pending_invitations := COALESCE(v_pending, 0);
   operations := COALESCE(v_ops, '[]'::jsonb);
   RETURN NEXT;
@@ -3057,7 +3057,7 @@ BEGIN
       COUNT(*) FILTER (WHERE cs.code = 'in_review') AS in_review,
       COUNT(*) FILTER (WHERE cs.code = 'scheduled') AS scheduled,
       COUNT(*) FILTER (WHERE cs.code = 'archived') AS archived,
-      COUNT(*) FILTER (WHERE ci.updated_at < NOW() - INTERVAL '45 days') AS stale
+      COUNT(*) FILTER (WHERE ci.updated_at < NOW() - INTERVAL '90 days') AS stale
     FROM heartguard.content_items ci
     LEFT JOIN heartguard.content_statuses cs ON cs.id = ci.status_id
   ),

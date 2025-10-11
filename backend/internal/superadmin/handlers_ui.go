@@ -408,9 +408,9 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 	activityBuckets := make(map[time.Time]int)
 	if overview != nil {
 		metrics = append(metrics,
-			dashboardMetric{Label: "Usuarios activos", Value: strconv.Itoa(overview.ActiveUsers), Caption: "Sesiones válidas en las últimas 24h"},
-			dashboardMetric{Label: "Organizaciones activas", Value: strconv.Itoa(overview.ActiveOrganizations), Caption: "Con actividad reciente"},
-			dashboardMetric{Label: "Membresías", Value: strconv.Itoa(overview.ActiveMemberships), Caption: "Usuarios con rol asignado"},
+			dashboardMetric{Label: "Usuarios totales", Value: strconv.Itoa(overview.TotalUsers), Caption: "Usuarios registrados en el sistema"},
+			dashboardMetric{Label: "Organizaciones totales", Value: strconv.Itoa(overview.TotalOrganizations), Caption: "Con al menos un usuario"},
+			dashboardMetric{Label: "Membresías totales", Value: strconv.Itoa(overview.TotalMemberships), Caption: "Usuarios con rol asignado"},
 			dashboardMetric{Label: "Tiempo de respuesta", Value: fmt.Sprintf("%.0f ms", overview.AvgResponseMs), Caption: "Promedio en la última hora"},
 		)
 		ops = make([]dashboardOperation, 0, len(overview.RecentOperations))
@@ -914,39 +914,156 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pdf\"", filename))
 		pdf := gofpdf.New("L", "mm", "A4", "")
 		pdf.SetTitle("Reporte del panel superadmin", false)
-		pdf.SetMargins(12, 16, 12)
-		pdf.SetAutoPageBreak(true, 18)
-		pdf.AddPage()
+		pdf.SetAuthor("HeartGuard", true)
+		pdf.SetCreator("HeartGuard SuperAdmin System", true)
+		pdf.SetMargins(15, 20, 15)
+		pdf.SetAutoPageBreak(true, 25)
 		translator := pdf.UnicodeTranslatorFromDescriptor("")
 
+		// Colores corporativos
+		primaryColor := struct{ R, G, B int }{26, 32, 44}      // Azul oscuro
+		accentColor := struct{ R, G, B int }{59, 130, 246}     // Azul
+		lightGrayColor := struct{ R, G, B int }{248, 250, 252} // Gris claro
+		darkGrayColor := struct{ R, G, B int }{71, 85, 105}    // Gris oscuro
+
+		// Función para encabezado y pie de página
+		headerFooter := func() {
+			pdf.SetHeaderFunc(func() {
+				pdf.SetY(8)
+				pdf.SetFont("Helvetica", "B", 10)
+				pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+				pdf.Cell(0, 6, translator("HEARTGUARD - REPORTE EMPRESARIAL"))
+				pdf.Ln(8)
+				pdf.SetDrawColor(accentColor.R, accentColor.G, accentColor.B)
+				pdf.SetLineWidth(0.5)
+				pdf.Line(15, 18, 282, 18) // Línea horizontal
+				pdf.SetTextColor(0, 0, 0)
+			})
+			pdf.SetFooterFunc(func() {
+				pdf.SetY(-15)
+				pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+				pdf.SetLineWidth(0.3)
+				pdf.Line(15, pdf.GetY()-2, 282, pdf.GetY()-2)
+				pdf.SetFont("Helvetica", "I", 8)
+				pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+				pdf.CellFormat(0, 5, translator(fmt.Sprintf("Generado: %s", formatLocal(generatedAt))), "", 0, "L", false, 0, "")
+				pdf.CellFormat(0, 5, translator(fmt.Sprintf("Página %d", pdf.PageNo())), "", 0, "R", false, 0, "")
+				pdf.SetTextColor(0, 0, 0)
+			})
+		}
+		headerFooter()
+
+		// ============ PORTADA ============
+		pdf.AddPage()
+		pdf.SetY(60)
+		
+		// Logo simulado / Marca
+		pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
+		pdf.Rect(125, 50, 15, 15, "F")
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(255, 255, 255)
+		pdf.SetXY(125, 57)
+		pdf.Cell(15, 5, "HG")
+		
+		pdf.SetY(75)
+		pdf.SetFont("Helvetica", "B", 24)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.CellFormat(0, 15, translator("REPORTE EJECUTIVO"), "", 0, "C", false, 0, "")
+		pdf.Ln(15)
+		
+		pdf.SetFont("Helvetica", "", 14)
+		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+		pdf.CellFormat(0, 8, translator("Panel de Administración SuperAdmin"), "", 0, "C", false, 0, "")
+		pdf.Ln(40)
+		
+		// Cuadro de información
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+		pdf.SetLineWidth(0.3)
+		boxY := pdf.GetY()
+		pdf.Rect(80, boxY, 137, 35, "FD")
+		
+		pdf.SetY(boxY + 8)
+		pdf.SetFont("Helvetica", "B", 11)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.CellFormat(0, 6, translator("INFORMACIÓN DEL REPORTE"), "", 0, "C", false, 0, "")
+		pdf.Ln(8)
+		
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetTextColor(0, 0, 0)
+		pdf.CellFormat(0, 5, translator(fmt.Sprintf("Fecha de generación: %s", formatLocal(generatedAt))), "", 0, "C", false, 0, "")
+		pdf.Ln(6)
+		pdf.CellFormat(0, 5, translator("Sistema: HeartGuard SuperAdmin v1.0"), "", 0, "C", false, 0, "")
+		pdf.Ln(6)
+		pdf.SetFont("Helvetica", "I", 9)
+		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+		pdf.CellFormat(0, 5, translator("Documento confidencial - Uso interno"), "", 0, "C", false, 0, "")
+		
+		pdf.SetTextColor(0, 0, 0)
+
+		// ============ PÁGINA DE CONTENIDO ============
+		pdf.AddPage()
+		
+		// Resumen ejecutivo
 		pdf.SetFont("Helvetica", "B", 16)
-		pdf.Cell(0, 10, translator("Reporte del panel superadmin"))
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 10, translator("RESUMEN EJECUTIVO"), "", 0, "L", true, 0, "")
 		pdf.Ln(12)
-		pdf.SetFont("Helvetica", "", 11)
-		pdf.Cell(0, 7, translator(fmt.Sprintf("Generado %s", formatLocal(generatedAt))))
-		pdf.Ln(10)
+		
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetTextColor(0, 0, 0)
+		summaryText := "Este reporte presenta un análisis detallado de las métricas clave del sistema HeartGuard. "
+		summaryText += "Incluye información sobre usuarios activos, invitaciones, operaciones recientes y actividad del sistema. "
+		summaryText += "Los datos presentados permiten una evaluación integral del rendimiento y uso de la plataforma."
+		pdf.MultiCell(0, 6, translator(summaryText), "", "J", false)
+		pdf.Ln(8)
 
 		renderTable := func(title string, headers []string, widths []float64, aligns []string, rows [][]string) {
 			if len(headers) != len(widths) {
 				return
 			}
+			
+			// Calcular espacio necesario: título (24mm) + encabezado (7mm) + al menos 3 filas (18mm) = ~50mm
+			minSpaceNeeded := 50.0
+			_, _, _, bottomMargin := pdf.GetMargins()
+			pageHeight := 210.0 // A4 height
+			availableSpace := pageHeight - pdf.GetY() - bottomMargin
+			
+			// Si no hay suficiente espacio, crear nueva página
+			if availableSpace < minSpaceNeeded {
+				pdf.AddPage()
+			}
+			
+			// Separador de sección
+			pdf.Ln(4)
+			pdf.SetDrawColor(accentColor.R, accentColor.G, accentColor.B)
+			pdf.SetLineWidth(0.8)
+			currentY := pdf.GetY()
+			pdf.Line(15, currentY, 40, currentY)
 			pdf.Ln(2)
-			pdf.SetFont("Helvetica", "B", 12)
-			pdf.SetTextColor(26, 32, 44)
-			pdf.Cell(0, 7, translator(title))
-			pdf.Ln(8)
+			
+			// Título de la tabla con estilo destacado
+			pdf.SetFont("Helvetica", "B", 13)
+			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+			pdf.Cell(0, 8, translator(title))
+			pdf.Ln(10)
+			
 			if len(rows) == 0 {
-				pdf.SetFont("Helvetica", "", 9)
-				pdf.SetTextColor(120, 128, 148)
-				pdf.Cell(0, 6, translator("Sin datos disponibles"))
+				pdf.SetFont("Helvetica", "I", 10)
+				pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+				pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+				pdf.CellFormat(0, 8, translator("   Sin datos disponibles"), "1", 0, "L", true, 0, "")
 				pdf.SetTextColor(0, 0, 0)
-				pdf.Ln(4)
+				pdf.Ln(12)
 				return
 			}
+			
+			// Encabezados de tabla mejorados
 			pdf.SetFont("Helvetica", "B", 9)
-			pdf.SetFillColor(40, 64, 96)
-			pdf.SetDrawColor(210, 218, 235)
-			pdf.SetLineWidth(0.15)
+			pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
+			pdf.SetDrawColor(200, 208, 220)
+			pdf.SetLineWidth(0.2)
 			pdf.SetTextColor(255, 255, 255)
 			for i, head := range headers {
 				align := "L"
@@ -956,18 +1073,49 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 				pdf.CellFormat(widths[i], 7, translator(head), "1", 0, align, true, 0, "")
 			}
 			pdf.Ln(-1)
-			pdf.SetFont("Helvetica", "", 8.7)
-			pdf.SetTextColor(0, 0, 0)
+			pdf.SetFont("Helvetica", "", 9)
+			pdf.SetTextColor(26, 32, 44)
 			fill := false
 			leftMargin, _, _, _ := pdf.GetMargins()
-			lineHeight := 5.6
-			for _, row := range rows {
+			lineHeight := 6.0
+			
+			for rowIdx, row := range rows {
+				// Verificar si hay espacio para la fila actual (considerando altura máxima posible)
+				maxPossibleRowHeight := 30.0 // Altura máxima estimada para una fila con texto largo
+				availableSpace := pageHeight - pdf.GetY() - bottomMargin
+				
+				// Si no hay espacio suficiente para la fila, crear nueva página y redibujar encabezados
+				if availableSpace < maxPossibleRowHeight {
+					pdf.AddPage()
+					
+					// Redibujar encabezados de tabla en la nueva página
+					pdf.SetFont("Helvetica", "B", 9)
+					pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
+					pdf.SetDrawColor(200, 208, 220)
+					pdf.SetLineWidth(0.2)
+					pdf.SetTextColor(255, 255, 255)
+					for i, head := range headers {
+						align := "L"
+						if i < len(aligns) && aligns[i] != "" {
+							align = aligns[i]
+						}
+						pdf.CellFormat(widths[i], 7, translator(head), "1", 0, align, true, 0, "")
+					}
+					pdf.Ln(-1)
+					pdf.SetFont("Helvetica", "", 9)
+					pdf.SetTextColor(26, 32, 44)
+					
+					// Resetear el fill pattern para mantener consistencia
+					fill = (rowIdx % 2) == 1
+				}
+				
 				fill = !fill
 				if fill {
-					pdf.SetFillColor(245, 247, 252)
+					pdf.SetFillColor(250, 251, 253)
 				} else {
 					pdf.SetFillColor(255, 255, 255)
 				}
+				
 				y := pdf.GetY()
 				x := leftMargin
 				rowHeight := lineHeight
@@ -1009,6 +1157,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		if data.Overview != nil {
 			metricsRows = append(metricsRows, []string{"Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
 		}
+		
+		// Sección: Indicadores Clave
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("1. INDICADORES CLAVE DE RENDIMIENTO"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		
 		renderTable("Resumen general", []string{"Métrica", "Valor", "Detalle"}, []float64{80, 28, 140}, []string{"L", "R", "L"}, metricsRows)
 
 		statusRows := make([][]string, 0, len(data.StatusChart))
@@ -1020,6 +1176,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		renderTable("Usuarios por estatus", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, statusRows)
 
+		// Sección: Gestión de Invitaciones
+		pdf.Ln(6)
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("2. GESTIÓN DE INVITACIONES"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		
 		invRows := make([][]string, 0, len(data.InvitationChart))
 		for _, item := range data.InvitationChart {
 			invRows = append(invRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
@@ -1029,6 +1193,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		renderTable("Invitaciones", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, invRows)
 
+		// Sección: Actividad del Sistema
+		pdf.Ln(6)
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("3. ACTIVIDAD DEL SISTEMA"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		
 		opRows := make([][]string, 0, len(data.RecentOperations))
 		for _, op := range data.RecentOperations {
 			opRows = append(opRows, []string{op.Label, op.Code, strconv.Itoa(op.Count)})
@@ -1044,6 +1216,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		renderTable("Actividad más reciente", []string{"Fecha", "Evento", "Actor", "Entidad"}, []float64{40, 110, 60, 60}, []string{"L", "L", "L", "L"}, activityRows)
 
+		// Sección: Análisis Temporal
+		pdf.Ln(6)
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("4. ANÁLISIS TEMPORAL"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		
 		timelineRows := make([][]string, 0, len(data.ActivitySeries))
 		for _, point := range data.ActivitySeries {
 			timelineRows = append(timelineRows, []string{formatLocal(point.Bucket), strconv.Itoa(point.Count)})
@@ -1051,6 +1231,16 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		renderTable("Actividad por hora", []string{"Fecha/Hora", "Eventos"}, []float64{60, 28}, []string{"L", "R"}, timelineRows)
 
 		if data.ContentTotals != nil {
+			// Nueva página para contenido
+			pdf.AddPage()
+			
+			// Sección: Gestión de Contenido
+			pdf.SetFont("Helvetica", "B", 14)
+			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+			pdf.CellFormat(0, 9, translator("5. GESTIÓN DE CONTENIDO"), "", 0, "L", true, 0, "")
+			pdf.Ln(8)
+			
 			totals := data.ContentTotals
 			contentRows := [][]string{
 				{"Total piezas", strconv.Itoa(totals.Total)},
@@ -1085,6 +1275,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if len(data.ContentMonthlySeries) > 0 {
+			// Sección: Tendencias de Producción
+			pdf.Ln(6)
+			pdf.SetFont("Helvetica", "B", 14)
+			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+			pdf.CellFormat(0, 9, translator("6. TENDENCIAS DE PRODUCCIÓN"), "", 0, "L", true, 0, "")
+			pdf.Ln(8)
+			
 			monthlyRows := make([][]string, 0, len(data.ContentMonthlySeries))
 			for idx, point := range data.ContentMonthlySeries {
 				if idx >= 24 {
@@ -1106,7 +1304,34 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			renderTable("Crecimiento acumulado", []string{"Periodo", "Acumulado"}, []float64{60, 28}, []string{"L", "R"}, cumulativeRows)
 		}
 
+		// Página final con conclusiones
 		pdf.AddPage()
+		pdf.SetY(40)
+		pdf.SetFont("Helvetica", "B", 16)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 10, translator("CONCLUSIONES Y OBSERVACIONES"), "", 0, "L", true, 0, "")
+		pdf.Ln(12)
+		
+		pdf.SetFont("Helvetica", "", 10)
+		pdf.SetTextColor(0, 0, 0)
+		conclusionText := "Este reporte ha presentado un análisis exhaustivo de las métricas operativas del sistema HeartGuard. "
+		conclusionText += "Los indicadores muestran el estado actual de la plataforma, permitiendo la toma de decisiones informadas "
+		conclusionText += "para optimizar el rendimiento y la experiencia del usuario.\n\n"
+		conclusionText += "Se recomienda revisar periódicamente estos reportes para identificar tendencias, "
+		conclusionText += "detectar anomalías y planificar estrategias de crecimiento."
+		pdf.MultiCell(0, 6, translator(conclusionText), "", "J", false)
+		pdf.Ln(15)
+		
+		// Cuadro de firma o aprobación
+		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+		pdf.SetLineWidth(0.3)
+		pdf.Line(40, pdf.GetY(), 140, pdf.GetY())
+		pdf.Ln(2)
+		pdf.SetFont("Helvetica", "I", 9)
+		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
+		pdf.CellFormat(100, 5, translator("Sistema HeartGuard - Reporte Automatizado"), "", 0, "L", false, 0, "")
+		
 		pdf.SetMargins(16, 18, 16)
 		pdf.SetAutoPageBreak(true, 20)
 		pdf.SetFont("Helvetica", "B", 15)
