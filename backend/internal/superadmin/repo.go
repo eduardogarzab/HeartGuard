@@ -2374,6 +2374,89 @@ LIMIT $1 OFFSET $2
 	return out, nil
 }
 
+func (r *Repo) ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT rp.role_id::text, p.code, p.description, rp.granted_at
+FROM role_permission rp
+JOIN permissions p ON p.id = rp.permission_id
+WHERE rp.role_id = $1::uuid
+ORDER BY p.code
+`, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.RolePermission, 0, 8)
+	for rows.Next() {
+		var (
+			item models.RolePermission
+			desc sql.NullString
+		)
+		if err := rows.Scan(&item.RoleID, &item.Code, &desc, &item.GrantedAt); err != nil {
+			return nil, err
+		}
+		if desc.Valid {
+			item.Description = desc.String
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) GrantRolePermission(ctx context.Context, roleID, permissionCode string) (*models.RolePermission, error) {
+	var (
+		item models.RolePermission
+		desc sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+WITH perm AS (
+        SELECT id, code, description
+        FROM permissions
+        WHERE code = $2
+), upsert AS (
+        INSERT INTO role_permission (role_id, permission_id)
+        SELECT $1::uuid, perm.id
+        FROM perm
+        ON CONFLICT (role_id, permission_id) DO UPDATE SET granted_at = role_permission.granted_at
+        RETURNING role_id::text, permission_id, granted_at
+)
+SELECT u.role_id, perm.code, perm.description, u.granted_at
+FROM upsert u
+JOIN perm ON TRUE
+`, roleID, permissionCode).Scan(&item.RoleID, &item.Code, &desc, &item.GrantedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pgx.ErrNoRows
+		}
+		return nil, err
+	}
+	if desc.Valid {
+		item.Description = desc.String
+	}
+	return &item, nil
+}
+
+func (r *Repo) RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error {
+	ct, err := r.pool.Exec(ctx, `
+DELETE FROM role_permission
+WHERE role_id = $1::uuid
+  AND permission_id = (
+        SELECT id FROM permissions WHERE code = $2
+)
+`, roleID, permissionCode)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
 func (r *Repo) CreateRole(ctx context.Context, name string, description *string) (*models.Role, error) {
 	var (
 		item models.Role
