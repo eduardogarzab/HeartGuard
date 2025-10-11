@@ -120,6 +120,10 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			ar.Get("/", uiHandlers.AlertsIndex)
 			ar.Post("/", uiHandlers.AlertsCreate)
 			ar.Post("/{id}/update", uiHandlers.AlertsUpdate)
+			ar.Post("/{id}/assignments", uiHandlers.AlertAssignmentsCreate)
+			ar.Post("/{id}/acks", uiHandlers.AlertAcksCreate)
+			ar.Post("/{id}/resolutions", uiHandlers.AlertResolutionsCreate)
+			ar.Post("/{id}/deliveries", uiHandlers.AlertDeliveriesCreate)
 			ar.Post("/{id}/delete", uiHandlers.AlertsDelete)
 		})
 
