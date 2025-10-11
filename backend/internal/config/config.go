@@ -19,6 +19,7 @@ type Config struct {
 	RedisURL          string
 	RateLimitRPS      int
 	RateLimitBurst    int
+	SecureCookies     bool
 }
 
 func Load() (*Config, error) {
@@ -54,6 +55,9 @@ func Load() (*Config, error) {
 	if c.RateLimitBurst, err = atoi(getenv("RATE_LIMIT_BURST", "20")); err != nil {
 		return nil, fmt.Errorf("bad RATE_LIMIT_BURST: %w", err)
 	}
+
+	// SecureCookies: default true (producción), false solo en dev explícito
+	c.SecureCookies = getenv("SECURE_COOKIES", "true") != "false"
 
 	return c, nil
 }

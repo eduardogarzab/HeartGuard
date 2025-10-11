@@ -212,25 +212,23 @@ func (m *Manager) Refresh(ctx context.Context, jti string) {
 }
 
 func (m *Manager) SessionCookie(token string, ttl time.Duration) *http.Cookie {
-    return &http.Cookie{
-        Name:     cookieName,
-        Value:    token,
-        HttpOnly: true,
-        Secure:   true,
-        SameSite: http.SameSiteStrictMode,
-        Path:     "/",
-        Expires:  time.Now().Add(ttl),
-    }
-}
-
-func (m *Manager) ClearCookie() *http.Cookie {
+	return &http.Cookie{
+		Name:     cookieName,
+		Value:    token,
+		HttpOnly: true,
+		Secure:   m.cfg.SecureCookies,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/",
+		Expires:  time.Now().Add(ttl),
+	}
+}func (m *Manager) ClearCookie() *http.Cookie {
     return &http.Cookie{
         Name:     cookieName,
         Value:    "",
         Path:     "/",
         MaxAge:   -1,
         HttpOnly: true,
-        Secure:   true,
+        Secure:   m.cfg.SecureCookies,
         SameSite: http.SameSiteStrictMode,
         Expires:  time.Unix(0, 0),
     }
@@ -272,28 +270,26 @@ func (m *Manager) ConsumeGuestCSRF(ctx context.Context, token string) {
 }
 
 func (m *Manager) GuestCSRFCookie(token string, ttl time.Duration) *http.Cookie {
-    if ttl <= 0 {
-        ttl = 10 * time.Minute
-    }
-    return &http.Cookie{
-        Name:     guestCSRFCookie,
-        Value:    token,
-        HttpOnly: true,
-        Secure:   true,
-        SameSite: http.SameSiteStrictMode,
-        Path:     "/login",
-        Expires:  time.Now().Add(ttl),
-    }
-}
-
-func (m *Manager) ClearGuestCSRFCookie() *http.Cookie {
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	return &http.Cookie{
+		Name:     guestCSRFCookie,
+		Value:    token,
+		HttpOnly: true,
+		Secure:   m.cfg.SecureCookies,
+		SameSite: http.SameSiteStrictMode,
+		Path:     "/login",
+		Expires:  time.Now().Add(ttl),
+	}
+}func (m *Manager) ClearGuestCSRFCookie() *http.Cookie {
     return &http.Cookie{
         Name:     guestCSRFCookie,
         Value:    "",
         Path:     "/login",
         MaxAge:   -1,
         HttpOnly: true,
-        Secure:   true,
+        Secure:   m.cfg.SecureCookies,
         SameSite: http.SameSiteStrictMode,
         Expires:  time.Unix(0, 0),
     }

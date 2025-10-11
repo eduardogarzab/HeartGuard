@@ -26,6 +26,206 @@ Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositori
 -   Opcional: `psql`, `openssl`, `curl`, `jq`.
 -   Windows: PowerShell 5.1+ funciona con los mismos comandos (`make` requiere WSL, Git Bash o Make for Windows).
 
+## Instalación de dependencias y herramientas
+
+### 1. Docker y Docker Compose
+
+**Windows:**
+
+```powershell
+# Descarga e instala Docker Desktop desde:
+# https://docs.docker.com/desktop/install/windows-install/
+# Docker Desktop incluye Docker Compose v2 automáticamente
+```
+
+**Linux (Ubuntu/Debian):**
+
+```bash
+# Actualizar repositorios
+sudo apt-get update
+
+# Instalar Docker Engine
+curl -fsSL https://get.docker.com -o get-docker.sh
+sudo sh get-docker.sh
+
+# Agregar usuario al grupo docker (para no usar sudo)
+sudo usermod -aG docker $USER
+newgrp docker
+
+# Instalar Docker Compose v2
+sudo apt-get install docker-compose-plugin
+
+# Verificar instalación
+docker --version
+docker compose version
+```
+
+**macOS:**
+
+```bash
+# Instalar Docker Desktop desde:
+# https://docs.docker.com/desktop/install/mac-install/
+# O usar Homebrew:
+brew install --cask docker
+```
+
+### 2. GNU Make
+
+**Windows:**
+
+```powershell
+# Opción 1: Usar WSL2 (recomendado)
+wsl --install
+# Dentro de WSL: sudo apt-get install make
+
+# Opción 2: Instalar Make for Windows
+choco install make
+# O descargar desde: http://gnuwin32.sourceforge.net/packages/make.htm
+
+# Opción 3: Usar Git Bash (incluye make)
+# Descarga Git for Windows: https://git-scm.com/download/win
+```
+
+**Linux:**
+
+```bash
+sudo apt-get install build-essential  # Ubuntu/Debian
+sudo yum groupinstall "Development Tools"  # CentOS/RHEL
+```
+
+**macOS:**
+
+```bash
+xcode-select --install  # Instala herramientas de línea de comandos
+# O usar Homebrew:
+brew install make
+```
+
+### 3. Go 1.22+
+
+**Windows:**
+
+```powershell
+# Descargar instalador desde: https://go.dev/dl/
+# O usar Chocolatey:
+choco install golang --version=1.22.0
+
+# Verificar instalación
+go version
+```
+
+**Linux:**
+
+```bash
+# Descargar y extraer
+wget https://go.dev/dl/go1.22.0.linux-amd64.tar.gz
+sudo rm -rf /usr/local/go
+sudo tar -C /usr/local -xzf go1.22.0.linux-amd64.tar.gz
+
+# Agregar al PATH (en ~/.bashrc o ~/.zshrc)
+export PATH=$PATH:/usr/local/go/bin
+export GOPATH=$HOME/go
+export PATH=$PATH:$GOPATH/bin
+
+# Recargar configuración
+source ~/.bashrc
+
+# Verificar instalación
+go version
+```
+
+**macOS:**
+
+```bash
+# Usar Homebrew:
+brew install go@1.22
+
+# O descargar desde: https://go.dev/dl/
+```
+
+### 4. PostgreSQL Client (psql) - Opcional
+
+**Windows:**
+
+```powershell
+# Descargar PostgreSQL desde:
+# https://www.postgresql.org/download/windows/
+# O usar Chocolatey:
+choco install postgresql --version=14.0
+```
+
+**Linux:**
+
+```bash
+sudo apt-get install postgresql-client-14
+```
+
+**macOS:**
+
+```bash
+brew install postgresql@14
+```
+
+### 5. Redis CLI - Opcional
+
+**Windows:**
+
+```powershell
+# Redis no tiene soporte oficial para Windows
+# Usar WSL2 o contenedor Docker (recomendado para desarrollo)
+# O descargar versión no oficial: https://github.com/tporadowski/redis
+```
+
+**Linux:**
+
+```bash
+sudo apt-get install redis-tools
+```
+
+**macOS:**
+
+```bash
+brew install redis
+```
+
+### 6. Herramientas adicionales
+
+```bash
+# Git (control de versiones)
+# Windows: https://git-scm.com/download/win
+# Linux: sudo apt-get install git
+# macOS: brew install git
+
+# curl (para peticiones HTTP)
+# Viene preinstalado en la mayoría de sistemas
+# Windows: choco install curl
+
+# jq (procesamiento JSON)
+# Windows: choco install jq
+# Linux: sudo apt-get install jq
+# macOS: brew install jq
+
+# openssl (generación de secretos)
+# Viene preinstalado en Linux/macOS
+# Windows: incluido en Git Bash
+```
+
+### 7. Verificar instalación completa
+
+Ejecuta estos comandos para verificar que todas las herramientas estén instaladas:
+
+```bash
+docker --version          # Docker version 24.0.0+
+docker compose version    # Docker Compose version v2.20.0+
+make --version           # GNU Make 4.0+
+go version               # go version go1.22.0+
+psql --version           # psql (PostgreSQL) 14.0+ (opcional)
+redis-cli --version      # redis-cli 6.0+ (opcional)
+git --version            # git version 2.30.0+
+curl --version           # curl 7.68.0+
+jq --version             # jq-1.6+ (opcional)
+```
+
 ## Variables de entorno
 
 Duplica `.env.example` a `.env` y ajusta según tu entorno.
@@ -35,6 +235,7 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | Postgres (superuser)  | `PGSUPER`, `PGSUPER_PASS`, `PGHOST`, `PGPORT`         | Usados por `make db-*` para crear la base.                                 |
 | Postgres (app)        | `DBNAME`, `DBUSER`, `DBPASS`, `DATABASE_URL`          | `DATABASE_URL` se utiliza tanto por el backend como por scripts de health. |
 | Backend/HTTP          | `ENV`, `HTTP_ADDR`                                    | `ENV` admite `dev` o `prod`; el valor controla logging.                    |
+| Cookies               | `SECURE_COOKIES`                                      | `false` = HTTP (dev local), `true` = HTTPS requerido (producción).         |
 | Auth JWT              | `JWT_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | El secreto debe tener ≥32 bytes en producción.                             |
 | Redis & Rate limiting | `REDIS_URL`, `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`     | Redis es obligatorio: refresh tokens y rate limiting por IP/endpoint.      |
 
@@ -143,6 +344,8 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 
 ## Troubleshooting
 
+### Errores generales
+
 -   **`DATABASE_URL is required` (al correr el backend):** exporta las variables de `.env` en la shell actual.
     ```sh
     export $(grep -v '^#' .env | xargs)
@@ -151,6 +354,88 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 -   **Puerto 5432 ocupado:** ajusta el mapeo `5432:5432` en `docker-compose.yml` y las variables `PGPORT`/`DATABASE_URL`.
 -   **Regenerar API key demo:** usa `/superadmin/api-keys` en el panel para generar una nueva y guarda el secreto mostrado.
 -   **Redis no responde:** revisa `make logs-redis` y confirma que `REDIS_URL` use el puerto correcto (`6379`).
+
+### Error "CSRF inválido" al iniciar sesión
+
+Este error ocurre cuando las cookies CSRF tienen el atributo `Secure: true` (requiere HTTPS) pero accedes mediante HTTP.
+
+**Solución simple:**
+
+1. **En tu `.env`, agrega o modifica:**
+
+    ```bash
+    SECURE_COOKIES=false
+    ```
+
+2. **Reinicia el backend:**
+
+    ```bash
+    make dev
+    ```
+
+3. **Accede normalmente a `http://localhost:8080`**
+
+**Explicación:**
+
+-   `SECURE_COOKIES=false` → Las cookies funcionan con HTTP (desarrollo local)
+-   `SECURE_COOKIES=true` → Las cookies requieren HTTPS (producción)
+-   El valor por defecto es `false` en `.env.example` para facilitar desarrollo local
+
+**¿Cuándo usar cada valor?**
+
+| Escenario                       | Valor recomendado                                  |
+| ------------------------------- | -------------------------------------------------- |
+| Desarrollo local (tu PC)        | `SECURE_COOKIES=false`                             |
+| Desarrollo en VM con túnel SSH  | `SECURE_COOKIES=false`                             |
+| Desarrollo con ngrok/cloudflare | `SECURE_COOKIES=true` (el túnel proporciona HTTPS) |
+| Producción con dominio y SSL    | `SECURE_COOKIES=true` (siempre)                    |
+
+**Alternativa: Usar túnel HTTPS (sin modificar .env)**
+
+Si prefieres no cambiar el `.env` y trabajar con HTTPS desde el inicio:
+
+_Con ngrok (Windows/Linux):_
+
+```bash
+# Instalar ngrok
+# Windows: choco install ngrok
+# Linux: https://ngrok.com/download
+
+# Crear túnel HTTPS
+ngrok http 8080
+
+# Usar la URL HTTPS que te proporciona (ej: https://abc123.ngrok-free.app)
+```
+
+_Con Cloudflare Tunnel:_
+
+```bash
+# Instalar cloudflared
+# Windows: choco install cloudflared
+# Linux: https://github.com/cloudflare/cloudflared/releases
+
+# Crear túnel
+cloudflared tunnel --url http://localhost:8080
+```
+
+**Verificar que funcione:**
+
+```bash
+# 1. Comprobar que Redis está activo
+docker exec -it heartguard-redis redis-cli ping
+# Debe responder: PONG
+
+# 2. Ver los tokens CSRF en Redis
+docker exec -it heartguard-redis redis-cli KEYS "csrf:guest:*"
+
+# 3. Limpiar cache del navegador si persiste el error
+# Chrome/Edge: Ctrl+Shift+Delete → Cookies
+# Firefox: Ctrl+Shift+Delete → Cookies
+
+# 4. Probar en modo incógnito
+```
+
+**⚠️ IMPORTANTE:** En producción, siempre usa `SECURE_COOKIES=true` con un certificado SSL válido (Let's Encrypt, Cloudflare, etc.).
 
 ## Próximos pasos sugeridos
 
