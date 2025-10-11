@@ -1952,7 +1952,7 @@ func (r *Repo) DeleteDevice(ctx context.Context, id string) error {
 }
 
 func (r *Repo) ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error) {
-	rows, err := r.pool.Query(ctx, `SELECT id::text, code, description FROM heartguard.device_types ORDER BY code`)
+	rows, err := r.pool.Query(ctx, `SELECT id::text, code, label FROM heartguard.device_types ORDER BY code`)
 	if err != nil {
 		return nil, err
 	}
@@ -1960,15 +1960,15 @@ func (r *Repo) ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
 	var out []models.DeviceType
 	for rows.Next() {
 		var (
-			d    models.DeviceType
-			desc sql.NullString
+			d     models.DeviceType
+			label sql.NullString
 		)
-		if err := rows.Scan(&d.ID, &d.Code, &desc); err != nil {
+		if err := rows.Scan(&d.ID, &d.Code, &label); err != nil {
 			return nil, err
 		}
-		if desc.Valid {
-			v := desc.String
-			d.Description = &v
+		if label.Valid {
+			v := label.String
+			d.Label = &v
 		}
 		out = append(out, d)
 	}

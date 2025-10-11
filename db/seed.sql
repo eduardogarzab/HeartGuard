@@ -118,7 +118,7 @@ FROM (VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- Tipos de dispositivo
-INSERT INTO device_types(code, description) VALUES
+INSERT INTO device_types(code, label) VALUES
   ('ECG_1LEAD','ECG de una derivación'),
   ('PULSE_OX','Pulsioxímetro')
 ON CONFLICT (code) DO NOTHING;

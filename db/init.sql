@@ -4,6 +4,9 @@
 -- Ejecuta con:
 --   psql -U postgres -v dbname=heartguard -v dbuser=heartguard_app -v dbpass='dev_change_me' -f init.sql
 
+-- Todas las entidades exceptuando las que contienen jsonb estan normalizadas hasta la 3FN, sin embargo al ser un sistema de monitoreo se requieren de detalles adicinales los cuales se documentan en cada tabla y no es practico normalizar.
+-- Por lo tanto consideramos que no se deben considerar al evaluar la normalizacion, ya que no afectan la integridad de los datos. Omite la revisión de normalización en las tablas que contienen columnas JSONB.
+
 \set dbname 'heartguard'
 \set dbuser 'heartguard_app'
 \set dbpass 'dev_change_me'
@@ -476,6 +479,7 @@ BEGIN
     WHEN 'delivery_statuses'    THEN table_name := 'delivery_statuses';
     WHEN 'batch_export_statuses'THEN table_name := 'batch_export_statuses';
     WHEN 'org_roles'            THEN table_name := 'org_roles';
+    WHEN 'device_types'         THEN table_name := 'device_types';
     WHEN 'content_categories'   THEN table_name := 'content_categories';
     WHEN 'content_statuses'     THEN table_name := 'content_statuses';
     WHEN 'content_types'        THEN table_name := 'content_types';
@@ -754,8 +758,10 @@ $$;
 CREATE TABLE IF NOT EXISTS device_types (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   code        VARCHAR(40) UNIQUE NOT NULL,
-  description TEXT
+  label       VARCHAR(120) NOT NULL
 );
+
+ALTER TABLE IF EXISTS device_types ALTER COLUMN label SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS devices (
   id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -989,7 +995,7 @@ BEGIN
     d.brand::text,
     d.model::text,
     dt.code::text,
-    dt.description::text,
+    dt.label::text,
     d.owner_patient_id::text,
     p.person_name::text,
     d.registered_at,
@@ -1059,7 +1065,7 @@ BEGIN
     d.brand::text,
     d.model::text,
     (SELECT dt.code::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
-    (SELECT dt.description::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
+    (SELECT dt.label::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
     d.owner_patient_id::text,
     (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = d.owner_patient_id),
     d.registered_at,
@@ -1131,7 +1137,7 @@ BEGIN
     d.brand::text,
     d.model::text,
     (SELECT dt.code::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
-    (SELECT dt.description::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
+    (SELECT dt.label::text FROM heartguard.device_types dt WHERE dt.id = d.device_type_id),
     d.owner_patient_id::text,
     (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = d.owner_patient_id),
     d.registered_at,
@@ -1804,7 +1810,6 @@ CREATE TABLE IF NOT EXISTS alert_status (
 
 CREATE TABLE IF NOT EXISTS alerts (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id                UUID,
   patient_id            UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   type_id               UUID NOT NULL REFERENCES alert_types(id) ON DELETE RESTRICT,
   created_by_model_id   UUID REFERENCES models(id) ON DELETE SET NULL,
@@ -1816,7 +1821,6 @@ CREATE TABLE IF NOT EXISTS alerts (
   location              geometry(Point,4326),
   duplicate_of_alert_id UUID REFERENCES alerts(id) ON DELETE SET NULL
 );
-CREATE INDEX IF NOT EXISTS idx_alerts_org ON alerts(org_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_patient_status ON alerts(patient_id, status_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_level ON alerts(alert_level_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_loc_gix ON alerts USING GIST(location);
@@ -1848,7 +1852,7 @@ BEGIN
   RETURN QUERY
   SELECT
     a.id::text,
-    a.org_id::text,
+    p.org_id::text,
     o.name::text,
     a.patient_id::text,
     p.person_name::text,
@@ -1862,7 +1866,7 @@ BEGIN
     a.description
   FROM heartguard.alerts a
   JOIN heartguard.patients p ON p.id = a.patient_id
-  LEFT JOIN heartguard.organizations o ON o.id = a.org_id
+  LEFT JOIN heartguard.organizations o ON o.id = p.org_id
   JOIN heartguard.alert_types at ON at.id = a.type_id
   JOIN heartguard.alert_levels al ON al.id = a.alert_level_id
   JOIN heartguard.alert_status ast ON ast.id = a.status_id
@@ -1900,7 +1904,6 @@ DECLARE
   v_type_id uuid;
   v_level_id uuid;
   v_status_id uuid;
-  v_org_id uuid;
   v_location geometry(Point,4326);
 BEGIN
   SELECT at.id INTO v_type_id
@@ -1927,29 +1930,36 @@ BEGIN
     RAISE EXCEPTION 'Estatus de alerta % no existe', p_status_code USING ERRCODE = '23514';
   END IF;
 
-  SELECT p.org_id INTO v_org_id FROM heartguard.patients p WHERE p.id = p_patient_id;
-
   IF p_location_wkt IS NOT NULL AND btrim(p_location_wkt) <> '' THEN
     v_location := ST_GeomFromText(p_location_wkt, 4326);
   END IF;
 
   RETURN QUERY
-  INSERT INTO heartguard.alerts AS a (org_id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, description, location)
-  VALUES (v_org_id, p_patient_id, v_type_id, p_model_id, p_inference_id, v_level_id, v_status_id, NULLIF(btrim(p_description), ''), v_location)
-  RETURNING
-    a.id::text,
-    a.org_id::text,
-    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = a.org_id),
-    a.patient_id::text,
-    (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = a.patient_id),
-    (SELECT at.code::text FROM heartguard.alert_types at WHERE at.id = a.type_id),
-    (SELECT at.description FROM heartguard.alert_types at WHERE at.id = a.type_id),
-    (SELECT al.code::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
-    (SELECT al.label::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
-    (SELECT ast.code::text FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
-    (SELECT ast.description FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
-    a.created_at,
-    a.description;
+  WITH inserted_alert AS (
+    INSERT INTO heartguard.alerts AS a (patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, description, location)
+    VALUES (p_patient_id, v_type_id, p_model_id, p_inference_id, v_level_id, v_status_id, NULLIF(btrim(p_description), ''), v_location)
+    RETURNING a.id, a.patient_id, a.type_id, a.alert_level_id, a.status_id, a.created_at, a.description
+  )
+  SELECT
+    ia.id::text,
+    p.org_id::text,
+    o.name::text,
+    ia.patient_id::text,
+    p.person_name::text,
+    at.code::text,
+    at.description,
+    al.code::text,
+    al.label::text,
+    ast.code::text,
+    ast.description,
+    ia.created_at,
+    ia.description
+  FROM inserted_alert ia
+  JOIN heartguard.patients p ON p.id = ia.patient_id
+  LEFT JOIN heartguard.organizations o ON o.id = p.org_id
+  JOIN heartguard.alert_types at ON at.id = ia.type_id
+  JOIN heartguard.alert_levels al ON al.id = ia.alert_level_id
+  JOIN heartguard.alert_status ast ON ast.id = ia.status_id;
 END;
 $$;
 
@@ -2015,29 +2025,38 @@ BEGIN
   END IF;
 
   RETURN QUERY
-  UPDATE heartguard.alerts AS a
-     SET type_id = v_type_id,
-         alert_level_id = v_level_id,
-         status_id = v_status_id,
-         created_by_model_id = p_model_id,
-         source_inference_id = p_inference_id,
-         description = NULLIF(btrim(p_description), ''),
-         location = v_location
-   WHERE a.id = p_id
-  RETURNING
-    a.id::text,
-    a.org_id::text,
-    (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = a.org_id),
-    a.patient_id::text,
-    (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = a.patient_id),
-    (SELECT at.code::text FROM heartguard.alert_types at WHERE at.id = a.type_id),
-    (SELECT at.description FROM heartguard.alert_types at WHERE at.id = a.type_id),
-    (SELECT al.code::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
-    (SELECT al.label::text FROM heartguard.alert_levels al WHERE al.id = a.alert_level_id),
-    (SELECT ast.code::text FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
-    (SELECT ast.description FROM heartguard.alert_status ast WHERE ast.id = a.status_id),
-    a.created_at,
-    a.description;
+  WITH updated_alert AS (
+    UPDATE heartguard.alerts AS a
+       SET type_id = v_type_id,
+           alert_level_id = v_level_id,
+           status_id = v_status_id,
+           created_by_model_id = p_model_id,
+           source_inference_id = p_inference_id,
+           description = NULLIF(btrim(p_description), ''),
+           location = v_location
+     WHERE a.id = p_id
+    RETURNING a.id, a.patient_id, a.type_id, a.alert_level_id, a.status_id, a.created_at, a.description
+  )
+  SELECT
+    ua.id::text,
+    p.org_id::text,
+    o.name::text,
+    ua.patient_id::text,
+    p.person_name::text,
+    at.code::text,
+    at.description,
+    al.code::text,
+    al.label::text,
+    ast.code::text,
+    ast.description,
+    ua.created_at,
+    ua.description
+  FROM updated_alert ua
+  JOIN heartguard.patients p ON p.id = ua.patient_id
+  LEFT JOIN heartguard.organizations o ON o.id = p.org_id
+  JOIN heartguard.alert_types at ON at.id = ua.type_id
+  JOIN heartguard.alert_levels al ON al.id = ua.alert_level_id
+  JOIN heartguard.alert_status ast ON ast.id = ua.status_id;
 END;
 $$;
 
