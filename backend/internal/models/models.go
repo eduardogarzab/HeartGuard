@@ -116,16 +116,57 @@ type Patient struct {
 }
 
 type PatientInput struct {
-	OrgID     *string    `json:"org_id,omitempty"`
-	Name      string     `json:"name"`
-	Birthdate *time.Time `json:"birthdate,omitempty"`
-	SexCode   *string    `json:"sex_code,omitempty"`
-	RiskLevel *string    `json:"risk_level,omitempty"`
+        OrgID     *string    `json:"org_id,omitempty"`
+        Name      string     `json:"name"`
+        Birthdate *time.Time `json:"birthdate,omitempty"`
+        SexCode   *string    `json:"sex_code,omitempty"`
+        RiskLevel *string    `json:"risk_level,omitempty"`
+}
+
+type LocationInput struct {
+        Timestamp      *time.Time `json:"timestamp,omitempty"`
+        Latitude       *float64   `json:"latitude,omitempty"`
+        Longitude      *float64   `json:"longitude,omitempty"`
+        WKT            *string    `json:"wkt,omitempty"`
+        WKB            []byte     `json:"-"`
+        Source         *string    `json:"source,omitempty"`
+        AccuracyMeters *float64   `json:"accuracy_meters,omitempty"`
+}
+
+type PatientLocationInput = LocationInput
+
+type UserLocationInput = LocationInput
+
+type PatientLocation struct {
+        ID             string     `json:"id"`
+        PatientID      string     `json:"patient_id"`
+        PatientName    *string    `json:"patient_name,omitempty"`
+        Timestamp      time.Time  `json:"timestamp"`
+        Latitude       float64    `json:"latitude"`
+        Longitude      float64    `json:"longitude"`
+        WKT            string     `json:"wkt"`
+        WKBHex         string     `json:"wkb_hex"`
+        Source         *string    `json:"source,omitempty"`
+        AccuracyMeters *float64   `json:"accuracy_meters,omitempty"`
+}
+
+type UserLocation struct {
+        ID             string     `json:"id"`
+        UserID         string     `json:"user_id"`
+        UserName       *string    `json:"user_name,omitempty"`
+        UserEmail      *string    `json:"user_email,omitempty"`
+        Timestamp      time.Time  `json:"timestamp"`
+        Latitude       float64    `json:"latitude"`
+        Longitude      float64    `json:"longitude"`
+        WKT            string     `json:"wkt"`
+        WKBHex         string     `json:"wkb_hex"`
+        Source         *string    `json:"source,omitempty"`
+        AccuracyMeters *float64   `json:"accuracy_meters,omitempty"`
 }
 
 type Device struct {
-	ID               string    `json:"id"`
-	OrgID            *string   `json:"org_id,omitempty"`
+        ID               string    `json:"id"`
+        OrgID            *string   `json:"org_id,omitempty"`
 	OrgName          *string   `json:"org_name,omitempty"`
 	Serial           string    `json:"serial"`
 	Brand            *string   `json:"brand,omitempty"`

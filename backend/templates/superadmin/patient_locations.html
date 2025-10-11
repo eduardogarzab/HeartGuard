@@ -1,0 +1,112 @@
+{{define "superadmin/patient_locations.html"}} {{template "layout" .}} {{end}}
+{{define "superadmin/patient_locations.html:content"}}
+<section class="hg-section">
+        <div class="hg-flex-between">
+                <h1>Ubicaciones de {{.Data.Patient.Name}}</h1>
+        </div>
+        <div class="hg-tabs">
+                <a href="/superadmin/patients">Pacientes</a>
+                <a class="active" href="/superadmin/patients/{{.Data.Patient.ID}}/locations">Ubicaciones</a>
+        </div>
+</section>
+
+<section class="hg-section hg-grid">
+        <div class="hg-card">
+                <h3>Resumen del paciente</h3>
+                <ul class="hg-list-compact">
+                        <li><strong>Organización:</strong> {{if .Data.Patient.OrgName}}{{.Data.Patient.OrgName}}{{else}}—{{end}}</li>
+                        <li><strong>Riesgo:</strong> {{if .Data.Patient.RiskLevel}}{{.Data.Patient.RiskLevel}}{{else}}—{{end}}</li>
+                        <li><strong>Sexo:</strong> {{if .Data.Patient.SexLabel}}{{.Data.Patient.SexLabel}}{{else}}—{{end}}</li>
+                        <li><strong>Nacimiento:</strong> {{formatDatePtr .Data.Patient.Birthdate}}</li>
+                        <li><strong>Creado:</strong> {{formatTime .Data.Patient.CreatedAt}}</li>
+                </ul>
+        </div>
+        <div class="hg-card">
+                <h3>Registrar ubicación</h3>
+                <form method="post" action="/superadmin/patients/{{.Data.Patient.ID}}/locations" class="hg-form-grid">
+                        <input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+                        <div class="hg-form-field">
+                                <label for="location-timestamp">Fecha y hora</label>
+                                <input id="location-timestamp" name="timestamp" type="datetime-local" />
+                                <span class="hg-field-hint">Si se omite, se usará la hora actual.</span>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="location-lat">Latitud</label>
+                                <input id="location-lat" name="latitude" type="number" step="any" placeholder="19.4326" />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="location-lon">Longitud</label>
+                                <input id="location-lon" name="longitude" type="number" step="any" placeholder="-99.1332" />
+                        </div>
+                        <div class="hg-form-field hg-form-field--full">
+                                <label for="location-wkt">WKT</label>
+                                <textarea id="location-wkt" name="wkt" rows="2" placeholder="POINT(-99.1332 19.4326)"></textarea>
+                        </div>
+                        <div class="hg-form-field hg-form-field--full">
+                                <label for="location-wkb">WKB (hex)</label>
+                                <textarea id="location-wkb" name="wkb_hex" rows="2" placeholder="0101000020E6100000..."></textarea>
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="location-source">Fuente</label>
+                                <input id="location-source" name="source" type="text" placeholder="GPS, estimación, etc." />
+                        </div>
+                        <div class="hg-form-field">
+                                <label for="location-accuracy">Precisión (m)</label>
+                                <input id="location-accuracy" name="accuracy" type="number" step="0.1" min="0" placeholder="5" />
+                        </div>
+                        <div class="hg-form-field hg-form-field--plain hg-form-field--full">
+                                <p class="hg-field-hint">Formatos admitidos:</p>
+                                <ul class="hg-list-compact">
+                                        {{range .Data.FormatHelp}}
+                                        <li>{{.}}</li>
+                                        {{end}}
+                                </ul>
+                        </div>
+                        <div class="hg-form-actions">
+                                <button type="submit">Guardar ubicación</button>
+                        </div>
+                </form>
+        </div>
+</section>
+
+<section class="hg-section">
+        <div class="hg-card">
+                <h3>Historial de ubicaciones</h3>
+                <table class="hg-table">
+                        <thead>
+                                <tr>
+                                        <th>Fecha</th>
+                                        <th>Coordenadas</th>
+                                        <th>Fuente</th>
+                                        <th>Precisión</th>
+                                        <th>WKT</th>
+                                        <th>WKB</th>
+                                        <th></th>
+                                </tr>
+                        </thead>
+                        <tbody>
+                                {{range .Data.Locations}}
+                                <tr>
+                                        <td>{{formatTime .Timestamp}}</td>
+                                        <td>{{printf "%.6f, %.6f" .Latitude .Longitude}}</td>
+                                        <td>{{if .Source}}{{.Source}}{{else}}—{{end}}</td>
+                                        <td>{{if .AccuracyMeters}}{{formatFloat64 .AccuracyMeters 2}} m{{else}}—{{end}}</td>
+                                        <td><code style="word-break: break-word;">{{.WKT}}</code></td>
+                                        <td><code style="word-break: break-word;">{{.WKBHex}}</code></td>
+                                        <td>
+                                                <form method="post" action="/superadmin/patients/{{$.Data.Patient.ID}}/locations/{{.ID}}/delete" class="hg-inline-form" data-hg-confirm="¿Eliminar ubicación?">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </td>
+                                </tr>
+                                {{else}}
+                                <tr>
+                                        <td colspan="7" class="hg-empty-cell">Sin ubicaciones registradas.</td>
+                                </tr>
+                                {{end}}
+                        </tbody>
+                </table>
+        </div>
+</section>
+{{end}}

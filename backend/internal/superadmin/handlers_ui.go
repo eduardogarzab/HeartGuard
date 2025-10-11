@@ -64,9 +64,13 @@ type Repository interface {
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
 	ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error)
+	GetPatient(ctx context.Context, id string) (*models.Patient, error)
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
+	ListPatientLocations(ctx context.Context, patientID string, limit, offset int) ([]models.PatientLocation, error)
+	CreatePatientLocation(ctx context.Context, patientID string, input models.PatientLocationInput) (*models.PatientLocation, error)
+	DeletePatientLocation(ctx context.Context, patientID, locationID string) error
 
 	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
 	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
@@ -138,6 +142,9 @@ type Repository interface {
 
 	GetUserSummary(ctx context.Context, userID string) (*models.User, error)
 	IsSuperadmin(ctx context.Context, userID string) (bool, error)
+	ListUserLocations(ctx context.Context, userID string, limit, offset int) ([]models.UserLocation, error)
+	CreateUserLocation(ctx context.Context, userID string, input models.UserLocationInput) (*models.UserLocation, error)
+	DeleteUserLocation(ctx context.Context, userID, locationID string) error
 
 	GetSystemSettings(ctx context.Context) (*models.SystemSettings, error)
 	UpdateSystemSettings(ctx context.Context, payload models.SystemSettingsInput, updatedBy *string) (*models.SystemSettings, error)
@@ -209,6 +216,8 @@ var operationLabels = map[string]string{
 	"PATIENT_CREATE":            "Alta de paciente",
 	"PATIENT_UPDATE":            "Actualización de paciente",
 	"PATIENT_DELETE":            "Eliminación de paciente",
+	"PATIENT_LOCATION_CREATE":   "Registro de ubicación de paciente",
+	"PATIENT_LOCATION_DELETE":   "Eliminación de ubicación de paciente",
 	"DEVICE_CREATE":             "Alta de dispositivo",
 	"DEVICE_UPDATE":             "Actualización de dispositivo",
 	"DEVICE_DELETE":             "Eliminación de dispositivo",
@@ -227,6 +236,8 @@ var operationLabels = map[string]string{
 	"ALERT_CREATE":              "Alta de alerta",
 	"ALERT_UPDATE":              "Actualización de alerta",
 	"ALERT_DELETE":              "Eliminación de alerta",
+	"USER_LOCATION_CREATE":      "Registro de ubicación de usuario",
+	"USER_LOCATION_DELETE":      "Eliminación de ubicación de usuario",
 	"AUDIT_EXPORT":              "Exportación de auditoría",
 	"CONTENT_CREATE":            "Alta de contenido",
 	"CONTENT_UPDATE":            "Actualización de contenido",
@@ -2254,6 +2265,12 @@ type catalogsViewData struct {
 	RequiresWeight bool
 }
 
+var locationFormatHelp = []string{
+	"Latitud y longitud en grados decimales (por ejemplo 19.4326, -99.1332).",
+	"WKT de punto usando orden lon/lat, por ejemplo: POINT(-99.1332 19.4326).",
+	"WKB en hexadecimal; se admiten prefijos 0x o \\x y se ignoran espacios en blanco.",
+}
+
 type contentBlockTypesViewData struct {
 	Items []models.ContentBlockType
 }
@@ -2262,6 +2279,12 @@ type patientsViewData struct {
 	Items         []models.Patient
 	Organizations []models.Organization
 	Sexes         []models.CatalogItem
+}
+
+type patientLocationsViewData struct {
+	Patient    *models.Patient
+	Locations  []models.PatientLocation
+	FormatHelp []string
 }
 
 type devicesViewData struct {
@@ -2308,6 +2331,12 @@ type apiKeysViewData struct {
 	Keys         []models.APIKey
 	Permissions  []models.Permission
 	ShowInactive bool
+}
+
+type userLocationsViewData struct {
+	User       *models.User
+	Locations  []models.UserLocation
+	FormatHelp []string
 }
 
 type systemSettingsViewData struct {
@@ -2504,6 +2533,98 @@ func (h *Handlers) UsersUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "USER_STATUS_UPDATE", "user", &userID, map[string]any{"status": status})
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Estado actualizado"})
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
+}
+
+func (h *Handlers) UserLocationsIndex(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	user, err := h.repo.GetUserSummary(ctx, userID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.NotFound(w, r)
+		} else {
+			http.Error(w, "No se pudo cargar el usuario", http.StatusInternalServerError)
+		}
+		return
+	}
+
+	locations, err := h.repo.ListUserLocations(ctx, userID, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
+		return
+	}
+
+	data := userLocationsViewData{User: user, Locations: locations, FormatHelp: locationFormatHelp}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Usuarios", URL: "/superadmin/users"}, {Label: fmt.Sprintf("%s", user.Name), URL: fmt.Sprintf("/superadmin/users/%s/locations", userID)}, {Label: "Ubicaciones"}}
+	h.render(w, r, "superadmin/user_locations.html", fmt.Sprintf("Ubicaciones de %s", user.Name), data, crumbs)
+}
+
+func (h *Handlers) UserLocationsCreate(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+
+	input, message, err := parseLocationForm(r)
+	if err != nil {
+		flashType := "error"
+		if errors.Is(err, ErrMissingGeometry) || errors.Is(err, ErrInvalidGeometry) {
+			flashType = "warn"
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: flashType, Message: message})
+		http.Redirect(w, r, fmt.Sprintf("/superadmin/users/%s/locations", userID), http.StatusSeeOther)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	location, err := h.repo.CreateUserLocation(ctx, userID, models.UserLocationInput(input))
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrMissingGeometry):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "warn", Message: "Debes capturar una geometría"})
+		case errors.Is(err, ErrInvalidGeometry):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo interpretar la geometría"})
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+				http.NotFound(w, r)
+				return
+			}
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la ubicación"})
+		}
+		http.Redirect(w, r, fmt.Sprintf("/superadmin/users/%s/locations", userID), http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "USER_LOCATION_CREATE", "user_location", &location.ID, map[string]any{"user_id": userID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación registrada"})
+	http.Redirect(w, r, fmt.Sprintf("/superadmin/users/%s/locations", userID), http.StatusSeeOther)
+}
+
+func (h *Handlers) UserLocationsDelete(w http.ResponseWriter, r *http.Request) {
+	userID := chi.URLParam(r, "id")
+	locationID := chi.URLParam(r, "locationID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.repo.DeleteUserLocation(ctx, userID, locationID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "warn", Message: "Ubicación no encontrada"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la ubicación"})
+		}
+		http.Redirect(w, r, fmt.Sprintf("/superadmin/users/%s/locations", userID), http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "USER_LOCATION_DELETE", "user_location", &locationID, map[string]any{"user_id": userID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación eliminada"})
+	http.Redirect(w, r, fmt.Sprintf("/superadmin/users/%s/locations", userID), http.StatusSeeOther)
 }
 
 func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
@@ -3191,6 +3312,183 @@ func (h *Handlers) PatientsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "PATIENT_DELETE", "patient", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente eliminado"})
 	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+func parseLocationForm(r *http.Request) (models.LocationInput, string, error) {
+	var input models.LocationInput
+
+	ts := strings.TrimSpace(r.FormValue("timestamp"))
+	if ts != "" {
+		parsed, err := time.ParseInLocation("2006-01-02T15:04", ts, time.Local)
+		if err != nil {
+			return input, "Fecha y hora inválidas", err
+		}
+		input.Timestamp = &parsed
+	}
+
+	source := strings.TrimSpace(r.FormValue("source"))
+	if source != "" {
+		input.Source = &source
+	}
+
+	accuracyStr := strings.TrimSpace(r.FormValue("accuracy"))
+	if accuracyStr != "" {
+		accuracyVal, err := strconv.ParseFloat(accuracyStr, 64)
+		if err != nil {
+			return input, "Precisión inválida", err
+		}
+		if accuracyVal < 0 {
+			return input, "La precisión debe ser positiva", fmt.Errorf("negative accuracy")
+		}
+		input.AccuracyMeters = &accuracyVal
+	}
+
+	latStr := strings.TrimSpace(r.FormValue("latitude"))
+	if latStr != "" {
+		latVal, err := strconv.ParseFloat(latStr, 64)
+		if err != nil {
+			return input, "Latitud inválida", err
+		}
+		if latVal < -90 || latVal > 90 {
+			return input, "La latitud debe estar entre -90 y 90", fmt.Errorf("latitude out of range")
+		}
+		input.Latitude = &latVal
+	}
+
+	lonStr := strings.TrimSpace(r.FormValue("longitude"))
+	if lonStr != "" {
+		lonVal, err := strconv.ParseFloat(lonStr, 64)
+		if err != nil {
+			return input, "Longitud inválida", err
+		}
+		if lonVal < -180 || lonVal > 180 {
+			return input, "La longitud debe estar entre -180 y 180", fmt.Errorf("longitude out of range")
+		}
+		input.Longitude = &lonVal
+	}
+
+	wkt := strings.TrimSpace(r.FormValue("wkt"))
+	if wkt != "" {
+		input.WKT = &wkt
+	}
+
+	wkbHex := strings.TrimSpace(r.FormValue("wkb_hex"))
+	if wkbHex != "" {
+		data, err := decodeWKBHex(wkbHex)
+		if err != nil {
+			return input, "El WKB no tiene un formato hexadecimal válido", err
+		}
+		if len(data) > 0 {
+			input.WKB = data
+		}
+	}
+
+	if input.WKT == nil && len(input.WKB) == 0 {
+		switch {
+		case input.Latitude != nil && input.Longitude != nil:
+			// ok
+		case input.Latitude == nil && input.Longitude == nil:
+			return input, "Captura latitud/longitud, WKT o WKB para registrar la ubicación", ErrMissingGeometry
+		case input.Latitude == nil:
+			return input, "Falta la latitud", ErrInvalidGeometry
+		default:
+			return input, "Falta la longitud", ErrInvalidGeometry
+		}
+	}
+
+	return input, "", nil
+}
+
+func (h *Handlers) PatientLocationsIndex(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	patient, err := h.repo.GetPatient(ctx, patientID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, "No se pudo cargar el paciente", http.StatusInternalServerError)
+		return
+	}
+
+	locations, err := h.repo.ListPatientLocations(ctx, patientID, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
+		return
+	}
+
+	data := patientLocationsViewData{Patient: patient, Locations: locations, FormatHelp: locationFormatHelp}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes", URL: "/superadmin/patients"}, {Label: fmt.Sprintf("%s", patient.Name), URL: fmt.Sprintf("/superadmin/patients/%s/locations", patientID)}, {Label: "Ubicaciones"}}
+	h.render(w, r, "superadmin/patient_locations.html", fmt.Sprintf("Ubicaciones de %s", patient.Name), data, crumbs)
+}
+
+func (h *Handlers) PatientLocationsCreate(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+
+	input, message, err := parseLocationForm(r)
+	if err != nil {
+		flashType := "error"
+		if errors.Is(err, ErrMissingGeometry) || errors.Is(err, ErrInvalidGeometry) {
+			flashType = "warn"
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: flashType, Message: message})
+		http.Redirect(w, r, fmt.Sprintf("/superadmin/patients/%s/locations", patientID), http.StatusSeeOther)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	location, err := h.repo.CreatePatientLocation(ctx, patientID, models.PatientLocationInput(input))
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrMissingGeometry):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "warn", Message: "Debes capturar una geometría"})
+		case errors.Is(err, ErrInvalidGeometry):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo interpretar la geometría"})
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+				http.NotFound(w, r)
+				return
+			}
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la ubicación"})
+		}
+		http.Redirect(w, r, fmt.Sprintf("/superadmin/patients/%s/locations", patientID), http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "PATIENT_LOCATION_CREATE", "patient_location", &location.ID, map[string]any{"patient_id": patientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación registrada"})
+	http.Redirect(w, r, fmt.Sprintf("/superadmin/patients/%s/locations", patientID), http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientLocationsDelete(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "id")
+	locationID := chi.URLParam(r, "locationID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	if err := h.repo.DeletePatientLocation(ctx, patientID, locationID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "warn", Message: "Ubicación no encontrada"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la ubicación"})
+		}
+		http.Redirect(w, r, fmt.Sprintf("/superadmin/patients/%s/locations", patientID), http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "PATIENT_LOCATION_DELETE", "patient_location", &locationID, map[string]any{"patient_id": patientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación eliminada"})
+	http.Redirect(w, r, fmt.Sprintf("/superadmin/patients/%s/locations", patientID), http.StatusSeeOther)
 }
 
 // Devices

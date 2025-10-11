@@ -70,8 +70,15 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 		s.Route("/patients", func(pr chi.Router) {
 			pr.Get("/", uiHandlers.PatientsIndex)
 			pr.Post("/", uiHandlers.PatientsCreate)
-			pr.Post("/{id}/update", uiHandlers.PatientsUpdate)
-			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
+			pr.Route("/{id}", func(pir chi.Router) {
+				pir.Post("/update", uiHandlers.PatientsUpdate)
+				pir.Post("/delete", uiHandlers.PatientsDelete)
+				pir.Route("/locations", func(lr chi.Router) {
+					lr.Get("/", uiHandlers.PatientLocationsIndex)
+					lr.Post("/", uiHandlers.PatientLocationsCreate)
+					lr.Post("/{locationID}/delete", uiHandlers.PatientLocationsDelete)
+				})
+			})
 		})
 
 		s.Route("/devices", func(dr chi.Router) {
@@ -124,7 +131,14 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 
 		s.Route("/users", func(ur chi.Router) {
 			ur.Get("/", uiHandlers.UsersIndex)
-			ur.Post("/{id}/status", uiHandlers.UsersUpdateStatus)
+			ur.Route("/{id}", func(usr chi.Router) {
+				usr.Post("/status", uiHandlers.UsersUpdateStatus)
+				usr.Route("/locations", func(lr chi.Router) {
+					lr.Get("/", uiHandlers.UserLocationsIndex)
+					lr.Post("/", uiHandlers.UserLocationsCreate)
+					lr.Post("/{locationID}/delete", uiHandlers.UserLocationsDelete)
+				})
+			})
 		})
 
 		s.Route("/roles", func(rr chi.Router) {

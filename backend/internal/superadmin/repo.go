@@ -53,6 +53,11 @@ func (r *Repo) Ping(ctx context.Context) error {
 
 var nowFn = time.Now
 
+var (
+	ErrMissingGeometry = errors.New("missing geometry input")
+	ErrInvalidGeometry = errors.New("invalid geometry input")
+)
+
 func stringParam(ptr *string, trim bool) any {
 	if ptr == nil {
 		return nil
@@ -88,6 +93,13 @@ func float32Param(ptr *float32) any {
 	return *ptr
 }
 
+func float64Param(ptr *float64) any {
+	if ptr == nil {
+		return nil
+	}
+	return *ptr
+}
+
 func jsonParam(ptr *string) any {
 	if ptr == nil {
 		return nil
@@ -97,6 +109,25 @@ func jsonParam(ptr *string) any {
 		return nil
 	}
 	return []byte(v)
+}
+
+func geometryClause(basePos int, input models.LocationInput) (string, []any, error) {
+	if input.WKT != nil {
+		if trimmed := strings.TrimSpace(*input.WKT); trimmed != "" {
+			return fmt.Sprintf("ST_GeomFromText($%d, 4326)", basePos), []any{trimmed}, nil
+		}
+	}
+	if len(input.WKB) > 0 {
+		return fmt.Sprintf("ST_GeomFromWKB($%d, 4326)", basePos), []any{input.WKB}, nil
+	}
+	switch {
+	case input.Longitude != nil && input.Latitude != nil:
+		return fmt.Sprintf("ST_SetSRID(ST_MakePoint($%d, $%d), 4326)", basePos, basePos+1), []any{*input.Longitude, *input.Latitude}, nil
+	case input.Longitude != nil || input.Latitude != nil:
+		return "", nil, ErrInvalidGeometry
+	default:
+		return "", nil, ErrMissingGeometry
+	}
 }
 
 func invitationStatus(inv *models.OrgInvitation, now time.Time) string {
@@ -470,6 +501,61 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 	return out, rows.Err()
 }
 
+func (r *Repo) GetPatient(ctx context.Context, id string) (*models.Patient, error) {
+	var (
+		patient  models.Patient
+		orgID    sql.NullString
+		orgName  sql.NullString
+		birth    sql.NullTime
+		sexCode  sql.NullString
+		sexLabel sql.NullString
+		risk     sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+SELECT p.id::text,
+       p.org_id::text,
+       o.name::text,
+        p.person_name::text,
+        p.birthdate,
+        sx.code::text,
+        sx.label::text,
+        p.risk_level::text,
+        p.created_at
+FROM heartguard.patients p
+LEFT JOIN heartguard.organizations o ON o.id = p.org_id
+LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+WHERE p.id = $1
+`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		patient.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		patient.OrgName = &v
+	}
+	if birth.Valid {
+		bt := birth.Time
+		patient.Birthdate = &bt
+	}
+	if sexCode.Valid {
+		v := sexCode.String
+		patient.SexCode = &v
+	}
+	if sexLabel.Valid {
+		v := sexLabel.String
+		patient.SexLabel = &v
+	}
+	if risk.Valid {
+		v := risk.String
+		patient.RiskLevel = &v
+	}
+	return &patient, nil
+}
+
 func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error) {
 	var (
 		patient  models.Patient
@@ -560,6 +646,298 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 		return err
 	}
 	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Patient locations
+// ------------------------------
+
+func (r *Repo) ListPatientLocations(ctx context.Context, patientID string, limit, offset int) ([]models.PatientLocation, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT pl.id::text,
+       pl.patient_id::text,
+       p.person_name::text,
+       pl.ts,
+       pl.source::text,
+       pl.accuracy_m::float8,
+       ST_Y(pl.geom) AS latitude,
+       ST_X(pl.geom) AS longitude,
+       ST_AsText(pl.geom) AS wkt,
+       encode(ST_AsBinary(pl.geom), 'hex') AS wkb
+FROM heartguard.patient_locations pl
+JOIN heartguard.patients p ON p.id = pl.patient_id
+WHERE pl.patient_id = $1
+ORDER BY pl.ts DESC
+LIMIT $2 OFFSET $3
+`, patientID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.PatientLocation, 0, limit)
+	for rows.Next() {
+		var (
+			location  models.PatientLocation
+			patient   sql.NullString
+			source    sql.NullString
+			accuracy  sql.NullFloat64
+			wkt       sql.NullString
+			wkb       sql.NullString
+			latitude  float64
+			longitude float64
+		)
+		if err := rows.Scan(&location.ID, &location.PatientID, &patient, &location.Timestamp, &source, &accuracy, &latitude, &longitude, &wkt, &wkb); err != nil {
+			return nil, err
+		}
+		if patient.Valid {
+			v := patient.String
+			location.PatientName = &v
+		}
+		if source.Valid {
+			v := source.String
+			location.Source = &v
+		}
+		if accuracy.Valid {
+			v := accuracy.Float64
+			location.AccuracyMeters = &v
+		}
+		location.Latitude = latitude
+		location.Longitude = longitude
+		if wkt.Valid {
+			location.WKT = wkt.String
+		}
+		if wkb.Valid {
+			location.WKBHex = strings.ToUpper(wkb.String)
+		}
+		out = append(out, location)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreatePatientLocation(ctx context.Context, patientID string, input models.PatientLocationInput) (*models.PatientLocation, error) {
+	geomSQL, geomArgs, err := geometryClause(3, models.LocationInput(input))
+	if err != nil {
+		return nil, err
+	}
+
+	args := []any{patientID, timeParam(input.Timestamp)}
+	args = append(args, geomArgs...)
+	sourceIdx := 3 + len(geomArgs)
+	accuracyIdx := sourceIdx + 1
+
+	query := fmt.Sprintf(`
+INSERT INTO heartguard.patient_locations (patient_id, ts, geom, source, accuracy_m)
+VALUES ($1, COALESCE($2, NOW()), %s, $%d, $%d)
+RETURNING id::text,
+          patient_id::text,
+          (SELECT p.person_name::text FROM heartguard.patients p WHERE p.id = patient_id) AS patient_name,
+          ts,
+          source::text,
+          accuracy_m::float8,
+          ST_Y(geom) AS latitude,
+          ST_X(geom) AS longitude,
+          ST_AsText(geom) AS wkt,
+          encode(ST_AsBinary(geom), 'hex') AS wkb
+`, geomSQL, sourceIdx, accuracyIdx)
+
+	args = append(args, stringParam(input.Source, true), float64Param(input.AccuracyMeters))
+
+	var (
+		location models.PatientLocation
+		patient  sql.NullString
+		source   sql.NullString
+		accuracy sql.NullFloat64
+		wkt      sql.NullString
+		wkb      sql.NullString
+	)
+
+	err = r.pool.QueryRow(ctx, query, args...).Scan(&location.ID, &location.PatientID, &patient, &location.Timestamp, &source, &accuracy, &location.Latitude, &location.Longitude, &wkt, &wkb)
+	if err != nil {
+		return nil, err
+	}
+	if patient.Valid {
+		v := patient.String
+		location.PatientName = &v
+	}
+	if source.Valid {
+		v := source.String
+		location.Source = &v
+	}
+	if accuracy.Valid {
+		v := accuracy.Float64
+		location.AccuracyMeters = &v
+	}
+	if wkt.Valid {
+		location.WKT = wkt.String
+	}
+	if wkb.Valid {
+		location.WKBHex = strings.ToUpper(wkb.String)
+	}
+	return &location, nil
+}
+
+func (r *Repo) DeletePatientLocation(ctx context.Context, patientID, locationID string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM heartguard.patient_locations WHERE patient_id = $1 AND id = $2`, patientID, locationID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// User locations
+// ------------------------------
+
+func (r *Repo) ListUserLocations(ctx context.Context, userID string, limit, offset int) ([]models.UserLocation, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT ul.id::text,
+       ul.user_id::text,
+       u.name::text,
+       u.email::text,
+       ul.ts,
+       ul.source::text,
+       ul.accuracy_m::float8,
+       ST_Y(ul.geom) AS latitude,
+       ST_X(ul.geom) AS longitude,
+       ST_AsText(ul.geom) AS wkt,
+       encode(ST_AsBinary(ul.geom), 'hex') AS wkb
+FROM heartguard.user_locations ul
+JOIN heartguard.users u ON u.id = ul.user_id
+WHERE ul.user_id = $1
+ORDER BY ul.ts DESC
+LIMIT $2 OFFSET $3
+`, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.UserLocation, 0, limit)
+	for rows.Next() {
+		var (
+			location  models.UserLocation
+			name      sql.NullString
+			email     sql.NullString
+			source    sql.NullString
+			accuracy  sql.NullFloat64
+			wkt       sql.NullString
+			wkb       sql.NullString
+			latitude  float64
+			longitude float64
+		)
+		if err := rows.Scan(&location.ID, &location.UserID, &name, &email, &location.Timestamp, &source, &accuracy, &latitude, &longitude, &wkt, &wkb); err != nil {
+			return nil, err
+		}
+		if name.Valid {
+			v := name.String
+			location.UserName = &v
+		}
+		if email.Valid {
+			v := email.String
+			location.UserEmail = &v
+		}
+		if source.Valid {
+			v := source.String
+			location.Source = &v
+		}
+		if accuracy.Valid {
+			v := accuracy.Float64
+			location.AccuracyMeters = &v
+		}
+		location.Latitude = latitude
+		location.Longitude = longitude
+		if wkt.Valid {
+			location.WKT = wkt.String
+		}
+		if wkb.Valid {
+			location.WKBHex = strings.ToUpper(wkb.String)
+		}
+		out = append(out, location)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateUserLocation(ctx context.Context, userID string, input models.UserLocationInput) (*models.UserLocation, error) {
+	geomSQL, geomArgs, err := geometryClause(3, models.LocationInput(input))
+	if err != nil {
+		return nil, err
+	}
+
+	args := []any{userID, timeParam(input.Timestamp)}
+	args = append(args, geomArgs...)
+	sourceIdx := 3 + len(geomArgs)
+	accuracyIdx := sourceIdx + 1
+
+	query := fmt.Sprintf(`
+INSERT INTO heartguard.user_locations (user_id, ts, geom, source, accuracy_m)
+VALUES ($1, COALESCE($2, NOW()), %s, $%d, $%d)
+RETURNING id::text,
+          user_id::text,
+          (SELECT u.name::text FROM heartguard.users u WHERE u.id = user_id) AS user_name,
+          (SELECT u.email::text FROM heartguard.users u WHERE u.id = user_id) AS user_email,
+          ts,
+          source::text,
+          accuracy_m::float8,
+          ST_Y(geom) AS latitude,
+          ST_X(geom) AS longitude,
+          ST_AsText(geom) AS wkt,
+          encode(ST_AsBinary(geom), 'hex') AS wkb
+`, geomSQL, sourceIdx, accuracyIdx)
+
+	args = append(args, stringParam(input.Source, true), float64Param(input.AccuracyMeters))
+
+	var (
+		location models.UserLocation
+		name     sql.NullString
+		email    sql.NullString
+		source   sql.NullString
+		accuracy sql.NullFloat64
+		wkt      sql.NullString
+		wkb      sql.NullString
+	)
+
+	err = r.pool.QueryRow(ctx, query, args...).Scan(&location.ID, &location.UserID, &name, &email, &location.Timestamp, &source, &accuracy, &location.Latitude, &location.Longitude, &wkt, &wkb)
+	if err != nil {
+		return nil, err
+	}
+	if name.Valid {
+		v := name.String
+		location.UserName = &v
+	}
+	if email.Valid {
+		v := email.String
+		location.UserEmail = &v
+	}
+	if source.Valid {
+		v := source.String
+		location.Source = &v
+	}
+	if accuracy.Valid {
+		v := accuracy.Float64
+		location.AccuracyMeters = &v
+	}
+	if wkt.Valid {
+		location.WKT = wkt.String
+	}
+	if wkb.Valid {
+		location.WKBHex = strings.ToUpper(wkb.String)
+	}
+	return &location, nil
+}
+
+func (r *Repo) DeleteUserLocation(ctx context.Context, userID, locationID string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM heartguard.user_locations WHERE user_id = $1 AND id = $2`, userID, locationID)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil

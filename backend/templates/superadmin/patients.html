@@ -59,65 +59,68 @@
 					<th></th>
 				</tr>
 			</thead>
-			<tbody>
-				{{range .Data.Items}}
-				{{$patient := .}}
-				<tr>
-					<td>{{$patient.Name}}</td>
-					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
-					<td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
-					<td>{{if ne (stringValue $patient.RiskLevel) ""}}{{stringValue $patient.RiskLevel}}{{else}}—{{end}}</td>
-					<td>{{formatDatePtr $patient.Birthdate}}</td>
-					<td>{{formatTime $patient.CreatedAt}}</td>
-					<td class="hg-flex">
-						<details>
-							<summary>Editar</summary>
-							<form method="post" action="/superadmin/patients/{{$patient.ID}}/update" class="hg-form-grid">
-								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-								<div class="hg-form-field">
-									<label>Nombre</label>
-									<input name="name" type="text" value="{{$patient.Name}}" required />
-								</div>
-								<div class="hg-form-field">
-									<label>Organización</label>
-									<select name="org_id">
-										<option value="">Sin organización</option>
-										{{range $.Data.Organizations}}
-										<option value="{{.ID}}" {{if eq .ID (stringValue $patient.OrgID)}}selected{{end}}>{{.Name}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Fecha de nacimiento</label>
-									<input name="birthdate" type="date" value="{{formatDatePtr $patient.Birthdate}}" />
-								</div>
-								<div class="hg-form-field">
-									<label>Sexo</label>
-									<select name="sex_code">
-										<option value="">Sin especificar</option>
-										{{range $.Data.Sexes}}
-										<option value="{{.Code}}" {{if eq .Code (stringValue $patient.SexCode)}}selected{{end}}>{{.Label}}</option>
-										{{end}}
-									</select>
-								</div>
-								<div class="hg-form-field">
-									<label>Riesgo</label>
-									<input name="risk_level" type="text" value="{{stringValue $patient.RiskLevel}}" />
-								</div>
-								<div class="hg-form-actions">
-									<button type="submit">Guardar</button>
-								</div>
-							</form>
-						</details>
-						<form method="post" action="/superadmin/patients/{{$patient.ID}}/delete" data-hg-confirm="¿Eliminar paciente?" class="hg-inline-form">
-							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
-						</form>
-					</td>
-				</tr>
-				{{else}}
-				<tr>
-					<td colspan="7" class="hg-empty-cell">Sin pacientes registrados.</td>
+                <tbody>
+                        {{range .Data.Items}}
+                        {{$patient := .}}
+                        <tr>
+                                <td>{{$patient.Name}}</td>
+                                <td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
+                                <td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
+                                <td>{{if ne (stringValue $patient.RiskLevel) ""}}{{stringValue $patient.RiskLevel}}{{else}}—{{end}}</td>
+                                <td>{{formatDatePtr $patient.Birthdate}}</td>
+                                <td>{{formatTime $patient.CreatedAt}}</td>
+                                <td>
+                                        <div class="hg-flex hg-gap">
+                                                <a class="hg-link" href="/superadmin/patients/{{$patient.ID}}/locations">Ubicaciones</a>
+                                                <details>
+                                                        <summary>Editar</summary>
+                                                        <form method="post" action="/superadmin/patients/{{$patient.ID}}/update" class="hg-form-grid">
+                                                                <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                                <div class="hg-form-field">
+                                                                        <label>Nombre</label>
+                                                                        <input name="name" type="text" value="{{$patient.Name}}" required />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Organización</label>
+                                                                        <select name="org_id">
+                                                                                <option value="">Sin organización</option>
+                                                                                {{range $.Data.Organizations}}
+                                                                                <option value="{{.ID}}" {{if eq .ID (stringValue $patient.OrgID)}}selected{{end}}>{{.Name}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Fecha de nacimiento</label>
+                                                                        <input name="birthdate" type="date" value="{{formatDatePtr $patient.Birthdate}}" />
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Sexo</label>
+                                                                        <select name="sex_code">
+                                                                                <option value="">Sin especificar</option>
+                                                                                {{range $.Data.Sexes}}
+                                                                                <option value="{{.Code}}" {{if eq .Code (stringValue $patient.SexCode)}}selected{{end}}>{{.Label}}</option>
+                                                                                {{end}}
+                                                                        </select>
+                                                                </div>
+                                                                <div class="hg-form-field">
+                                                                        <label>Riesgo</label>
+                                                                        <input name="risk_level" type="text" value="{{stringValue $patient.RiskLevel}}" />
+                                                                </div>
+                                                                <div class="hg-form-actions">
+                                                                        <button type="submit">Guardar</button>
+                                                                </div>
+                                                        </form>
+                                                </details>
+                                                <form method="post" action="/superadmin/patients/{{$patient.ID}}/delete" data-hg-confirm="¿Eliminar paciente?" class="hg-inline-form">
+                                                        <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+                                                        <button type="submit" class="hg-link hg-link-danger">Eliminar</button>
+                                                </form>
+                                        </div>
+                                </td>
+                        </tr>
+                        {{else}}
+                        <tr>
+                                <td colspan="7" class="hg-empty-cell">Sin pacientes registrados.</td>
 				</tr>
 				{{end}}
 			</tbody>
