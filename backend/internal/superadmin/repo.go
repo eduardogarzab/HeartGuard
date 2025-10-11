@@ -644,7 +644,7 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 // ------------------------------
 
 func (r *Repo) ListPatientLocations(ctx context.Context, filters models.PatientLocationFilters, limit, offset int) ([]models.PatientLocation, error) {
-	query := `SELECT pl.id::text, pl.patient_id::text, p.name, pl.ts, ST_Y(pl.geom), ST_X(pl.geom), pl.source, pl.accuracy_m
+	query := `SELECT pl.id::text, pl.patient_id::text, p.person_name, pl.ts, ST_Y(pl.geom), ST_X(pl.geom), pl.source, pl.accuracy_m
 FROM patient_locations pl
 LEFT JOIN patients p ON p.id = pl.patient_id`
 	var (
@@ -718,11 +718,25 @@ func (r *Repo) CreatePatientLocation(ctx context.Context, input models.PatientLo
 	)
 	err := r.pool.QueryRow(ctx, `
 INSERT INTO patient_locations (patient_id, ts, geom, source, accuracy_m)
-VALUES ($1, COALESCE($2, NOW()), ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6)
-RETURNING id::text, patient_id::text, (SELECT name FROM patients WHERE id = patient_id), ts, ST_Y(geom), ST_X(geom), source, accuracy_m
+VALUES ($1::uuid, COALESCE($2, NOW()), ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6)
+RETURNING id::text, patient_id::text, (SELECT person_name FROM patients WHERE id = patient_id), ts, ST_Y(geom), ST_X(geom), source, accuracy_m
 `, input.PatientID, timeParam(input.RecordedAt), input.Longitude, input.Latitude, stringParam(input.Source, true), float64Param(input.AccuracyM)).
 		Scan(&loc.ID, &loc.PatientID, &name, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy)
 	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23503":
+				// Foreign key violation
+				if strings.Contains(pgErr.Message, "patient") {
+					return nil, fmt.Errorf("el paciente especificado no existe")
+				}
+				return nil, fmt.Errorf("referencia inválida: %s", pgErr.Message)
+			case "22P02":
+				// Invalid UUID format
+				return nil, fmt.Errorf("formato de identificador inválido")
+			}
+		}
 		return nil, err
 	}
 	if name.Valid {
@@ -1273,10 +1287,18 @@ func (r *Repo) CreateCaregiverAssignment(ctx context.Context, input models.Careg
 	note := stringParam(input.Note, true)
 	isPrimary := boolParam(input.IsPrimary)
 
+	// Handle rel_type_id: convert empty string to nil for proper NULL handling
+	var relTypeID any
+	if input.RelationshipTypeID != nil && strings.TrimSpace(*input.RelationshipTypeID) != "" {
+		relTypeID = strings.TrimSpace(*input.RelationshipTypeID)
+	} else {
+		relTypeID = nil
+	}
+
 	row := r.pool.QueryRow(ctx, `
 WITH inserted AS (
         INSERT INTO caregiver_patient (patient_id, user_id, rel_type_id, is_primary, started_at, ended_at, note)
-        VALUES ($1, $2, CASE WHEN $3 IS NULL OR $3 = '' THEN NULL ELSE $3::uuid END, COALESCE($4, FALSE), COALESCE($5, NOW()), $6, $7)
+        VALUES ($1::uuid, $2::uuid, $3::uuid, COALESCE($4, FALSE), COALESCE($5, NOW()), $6, $7)
         RETURNING patient_id, user_id, rel_type_id, is_primary, started_at, ended_at, note
 )
 SELECT i.patient_id::text, p.person_name, i.user_id::text, u.name, u.email, i.rel_type_id::text, crt.code, crt.label, i.is_primary, i.started_at, i.ended_at, i.note
@@ -1284,13 +1306,31 @@ FROM inserted i
 JOIN patients p ON p.id = i.patient_id
 JOIN users u ON u.id = i.user_id
 LEFT JOIN caregiver_relationship_types crt ON crt.id = i.rel_type_id
-`, input.PatientID, input.CaregiverID, stringParam(input.RelationshipTypeID, true), isPrimary, started, ended, note)
+`, input.PatientID, input.CaregiverID, relTypeID, isPrimary, started, ended, note)
 
 	assignment, err := scanCaregiverAssignment(row)
 	if err != nil {
 		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			return nil, ErrDuplicateCaregiverAssignment
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23505":
+				return nil, ErrDuplicateCaregiverAssignment
+			case "23503":
+				// Foreign key violation - provide more context
+				if strings.Contains(pgErr.Message, "patient") {
+					return nil, fmt.Errorf("el paciente especificado no existe")
+				}
+				if strings.Contains(pgErr.Message, "user") {
+					return nil, fmt.Errorf("el cuidador especificado no existe")
+				}
+				if strings.Contains(pgErr.Message, "rel_type") {
+					return nil, fmt.Errorf("el tipo de relación especificado no existe")
+				}
+				return nil, fmt.Errorf("referencia inválida: %s", pgErr.Message)
+			case "22P02":
+				// Invalid UUID format
+				return nil, fmt.Errorf("formato de identificador inválido")
+			}
 		}
 		return nil, err
 	}

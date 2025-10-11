@@ -3425,7 +3425,10 @@ func (h *Handlers) PatientLocationsIndex(w http.ResponseWriter, r *http.Request)
 
 	locations, err := h.repo.ListPatientLocations(ctx, filters, 200, 0)
 	if err != nil {
-		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
+		if h.logger != nil {
+			h.logger.Error("failed to load patient locations", zap.Error(err))
+		}
+		http.Error(w, fmt.Sprintf("No se pudieron cargar las ubicaciones: %v", err), http.StatusInternalServerError)
 		return
 	}
 	patients, err := h.repo.ListPatients(ctx, 200, 0)
@@ -3522,13 +3525,21 @@ func (h *Handlers) PatientLocationsCreate(w http.ResponseWriter, r *http.Request
 	defer cancel()
 	location, err := h.repo.CreatePatientLocation(ctx, input)
 	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente no encontrado"})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
+		message := "No se pudo registrar la ubicación"
+		// Check for specific error messages from the repository
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "paciente") || strings.Contains(errMsg, "no existe") {
+			message = errMsg
+		} else if strings.Contains(errMsg, "formato") || strings.Contains(errMsg, "identificador") {
+			message = errMsg
 		}
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la ubicación"})
+		// Log the full error for debugging
+		if h.logger != nil {
+			h.logger.Error("patient location create failed",
+				zap.Error(err),
+				zap.String("patient_id", patientID))
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: message})
 		http.Redirect(w, r, redirect, http.StatusSeeOther)
 		return
 	}
@@ -4010,9 +4021,26 @@ func (h *Handlers) CaregiversAssignmentsCreate(w http.ResponseWriter, r *http.Re
 		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
 		return
 	}
+	// Validate UUIDs
+	if err := h.validate.Var(patientID, "uuid4"); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El ID del paciente no es válido"})
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+	if err := h.validate.Var(caregiverID, "uuid4"); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El ID del cuidador no es válido"})
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
 	relRaw := strings.TrimSpace(r.FormValue("rel_type_id"))
 	var relPtr *string
 	if relRaw != "" {
+		// Validate relationship type UUID if provided
+		if err := h.validate.Var(relRaw, "uuid4"); err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El ID del tipo de relación no es válido"})
+			http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+			return
+		}
 		relPtr = &relRaw
 	}
 	primaryRaw := strings.TrimSpace(r.FormValue("is_primary"))
@@ -4066,6 +4094,19 @@ func (h *Handlers) CaregiversAssignmentsCreate(w http.ResponseWriter, r *http.Re
 		message := "No se pudo asignar el cuidador"
 		if errors.Is(err, ErrDuplicateCaregiverAssignment) {
 			message = "Este cuidador ya está asignado a este paciente"
+		} else if err != nil {
+			// Show the actual error message if it's descriptive
+			errMsg := err.Error()
+			if errMsg != "" && len(errMsg) < 200 {
+				message = fmt.Sprintf("Error al asignar cuidador: %s", errMsg)
+			}
+			// Log the full error for debugging
+			if h.logger != nil {
+				h.logger.Error("caregiver assignment create failed",
+					zap.Error(err),
+					zap.String("patient_id", patientID),
+					zap.String("caregiver_id", caregiverID))
+			}
 		}
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: message})
 		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)

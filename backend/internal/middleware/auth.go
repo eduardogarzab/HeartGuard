@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"heartguard-superadmin/internal/models"
 	"heartguard-superadmin/internal/session"
@@ -121,14 +122,33 @@ func CSRF(sm *session.Manager) func(http.Handler) http.Handler {
 				http.Error(w, "unauthorized", http.StatusUnauthorized)
 				return
 			}
-			if err := r.ParseForm(); err != nil {
-				http.Error(w, "invalid form", http.StatusBadRequest)
-				return
+			
+			// Handle both regular forms and multipart forms
+			var token string
+			contentType := r.Header.Get("Content-Type")
+			
+			// Check if it's a multipart form
+			if strings.HasPrefix(contentType, "multipart/form-data") {
+				// For multipart forms, parse it first
+				if err := r.ParseMultipartForm(32 << 20); err != nil {
+					http.Error(w, "invalid form", http.StatusBadRequest)
+					return
+				}
+				token = r.FormValue("_csrf")
+			} else {
+				// For regular forms, use ParseForm
+				if err := r.ParseForm(); err != nil {
+					http.Error(w, "invalid form", http.StatusBadRequest)
+					return
+				}
+				token = r.FormValue("_csrf")
 			}
-			token := r.FormValue("_csrf")
+			
+			// Fallback to header if not in form
 			if token == "" {
 				token = r.Header.Get("X-CSRF-Token")
 			}
+			
 			if err := sm.ValidateCSRF(r.Context(), jti, token); err != nil {
 				http.Error(w, "csrf failure", http.StatusForbidden)
 				return
