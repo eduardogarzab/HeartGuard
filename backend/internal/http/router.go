@@ -81,6 +81,13 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			dr.Post("/{id}/delete", uiHandlers.DevicesDelete)
 		})
 
+		s.Route("/push-devices", func(pr chi.Router) {
+			pr.Get("/", uiHandlers.PushDevicesIndex)
+			pr.Post("/", uiHandlers.PushDevicesCreate)
+			pr.Post("/{id}/update", uiHandlers.PushDevicesUpdate)
+			pr.Post("/{id}/delete", uiHandlers.PushDevicesDelete)
+		})
+
 		s.Route("/signal-streams", func(sr chi.Router) {
 			sr.Get("/", uiHandlers.SignalStreamsIndex)
 			sr.Post("/", uiHandlers.SignalStreamsCreate)
@@ -119,6 +126,10 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			ar.Get("/", uiHandlers.AlertsIndex)
 			ar.Post("/", uiHandlers.AlertsCreate)
 			ar.Post("/{id}/update", uiHandlers.AlertsUpdate)
+			ar.Post("/{id}/assignments", uiHandlers.AlertAssignmentsCreate)
+			ar.Post("/{id}/acks", uiHandlers.AlertAcksCreate)
+			ar.Post("/{id}/resolutions", uiHandlers.AlertResolutionsCreate)
+			ar.Post("/{id}/deliveries", uiHandlers.AlertDeliveriesCreate)
 			ar.Post("/{id}/delete", uiHandlers.AlertsDelete)
 		})
 

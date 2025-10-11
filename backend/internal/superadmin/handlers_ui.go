@@ -68,6 +68,11 @@ type Repository interface {
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
 
+	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
+	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
+	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
+	DeletePushDevice(ctx context.Context, id string) error
+
 	ListDevices(ctx context.Context, limit, offset int) ([]models.Device, error)
 	CreateDevice(ctx context.Context, input models.DeviceInput) (*models.Device, error)
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
@@ -108,6 +113,14 @@ type Repository interface {
 	DeleteAlert(ctx context.Context, id string) error
 	ListAlertTypes(ctx context.Context) ([]models.AlertType, error)
 	ListAlertStatuses(ctx context.Context) ([]models.AlertStatus, error)
+	ListAlertAssignments(ctx context.Context, alertID string) ([]models.AlertAssignment, error)
+	CreateAlertAssignment(ctx context.Context, alertID, assigneeUserID string, assignedBy *string) (*models.AlertAssignment, error)
+	ListAlertAcks(ctx context.Context, alertID string) ([]models.AlertAck, error)
+	CreateAlertAck(ctx context.Context, alertID string, ackBy *string, note *string) (*models.AlertAck, error)
+	ListAlertResolutions(ctx context.Context, alertID string) ([]models.AlertResolution, error)
+	CreateAlertResolution(ctx context.Context, alertID string, resolvedBy *string, outcome, note *string) (*models.AlertResolution, error)
+	ListAlertDeliveries(ctx context.Context, alertID string) ([]models.AlertDelivery, error)
+	CreateAlertDelivery(ctx context.Context, alertID, channelID, target, deliveryStatusID string, responsePayload *string) (*models.AlertDelivery, error)
 
 	ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error)
 	CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error)
@@ -206,6 +219,9 @@ var operationLabels = map[string]string{
 	"APIKEY_CREATE":             "Creación de API Key",
 	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
 	"APIKEY_REVOKE":             "Revocación de API Key",
+	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
 	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
 	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
 	"CATALOG_CREATE":            "Alta en catálogo",
@@ -241,6 +257,10 @@ var operationLabels = map[string]string{
 	"ALERT_CREATE":              "Alta de alerta",
 	"ALERT_UPDATE":              "Actualización de alerta",
 	"ALERT_DELETE":              "Eliminación de alerta",
+	"ALERT_ASSIGNMENT_CREATE":   "Registro de asignación de alerta",
+	"ALERT_ACK_CREATE":          "Registro de acuse de alerta",
+	"ALERT_RESOLUTION_CREATE":   "Registro de resolución de alerta",
+	"ALERT_DELIVERY_CREATE":     "Registro de entrega de alerta",
 	"AUDIT_EXPORT":              "Exportación de auditoría",
 	"CONTENT_CREATE":            "Alta de contenido",
 	"CONTENT_UPDATE":            "Actualización de contenido",
@@ -2291,6 +2311,14 @@ type timeseriesBindingsViewData struct {
 	Bindings         []models.TimeseriesBinding
 }
 
+type pushDevicesViewData struct {
+	Items          []models.PushDevice
+	Users          []models.User
+	Platforms      []models.CatalogItem
+	FilterUserID   string
+	FilterPlatform string
+}
+
 type signalStreamsViewData struct {
 	ActiveTab   string
 	Items       []models.SignalStream
@@ -2317,13 +2345,21 @@ type inferencesViewData struct {
 }
 
 type alertsViewData struct {
-	Items         []models.Alert
-	Patients      []models.Patient
-	AlertTypes    []models.AlertType
-	AlertStatuses []models.AlertStatus
-	AlertLevels   []models.CatalogItem
-	Models        []models.MLModel
-	Inferences    []models.Inference
+	Items            []models.Alert
+	Patients         []models.Patient
+	AlertTypes       []models.AlertType
+	AlertStatuses    []models.AlertStatus
+	AlertLevels      []models.CatalogItem
+	Models           []models.MLModel
+	Inferences       []models.Inference
+	Assignments      map[string][]models.AlertAssignment
+	Acks             map[string][]models.AlertAck
+	Resolutions      map[string][]models.AlertResolution
+	Deliveries       map[string][]models.AlertDelivery
+	Users            []models.User
+	AlertChannels    []models.CatalogItem
+	DeliveryStatuses []models.CatalogItem
+	CurrentUserID    string
 }
 
 type apiKeysViewData struct {
@@ -3370,6 +3406,158 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
 }
 
+// Push devices
+
+func (h *Handlers) PushDevicesIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	query := r.URL.Query()
+	filterUser := strings.TrimSpace(query.Get("user_id"))
+	var userFilter *string
+	if filterUser != "" {
+		userFilter = &filterUser
+	}
+	filterPlatform := strings.TrimSpace(query.Get("platform"))
+	var platformFilter *string
+	if filterPlatform != "" {
+		platformFilter = &filterPlatform
+	}
+
+	devices, err := h.repo.ListPushDevices(ctx, userFilter, platformFilter, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los dispositivos push", http.StatusInternalServerError)
+		return
+	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+	platforms, err := h.repo.ListCatalog(ctx, "platforms", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las plataformas", http.StatusInternalServerError)
+		return
+	}
+
+	data := pushDevicesViewData{Items: devices, Users: users, Platforms: platforms, FilterUserID: filterUser, FilterPlatform: filterPlatform}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Dispositivos push"}}
+	h.render(w, r, "superadmin/push_devices.html", "Dispositivos push", data, crumbs)
+}
+
+func (h *Handlers) PushDevicesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	platformCode := strings.TrimSpace(r.FormValue("platform_code"))
+	if platformCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma requerida"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("push_token"))
+	if token == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Token requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	activeVal := true
+	if r.FormValue("active") == "" {
+		activeVal = false
+	}
+	input := models.PushDeviceInput{UserID: userID, PlatformCode: platformCode, PushToken: token, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.CreatePushDevice(ctx, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidPlatform):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma inválida"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_CREATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo push registrado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) PushDevicesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	platformCode := strings.TrimSpace(r.FormValue("platform_code"))
+	if platformCode == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma requerida"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	token := strings.TrimSpace(r.FormValue("push_token"))
+	if token == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Token requerido"})
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	activeVal := false
+	if r.FormValue("active") != "" {
+		activeVal = true
+	}
+	input := models.PushDeviceInput{UserID: userID, PlatformCode: platformCode, PushToken: token, Active: &activeVal}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	device, err := h.repo.UpdatePushDevice(ctx, id, input)
+	if err != nil {
+		switch {
+		case errors.Is(err, errInvalidPlatform):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Plataforma inválida"})
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el dispositivo"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_UPDATE", "push_device", &device.ID, map[string]any{"user_id": device.UserID, "platform": device.PlatformCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo actualizado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
+func (h *Handlers) PushDevicesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeletePushDevice(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Dispositivo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar"})
+		}
+		http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "PUSH_DEVICE_DELETE", "push_device", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
+	http.Redirect(w, r, "/superadmin/push-devices", http.StatusSeeOther)
+}
+
 // Signal streams
 
 func (h *Handlers) SignalStreamsIndex(w http.ResponseWriter, r *http.Request) {
@@ -4176,6 +4364,16 @@ func (h *Handlers) AlertsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los niveles", http.StatusInternalServerError)
 		return
 	}
+	channels, err := h.repo.ListCatalog(ctx, "alert_channels", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los canales", http.StatusInternalServerError)
+		return
+	}
+	deliveryStatuses, err := h.repo.ListCatalog(ctx, "delivery_statuses", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los estados de entrega", http.StatusInternalServerError)
+		return
+	}
 	modelsList, err := h.repo.ListModels(ctx, 200, 0)
 	if err != nil {
 		http.Error(w, "No se pudieron cargar los modelos", http.StatusInternalServerError)
@@ -4186,14 +4384,57 @@ func (h *Handlers) AlertsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar las inferencias", http.StatusInternalServerError)
 		return
 	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+	assignments := make(map[string][]models.AlertAssignment, len(alerts))
+	acks := make(map[string][]models.AlertAck, len(alerts))
+	resolutions := make(map[string][]models.AlertResolution, len(alerts))
+	deliveries := make(map[string][]models.AlertDelivery, len(alerts))
+	for _, alert := range alerts {
+		if list, err := h.repo.ListAlertAssignments(ctx, alert.ID); err == nil {
+			assignments[alert.ID] = list
+		} else {
+			http.Error(w, "No se pudieron cargar las asignaciones", http.StatusInternalServerError)
+			return
+		}
+		if list, err := h.repo.ListAlertAcks(ctx, alert.ID); err == nil {
+			acks[alert.ID] = list
+		} else {
+			http.Error(w, "No se pudieron cargar los acuses", http.StatusInternalServerError)
+			return
+		}
+		if list, err := h.repo.ListAlertResolutions(ctx, alert.ID); err == nil {
+			resolutions[alert.ID] = list
+		} else {
+			http.Error(w, "No se pudieron cargar las resoluciones", http.StatusInternalServerError)
+			return
+		}
+		if list, err := h.repo.ListAlertDeliveries(ctx, alert.ID); err == nil {
+			deliveries[alert.ID] = list
+		} else {
+			http.Error(w, "No se pudieron cargar las entregas", http.StatusInternalServerError)
+			return
+		}
+	}
 	data := alertsViewData{
-		Items:         alerts,
-		Patients:      patients,
-		AlertTypes:    alertTypes,
-		AlertStatuses: statuses,
-		AlertLevels:   levels,
-		Models:        modelsList,
-		Inferences:    inferences,
+		Items:            alerts,
+		Patients:         patients,
+		AlertTypes:       alertTypes,
+		AlertStatuses:    statuses,
+		AlertLevels:      levels,
+		Models:           modelsList,
+		Inferences:       inferences,
+		Assignments:      assignments,
+		Acks:             acks,
+		Resolutions:      resolutions,
+		Deliveries:       deliveries,
+		Users:            users,
+		AlertChannels:    channels,
+		DeliveryStatuses: deliveryStatuses,
+		CurrentUserID:    middleware.UserIDFromContext(r.Context()),
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Alertas"}}
 	h.render(w, r, "superadmin/alerts.html", "Alertas", data, crumbs)
@@ -4290,6 +4531,144 @@ func (h *Handlers) AlertsDelete(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeAudit(ctx, r, "ALERT_DELETE", "alert", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Alerta eliminada"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+}
+
+func (h *Handlers) AlertAssignmentsCreate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	assignee := strings.TrimSpace(r.FormValue("assignee_user_id"))
+	if assignee == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un responsable"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	actorID := middleware.UserIDFromContext(r.Context())
+	var assignedBy *string
+	if actorID != "" {
+		assignedBy = &actorID
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignment, err := h.repo.CreateAlertAssignment(ctx, id, assignee, assignedBy)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la asignación"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	details := map[string]any{"assignee_user_id": assignment.AssigneeUserID}
+	if assignment.AssignedByUserID != nil {
+		details["assigned_by_user_id"] = *assignment.AssignedByUserID
+	}
+	h.writeAudit(ctx, r, "ALERT_ASSIGNMENT_CREATE", "alert", &assignment.AlertID, details)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Asignación registrada"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+}
+
+func (h *Handlers) AlertAcksCreate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	ackUser := strings.TrimSpace(r.FormValue("ack_by_user_id"))
+	if ackUser == "" {
+		ackUser = middleware.UserIDFromContext(r.Context())
+	}
+	var ackPtr *string
+	if ackUser != "" {
+		ack := ackUser
+		ackPtr = &ack
+	}
+	note := optionalString(r.FormValue("note"))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	ack, err := h.repo.CreateAlertAck(ctx, id, ackPtr, note)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar el acuse"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	details := map[string]any{"alert_id": ack.AlertID}
+	if ack.AckByUserID != nil {
+		details["ack_by_user_id"] = *ack.AckByUserID
+	}
+	h.writeAudit(ctx, r, "ALERT_ACK_CREATE", "alert_ack", &ack.ID, details)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Acuse registrado"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+}
+
+func (h *Handlers) AlertResolutionsCreate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	resolvedUser := strings.TrimSpace(r.FormValue("resolved_by_user_id"))
+	if resolvedUser == "" {
+		resolvedUser = middleware.UserIDFromContext(r.Context())
+	}
+	var resolvedPtr *string
+	if resolvedUser != "" {
+		resolved := resolvedUser
+		resolvedPtr = &resolved
+	}
+	outcome := optionalString(r.FormValue("outcome"))
+	note := optionalString(r.FormValue("note"))
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	res, err := h.repo.CreateAlertResolution(ctx, id, resolvedPtr, outcome, note)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la resolución"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	details := map[string]any{"alert_id": res.AlertID}
+	if res.ResolvedByUserID != nil {
+		details["resolved_by_user_id"] = *res.ResolvedByUserID
+	}
+	if res.Outcome != nil {
+		details["outcome"] = *res.Outcome
+	}
+	h.writeAudit(ctx, r, "ALERT_RESOLUTION_CREATE", "alert_resolution", &res.ID, details)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Resolución registrada"})
+	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+}
+
+func (h *Handlers) AlertDeliveriesCreate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	channelID := strings.TrimSpace(r.FormValue("channel_id"))
+	statusID := strings.TrimSpace(r.FormValue("delivery_status_id"))
+	target := strings.TrimSpace(r.FormValue("target"))
+	if channelID == "" || statusID == "" || target == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Canal, estado y destino son obligatorios"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	payloadPtr, err := optionalJSON(r.FormValue("response_payload"))
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Respuesta debe ser JSON válido"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	delivery, err := h.repo.CreateAlertDelivery(ctx, id, channelID, target, statusID, payloadPtr)
+	if err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la entrega"})
+		http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
+		return
+	}
+	details := map[string]any{"alert_id": delivery.AlertID, "channel_id": delivery.ChannelID, "delivery_status_id": delivery.DeliveryStatusID}
+	h.writeAudit(ctx, r, "ALERT_DELIVERY_CREATE", "alert_delivery", &delivery.ID, details)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Entrega registrada"})
 	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
 }
 

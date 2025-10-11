@@ -53,6 +53,8 @@ func (r *Repo) Ping(ctx context.Context) error {
 
 var nowFn = time.Now
 
+var errInvalidPlatform = errors.New("invalid platform")
+
 func stringParam(ptr *string, trim bool) any {
 	if ptr == nil {
 		return nil
@@ -584,6 +586,210 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 		return err
 	}
 	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+// ------------------------------
+// Push devices
+// ------------------------------
+
+func (r *Repo) ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error) {
+	where := "WHERE 1=1"
+	args := make([]any, 0, 4)
+	idx := 1
+
+	if userID != nil {
+		if v := strings.TrimSpace(*userID); v != "" {
+			where += fmt.Sprintf(" AND pd.user_id = $%d", idx)
+			args = append(args, v)
+			idx++
+		}
+	}
+	if platformCode != nil {
+		if v := strings.TrimSpace(*platformCode); v != "" {
+			where += fmt.Sprintf(" AND p.code = $%d", idx)
+			args = append(args, v)
+			idx++
+		}
+	}
+
+	query := fmt.Sprintf(`
+SELECT
+  pd.id::text,
+  pd.user_id::text,
+  u.name,
+  u.email,
+  p.code,
+  p.label,
+  pd.push_token,
+  pd.last_seen_at,
+  pd.active
+FROM push_devices pd
+JOIN users u ON u.id = pd.user_id
+JOIN platforms p ON p.id = pd.platform_id
+%s
+ORDER BY pd.last_seen_at DESC
+LIMIT $%d OFFSET $%d
+`, where, idx, idx+1)
+
+	args = append(args, limit, offset)
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.PushDevice, 0, limit)
+	for rows.Next() {
+		var item models.PushDevice
+		if err := rows.Scan(
+			&item.ID,
+			&item.UserID,
+			&item.UserName,
+			&item.UserEmail,
+			&item.PlatformCode,
+			&item.PlatformLabel,
+			&item.PushToken,
+			&item.LastSeenAt,
+			&item.Active,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error) {
+	userID := strings.TrimSpace(input.UserID)
+	platformCode := strings.TrimSpace(input.PlatformCode)
+	token := strings.TrimSpace(input.PushToken)
+
+	var item models.PushDevice
+	err := r.pool.QueryRow(ctx, `
+WITH platform AS (
+  SELECT id, code, label
+  FROM platforms
+  WHERE code = $2
+), inserted AS (
+  INSERT INTO push_devices (user_id, platform_id, push_token, last_seen_at, active)
+  SELECT $1::uuid, platform.id, $3, COALESCE($4, NOW()), COALESCE($5::bool, TRUE)
+  FROM platform
+  RETURNING id, user_id, platform_id, push_token, last_seen_at, active
+)
+SELECT
+  ins.id::text,
+  ins.user_id::text,
+  u.name,
+  u.email,
+  p.code,
+  p.label,
+  ins.push_token,
+  ins.last_seen_at,
+  ins.active
+FROM inserted ins
+JOIN users u ON u.id = ins.user_id
+JOIN platforms p ON p.id = ins.platform_id
+`, userID, platformCode, token, timeParam(input.LastSeenAt), boolParam(input.Active)).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.UserName,
+		&item.UserEmail,
+		&item.PlatformCode,
+		&item.PlatformLabel,
+		&item.PushToken,
+		&item.LastSeenAt,
+		&item.Active,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			var exists bool
+			if checkErr := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM platforms WHERE code = $1)`, platformCode).Scan(&exists); checkErr != nil {
+				return nil, checkErr
+			}
+			if !exists {
+				return nil, errInvalidPlatform
+			}
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repo) UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error) {
+	userID := strings.TrimSpace(input.UserID)
+	platformCode := strings.TrimSpace(input.PlatformCode)
+	token := strings.TrimSpace(input.PushToken)
+
+	var item models.PushDevice
+	err := r.pool.QueryRow(ctx, `
+WITH platform AS (
+  SELECT id
+  FROM platforms
+  WHERE code = $2
+), updated AS (
+  UPDATE push_devices pd
+  SET
+    user_id = $1::uuid,
+    platform_id = platform.id,
+    push_token = $3,
+    last_seen_at = COALESCE($4, pd.last_seen_at),
+    active = COALESCE($5::bool, pd.active)
+  FROM platform
+  WHERE pd.id = $6::uuid
+  RETURNING pd.id, pd.user_id, pd.platform_id, pd.push_token, pd.last_seen_at, pd.active
+)
+SELECT
+  upd.id::text,
+  upd.user_id::text,
+  u.name,
+  u.email,
+  p.code,
+  p.label,
+  upd.push_token,
+  upd.last_seen_at,
+  upd.active
+FROM updated upd
+JOIN users u ON u.id = upd.user_id
+JOIN platforms p ON p.id = upd.platform_id
+`, userID, platformCode, token, timeParam(input.LastSeenAt), boolParam(input.Active), id).Scan(
+		&item.ID,
+		&item.UserID,
+		&item.UserName,
+		&item.UserEmail,
+		&item.PlatformCode,
+		&item.PlatformLabel,
+		&item.PushToken,
+		&item.LastSeenAt,
+		&item.Active,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			var exists bool
+			if checkErr := r.pool.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM platforms WHERE code = $1)`, platformCode).Scan(&exists); checkErr != nil {
+				return nil, checkErr
+			}
+			if !exists {
+				return nil, errInvalidPlatform
+			}
+		}
+		return nil, err
+	}
+	return &item, nil
+}
+
+func (r *Repo) DeletePushDevice(ctx context.Context, id string) error {
+	ct, err := r.pool.Exec(ctx, `DELETE FROM push_devices WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if ct.RowsAffected() == 0 {
 		return pgx.ErrNoRows
 	}
 	return nil
@@ -1466,6 +1672,362 @@ func (r *Repo) ListAlertStatuses(ctx context.Context) ([]models.AlertStatus, err
 		out = append(out, status)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repo) ListAlertAssignments(ctx context.Context, alertID string) ([]models.AlertAssignment, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT aa.alert_id::text,
+       aa.assignee_user_id::text,
+       assignee.name,
+       aa.assigned_by_user_id::text,
+       assigned_by.name,
+       aa.assigned_at
+FROM heartguard.alert_assignment aa
+LEFT JOIN heartguard.users assignee ON assignee.id = aa.assignee_user_id
+LEFT JOIN heartguard.users assigned_by ON assigned_by.id = aa.assigned_by_user_id
+WHERE aa.alert_id = $1
+ORDER BY aa.assigned_at DESC
+`, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.AlertAssignment
+	for rows.Next() {
+		var (
+			assignment     models.AlertAssignment
+			assigneeName   sql.NullString
+			assignedByID   sql.NullString
+			assignedByName sql.NullString
+		)
+		if err := rows.Scan(&assignment.AlertID, &assignment.AssigneeUserID, &assigneeName, &assignedByID, &assignedByName, &assignment.AssignedAt); err != nil {
+			return nil, err
+		}
+		if assigneeName.Valid {
+			name := assigneeName.String
+			assignment.AssigneeName = &name
+		}
+		if assignedByID.Valid {
+			id := assignedByID.String
+			assignment.AssignedByUserID = &id
+		}
+		if assignedByName.Valid {
+			name := assignedByName.String
+			assignment.AssignedByName = &name
+		}
+		out = append(out, assignment)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateAlertAssignment(ctx context.Context, alertID, assigneeUserID string, assignedBy *string) (*models.AlertAssignment, error) {
+	var (
+		assignment     models.AlertAssignment
+		assigneeName   sql.NullString
+		assignedByID   sql.NullString
+		assignedByName sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO heartguard.alert_assignment (alert_id, assignee_user_id, assigned_by_user_id)
+VALUES ($1, $2, $3)
+RETURNING alert_id::text,
+          assignee_user_id::text,
+          (SELECT name FROM heartguard.users WHERE id = assignee_user_id),
+          assigned_by_user_id::text,
+          (SELECT name FROM heartguard.users WHERE id = assigned_by_user_id),
+          assigned_at
+`, alertID, assigneeUserID, stringParam(assignedBy, true)).
+		Scan(&assignment.AlertID, &assignment.AssigneeUserID, &assigneeName, &assignedByID, &assignedByName, &assignment.AssignedAt)
+	if err != nil {
+		return nil, err
+	}
+	if assigneeName.Valid {
+		name := assigneeName.String
+		assignment.AssigneeName = &name
+	}
+	if assignedByID.Valid {
+		id := assignedByID.String
+		assignment.AssignedByUserID = &id
+	}
+	if assignedByName.Valid {
+		name := assignedByName.String
+		assignment.AssignedByName = &name
+	}
+	return &assignment, nil
+}
+
+func (r *Repo) ListAlertAcks(ctx context.Context, alertID string) ([]models.AlertAck, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT aa.id::text,
+       aa.alert_id::text,
+       aa.ack_by_user_id::text,
+       ack_user.name,
+       aa.ack_at,
+       aa.note
+FROM heartguard.alert_ack aa
+LEFT JOIN heartguard.users ack_user ON ack_user.id = aa.ack_by_user_id
+WHERE aa.alert_id = $1
+ORDER BY aa.ack_at DESC
+`, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.AlertAck
+	for rows.Next() {
+		var (
+			ack        models.AlertAck
+			ackByID    sql.NullString
+			ackByName  sql.NullString
+			noteString sql.NullString
+		)
+		if err := rows.Scan(&ack.ID, &ack.AlertID, &ackByID, &ackByName, &ack.AckAt, &noteString); err != nil {
+			return nil, err
+		}
+		if ackByID.Valid {
+			id := ackByID.String
+			ack.AckByUserID = &id
+		}
+		if ackByName.Valid {
+			name := ackByName.String
+			ack.AckByName = &name
+		}
+		if noteString.Valid {
+			note := noteString.String
+			ack.Note = &note
+		}
+		out = append(out, ack)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateAlertAck(ctx context.Context, alertID string, ackBy *string, note *string) (*models.AlertAck, error) {
+	var (
+		ack        models.AlertAck
+		ackByID    sql.NullString
+		ackByName  sql.NullString
+		noteString sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO heartguard.alert_ack (alert_id, ack_by_user_id, note)
+VALUES ($1, $2, $3)
+RETURNING id::text,
+          alert_id::text,
+          ack_by_user_id::text,
+          (SELECT name FROM heartguard.users WHERE id = ack_by_user_id),
+          ack_at,
+          note
+`, alertID, stringParam(ackBy, true), stringParam(note, true)).
+		Scan(&ack.ID, &ack.AlertID, &ackByID, &ackByName, &ack.AckAt, &noteString)
+	if err != nil {
+		return nil, err
+	}
+	if ackByID.Valid {
+		id := ackByID.String
+		ack.AckByUserID = &id
+	}
+	if ackByName.Valid {
+		name := ackByName.String
+		ack.AckByName = &name
+	}
+	if noteString.Valid {
+		noteVal := noteString.String
+		ack.Note = &noteVal
+	}
+	return &ack, nil
+}
+
+func (r *Repo) ListAlertResolutions(ctx context.Context, alertID string) ([]models.AlertResolution, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT ar.id::text,
+       ar.alert_id::text,
+       ar.resolved_by_user_id::text,
+       resolver.name,
+       ar.resolved_at,
+       ar.outcome,
+       ar.note
+FROM heartguard.alert_resolution ar
+LEFT JOIN heartguard.users resolver ON resolver.id = ar.resolved_by_user_id
+WHERE ar.alert_id = $1
+ORDER BY ar.resolved_at DESC
+`, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.AlertResolution
+	for rows.Next() {
+		var (
+			res          models.AlertResolution
+			resolvedID   sql.NullString
+			resolvedName sql.NullString
+			outcomeStr   sql.NullString
+			noteStr      sql.NullString
+		)
+		if err := rows.Scan(&res.ID, &res.AlertID, &resolvedID, &resolvedName, &res.ResolvedAt, &outcomeStr, &noteStr); err != nil {
+			return nil, err
+		}
+		if resolvedID.Valid {
+			id := resolvedID.String
+			res.ResolvedByUserID = &id
+		}
+		if resolvedName.Valid {
+			name := resolvedName.String
+			res.ResolvedByName = &name
+		}
+		if outcomeStr.Valid {
+			outcome := outcomeStr.String
+			res.Outcome = &outcome
+		}
+		if noteStr.Valid {
+			note := noteStr.String
+			res.Note = &note
+		}
+		out = append(out, res)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateAlertResolution(ctx context.Context, alertID string, resolvedBy *string, outcome, note *string) (*models.AlertResolution, error) {
+	var (
+		res          models.AlertResolution
+		resolvedID   sql.NullString
+		resolvedName sql.NullString
+		outcomeStr   sql.NullString
+		noteStr      sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO heartguard.alert_resolution (alert_id, resolved_by_user_id, outcome, note)
+VALUES ($1, $2, $3, $4)
+RETURNING id::text,
+          alert_id::text,
+          resolved_by_user_id::text,
+          (SELECT name FROM heartguard.users WHERE id = resolved_by_user_id),
+          resolved_at,
+          outcome,
+          note
+`, alertID, stringParam(resolvedBy, true), stringParam(outcome, true), stringParam(note, true)).
+		Scan(&res.ID, &res.AlertID, &resolvedID, &resolvedName, &res.ResolvedAt, &outcomeStr, &noteStr)
+	if err != nil {
+		return nil, err
+	}
+	if resolvedID.Valid {
+		id := resolvedID.String
+		res.ResolvedByUserID = &id
+	}
+	if resolvedName.Valid {
+		name := resolvedName.String
+		res.ResolvedByName = &name
+	}
+	if outcomeStr.Valid {
+		outcomeVal := outcomeStr.String
+		res.Outcome = &outcomeVal
+	}
+	if noteStr.Valid {
+		noteVal := noteStr.String
+		res.Note = &noteVal
+	}
+	return &res, nil
+}
+
+func (r *Repo) ListAlertDeliveries(ctx context.Context, alertID string) ([]models.AlertDelivery, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT ad.id::text,
+       ad.alert_id::text,
+       ad.channel_id::text,
+       ac.code,
+       ac.label,
+       ad.target,
+       ad.sent_at,
+       ad.delivery_status_id::text,
+       ds.code,
+       ds.label,
+       ad.response_payload::text
+FROM heartguard.alert_delivery ad
+JOIN heartguard.alert_channels ac ON ac.id = ad.channel_id
+JOIN heartguard.delivery_statuses ds ON ds.id = ad.delivery_status_id
+WHERE ad.alert_id = $1
+ORDER BY ad.sent_at DESC
+`, alertID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.AlertDelivery
+	for rows.Next() {
+		var (
+			delivery        models.AlertDelivery
+			responsePayload sql.NullString
+		)
+		if err := rows.Scan(
+			&delivery.ID,
+			&delivery.AlertID,
+			&delivery.ChannelID,
+			&delivery.ChannelCode,
+			&delivery.ChannelLabel,
+			&delivery.Target,
+			&delivery.SentAt,
+			&delivery.DeliveryStatusID,
+			&delivery.DeliveryStatusCode,
+			&delivery.DeliveryStatusLabel,
+			&responsePayload,
+		); err != nil {
+			return nil, err
+		}
+		if responsePayload.Valid {
+			payload := responsePayload.String
+			delivery.ResponsePayload = &payload
+		}
+		out = append(out, delivery)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) CreateAlertDelivery(ctx context.Context, alertID, channelID, target, deliveryStatusID string, responsePayload *string) (*models.AlertDelivery, error) {
+	var (
+		delivery   models.AlertDelivery
+		payloadStr sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+INSERT INTO heartguard.alert_delivery (alert_id, channel_id, target, delivery_status_id, response_payload)
+VALUES ($1, $2, $3, $4, $5)
+RETURNING id::text,
+          alert_id::text,
+          channel_id::text,
+          (SELECT code FROM heartguard.alert_channels WHERE id = channel_id),
+          (SELECT label FROM heartguard.alert_channels WHERE id = channel_id),
+          target,
+          sent_at,
+          delivery_status_id::text,
+          (SELECT code FROM heartguard.delivery_statuses WHERE id = delivery_status_id),
+          (SELECT label FROM heartguard.delivery_statuses WHERE id = delivery_status_id),
+          response_payload::text
+`, alertID, channelID, target, deliveryStatusID, jsonParam(responsePayload)).
+		Scan(
+			&delivery.ID,
+			&delivery.AlertID,
+			&delivery.ChannelID,
+			&delivery.ChannelCode,
+			&delivery.ChannelLabel,
+			&delivery.Target,
+			&delivery.SentAt,
+			&delivery.DeliveryStatusID,
+			&delivery.DeliveryStatusCode,
+			&delivery.DeliveryStatusLabel,
+			&payloadStr,
+		)
+	if err != nil {
+		return nil, err
+	}
+	if payloadStr.Valid {
+		payload := payloadStr.String
+		delivery.ResponsePayload = &payload
+	}
+	return &delivery, nil
 }
 
 func (r *Repo) ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error) {
