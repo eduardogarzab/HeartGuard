@@ -2,12 +2,14 @@ package superadmin
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
 	"heartguard-superadmin/internal/models"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func TestRepoUpdateCareTeamParams(t *testing.T) {
@@ -122,5 +124,17 @@ func TestRepoUpdateCaregiverAssignmentParams(t *testing.T) {
 	}
 	if _, err := repo.UpdateCaregiverAssignment(context.Background(), "patient-1", "caregiver-1", input); err != nil {
 		t.Fatalf("UpdateCaregiverAssignment: %v", err)
+	}
+}
+
+func TestRepoCreateCaregiverAssignmentDuplicate(t *testing.T) {
+	pool := &stubPool{}
+	pool.queryRow = func(ctx context.Context, sql string, args ...any) pgx.Row {
+		return mockRow{err: &pgconn.PgError{Code: "23505"}}
+	}
+	repo := NewRepoWithPool(pool, nil)
+	input := models.CaregiverAssignmentInput{PatientID: "patient-1", CaregiverID: "caregiver-1"}
+	if _, err := repo.CreateCaregiverAssignment(context.Background(), input); !errors.Is(err, ErrDuplicateCaregiverAssignment) {
+		t.Fatalf("expected ErrDuplicateCaregiverAssignment, got %v", err)
 	}
 }
