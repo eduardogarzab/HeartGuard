@@ -63,6 +63,27 @@ type Repository interface {
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
+	ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error)
+	CreateCareTeam(ctx context.Context, input models.CareTeamInput) (*models.CareTeam, error)
+	UpdateCareTeam(ctx context.Context, id string, input models.CareTeamUpdateInput) (*models.CareTeam, error)
+	DeleteCareTeam(ctx context.Context, id string) error
+	ListCareTeamMembers(ctx context.Context, teamID string) ([]models.CareTeamMember, error)
+	AddCareTeamMember(ctx context.Context, teamID, userID, role string) (*models.CareTeamMember, error)
+	UpdateCareTeamMember(ctx context.Context, teamID, userID, role string) (*models.CareTeamMember, error)
+	RemoveCareTeamMember(ctx context.Context, teamID, userID string) error
+	ListCareTeamPatients(ctx context.Context, teamID string) ([]models.CareTeamPatient, error)
+	AssignPatientToCareTeam(ctx context.Context, teamID, patientID string) (*models.CareTeamPatient, error)
+	RemovePatientFromCareTeam(ctx context.Context, teamID, patientID string) error
+
+	ListCaregiverRelationTypes(ctx context.Context) ([]models.CaregiverRelationType, error)
+	CreateCaregiverRelationType(ctx context.Context, code, label string) (*models.CaregiverRelationType, error)
+	UpdateCaregiverRelationType(ctx context.Context, id string, code, label *string) (*models.CaregiverRelationType, error)
+	DeleteCaregiverRelationType(ctx context.Context, id string) error
+	ListCaregiverRelations(ctx context.Context, limit, offset int) ([]models.CaregiverRelation, error)
+	CreateCaregiverRelation(ctx context.Context, input models.CaregiverRelationInput) (*models.CaregiverRelation, error)
+	UpdateCaregiverRelation(ctx context.Context, patientID, caregiverID string, input models.CaregiverRelationUpdateInput) (*models.CaregiverRelation, error)
+	DeleteCaregiverRelation(ctx context.Context, patientID, caregiverID string) error
+
 	ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error)
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
@@ -186,51 +207,65 @@ var allowedCatalogs = map[string]catalogMeta{
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":                "Alta de organización",
-	"ORG_UPDATE":                "Actualización de organización",
-	"ORG_DELETE":                "Eliminación de organización",
-	"INVITE_CREATE":             "Emisión de invitación",
-	"INVITE_CANCEL":             "Cancelación de invitación",
-	"INVITE_CONSUME":            "Consumo de invitación",
-	"MEMBER_ADD":                "Alta de miembro",
-	"MEMBER_REMOVE":             "Baja de miembro",
-	"USER_STATUS_UPDATE":        "Actualización de estatus de usuario",
-	"APIKEY_CREATE":             "Creación de API Key",
-	"APIKEY_SET_PERMS":          "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":             "Revocación de API Key",
-	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
-	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
-	"CATALOG_CREATE":            "Alta en catálogo",
-	"CATALOG_UPDATE":            "Actualización de catálogo",
-	"CATALOG_DELETE":            "Eliminación de catálogo",
-	"CONTENT_BLOCK_TYPE_CREATE": "Alta de tipo de bloque",
-	"CONTENT_BLOCK_TYPE_UPDATE": "Actualización de tipo de bloque",
-	"CONTENT_BLOCK_TYPE_DELETE": "Eliminación de tipo de bloque",
-	"PATIENT_CREATE":            "Alta de paciente",
-	"PATIENT_UPDATE":            "Actualización de paciente",
-	"PATIENT_DELETE":            "Eliminación de paciente",
-	"DEVICE_CREATE":             "Alta de dispositivo",
-	"DEVICE_UPDATE":             "Actualización de dispositivo",
-	"DEVICE_DELETE":             "Eliminación de dispositivo",
-	"SIGNAL_STREAM_CREATE":      "Alta de stream de señal",
-	"SIGNAL_STREAM_UPDATE":      "Actualización de stream de señal",
-	"SIGNAL_STREAM_DELETE":      "Eliminación de stream de señal",
-	"MODEL_CREATE":              "Alta de modelo ML",
-	"MODEL_UPDATE":              "Actualización de modelo ML",
-	"MODEL_DELETE":              "Eliminación de modelo ML",
-	"EVENT_TYPE_CREATE":         "Alta de tipo de evento",
-	"EVENT_TYPE_UPDATE":         "Actualización de tipo de evento",
-	"EVENT_TYPE_DELETE":         "Eliminación de tipo de evento",
-	"INFERENCE_CREATE":          "Alta de inferencia",
-	"INFERENCE_UPDATE":          "Actualización de inferencia",
-	"INFERENCE_DELETE":          "Eliminación de inferencia",
-	"ALERT_CREATE":              "Alta de alerta",
-	"ALERT_UPDATE":              "Actualización de alerta",
-	"ALERT_DELETE":              "Eliminación de alerta",
-	"AUDIT_EXPORT":              "Exportación de auditoría",
-	"CONTENT_CREATE":            "Alta de contenido",
-	"CONTENT_UPDATE":            "Actualización de contenido",
-	"CONTENT_DELETE":            "Eliminación de contenido",
+	"ORG_CREATE":                  "Alta de organización",
+	"ORG_UPDATE":                  "Actualización de organización",
+	"ORG_DELETE":                  "Eliminación de organización",
+	"INVITE_CREATE":               "Emisión de invitación",
+	"INVITE_CANCEL":               "Cancelación de invitación",
+	"INVITE_CONSUME":              "Consumo de invitación",
+	"MEMBER_ADD":                  "Alta de miembro",
+	"MEMBER_REMOVE":               "Baja de miembro",
+	"CARE_TEAM_CREATE":            "Alta de equipo de cuidado",
+	"CARE_TEAM_UPDATE":            "Actualización de equipo de cuidado",
+	"CARE_TEAM_DELETE":            "Eliminación de equipo de cuidado",
+	"CARE_TEAM_MEMBER_ADD":        "Alta de miembro en equipo",
+	"CARE_TEAM_MEMBER_UPDATE":     "Actualización de miembro en equipo",
+	"CARE_TEAM_MEMBER_REMOVE":     "Baja de miembro en equipo",
+	"CARE_TEAM_PATIENT_ASSIGN":    "Asignación de paciente a equipo",
+	"CARE_TEAM_PATIENT_REMOVE":    "Desasignación de paciente de equipo",
+	"CAREGIVER_REL_TYPE_CREATE":   "Alta de tipo de relación",
+	"CAREGIVER_REL_TYPE_UPDATE":   "Actualización de tipo de relación",
+	"CAREGIVER_REL_TYPE_DELETE":   "Eliminación de tipo de relación",
+	"CAREGIVER_ASSIGNMENT_CREATE": "Alta de cuidador",
+	"CAREGIVER_ASSIGNMENT_UPDATE": "Actualización de cuidador",
+	"CAREGIVER_ASSIGNMENT_DELETE": "Baja de cuidador",
+	"USER_STATUS_UPDATE":          "Actualización de estatus de usuario",
+	"APIKEY_CREATE":               "Creación de API Key",
+	"APIKEY_SET_PERMS":            "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":               "Revocación de API Key",
+	"ROLE_PERMISSION_GRANT":       "Asignación de permiso a rol",
+	"ROLE_PERMISSION_REVOKE":      "Revocación de permiso de rol",
+	"CATALOG_CREATE":              "Alta en catálogo",
+	"CATALOG_UPDATE":              "Actualización de catálogo",
+	"CATALOG_DELETE":              "Eliminación de catálogo",
+	"CONTENT_BLOCK_TYPE_CREATE":   "Alta de tipo de bloque",
+	"CONTENT_BLOCK_TYPE_UPDATE":   "Actualización de tipo de bloque",
+	"CONTENT_BLOCK_TYPE_DELETE":   "Eliminación de tipo de bloque",
+	"PATIENT_CREATE":              "Alta de paciente",
+	"PATIENT_UPDATE":              "Actualización de paciente",
+	"PATIENT_DELETE":              "Eliminación de paciente",
+	"DEVICE_CREATE":               "Alta de dispositivo",
+	"DEVICE_UPDATE":               "Actualización de dispositivo",
+	"DEVICE_DELETE":               "Eliminación de dispositivo",
+	"SIGNAL_STREAM_CREATE":        "Alta de stream de señal",
+	"SIGNAL_STREAM_UPDATE":        "Actualización de stream de señal",
+	"SIGNAL_STREAM_DELETE":        "Eliminación de stream de señal",
+	"MODEL_CREATE":                "Alta de modelo ML",
+	"MODEL_UPDATE":                "Actualización de modelo ML",
+	"MODEL_DELETE":                "Eliminación de modelo ML",
+	"EVENT_TYPE_CREATE":           "Alta de tipo de evento",
+	"EVENT_TYPE_UPDATE":           "Actualización de tipo de evento",
+	"EVENT_TYPE_DELETE":           "Eliminación de tipo de evento",
+	"INFERENCE_CREATE":            "Alta de inferencia",
+	"INFERENCE_UPDATE":            "Actualización de inferencia",
+	"INFERENCE_DELETE":            "Eliminación de inferencia",
+	"ALERT_CREATE":                "Alta de alerta",
+	"ALERT_UPDATE":                "Actualización de alerta",
+	"ALERT_DELETE":                "Eliminación de alerta",
+	"AUDIT_EXPORT":                "Exportación de auditoría",
+	"CONTENT_CREATE":              "Alta de contenido",
+	"CONTENT_UPDATE":              "Actualización de contenido",
+	"CONTENT_DELETE":              "Eliminación de contenido",
 }
 
 func humanizeToken(input string) string {
@@ -2258,6 +2293,19 @@ type contentBlockTypesViewData struct {
 	Items []models.ContentBlockType
 }
 
+type careTeamDetailView struct {
+	Team     models.CareTeam
+	Members  []models.CareTeamMember
+	Patients []models.CareTeamPatient
+}
+
+type careTeamsViewData struct {
+	Teams         []careTeamDetailView
+	Organizations []models.Organization
+	Users         []models.User
+	Patients      []models.Patient
+}
+
 type patientsViewData struct {
 	Items         []models.Patient
 	Organizations []models.Organization
@@ -2276,6 +2324,13 @@ type signalStreamsViewData struct {
 	Patients    []models.Patient
 	Devices     []models.Device
 	SignalTypes []models.CatalogItem
+}
+
+type caregiversViewData struct {
+	Types       []models.CaregiverRelationType
+	Assignments []models.CaregiverRelation
+	Patients    []models.Patient
+	Caregivers  []models.User
 }
 
 type modelsViewData struct {
@@ -3045,6 +3100,588 @@ func (h *Handlers) ContentBlockTypesDelete(w http.ResponseWriter, r *http.Reques
 	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_DELETE", "content_block_type", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque eliminado"})
 	http.Redirect(w, r, "/superadmin/content-block-types", http.StatusSeeOther)
+}
+
+// Care teams
+
+func (h *Handlers) CareTeamsIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	teams, err := h.repo.ListCareTeams(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los equipos", http.StatusInternalServerError)
+		return
+	}
+	orgs, err := h.repo.ListOrganizations(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las organizaciones", http.StatusInternalServerError)
+		return
+	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+
+	details := make([]careTeamDetailView, 0, len(teams))
+	for _, team := range teams {
+		members, err := h.repo.ListCareTeamMembers(ctx, team.ID)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los miembros", http.StatusInternalServerError)
+			return
+		}
+		assigned, err := h.repo.ListCareTeamPatients(ctx, team.ID)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los pacientes del equipo", http.StatusInternalServerError)
+			return
+		}
+		details = append(details, careTeamDetailView{Team: team, Members: members, Patients: assigned})
+	}
+
+	data := careTeamsViewData{Teams: details, Organizations: orgs, Users: users, Patients: patients}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Equipos de cuidado"}}
+	h.render(w, r, "superadmin/care_teams.html", "Equipos de cuidado", data, crumbs)
+}
+
+func (h *Handlers) CareTeamsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre es obligatorio"})
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+	orgRaw := strings.TrimSpace(r.FormValue("org_id"))
+	var orgID *string
+	if orgRaw != "" {
+		orgID = &orgRaw
+	}
+
+	input := models.CareTeamInput{Name: name, OrgID: orgID}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	team, err := h.repo.CreateCareTeam(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Organización inválida"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el equipo"})
+		}
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_CREATE", "care_team", &team.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Equipo creado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamsUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre es obligatorio"})
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+	orgRaw := strings.TrimSpace(r.FormValue("org_id"))
+	orgPtr := &orgRaw
+	nameCopy := name
+	input := models.CareTeamUpdateInput{Name: &nameCopy, OrgID: orgPtr}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	team, err := h.repo.UpdateCareTeam(ctx, id, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Organización inválida"})
+		} else if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Equipo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el equipo"})
+		}
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_UPDATE", "care_team", &team.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Equipo actualizado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamsDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCareTeam(ctx, id); err != nil {
+		status := http.StatusInternalServerError
+		msg := "No se pudo eliminar el equipo"
+		if errors.Is(err, pgx.ErrNoRows) {
+			status = http.StatusNotFound
+			msg = "Equipo no encontrado"
+		}
+		http.Error(w, msg, status)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_DELETE", "care_team", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Equipo eliminado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamMembersAdd(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	role := strings.TrimSpace(r.FormValue("role_in_team"))
+	if userID == "" || role == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario y rol son obligatorios"})
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	member, err := h.repo.AddCareTeamMember(ctx, teamID, userID, role)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Equipo o usuario inexistente"})
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El usuario ya pertenece al equipo"})
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Relación inválida"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo agregar el miembro"})
+		}
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_ADD", "care_team_member", &member.UserID, map[string]any{"care_team_id": teamID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Miembro agregado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamMembersUpdate(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userID")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	role := strings.TrimSpace(r.FormValue("role_in_team"))
+	if role == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Rol es obligatorio"})
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	member, err := h.repo.UpdateCareTeamMember(ctx, teamID, userID, role)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Miembro no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el miembro"})
+		}
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_UPDATE", "care_team_member", &member.UserID, map[string]any{"care_team_id": teamID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Miembro actualizado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamMembersDelete(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemoveCareTeamMember(ctx, teamID, userID); err != nil {
+		status := http.StatusInternalServerError
+		msg := "No se pudo eliminar"
+		if errors.Is(err, pgx.ErrNoRows) {
+			status = http.StatusNotFound
+			msg = "Miembro no encontrado"
+		}
+		http.Error(w, msg, status)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_REMOVE", "care_team_member", &userID, map[string]any{"care_team_id": teamID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Miembro eliminado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamPatientsAdd(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	if patientID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente es obligatorio"})
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignment, err := h.repo.AssignPatientToCareTeam(ctx, teamID, patientID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "info", Message: "El paciente ya está asignado"})
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Relación inválida"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo asignar el paciente"})
+		}
+		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_PATIENT_ASSIGN", "care_team_patient", &assignment.PatientID, map[string]any{"care_team_id": teamID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente asignado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+func (h *Handlers) CareTeamPatientsDelete(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	patientID := chi.URLParam(r, "patientID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemovePatientFromCareTeam(ctx, teamID, patientID); err != nil {
+		status := http.StatusInternalServerError
+		msg := "No se pudo eliminar"
+		if errors.Is(err, pgx.ErrNoRows) {
+			status = http.StatusNotFound
+			msg = "Asignación no encontrada"
+		}
+		http.Error(w, msg, status)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CARE_TEAM_PATIENT_REMOVE", "care_team_patient", &patientID, map[string]any{"care_team_id": teamID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente desasignado"})
+	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
+}
+
+// Caregivers
+
+func (h *Handlers) CaregiversIndex(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	types, err := h.repo.ListCaregiverRelationTypes(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los tipos", http.StatusInternalServerError)
+		return
+	}
+	assignments, err := h.repo.ListCaregiverRelations(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las asignaciones", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListPatients(ctx, 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	caregivers, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los cuidadores", http.StatusInternalServerError)
+		return
+	}
+
+	data := caregiversViewData{Types: types, Assignments: assignments, Patients: patients, Caregivers: caregivers}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Cuidadores"}}
+	h.render(w, r, "superadmin/caregivers.html", "Cuidadores", data, crumbs)
+}
+
+func (h *Handlers) CaregiverTypesCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	code := strings.ToLower(strings.TrimSpace(r.FormValue("code")))
+	label := strings.TrimSpace(r.FormValue("label"))
+	if code == "" || label == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y etiqueta son obligatorios"})
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.CreateCaregiverRelationType(ctx, code, label)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El código ya existe"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el tipo"})
+		}
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CAREGIVER_REL_TYPE_CREATE", "caregiver_relation_type", &item.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo creado"})
+	http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+}
+
+func (h *Handlers) CaregiverTypesUpdate(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	codeRaw := strings.ToLower(strings.TrimSpace(r.FormValue("code")))
+	labelRaw := strings.TrimSpace(r.FormValue("label"))
+	var codePtr, labelPtr *string
+	if codeRaw != "" {
+		codePtr = &codeRaw
+	}
+	if labelRaw != "" {
+		labelPtr = &labelRaw
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.UpdateCaregiverRelationType(ctx, id, codePtr, labelPtr)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Tipo no encontrado"})
+		} else if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El código ya existe"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el tipo"})
+		}
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CAREGIVER_REL_TYPE_UPDATE", "caregiver_relation_type", &item.ID, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo actualizado"})
+	http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+}
+
+func (h *Handlers) CaregiverTypesDelete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCaregiverRelationType(ctx, id); err != nil {
+		status := http.StatusInternalServerError
+		msg := "No se pudo eliminar"
+		if errors.Is(err, pgx.ErrNoRows) {
+			status = http.StatusNotFound
+			msg = "Tipo no encontrado"
+		}
+		http.Error(w, msg, status)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CAREGIVER_REL_TYPE_DELETE", "caregiver_relation_type", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo eliminado"})
+	http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+}
+
+func (h *Handlers) CaregiverAssignmentsCreate(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	patientID := strings.TrimSpace(r.FormValue("patient_id"))
+	caregiverID := strings.TrimSpace(r.FormValue("caregiver_id"))
+	if patientID == "" || caregiverID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Paciente y cuidador son obligatorios"})
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+	relType := strings.TrimSpace(r.FormValue("relation_type_id"))
+	var relPtr *string
+	if relType != "" {
+		relPtr = &relType
+	}
+	startedRaw := strings.TrimSpace(r.FormValue("started_at"))
+	var startedAt *time.Time
+	if startedRaw != "" {
+		parsed, err := time.Parse("2006-01-02T15:04", startedRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de inicio inválida"})
+			http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+			return
+		}
+		startedAt = &parsed
+	}
+	endedRaw := strings.TrimSpace(r.FormValue("ended_at"))
+	var endedAt *time.Time
+	if endedRaw != "" {
+		parsed, err := time.Parse("2006-01-02T15:04", endedRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de fin inválida"})
+			http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+			return
+		}
+		endedAt = &parsed
+	}
+	noteRaw := strings.TrimSpace(r.FormValue("note"))
+	var notePtr *string
+	if noteRaw != "" {
+		notePtr = &noteRaw
+	}
+	isPrimary := r.FormValue("is_primary") == "on"
+	isPrimaryPtr := &isPrimary
+
+	input := models.CaregiverRelationInput{
+		PatientID:      patientID,
+		CaregiverID:    caregiverID,
+		RelationTypeID: relPtr,
+		IsPrimary:      isPrimaryPtr,
+		StartedAt:      startedAt,
+		EndedAt:        endedAt,
+		Note:           notePtr,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	relation, err := h.repo.CreateCaregiverRelation(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "info", Message: "Ya existe la asignación"})
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Relación inválida"})
+		default:
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear la asignación"})
+		}
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGNMENT_CREATE", "caregiver_patient", &relation.CaregiverID, map[string]any{"patient_id": relation.PatientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Asignación creada"})
+	http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+}
+
+func (h *Handlers) CaregiverAssignmentsUpdate(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "patientID")
+	caregiverID := chi.URLParam(r, "caregiverID")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	relType := strings.TrimSpace(r.FormValue("relation_type_id"))
+	var relPtr *string
+	clearRelation := false
+	if relType != "" {
+		relPtr = &relType
+	} else {
+		clearRelation = true
+	}
+	startedRaw := strings.TrimSpace(r.FormValue("started_at"))
+	var startedAt *time.Time
+	if startedRaw != "" {
+		parsed, err := time.Parse("2006-01-02T15:04", startedRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de inicio inválida"})
+			http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+			return
+		}
+		startedAt = &parsed
+	}
+	endedRaw := strings.TrimSpace(r.FormValue("ended_at"))
+	var endedAt *time.Time
+	clearEnded := false
+	if endedRaw != "" {
+		parsed, err := time.Parse("2006-01-02T15:04", endedRaw)
+		if err != nil {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de fin inválida"})
+			http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+			return
+		}
+		endedAt = &parsed
+	} else {
+		clearEnded = true
+	}
+	noteRaw := strings.TrimSpace(r.FormValue("note"))
+	var notePtr *string
+	clearNote := false
+	if noteRaw != "" {
+		notePtr = &noteRaw
+	} else {
+		clearNote = true
+	}
+	isPrimary := r.FormValue("is_primary") == "on"
+	isPrimaryPtr := &isPrimary
+
+	input := models.CaregiverRelationUpdateInput{
+		RelationTypeID: relPtr,
+		ClearRelation:  clearRelation,
+		IsPrimary:      isPrimaryPtr,
+		StartedAt:      startedAt,
+		EndedAt:        endedAt,
+		ClearEndedAt:   clearEnded,
+		Note:           notePtr,
+		ClearNote:      clearNote,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	relation, err := h.repo.UpdateCaregiverRelation(ctx, patientID, caregiverID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Asignación no encontrada"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar"})
+		}
+		http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGNMENT_UPDATE", "caregiver_patient", &relation.CaregiverID, map[string]any{"patient_id": relation.PatientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Asignación actualizada"})
+	http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
+}
+
+func (h *Handlers) CaregiverAssignmentsDelete(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "patientID")
+	caregiverID := chi.URLParam(r, "caregiverID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCaregiverRelation(ctx, patientID, caregiverID); err != nil {
+		status := http.StatusInternalServerError
+		msg := "No se pudo eliminar"
+		if errors.Is(err, pgx.ErrNoRows) {
+			status = http.StatusNotFound
+			msg = "Asignación no encontrada"
+		}
+		http.Error(w, msg, status)
+		return
+	}
+
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGNMENT_DELETE", "caregiver_patient", &caregiverID, map[string]any{"patient_id": patientID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Asignación eliminada"})
+	http.Redirect(w, r, "/superadmin/caregivers", http.StatusSeeOther)
 }
 
 // Patients

@@ -55,6 +55,27 @@ type Repository interface {
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
+	ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error)
+	CreateCareTeam(ctx context.Context, input models.CareTeamInput) (*models.CareTeam, error)
+	UpdateCareTeam(ctx context.Context, id string, input models.CareTeamUpdateInput) (*models.CareTeam, error)
+	DeleteCareTeam(ctx context.Context, id string) error
+	ListCareTeamMembers(ctx context.Context, teamID string) ([]models.CareTeamMember, error)
+	AddCareTeamMember(ctx context.Context, teamID, userID, role string) (*models.CareTeamMember, error)
+	UpdateCareTeamMember(ctx context.Context, teamID, userID, role string) (*models.CareTeamMember, error)
+	RemoveCareTeamMember(ctx context.Context, teamID, userID string) error
+	ListCareTeamPatients(ctx context.Context, teamID string) ([]models.CareTeamPatient, error)
+	AssignPatientToCareTeam(ctx context.Context, teamID, patientID string) (*models.CareTeamPatient, error)
+	RemovePatientFromCareTeam(ctx context.Context, teamID, patientID string) error
+
+	ListCaregiverRelationTypes(ctx context.Context) ([]models.CaregiverRelationType, error)
+	CreateCaregiverRelationType(ctx context.Context, code, label string) (*models.CaregiverRelationType, error)
+	UpdateCaregiverRelationType(ctx context.Context, id string, code, label *string) (*models.CaregiverRelationType, error)
+	DeleteCaregiverRelationType(ctx context.Context, id string) error
+	ListCaregiverRelations(ctx context.Context, limit, offset int) ([]models.CaregiverRelation, error)
+	CreateCaregiverRelation(ctx context.Context, input models.CaregiverRelationInput) (*models.CaregiverRelation, error)
+	UpdateCaregiverRelation(ctx context.Context, patientID, caregiverID string, input models.CaregiverRelationUpdateInput) (*models.CaregiverRelation, error)
+	DeleteCaregiverRelation(ctx context.Context, patientID, caregiverID string) error
+
 	ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error)
 	CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error)
 	UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error)
@@ -235,23 +256,37 @@ func averagePerDay(total int, days int) float64 {
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":         "Alta de organización",
-	"ORG_UPDATE":         "Actualización de organización",
-	"ORG_DELETE":         "Eliminación de organización",
-	"INVITE_CREATE":      "Emisión de invitación",
-	"INVITE_CANCEL":      "Cancelación de invitación",
-	"INVITE_CONSUME":     "Consumo de invitación",
-	"MEMBER_ADD":         "Alta de miembro",
-	"MEMBER_REMOVE":      "Baja de miembro",
-	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
-	"APIKEY_CREATE":      "Creación de API Key",
-	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":      "Revocación de API Key",
-	"CATALOG_CREATE":     "Alta en catálogo",
-	"CATALOG_UPDATE":     "Actualización de catálogo",
-	"CATALOG_DELETE":     "Eliminación de catálogo",
-	"DASHBOARD_EXPORT":   "Exportación de panel",
-	"AUDIT_EXPORT":       "Exportación de auditoría",
+	"ORG_CREATE":                  "Alta de organización",
+	"ORG_UPDATE":                  "Actualización de organización",
+	"ORG_DELETE":                  "Eliminación de organización",
+	"INVITE_CREATE":               "Emisión de invitación",
+	"INVITE_CANCEL":               "Cancelación de invitación",
+	"INVITE_CONSUME":              "Consumo de invitación",
+	"MEMBER_ADD":                  "Alta de miembro",
+	"MEMBER_REMOVE":               "Baja de miembro",
+	"CARE_TEAM_CREATE":            "Alta de equipo de cuidado",
+	"CARE_TEAM_UPDATE":            "Actualización de equipo de cuidado",
+	"CARE_TEAM_DELETE":            "Eliminación de equipo de cuidado",
+	"CARE_TEAM_MEMBER_ADD":        "Alta de miembro en equipo",
+	"CARE_TEAM_MEMBER_UPDATE":     "Actualización de miembro en equipo",
+	"CARE_TEAM_MEMBER_REMOVE":     "Baja de miembro en equipo",
+	"CARE_TEAM_PATIENT_ASSIGN":    "Asignación de paciente a equipo",
+	"CARE_TEAM_PATIENT_REMOVE":    "Desasignación de paciente de equipo",
+	"CAREGIVER_REL_TYPE_CREATE":   "Alta de tipo de relación",
+	"CAREGIVER_REL_TYPE_UPDATE":   "Actualización de tipo de relación",
+	"CAREGIVER_REL_TYPE_DELETE":   "Eliminación de tipo de relación",
+	"CAREGIVER_ASSIGNMENT_CREATE": "Alta de cuidador",
+	"CAREGIVER_ASSIGNMENT_UPDATE": "Actualización de cuidador",
+	"CAREGIVER_ASSIGNMENT_DELETE": "Baja de cuidador",
+	"USER_STATUS_UPDATE":          "Actualización de estatus de usuario",
+	"APIKEY_CREATE":               "Creación de API Key",
+	"APIKEY_SET_PERMS":            "Configuración de permisos de API Key",
+	"APIKEY_REVOKE":               "Revocación de API Key",
+	"CATALOG_CREATE":              "Alta en catálogo",
+	"CATALOG_UPDATE":              "Actualización de catálogo",
+	"CATALOG_DELETE":              "Eliminación de catálogo",
+	"DASHBOARD_EXPORT":            "Exportación de panel",
+	"AUDIT_EXPORT":                "Exportación de auditoría",
 }
 
 func operationLabel(code string) string {
@@ -1961,6 +1996,507 @@ func (h *Handlers) ListAuditLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, list)
+}
+
+// Care teams
+
+type careTeamCreateReq struct {
+	Name  string  `json:"name" validate:"required,min=3,max=160"`
+	OrgID *string `json:"org_id" validate:"omitempty,uuid4"`
+}
+
+type careTeamUpdateReq struct {
+	Name     *string `json:"name" validate:"omitempty,min=3,max=160"`
+	OrgID    *string `json:"org_id" validate:"omitempty,uuid4"`
+	ClearOrg bool    `json:"clear_org,omitempty"`
+}
+
+type careTeamMemberReq struct {
+	UserID string `json:"user_id" validate:"required,uuid4"`
+	Role   string `json:"role_in_team" validate:"required,min=2,max=80"`
+}
+
+type careTeamPatientReq struct {
+	PatientID string `json:"patient_id" validate:"required,uuid4"`
+}
+
+func (h *Handlers) ListCareTeams(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	teams, err := h.repo.ListCareTeams(ctx, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, teams)
+}
+
+func (h *Handlers) CreateCareTeam(w http.ResponseWriter, r *http.Request) {
+	var req careTeamCreateReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	input := models.CareTeamInput{Name: strings.TrimSpace(req.Name), OrgID: req.OrgID}
+	team, err := h.repo.CreateCareTeam(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "invalid_reference", pgErr.Message, nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_CREATE", "care_team", &team.ID, nil)
+	writeJSON(w, 201, team)
+}
+
+func (h *Handlers) UpdateCareTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req careTeamUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" {
+			req.Name = nil
+		} else {
+			req.Name = &trimmed
+		}
+	}
+	if req.OrgID != nil {
+		trimmed := strings.TrimSpace(*req.OrgID)
+		if trimmed == "" {
+			req.OrgID = nil
+		} else {
+			req.OrgID = &trimmed
+		}
+	}
+	if err := h.validate.StructPartial(req, "Name", "OrgID"); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid fields", nil)
+		return
+	}
+	var orgParam *string
+	if req.ClearOrg {
+		empty := ""
+		orgParam = &empty
+	} else if req.OrgID != nil {
+		orgParam = req.OrgID
+	}
+	input := models.CareTeamUpdateInput{Name: req.Name, OrgID: orgParam}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	team, err := h.repo.UpdateCareTeam(ctx, id, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+			writeProblem(w, 400, "invalid_reference", pgErr.Message, nil)
+			return
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "care team not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_UPDATE", "care_team", &team.ID, nil)
+	writeJSON(w, 200, team)
+}
+
+func (h *Handlers) DeleteCareTeam(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCareTeam(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "care team not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_DELETE", "care_team", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListCareTeamMembers(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	members, err := h.repo.ListCareTeamMembers(ctx, teamID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, members)
+}
+
+func (h *Handlers) AddCareTeamMember(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	var req careTeamMemberReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	member, err := h.repo.AddCareTeamMember(ctx, teamID, req.UserID, strings.TrimSpace(req.Role))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			writeProblem(w, 404, "not_found", "care team or user not found", nil)
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			writeProblem(w, 409, "conflict", "member already exists", nil)
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			writeProblem(w, 400, "invalid_reference", pgErr.Message, nil)
+		default:
+			writeProblem(w, 500, "db_error", err.Error(), nil)
+		}
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_ADD", "care_team_member", &member.UserID, map[string]any{"care_team_id": teamID})
+	writeJSON(w, 201, member)
+}
+
+func (h *Handlers) UpdateCareTeamMember(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userID")
+	var req careTeamMemberReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	member, err := h.repo.UpdateCareTeamMember(ctx, teamID, userID, strings.TrimSpace(req.Role))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "member not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_UPDATE", "care_team_member", &member.UserID, map[string]any{"care_team_id": teamID})
+	writeJSON(w, 200, member)
+}
+
+func (h *Handlers) RemoveCareTeamMember(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemoveCareTeamMember(ctx, teamID, userID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "member not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_MEMBER_REMOVE", "care_team_member", &userID, map[string]any{"care_team_id": teamID})
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListCareTeamPatients(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListCareTeamPatients(ctx, teamID)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) AssignPatientToCareTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	var req careTeamPatientReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	assignment, err := h.repo.AssignPatientToCareTeam(ctx, teamID, req.PatientID)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			writeProblem(w, 409, "conflict", "patient already assigned", nil)
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			writeProblem(w, 400, "invalid_reference", pgErr.Message, nil)
+		default:
+			writeProblem(w, 500, "db_error", err.Error(), nil)
+		}
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_PATIENT_ASSIGN", "care_team_patient", &assignment.PatientID, map[string]any{"care_team_id": teamID})
+	writeJSON(w, 201, assignment)
+}
+
+func (h *Handlers) RemovePatientFromCareTeam(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "id")
+	patientID := chi.URLParam(r, "patientID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemovePatientFromCareTeam(ctx, teamID, patientID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "assignment not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CARE_TEAM_PATIENT_REMOVE", "care_team_patient", &patientID, map[string]any{"care_team_id": teamID})
+	w.WriteHeader(204)
+}
+
+// Caregiver relations
+
+type caregiverTypeReq struct {
+	Code  string `json:"code" validate:"required,min=2,max=60"`
+	Label string `json:"label" validate:"required,min=2,max=120"`
+}
+
+type caregiverTypeUpdateReq struct {
+	Code  *string `json:"code" validate:"omitempty,min=2,max=60"`
+	Label *string `json:"label" validate:"omitempty,min=2,max=120"`
+}
+
+type caregiverRelationReq struct {
+	PatientID      string     `json:"patient_id" validate:"required,uuid4"`
+	CaregiverID    string     `json:"caregiver_id" validate:"required,uuid4"`
+	RelationTypeID *string    `json:"relation_type_id" validate:"omitempty,uuid4"`
+	IsPrimary      *bool      `json:"is_primary,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	EndedAt        *time.Time `json:"ended_at,omitempty"`
+	Note           *string    `json:"note,omitempty"`
+}
+
+type caregiverRelationUpdateReq struct {
+	RelationTypeID *string    `json:"relation_type_id" validate:"omitempty,uuid4"`
+	ClearRelation  bool       `json:"clear_relation_type,omitempty"`
+	IsPrimary      *bool      `json:"is_primary,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	EndedAt        *time.Time `json:"ended_at,omitempty"`
+	ClearEnded     bool       `json:"clear_ended_at,omitempty"`
+	Note           *string    `json:"note,omitempty"`
+	ClearNote      bool       `json:"clear_note,omitempty"`
+}
+
+func (h *Handlers) ListCaregiverRelationTypes(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	types, err := h.repo.ListCaregiverRelationTypes(ctx)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, types)
+}
+
+func (h *Handlers) CreateCaregiverRelationType(w http.ResponseWriter, r *http.Request) {
+	var req caregiverTypeReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.CreateCaregiverRelationType(ctx, strings.ToLower(strings.TrimSpace(req.Code)), strings.TrimSpace(req.Label))
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeProblem(w, 409, "conflict", "code already exists", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_REL_TYPE_CREATE", "caregiver_relation_type", &item.ID, nil)
+	writeJSON(w, 201, item)
+}
+
+func (h *Handlers) UpdateCaregiverRelationType(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var req caregiverTypeUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid fields", nil)
+		return
+	}
+	var codePtr, labelPtr *string
+	if req.Code != nil {
+		trimmed := strings.ToLower(strings.TrimSpace(*req.Code))
+		if trimmed != "" {
+			codePtr = &trimmed
+		}
+	}
+	if req.Label != nil {
+		trimmed := strings.TrimSpace(*req.Label)
+		if trimmed != "" {
+			labelPtr = &trimmed
+		}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	item, err := h.repo.UpdateCaregiverRelationType(ctx, id, codePtr, labelPtr)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "relation type not found", nil)
+			return
+		}
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+			writeProblem(w, 409, "conflict", "code already exists", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_REL_TYPE_UPDATE", "caregiver_relation_type", &item.ID, nil)
+	writeJSON(w, 200, item)
+}
+
+func (h *Handlers) DeleteCaregiverRelationType(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCaregiverRelationType(ctx, id); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "relation type not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_REL_TYPE_DELETE", "caregiver_relation_type", &id, nil)
+	w.WriteHeader(204)
+}
+
+func (h *Handlers) ListCaregiverRelations(w http.ResponseWriter, r *http.Request) {
+	limit, offset := parseLimitOffset(r)
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	list, err := h.repo.ListCaregiverRelations(ctx, limit, offset)
+	if err != nil {
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	writeJSON(w, 200, list)
+}
+
+func (h *Handlers) CreateCaregiverRelation(w http.ResponseWriter, r *http.Request) {
+	var req caregiverRelationReq
+	fields, err := decodeAndValidate(r, &req, h.validate)
+	if err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", fields)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	input := models.CaregiverRelationInput{
+		PatientID:      req.PatientID,
+		CaregiverID:    req.CaregiverID,
+		RelationTypeID: req.RelationTypeID,
+		IsPrimary:      req.IsPrimary,
+		StartedAt:      req.StartedAt,
+		EndedAt:        req.EndedAt,
+		Note:           req.Note,
+	}
+	relation, err := h.repo.CreateCaregiverRelation(ctx, input)
+	if err != nil {
+		var pgErr *pgconn.PgError
+		switch {
+		case errors.As(err, &pgErr) && pgErr.Code == "23505":
+			writeProblem(w, 409, "conflict", "relation already exists", nil)
+		case errors.As(err, &pgErr) && pgErr.Code == "23503":
+			writeProblem(w, 400, "invalid_reference", pgErr.Message, nil)
+		default:
+			writeProblem(w, 500, "db_error", err.Error(), nil)
+		}
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGNMENT_CREATE", "caregiver_patient", &relation.CaregiverID, map[string]any{"patient_id": relation.PatientID})
+	writeJSON(w, 201, relation)
+}
+
+func (h *Handlers) UpdateCaregiverRelation(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "patientID")
+	caregiverID := chi.URLParam(r, "caregiverID")
+	var req caregiverRelationUpdateReq
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(&req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid payload", nil)
+		return
+	}
+	if err := h.validate.Struct(req); err != nil {
+		writeProblem(w, 400, "bad_request", "invalid fields", nil)
+		return
+	}
+	input := models.CaregiverRelationUpdateInput{
+		RelationTypeID: req.RelationTypeID,
+		ClearRelation:  req.ClearRelation,
+		IsPrimary:      req.IsPrimary,
+		StartedAt:      req.StartedAt,
+		EndedAt:        req.EndedAt,
+		ClearEndedAt:   req.ClearEnded,
+		Note:           req.Note,
+		ClearNote:      req.ClearNote,
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	relation, err := h.repo.UpdateCaregiverRelation(ctx, patientID, caregiverID, input)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "relation not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGNMENT_UPDATE", "caregiver_patient", &relation.CaregiverID, map[string]any{"patient_id": relation.PatientID})
+	writeJSON(w, 200, relation)
+}
+
+func (h *Handlers) DeleteCaregiverRelation(w http.ResponseWriter, r *http.Request) {
+	patientID := chi.URLParam(r, "patientID")
+	caregiverID := chi.URLParam(r, "caregiverID")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.DeleteCaregiverRelation(ctx, patientID, caregiverID); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			writeProblem(w, 404, "not_found", "relation not found", nil)
+			return
+		}
+		writeProblem(w, 500, "db_error", err.Error(), nil)
+		return
+	}
+	h.writeAudit(ctx, r, "CAREGIVER_ASSIGNMENT_DELETE", "caregiver_patient", &caregiverID, map[string]any{"patient_id": patientID})
+	w.WriteHeader(204)
 }
 
 // Healthz

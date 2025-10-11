@@ -67,6 +67,28 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			br.Post("/{id}/delete", uiHandlers.ContentBlockTypesDelete)
 		})
 
+		s.Route("/care-teams", func(cr chi.Router) {
+			cr.Get("/", uiHandlers.CareTeamsIndex)
+			cr.Post("/", uiHandlers.CareTeamsCreate)
+			cr.Post("/{id}/update", uiHandlers.CareTeamsUpdate)
+			cr.Post("/{id}/delete", uiHandlers.CareTeamsDelete)
+			cr.Post("/{id}/members", uiHandlers.CareTeamMembersAdd)
+			cr.Post("/{id}/members/{userID}/update", uiHandlers.CareTeamMembersUpdate)
+			cr.Post("/{id}/members/{userID}/delete", uiHandlers.CareTeamMembersDelete)
+			cr.Post("/{id}/patients", uiHandlers.CareTeamPatientsAdd)
+			cr.Post("/{id}/patients/{patientID}/delete", uiHandlers.CareTeamPatientsDelete)
+		})
+
+		s.Route("/caregivers", func(cr chi.Router) {
+			cr.Get("/", uiHandlers.CaregiversIndex)
+			cr.Post("/types", uiHandlers.CaregiverTypesCreate)
+			cr.Post("/types/{id}/update", uiHandlers.CaregiverTypesUpdate)
+			cr.Post("/types/{id}/delete", uiHandlers.CaregiverTypesDelete)
+			cr.Post("/assignments", uiHandlers.CaregiverAssignmentsCreate)
+			cr.Post("/assignments/{patientID}/{caregiverID}/update", uiHandlers.CaregiverAssignmentsUpdate)
+			cr.Post("/assignments/{patientID}/{caregiverID}/delete", uiHandlers.CaregiverAssignmentsDelete)
+		})
+
 		s.Route("/patients", func(pr chi.Router) {
 			pr.Get("/", uiHandlers.PatientsIndex)
 			pr.Post("/", uiHandlers.PatientsCreate)
