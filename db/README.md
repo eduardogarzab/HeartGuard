@@ -18,7 +18,7 @@ db/
 └── README.md  # Este documento
 ```
 
-> El directorio `migrations/` queda reservado para futuras migraciones (aún no requerido).
+> El directorio `migrations/` contiene scripts de migración para actualizar esquemas existentes sin perder datos.
 
 ## Configuración desde `.env`
 
@@ -67,6 +67,8 @@ Tablas como `user_statuses`, `alert_channels`, `alert_levels`, `service_statuses
 ### Dominio clínico demo
 
 Incluye entidades base (`patients`, `care_teams`, `caregiver_patient`, `alert_types`, `event_types`) útiles para métricas y vistas futuras.
+
+**Normalización:** La tabla `alerts` obtiene `org_id` derivándolo de `patients.org_id` mediante JOIN en los stored procedures, respetando la Tercera Forma Normal (3FN) y eliminando dependencias transitivas.
 
 ### Auditoría y métricas
 
@@ -132,6 +134,20 @@ Se crea/actualiza en cada seed. Modifica la sección correspondiente de `seed.sq
 -   Para integraciones CI/CD, considera dividir `init.sql` en migraciones incrementales.
 -   PostGIS está habilitado desde el inicio para evitar migraciones posteriores aunque no todas las tablas lo utilicen aún.
 -   Controla los tiempos de espera (`statement_timeout`, `idle_in_transaction_session_timeout`) que `init.sql` establece al final del script.
+-   **Normalización 3FN:** Evita duplicar datos derivables; la tabla `alerts` ya no almacena `org_id` directamente, se obtiene mediante JOIN con `patients`.
+
+## Migraciones
+
+Para aplicar cambios a bases existentes sin perder datos:
+
+```bash
+# Ejecutar migración específica
+psql $DATABASE_URL -f db/migrations/001_remove_alerts_org_id.sql
+```
+
+Las migraciones disponibles:
+
+-   `001_remove_alerts_org_id.sql`: Elimina columna redundante `org_id` de `alerts` y actualiza stored procedures para obtenerla mediante JOIN.
 
 ## Problemas comunes
 

@@ -633,6 +633,7 @@ var allowedCatalogs = map[string]catalogMeta{
 	"delivery_statuses":     {Label: "Estados de entrega"},
 	"batch_export_statuses": {Label: "Estados de exportación"},
 	"org_roles":             {Label: "Roles de organización"},
+	"device_types":          {Label: "Tipos de dispositivo"},
 	"content_statuses":      {Label: "Estatus de contenido", RequiresWeight: true},
 	"content_categories":    {Label: "Categorías de contenido"},
 	"content_types":         {Label: "Tipos de contenido"},

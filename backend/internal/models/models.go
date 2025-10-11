@@ -316,9 +316,9 @@ type PushDeviceInput struct {
 }
 
 type DeviceType struct {
-	ID          string  `json:"id"`
-	Code        string  `json:"code"`
-	Description *string `json:"description,omitempty"`
+	ID    string  `json:"id"`
+	Code  string  `json:"code"`
+	Label *string `json:"label,omitempty"`
 }
 
 type SignalStream struct {
