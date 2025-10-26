@@ -9,6 +9,13 @@ type Organization struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type OrganizationStats struct {
+	MemberCount    int `json:"member_count"`
+	PatientCount   int `json:"patient_count"`
+	CareTeamCount  int `json:"care_team_count"`
+	CaregiverCount int `json:"caregiver_count"`
+}
+
 type OrgInvitation struct {
 	ID          string     `json:"id"`
 	OrgID       string     `json:"org_id"`
@@ -62,45 +69,6 @@ type MetricsOverview struct {
 	TotalMemberships   int             `json:"total_memberships"`
 	PendingInvitations int             `json:"pending_invitations"`
 	RecentOperations   []OperationStat `json:"recent_operations"`
-}
-
-type ContentTotals struct {
-	Total                 int     `json:"total"`
-	Published             int     `json:"published"`
-	Drafts                int     `json:"drafts"`
-	InReview              int     `json:"in_review"`
-	Scheduled             int     `json:"scheduled"`
-	Archived              int     `json:"archived"`
-	Stale                 int     `json:"stale"`
-	ActiveAuthors         int     `json:"active_authors"`
-	UpdatesLast30Days     int     `json:"updates_last_30_days"`
-	AvgUpdateIntervalDays float64 `json:"avg_update_interval_days"`
-}
-
-type ContentMonthlyPoint struct {
-	Period    string `json:"period"`
-	Total     int    `json:"total"`
-	Published int    `json:"published"`
-	Drafts    int    `json:"drafts"`
-}
-
-type ContentCategorySlice struct {
-	Category string `json:"category"`
-	Label    string `json:"label"`
-	Count    int    `json:"count"`
-}
-
-type ContentStatusTrend struct {
-	Period string `json:"period"`
-	Status string `json:"status"`
-	Count  int    `json:"count"`
-}
-
-type ContentBlockType struct {
-	ID          string  `json:"id"`
-	Code        string  `json:"code"`
-	Label       string  `json:"label"`
-	Description *string `json:"description,omitempty"`
 }
 
 type Patient struct {
@@ -191,33 +159,6 @@ type PatientLocationFilters struct {
 	PatientID *string    `json:"patient_id,omitempty"`
 	From      *time.Time `json:"from,omitempty"`
 	To        *time.Time `json:"to,omitempty"`
-}
-
-type UserLocation struct {
-	ID         string    `json:"id"`
-	UserID     string    `json:"user_id"`
-	UserName   *string   `json:"user_name,omitempty"`
-	UserEmail  *string   `json:"user_email,omitempty"`
-	RecordedAt time.Time `json:"recorded_at"`
-	Latitude   float64   `json:"latitude"`
-	Longitude  float64   `json:"longitude"`
-	Source     *string   `json:"source,omitempty"`
-	AccuracyM  *float64  `json:"accuracy_m,omitempty"`
-}
-
-type UserLocationInput struct {
-	UserID     string     `json:"user_id"`
-	RecordedAt *time.Time `json:"recorded_at,omitempty"`
-	Latitude   float64    `json:"latitude"`
-	Longitude  float64    `json:"longitude"`
-	Source     *string    `json:"source,omitempty"`
-	AccuracyM  *float64   `json:"accuracy_m,omitempty"`
-}
-
-type UserLocationFilters struct {
-	UserID *string    `json:"user_id,omitempty"`
-	From   *time.Time `json:"from,omitempty"`
-	To     *time.Time `json:"to,omitempty"`
 }
 
 type CaregiverRelationshipType struct {
@@ -580,171 +521,6 @@ type AlertDelivery struct {
 	ResponsePayload     *string   `json:"response_payload,omitempty"`
 }
 
-type ContentRoleActivity struct {
-	Role  string `json:"role"`
-	Count int    `json:"count"`
-}
-
-type ContentCumulativePoint struct {
-	Period string `json:"period"`
-	Count  int    `json:"count"`
-}
-
-type ContentUpdateHeatmapPoint struct {
-	Date  string `json:"date"`
-	Count int    `json:"count"`
-}
-
-type ContentMetrics struct {
-	Totals        ContentTotals               `json:"totals"`
-	Monthly       []ContentMonthlyPoint       `json:"monthly"`
-	Categories    []ContentCategorySlice      `json:"categories"`
-	StatusTrends  []ContentStatusTrend        `json:"status_trends"`
-	RoleActivity  []ContentRoleActivity       `json:"role_activity"`
-	Cumulative    []ContentCumulativePoint    `json:"cumulative"`
-	UpdateHeatmap []ContentUpdateHeatmapPoint `json:"update_heatmap"`
-}
-
-type ContentItem struct {
-	ID            string     `json:"id"`
-	Title         string     `json:"title"`
-	Summary       *string    `json:"summary,omitempty"`
-	Slug          *string    `json:"slug,omitempty"`
-	Locale        string     `json:"locale"`
-	StatusCode    string     `json:"status_code"`
-	StatusLabel   string     `json:"status_label"`
-	StatusWeight  int        `json:"status_weight"`
-	CategoryCode  string     `json:"category_code"`
-	CategoryLabel string     `json:"category_label"`
-	TypeCode      string     `json:"type_code"`
-	TypeLabel     string     `json:"type_label"`
-	AuthorName    *string    `json:"author_name,omitempty"`
-	AuthorEmail   *string    `json:"author_email,omitempty"`
-	UpdatedAt     time.Time  `json:"updated_at"`
-	PublishedAt   *time.Time `json:"published_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	ArchivedAt    *time.Time `json:"archived_at,omitempty"`
-}
-
-type ContentFilters struct {
-	TypeCode     *string `json:"type_code,omitempty"`
-	StatusCode   *string `json:"status_code,omitempty"`
-	CategoryCode *string `json:"category_code,omitempty"`
-	Search       *string `json:"search,omitempty"`
-	Limit        int     `json:"limit"`
-	Offset       int     `json:"offset"`
-}
-
-type ContentBlock struct {
-	ID             string  `json:"id"`
-	BlockTypeCode  string  `json:"block_type_code"`
-	BlockTypeLabel string  `json:"block_type_label"`
-	Position       int     `json:"position"`
-	Title          *string `json:"title,omitempty"`
-	Content        string  `json:"content"`
-}
-
-type ContentAuthor struct {
-	UserID     string `json:"user_id"`
-	Name       string `json:"name"`
-	Email      string `json:"email"`
-	StatusCode string `json:"status_code"`
-}
-
-type ContentVersion struct {
-	ID           string    `json:"id"`
-	VersionNo    int       `json:"version_no"`
-	CreatedAt    time.Time `json:"created_at"`
-	EditorUserID *string   `json:"editor_user_id,omitempty"`
-	EditorName   *string   `json:"editor_name,omitempty"`
-	ChangeType   string    `json:"change_type"`
-	Note         *string   `json:"note,omitempty"`
-	Published    bool      `json:"published"`
-	Body         string    `json:"body"`
-}
-
-type ContentDetail struct {
-	ContentItem
-	Body                   string         `json:"body"`
-	LatestVersionID        *string        `json:"latest_version_id,omitempty"`
-	LatestVersionNo        *int           `json:"latest_version_no,omitempty"`
-	LatestVersionCreatedAt *time.Time     `json:"latest_version_created_at,omitempty"`
-	Blocks                 []ContentBlock `json:"blocks"`
-}
-
-type ContentBlockInput struct {
-	BlockType string  `json:"block_type"`
-	Title     *string `json:"title,omitempty"`
-	Content   string  `json:"content"`
-	Position  int     `json:"position"`
-}
-
-type ContentCreateInput struct {
-	Title        string              `json:"title"`
-	Summary      *string             `json:"summary,omitempty"`
-	Slug         *string             `json:"slug,omitempty"`
-	Locale       *string             `json:"locale,omitempty"`
-	StatusCode   string              `json:"status_code"`
-	CategoryCode string              `json:"category_code"`
-	TypeCode     string              `json:"type_code"`
-	AuthorEmail  *string             `json:"author_email,omitempty"`
-	Body         string              `json:"body"`
-	Blocks       []ContentBlockInput `json:"blocks,omitempty"`
-	Note         *string             `json:"note,omitempty"`
-	PublishedAt  *time.Time          `json:"published_at,omitempty"`
-}
-
-type ContentUpdateInput struct {
-	Title           *string             `json:"title,omitempty"`
-	Summary         *string             `json:"summary,omitempty"`
-	Slug            *string             `json:"slug,omitempty"`
-	Locale          *string             `json:"locale,omitempty"`
-	StatusCode      *string             `json:"status_code,omitempty"`
-	CategoryCode    *string             `json:"category_code,omitempty"`
-	TypeCode        *string             `json:"type_code,omitempty"`
-	AuthorEmail     *string             `json:"author_email,omitempty"`
-	Body            *string             `json:"body,omitempty"`
-	Blocks          []ContentBlockInput `json:"blocks,omitempty"`
-	Note            *string             `json:"note,omitempty"`
-	PublishedAt     *time.Time          `json:"published_at,omitempty"`
-	ForceNewVersion bool                `json:"force_new_version"`
-}
-
-type ContentReportFilters struct {
-	From      *time.Time `json:"from,omitempty"`
-	To        *time.Time `json:"to,omitempty"`
-	Status    *string    `json:"status,omitempty"`
-	Category  *string    `json:"category,omitempty"`
-	Search    *string    `json:"search,omitempty"`
-	Sort      string     `json:"sort,omitempty"`
-	Direction string     `json:"direction,omitempty"`
-	Limit     int        `json:"limit"`
-	Offset    int        `json:"offset"`
-}
-
-type ContentReportRow struct {
-	ID             string     `json:"id"`
-	Title          string     `json:"title"`
-	StatusCode     string     `json:"status_code"`
-	StatusLabel    string     `json:"status_label"`
-	CategoryCode   string     `json:"category_code"`
-	CategoryLabel  string     `json:"category_label"`
-	AuthorName     *string    `json:"author_name,omitempty"`
-	AuthorEmail    *string    `json:"author_email,omitempty"`
-	PublishedAt    *time.Time `json:"published_at,omitempty"`
-	UpdatedAt      time.Time  `json:"updated_at"`
-	LastUpdateAt   *time.Time `json:"last_update_at,omitempty"`
-	LastEditorName *string    `json:"last_editor_name,omitempty"`
-	Updates30d     int        `json:"updates_30d"`
-}
-
-type ContentReportResult struct {
-	Rows   []ContentReportRow `json:"rows"`
-	Total  int                `json:"total"`
-	Limit  int                `json:"limit"`
-	Offset int                `json:"offset"`
-}
-
 type OperationsReportFilters struct {
 	From   *time.Time `json:"from,omitempty"`
 	To     *time.Time `json:"to,omitempty"`
@@ -838,6 +614,13 @@ type RolePermissionsResponse struct {
 	Permissions []RolePermission `json:"permissions"`
 }
 
+type RoleAssignment struct {
+	UserID     string    `json:"user_id"`
+	UserName   string    `json:"user_name"`
+	UserEmail  string    `json:"user_email"`
+	AssignedAt time.Time `json:"assigned_at"`
+}
+
 type UserRole struct {
 	RoleID      string     `json:"role_id"`
 	RoleName    string     `json:"role_name"`
@@ -890,29 +673,6 @@ type AuditLog struct {
 	EntityID *string        `json:"entity_id,omitempty"` // uuid -> string
 	Details  map[string]any `json:"details,omitempty"`   // JSONB
 	IP       *string        `json:"ip,omitempty"`        // inet -> string
-}
-
-type BatchExport struct {
-	ID               string         `json:"id"`
-	Purpose          string         `json:"purpose"`
-	TargetRef        string         `json:"target_ref"`
-	RequestedBy      *string        `json:"requested_by,omitempty"`
-	RequestedByName  *string        `json:"requested_by_name,omitempty"`
-	RequestedByEmail *string        `json:"requested_by_email,omitempty"`
-	RequestedAt      time.Time      `json:"requested_at"`
-	CompletedAt      *time.Time     `json:"completed_at,omitempty"`
-	StatusID         string         `json:"status_id"`
-	StatusCode       string         `json:"status_code"`
-	StatusLabel      string         `json:"status_label"`
-	Details          map[string]any `json:"details,omitempty"`
-}
-
-type BatchExportInput struct {
-	Purpose     string         `json:"purpose"`
-	TargetRef   string         `json:"target_ref"`
-	RequestedBy *string        `json:"requested_by,omitempty"`
-	StatusCode  string         `json:"status_code,omitempty"`
-	Details     map[string]any `json:"details,omitempty"`
 }
 
 type OperationCount struct {

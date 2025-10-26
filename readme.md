@@ -305,8 +305,6 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | -------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `dashboard`                | `GET /`, `GET /export`                                                          | Panel principal, exportable a CSV.                                              |
 | `organizations`            | `GET /`, `POST /`, `GET /{id}`, `POST /{id}/delete`                             | Listado, alta rápida, detalle y baja lógica de organizaciones.                  |
-| `content`                  | `GET /`, `GET /new`, `POST /`, `GET /{id}`, `POST /{id}`, `POST /{id}/delete`   | CMS SSR para bloques de contenido.                                              |
-| `content-block-types`      | `GET /`, `POST /`, `POST /{id}/update`, `POST /{id}/delete`                     | Gestión de tipos de bloque reutilizables.                                       |
 | `patients`                 | `GET /`, `POST /`, `POST /{id}/update`, `POST /{id}/delete`                     | CRUD de pacientes demo.                                                         |
 | `locations/patients`       | `GET /`, `POST /`, `POST /{id}/delete`                                          | Alta manual y administración de ubicaciones de pacientes (sin mapas embebidos). |
 | `locations/users`          | `GET /`, `POST /`, `POST /{id}/delete`                                          | Administrador de ubicaciones reportadas por usuarios finales.                   |

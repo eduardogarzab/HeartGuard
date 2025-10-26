@@ -22,6 +22,11 @@ INSERT INTO signal_types(code,label) VALUES
   ('BP','Presión arterial')
 ON CONFLICT (code) DO NOTHING;
 
+INSERT INTO device_types(code,label) VALUES
+  ('ECG_1LEAD','ECG portátil de una derivación'),
+  ('PULSE_OX','Oxímetro de pulso domiciliario')
+ON CONFLICT (code) DO NOTHING;
+
 INSERT INTO alert_channels(code,label) VALUES
   ('SMS','Mensaje SMS'),('EMAIL','Correo electrónico'),('PUSH','Notificación push')
 ON CONFLICT (code) DO NOTHING;
@@ -40,10 +45,6 @@ ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO delivery_statuses(code,label) VALUES
   ('SENT','Enviado'),('DELIVERED','Entregado'),('FAILED','Fallido')
-ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO batch_export_statuses(code,label) VALUES
-  ('queued','En cola'),('running','Ejecutando'),('done','Completado'),('error','Error')
 ON CONFLICT (code) DO NOTHING;
 
 -- Roles globales y permisos
@@ -134,22 +135,6 @@ ON CONFLICT (code) DO NOTHING;
 INSERT INTO caregiver_relationship_types(code,label) VALUES
  ('parent','Padre/Madre'),('spouse','Esposo/a'),('sibling','Hermano/a'),
  ('child','Hijo/a'),('friend','Amigo/a')
-ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO content_categories(code,label,color) VALUES
-  ('clinical_guides','Guías clínicas','#38bdf8'),
-  ('alert_protocols','Protocolos de alerta','#f97316'),
-  ('faq','Preguntas frecuentes','#22d3ee'),
-  ('education','Educación','#a855f7'),
-  ('communications','Comunicaciones','#f43f5e')
-ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO content_statuses(code,label,weight) VALUES
-  ('draft','Borrador',10),
-  ('in_review','En revisión',20),
-  ('scheduled','Programado',30),
-  ('published','Publicado',40),
-  ('archived','Archivado',50)
 ON CONFLICT (code) DO NOTHING;
 
 -- =========================================================
@@ -307,215 +292,6 @@ SELECT 'dfc8dca4-620a-4642-80ca-7d0fc7ab7a23'::uuid,
        180,
        '2.4.1'
 WHERE NOT EXISTS (SELECT 1 FROM service_health WHERE id='dfc8dca4-620a-4642-80ca-7d0fc7ab7a23'::uuid);
-
--- Contenido editorial demo
-INSERT INTO content_types(code, label, description) VALUES
-  ('article','Artículo','Artículos y guías gestionadas desde el panel'),
-  ('page','Página','Contenido informativo estático'),
-  ('block','Bloque','Fragmentos reutilizables para otras páginas')
-ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO content_block_types(code, label, description) VALUES
-  ('richtext','Texto enriquecido','Bloque de texto principal'),
-  ('callout','Llamado a la acción','Destacar notas o avisos'),
-  ('checklist','Lista de verificación','Pasos secuenciales para validar procesos'),
-  ('quote','Cita','Testimonios o fragmentos destacados'),
-  ('media','Multimedia','Bloques para imágenes o video')
-ON CONFLICT (code) DO NOTHING;
-
-INSERT INTO content_items (id, title, summary, slug, locale, category_id, status_id, content_type_id, author_user_id, created_at, updated_at, published_at, archived_at)
-VALUES
-  (
-    'ff7bfdf1-b20b-4e4c-8553-146acf69a474',
-    'Guía rápida de monitoreo post-operatorio',
-    'Checklist actualizado para pacientes en recuperación cardiovascular.',
-    'guia-rapida-monitoreo-post-operatorio',
-    'es',
-    (SELECT id FROM content_categories WHERE code='clinical_guides'),
-    (SELECT id FROM content_statuses WHERE code='published'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    NOW() - INTERVAL '330 days',
-    NOW() - INTERVAL '200 days',
-    NOW() - INTERVAL '327 days',
-    NULL
-  ),
-  (
-    '02492215-8764-4c8d-9c3e-b20ed0306dd5',
-    'Protocolos de triage cardiaco',
-    'Flujo para escalar alertas críticas en menos de cinco minutos.',
-    'protocolos-triage-cardiaco',
-    'es',
-    (SELECT id FROM content_categories WHERE code='alert_protocols'),
-    (SELECT id FROM content_statuses WHERE code='published'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    NOW() - INTERVAL '270 days',
-    NOW() - INTERVAL '40 days',
-    NOW() - INTERVAL '266 days',
-    NULL
-  ),
-  (
-    '36592f52-e8ca-4343-8e77-9394aacac8c2',
-    'Preguntas frecuentes sobre telemetría domiciliaria',
-    'Respuestas rápidas para cuidadores sobre dispositivos y soporte.',
-    'faq-telemetria-domiciliaria',
-    'es',
-    (SELECT id FROM content_categories WHERE code='faq'),
-    (SELECT id FROM content_statuses WHERE code='published'),
-    (SELECT id FROM content_types WHERE code='page'),
-    (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
-    NOW() - INTERVAL '210 days',
-    NOW() - INTERVAL '25 days',
-    NOW() - INTERVAL '205 days',
-    NULL
-  ),
-  (
-    'efb38308-5f7f-46df-acdb-cafaf7faf8a8',
-    'Boletín educativo: manejo de hipertensión',
-    'Campaña educativa para pacientes con seguimiento remoto.',
-    'boletin-manejo-hipertension',
-    'es',
-    (SELECT id FROM content_categories WHERE code='education'),
-    (SELECT id FROM content_statuses WHERE code='scheduled'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    NOW() - INTERVAL '150 days',
-    NOW() - INTERVAL '7 days',
-    NOW() + INTERVAL '12 days',
-    NULL
-  ),
-  (
-    '92d368b1-37b3-478d-abcd-d17f1405d653',
-    'Script de seguimiento telefónico',
-    'Guion para llamadas de verificación después de eventos de riesgo.',
-    'script-seguimiento-telefonico',
-    'es',
-    (SELECT id FROM content_categories WHERE code='communications'),
-    (SELECT id FROM content_statuses WHERE code='in_review'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    NOW() - INTERVAL '110 days',
-    NOW() - INTERVAL '12 days',
-    NULL,
-    NULL
-  ),
-  (
-    'a172e937-5644-44bd-8a74-be8c094462c5',
-    'Protocolo de cierre de alertas',
-    'Procedimiento histórico para cerrar alertas tras verificación manual.',
-    'protocolo-cierre-alertas',
-    'es',
-    (SELECT id FROM content_categories WHERE code='alert_protocols'),
-    (SELECT id FROM content_statuses WHERE code='archived'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    NOW() - INTERVAL '380 days',
-    NOW() - INTERVAL '320 days',
-    NOW() - INTERVAL '376 days',
-    NOW() - INTERVAL '310 days'
-  ),
-  (
-    'cc60ff3d-cf31-411f-985b-579a6e2a4f15',
-    'Guía de configuración para nuevos dispositivos',
-    'Procedimiento paso a paso para instalar sensores domiciliarios.',
-    'guia-configuracion-dispositivos',
-    'es',
-    (SELECT id FROM content_categories WHERE code='clinical_guides'),
-    (SELECT id FROM content_statuses WHERE code='draft'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
-    NOW() - INTERVAL '45 days',
-    NOW() - INTERVAL '5 days',
-    NULL,
-    NULL
-  ),
-  (
-    '3b8803de-cb8e-4406-af91-9e867281348f',
-    'Resumen semanal de incidencias',
-    'Resumen ejecutivo con insights del monitoreo semanal.',
-    'resumen-semanal-incidencias',
-    'es',
-    (SELECT id FROM content_categories WHERE code='communications'),
-    (SELECT id FROM content_statuses WHERE code='published'),
-    (SELECT id FROM content_types WHERE code='page'),
-    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    NOW() - INTERVAL '20 days',
-    NOW() - INTERVAL '2 days',
-    NOW() - INTERVAL '18 days',
-    NULL
-  ),
-  (
-    '4d878fd6-f5bc-48c0-a137-31473ccd8446',
-    'Checklist pre-implante para dispositivos implantables',
-    'Evaluación previa a la implantación de sensores cardíacos.',
-    'checklist-pre-implante-dispositivos',
-    'es',
-    (SELECT id FROM content_categories WHERE code='clinical_guides'),
-    (SELECT id FROM content_statuses WHERE code='published'),
-    (SELECT id FROM content_types WHERE code='article'),
-    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    NOW() - INTERVAL '420 days',
-    NOW() - INTERVAL '260 days',
-    NOW() - INTERVAL '415 days',
-    NULL
-  )
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO content_versions (id, content_id, version_no, body, editor_user_id, note, change_type, created_at, published)
-VALUES
-  ('06f8058e-582f-475c-a94d-986a54198832', 'ff7bfdf1-b20b-4e4c-8553-146acf69a474', 1, 'Checklist completo de signos vitales y acciones posoperatorias para los primeros siete días.', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '200 days', TRUE),
-  ('507b6fb2-74dc-4ae5-8dc2-49501d43bb8f', '02492215-8764-4c8d-9c3e-b20ed0306dd5', 1, 'Secuencia de triage para alertas cardíacas con tiempos objetivo y responsables.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '40 days', TRUE),
-  ('069ec287-d08a-4510-b539-7716e4f9ebbc', '36592f52-e8ca-4343-8e77-9394aacac8c2', 1, 'Respuestas frecuentes sobre configuración, conectividad y soporte para telemetría domiciliaria.', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '25 days', TRUE),
-  ('875e798d-63b5-41b3-b3a5-bc9308fb60a5', 'efb38308-5f7f-46df-acdb-cafaf7faf8a8', 1, 'Boletín educativo con consejos para pacientes hipertensos y recordatorios de seguimiento.', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '7 days', FALSE),
-  ('29946d21-3cd8-40f3-868d-74a25d9ab86c', '92d368b1-37b3-478d-abcd-d17f1405d653', 1, 'Guion telefónico con preguntas clave y registro de observaciones para cuidadores.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '12 days', FALSE),
-  ('06df3264-d9b0-4a8b-8ea6-2cea973378ba', 'a172e937-5644-44bd-8a74-be8c094462c5', 1, 'Procedimiento histórico documentado para cerrar alertas críticas de forma manual.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '320 days', FALSE),
-  ('a712c8c6-f66d-4a45-b74b-2347e70b0a30', 'cc60ff3d-cf31-411f-985b-579a6e2a4f15', 1, 'Pasos detallados para configurar dispositivos y calibrar sensores domiciliarios.', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '5 days', FALSE),
-  ('af0af772-e599-4bb4-b879-4338fd30aa82', '3b8803de-cb8e-4406-af91-9e867281348f', 1, 'Resumen ejecutivo con métricas clave y acciones recomendadas de la última semana.', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '2 days', TRUE),
-  ('cd43ad56-7c91-45da-a083-a5a11b889a66', '4d878fd6-f5bc-48c0-a137-31473ccd8446', 1, 'Checklist preoperatorio con validaciones clínicas y requisitos administrativos.', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'Versión inicial', 'seed', NOW() - INTERVAL '260 days', TRUE)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO content_blocks (id, version_id, block_type_id, position, title, content, created_at)
-SELECT
-  v.block_id,
-  v.version_id,
-  (SELECT id FROM content_block_types WHERE code='richtext'),
-  0,
-  NULL,
-  v.body,
-  v.created_at
-FROM (
-  VALUES
-    ('12dd5b08-542d-4f94-8235-58d0dd53e696'::uuid, '06f8058e-582f-475c-a94d-986a54198832'::uuid, 'Checklist completo de signos vitales y acciones posoperatorias para los primeros siete días.', NOW() - INTERVAL '200 days'),
-    ('e90efa7f-c658-4aa5-94cc-e3ad77e5704c'::uuid, '507b6fb2-74dc-4ae5-8dc2-49501d43bb8f'::uuid, 'Secuencia de triage para alertas cardíacas con tiempos objetivo y responsables.', NOW() - INTERVAL '40 days'),
-    ('0811abbc-bc61-4e38-8e00-5ef8a3c82fd1'::uuid, '069ec287-d08a-4510-b539-7716e4f9ebbc'::uuid, 'Respuestas frecuentes sobre configuración, conectividad y soporte para telemetría domiciliaria.', NOW() - INTERVAL '25 days'),
-    ('5e47a57e-2416-47aa-a6a1-65bcb7e7eaf2'::uuid, '875e798d-63b5-41b3-b3a5-bc9308fb60a5'::uuid, 'Boletín educativo con consejos para pacientes hipertensos y recordatorios de seguimiento.', NOW() - INTERVAL '7 days'),
-    ('85aa51c6-0d7a-4415-8b9c-614ee34d1bb1'::uuid, '29946d21-3cd8-40f3-868d-74a25d9ab86c'::uuid, 'Guion telefónico con preguntas clave y registro de observaciones para cuidadores.', NOW() - INTERVAL '12 days'),
-    ('a3aa7067-aacb-41b9-9ac6-1c9bea7e86c4'::uuid, '06df3264-d9b0-4a8b-8ea6-2cea973378ba'::uuid, 'Procedimiento histórico documentado para cerrar alertas críticas de forma manual.', NOW() - INTERVAL '320 days'),
-    ('f5e9155e-2972-4f6d-b342-f4c902de7fb4'::uuid, 'a712c8c6-f66d-4a45-b74b-2347e70b0a30'::uuid, 'Pasos detallados para configurar dispositivos y calibrar sensores domiciliarios.', NOW() - INTERVAL '5 days'),
-    ('1ce5af9f-d970-4170-b4a3-9d0e7191c49c'::uuid, 'af0af772-e599-4bb4-b879-4338fd30aa82'::uuid, 'Resumen ejecutivo con métricas clave y acciones recomendadas de la última semana.', NOW() - INTERVAL '2 days'),
-    ('7d856f79-25fa-4008-880d-a7e0e6753f82'::uuid, 'cd43ad56-7c91-45da-a083-a5a11b889a66'::uuid, 'Checklist preoperatorio con validaciones clínicas y requisitos administrativos.', NOW() - INTERVAL '260 days')
-) AS v(block_id, version_id, body, created_at)
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO content_updates (id, content_id, editor_user_id, change_type, note, created_at)
-VALUES
-  ('d91e40a9-6de3-4df5-8597-bf4368b59a69', 'ff7bfdf1-b20b-4e4c-8553-146acf69a474', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'review', 'Se actualizó tabla de signos vitales.', NOW() - INTERVAL '320 days'),
-  ('8441a3d5-bd2e-4890-ad74-b051ce60f299', 'ff7bfdf1-b20b-4e4c-8553-146acf69a474', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'edit', 'Se añadió checklist quirúrgico.', NOW() - INTERVAL '210 days'),
-  ('d3e8abba-4c09-410f-97b5-a23c8eef36c5', '02492215-8764-4c8d-9c3e-b20ed0306dd5', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Se incorporaron tiempos objetivo de respuesta.', NOW() - INTERVAL '60 days'),
-  ('d2d56c40-56c1-4070-99cc-f6e69c6544a0', '02492215-8764-4c8d-9c3e-b20ed0306dd5', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'review', 'Validación operativa.', NOW() - INTERVAL '35 days'),
-  ('0b895ef9-b616-4031-8bb3-12e63809ec3d', '36592f52-e8ca-4343-8e77-9394aacac8c2', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'edit', 'Se añadieron preguntas sobre conectividad.', NOW() - INTERVAL '120 days'),
-  ('b782c4c6-edc1-4fff-a4c2-0bce2ef09e79', '36592f52-e8ca-4343-8e77-9394aacac8c2', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'review', 'Clarificación sobre soporte técnico.', NOW() - INTERVAL '20 days'),
-  ('029ebff0-badf-4088-8bdb-adbac437cd12', 'efb38308-5f7f-46df-acdb-cafaf7faf8a8', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'edit', 'Actualización de gráficos de presión arterial.', NOW() - INTERVAL '30 days'),
-  ('4a9a0e1e-1811-4d7d-80d3-80601c26a4d0', 'efb38308-5f7f-46df-acdb-cafaf7faf8a8', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'review', 'Se programó envío a pacientes.', NOW() - INTERVAL '5 days'),
-  ('44c4d1c8-8da3-4021-8587-d5d996d1a03c', '92d368b1-37b3-478d-abcd-d17f1405d653', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Ajuste de tiempos de seguimiento.', NOW() - INTERVAL '28 days'),
-  ('81568cc7-5f07-4913-9781-980b45aee0c5', '92d368b1-37b3-478d-abcd-d17f1405d653', (SELECT id FROM users WHERE email='admin@heartguard.com'), 'review', 'Retroalimentación de calidad.', NOW() - INTERVAL '10 days'),
-  ('29020bb4-6c65-4f26-bb0c-551b432ed123', 'cc60ff3d-cf31-411f-985b-579a6e2a4f15', (SELECT id FROM users WHERE email='sofia.care@heartguard.com'), 'edit', 'Se añadió sección de calibración.', NOW() - INTERVAL '18 days'),
-  ('ef21ba6f-6d03-43ea-968d-96192e0bdb2b', 'cc60ff3d-cf31-411f-985b-579a6e2a4f15', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'review', 'Checklist técnico.', NOW() - INTERVAL '6 days'),
-  ('53f03a0b-8327-4095-890a-7bd787188b83', '3b8803de-cb8e-4406-af91-9e867281348f', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Consolidación de nuevos KPIs semanales.', NOW() - INTERVAL '15 days'),
-  ('16d28f0d-82fd-4d9e-b43e-6c7c0a41cccd', '3b8803de-cb8e-4406-af91-9e867281348f', (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'review', 'Validación médica de cifras clave.', NOW() - INTERVAL '7 days'),
-  ('4da49bb6-b1d4-4985-a229-e387f83ed759', '3b8803de-cb8e-4406-af91-9e867281348f', (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'edit', 'Ajuste en narrativa ejecutiva.', NOW() - INTERVAL '2 days')
-ON CONFLICT (id) DO NOTHING;
 
 -- Auditoría demo (últimos 30 días)
 INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip, details)
@@ -707,42 +483,6 @@ VALUES
     42.00
   )
 ON CONFLICT (patient_id, ts) DO NOTHING;
-
-INSERT INTO user_locations (id, user_id, ts, geom, source, accuracy_m)
-SELECT
-  '135c06c7-e1d0-4520-b8a3-cafd7c02821a'::uuid,
-  u.id,
-  NOW() - INTERVAL '3 hours',
-  ST_SetSRID(ST_MakePoint(-99.1100, 19.4400), 4326),
-  'mobile-app',
-  15.20
-FROM users u
-WHERE u.email='martin.ops@heartguard.com'
-ON CONFLICT (user_id, ts) DO NOTHING;
-
-INSERT INTO user_locations (id, user_id, ts, geom, source, accuracy_m)
-SELECT
-  '8a5c5b38-4f54-44f4-a374-8c513757bc0f'::uuid,
-  u.id,
-  NOW() - INTERVAL '5 hours',
-  ST_SetSRID(ST_MakePoint(-99.1500, 19.4200), 4326),
-  'caregiver-app',
-  22.00
-FROM users u
-WHERE u.email='sofia.care@heartguard.com'
-ON CONFLICT (user_id, ts) DO NOTHING;
-
-INSERT INTO user_locations (id, user_id, ts, geom, source, accuracy_m)
-SELECT
-  'b198d173-864c-4b47-a5c8-f50d36e79f76'::uuid,
-  u.id,
-  NOW() - INTERVAL '1 day',
-  ST_SetSRID(ST_MakePoint(-99.2000, 19.4000), 4326),
-  'vpn-monitor',
-  9.80
-FROM users u
-WHERE u.email='admin@heartguard.com'
-ON CONFLICT (user_id, ts) DO NOTHING;
 
 INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
 SELECT
@@ -1061,30 +801,6 @@ CROSS JOIN platforms p
 WHERE u.email='martin.ops@heartguard.com'
   AND p.code='android'
 ON CONFLICT (user_id, platform_id, push_token) DO NOTHING;
-
-INSERT INTO batch_exports (id, purpose, target_ref, requested_by, requested_at, completed_at, batch_export_status_id, details)
-VALUES
-  (
-    '791771c7-d51d-4d05-9e56-2ebfd2ff343a'::uuid,
-    'alerts_csv',
-    's3://demo-exports/alerts-2025-10-10.csv',
-    (SELECT id FROM users WHERE email='admin@heartguard.com'),
-    NOW() - INTERVAL '1 day',
-    NOW() - INTERVAL '23 hours',
-    (SELECT id FROM batch_export_statuses WHERE code='done'),
-    '{"row_count":52,"filters":{"status":["ack","resolved"]}}'::jsonb
-  ),
-  (
-    '9f063660-1e77-4dd3-aacc-36aeddab5d06'::uuid,
-    'patients_snapshot',
-    's3://demo-exports/patients-queue.csv',
-    (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
-    NOW() - INTERVAL '6 hours',
-    NULL,
-    (SELECT id FROM batch_export_statuses WHERE code='running'),
-    '{"org":"FAM-001"}'::jsonb
-  )
-ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO api_keys (id, owner_user_id, key_hash, label, created_at, expires_at, revoked_at, scopes)
 VALUES

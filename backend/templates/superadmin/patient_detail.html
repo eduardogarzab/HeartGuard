@@ -1,0 +1,135 @@
+{{define "superadmin/patient_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/patient_detail.html:content"}}
+<section class="hg-section">
+	<div class="hg-detail-header">
+		<div>
+			<h1>{{.Data.Patient.Name}}</h1>
+			<p class="hg-detail-subtitle">Registrado {{formatTime .Data.Patient.CreatedAt}}</p>
+		</div>
+		<div class="hg-detail-meta">
+			{{if .Data.Patient.OrgName}}<span class="hg-detail-pill">{{.Data.Patient.OrgName}}</span>{{end}}
+			{{with .Data.RiskLevel}}
+			<span class="hg-status-chip {{if eq . "alto"}}is-danger{{else if eq . "medio"}}is-warn{{else if eq . "bajo"}}is-success{{end}}">Riesgo: {{.}}</span>
+			{{end}}
+		</div>
+	</div>
+	<div class="hg-summary-grid">
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Organización</span>
+			<span class="hg-summary-value">{{if .Data.Patient.OrgName}}{{.Data.Patient.OrgName}}{{else}}—{{end}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Nivel de riesgo</span>
+			<span class="hg-summary-value">{{if .Data.RiskLevel}}{{.Data.RiskLevel}}{{else}}—{{end}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Sexo</span>
+			<span class="hg-summary-value">{{if .Data.Patient.SexLabel}}{{.Data.Patient.SexLabel}}{{else}}—{{end}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Nacimiento</span>
+			<span class="hg-summary-value">{{if .Data.Patient.Birthdate}}{{formatDatePtr .Data.Patient.Birthdate}}{{else}}—{{end}}</span>
+		</article>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Equipos de cuidado</h2>
+			<span class="hg-card-meta">{{len .Data.CareTeams}} equipos</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Equipo</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.CareTeams}}
+				<tr>
+					<td>{{.CareTeamName}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="1" class="hg-empty-cell">Sin equipos asociados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Cuidadores asignados</h2>
+			<span class="hg-card-meta">{{len .Data.Caregivers}} cuidadores</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Cuidador</th>
+					<th>Correo</th>
+					<th>Relación</th>
+					<th>Primario</th>
+					<th>Inicio</th>
+					<th>Fin</th>
+					<th>Nota</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Caregivers}}
+				<tr>
+					<td><a href="/superadmin/users/{{.CaregiverID}}" class="hg-link">{{.CaregiverName}}</a></td>
+					<td>{{.CaregiverEmail}}</td>
+					<td>{{if .RelationshipTypeLabel}}{{.RelationshipTypeLabel}}{{else}}—{{end}}</td>
+					<td>{{if .IsPrimary}}Sí{{else}}No{{end}}</td>
+					<td>{{formatDate .StartedAt}}</td>
+					<td>{{if .EndedAt}}{{formatDatePtr .EndedAt}}{{else}}—{{end}}</td>
+					<td>{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="7" class="hg-empty-cell">Sin cuidadores asignados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Últimas ubicaciones</h2>
+			<span class="hg-card-meta">{{len .Data.Locations}} registros</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Registrado</th>
+					<th>Latitud</th>
+					<th>Longitud</th>
+					<th>Fuente</th>
+					<th>Precisión (m)</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Locations}}
+				<tr>
+					<td>{{formatTime .RecordedAt}}</td>
+					<td>{{printf "%.5f" .Latitude}}</td>
+					<td>{{printf "%.5f" .Longitude}}</td>
+					<td>{{if .Source}}{{.Source}}{{else}}—{{end}}</td>
+					<td>{{if .AccuracyText}}{{.AccuracyText}}{{else}}—{{end}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="5" class="hg-empty-cell">Sin ubicaciones registradas.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}

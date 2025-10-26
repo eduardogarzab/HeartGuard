@@ -65,6 +65,9 @@ type Repository interface {
 	CreateOrganization(ctx context.Context, code, name string) (*models.Organization, error)
 	ListOrganizations(ctx context.Context, limit, offset int) ([]models.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*models.Organization, error)
+	GetOrganizationStats(ctx context.Context, id string) (*models.OrganizationStats, error)
+	ListOrganizationPatients(ctx context.Context, orgID string, limit int) ([]models.Patient, error)
+	ListOrganizationCareTeams(ctx context.Context, orgID string, limit int) ([]models.CareTeam, error)
 	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
 	DeleteOrganization(ctx context.Context, id string) error
 
@@ -82,6 +85,7 @@ type Repository interface {
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
 	ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error)
+	GetPatient(ctx context.Context, id string) (*models.Patient, error)
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
@@ -99,6 +103,7 @@ type Repository interface {
 	UpdateCareTeamMember(ctx context.Context, careTeamID, userID string, input models.CareTeamMemberUpdateInput) (*models.CareTeamMember, error)
 	RemoveCareTeamMember(ctx context.Context, careTeamID, userID string) error
 	ListCareTeamPatients(ctx context.Context, careTeamID string) ([]models.PatientCareTeamLink, error)
+	ListPatientCareTeams(ctx context.Context, patientID string) ([]models.PatientCareTeamLink, error)
 	AddCareTeamPatient(ctx context.Context, careTeamID, patientID string) (*models.PatientCareTeamLink, error)
 	RemoveCareTeamPatient(ctx context.Context, careTeamID, patientID string) error
 
@@ -111,11 +116,6 @@ type Repository interface {
 	UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error)
 	DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error
 
-	ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error)
-	CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error)
-	UpdateBatchExportStatus(ctx context.Context, id string, statusCode string, completedAt *time.Time, details map[string]any) (*models.BatchExport, error)
-	DeleteBatchExport(ctx context.Context, id string) error
-
 	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
 	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
 	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
@@ -127,10 +127,6 @@ type Repository interface {
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
 	ListServices(ctx context.Context) ([]models.Service, error)
-
-	ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error)
-	CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error)
-	DeleteUserLocation(ctx context.Context, id string) error
 
 	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
 	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
@@ -180,32 +176,20 @@ type Repository interface {
 	ListAlertDeliveries(ctx context.Context, alertID string) ([]models.AlertDelivery, error)
 	CreateAlertDelivery(ctx context.Context, alertID, channelID, target, deliveryStatusID string, responsePayload *string) (*models.AlertDelivery, error)
 
-	ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error)
-	CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error)
-	UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error)
-	DeleteContentBlockType(ctx context.Context, id string) error
-
-	ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error)
-	GetContent(ctx context.Context, id string) (*models.ContentDetail, error)
-	CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error)
-	UpdateContent(ctx context.Context, id string, input models.ContentUpdateInput, actorID *string) (*models.ContentDetail, error)
-	DeleteContent(ctx context.Context, id string) error
-	ListContentVersions(ctx context.Context, id string, limit, offset int) ([]models.ContentVersion, error)
-	ListContentAuthors(ctx context.Context) ([]models.ContentAuthor, error)
-
 	MetricsOverview(ctx context.Context) (*models.MetricsOverview, error)
 	MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error)
 	MetricsUserStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
 	MetricsInvitationBreakdown(ctx context.Context) ([]models.InvitationBreakdown, error)
-	MetricsContentSnapshot(ctx context.Context) (*models.ContentMetrics, error)
-	MetricsContentReport(ctx context.Context, filters models.ContentReportFilters) (*models.ContentReportResult, error)
 	MetricsOperationsReport(ctx context.Context, filters models.OperationsReportFilters) (*models.OperationsReportResult, error)
 	MetricsUserActivityReport(ctx context.Context, filters models.UserActivityReportFilters) (*models.UserActivityReportResult, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
+	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)
+	ListUserCareTeams(ctx context.Context, userID string) ([]models.CareTeamMember, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
 	ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error)
 	ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error)
+	ListRoleAssignments(ctx context.Context, roleID string) ([]models.RoleAssignment, error)
 	CreateRole(ctx context.Context, name string, description *string) (*models.Role, error)
 	UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error)
 	DeleteRole(ctx context.Context, id string) error
@@ -249,20 +233,16 @@ type catalogMeta struct {
 }
 
 var allowedCatalogs = map[string]catalogMeta{
-	"user_statuses":         {Label: "Estatus de usuarios"},
-	"signal_types":          {Label: "Tipos de señal"},
-	"alert_channels":        {Label: "Canales de alerta"},
-	"alert_levels":          {Label: "Niveles de alerta", RequiresWeight: true},
-	"sexes":                 {Label: "Sexos"},
-	"platforms":             {Label: "Plataformas"},
-	"service_statuses":      {Label: "Estados de servicio"},
-	"delivery_statuses":     {Label: "Estados de entrega"},
-	"batch_export_statuses": {Label: "Estados de exportación"},
-	"org_roles":             {Label: "Roles de organización"},
-	"device_types":          {Label: "Tipos de dispositivo"},
-	"content_statuses":      {Label: "Estatus de contenido", RequiresWeight: true},
-	"content_categories":    {Label: "Categorías de contenido"},
-	"content_types":         {Label: "Tipos de contenido"},
+	"user_statuses":    {Label: "Estatus de usuarios"},
+	"signal_types":     {Label: "Tipos de señal"},
+	"alert_channels":   {Label: "Canales de alerta"},
+	"alert_levels":     {Label: "Niveles de alerta", RequiresWeight: true},
+	"sexes":            {Label: "Sexos"},
+	"platforms":        {Label: "Plataformas"},
+	"service_statuses": {Label: "Estados de servicio"},
+	"delivery_statuses": {Label: "Estados de entrega"},
+	"org_roles":        {Label: "Roles de organización"},
+	"device_types":     {Label: "Tipos de dispositivo"},
 }
 
 var operationLabels = map[string]string{
@@ -278,16 +258,11 @@ var operationLabels = map[string]string{
 	"APIKEY_CREATE":              "Creación de API Key",
 	"APIKEY_SET_PERMS":           "Configuración de permisos de API Key",
 	"APIKEY_REVOKE":              "Revocación de API Key",
-	"BATCH_EXPORT_CREATE":        "Creación de lote de exportación",
-	"BATCH_EXPORT_STATUS_UPDATE": "Actualización de estado de lote",
-	"BATCH_EXPORT_DELETE":        "Eliminación de lote de exportación",
 	"PUSH_DEVICE_CREATE":         "Registro de dispositivo push",
 	"PUSH_DEVICE_UPDATE":         "Actualización de dispositivo push",
 	"PUSH_DEVICE_DELETE":         "Eliminación de dispositivo push",
 	"PATIENT_LOCATION_CREATE":    "Registro de ubicación de paciente",
 	"PATIENT_LOCATION_DELETE":    "Eliminación de ubicación de paciente",
-	"USER_LOCATION_CREATE":       "Registro de ubicación de usuario",
-	"USER_LOCATION_DELETE":       "Eliminación de ubicación de usuario",
 	"CARE_TEAM_CREATE":           "Alta de equipo de cuidado",
 	"CARE_TEAM_UPDATE":           "Actualización de equipo de cuidado",
 	"CARE_TEAM_DELETE":           "Eliminación de equipo de cuidado",
@@ -307,9 +282,6 @@ var operationLabels = map[string]string{
 	"CATALOG_CREATE":             "Alta en catálogo",
 	"CATALOG_UPDATE":             "Actualización de catálogo",
 	"CATALOG_DELETE":             "Eliminación de catálogo",
-	"CONTENT_BLOCK_TYPE_CREATE":  "Alta de tipo de bloque",
-	"CONTENT_BLOCK_TYPE_UPDATE":  "Actualización de tipo de bloque",
-	"CONTENT_BLOCK_TYPE_DELETE":  "Eliminación de tipo de bloque",
 	"PATIENT_CREATE":             "Alta de paciente",
 	"PATIENT_UPDATE":             "Actualización de paciente",
 	"PATIENT_DELETE":             "Eliminación de paciente",
@@ -345,9 +317,6 @@ var operationLabels = map[string]string{
 	"ALERT_RESOLUTION_CREATE":    "Registro de resolución de alerta",
 	"ALERT_DELIVERY_CREATE":      "Registro de entrega de alerta",
 	"AUDIT_EXPORT":               "Exportación de auditoría",
-	"CONTENT_CREATE":             "Alta de contenido",
-	"CONTENT_UPDATE":             "Actualización de contenido",
-	"CONTENT_DELETE":             "Eliminación de contenido",
 }
 
 func humanizeToken(input string) string {
@@ -422,19 +391,21 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, templateName, 
 	flashes := h.sessions.PopFlashes(r.Context(), jti)
 	csrf := middleware.CSRFFromContext(r.Context())
 	currentUser := middleware.UserFromContext(r.Context())
+	sessionExpiresAt := middleware.SessionExpiresAtFromContext(r.Context())
 	settings, err := h.repo.GetSystemSettings(r.Context())
 	if err != nil && h.logger != nil {
 		h.logger.Error("layout settings load", zap.Error(err))
 	}
 	view := ui.ViewData{
-		Title:        title,
-		CSRFToken:    csrf,
-		Flashes:      flashes,
-		CurrentUser:  currentUser,
-		Settings:     settings,
-		Data:         data,
-		Breadcrumbs:  breadcrumbs,
-		IsSuperadmin: middleware.IsSuperadmin(r.Context()),
+		Title:            title,
+		CSRFToken:        csrf,
+		Flashes:          flashes,
+		CurrentUser:      currentUser,
+		Settings:         settings,
+		Data:             data,
+		Breadcrumbs:      breadcrumbs,
+		IsSuperadmin:     middleware.IsSuperadmin(r.Context()),
+		SessionExpiresAt: sessionExpiresAt,
 	}
 	view.ContentTemplate = templateName + ":content"
 	if err := h.renderer.Render(w, templateName, view); err != nil {
@@ -502,12 +473,6 @@ type dashboardViewData struct {
 	RecentOperations        []dashboardOperation
 	RecentActivity          []dashboardActivityEntry
 	ActivitySeries          []dashboardActivitySeriesPoint
-	ContentTotals           *models.ContentTotals
-	ContentStatusChart      []dashboardChartSlice
-	ContentCategoryChart    []dashboardChartSlice
-	ContentRoleChart        []dashboardChartSlice
-	ContentMonthlySeries    []dashboardActivitySeriesPoint
-	ContentCumulativeSeries []dashboardActivitySeriesPoint
 }
 
 func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData {
@@ -527,11 +492,6 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 	if err != nil && h.logger != nil {
 		h.logger.Error("metrics invites", zap.Error(err))
 	}
-	content, err := h.repo.MetricsContentSnapshot(ctx)
-	if err != nil && h.logger != nil {
-		h.logger.Error("metrics content", zap.Error(err))
-	}
-
 	metrics := make([]dashboardMetric, 0, 4)
 	ops := make([]dashboardOperation, 0)
 	activity := make([]dashboardActivityEntry, 0)
@@ -659,208 +619,16 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 		})
 	}
 
-	var (
-		totals                  *models.ContentTotals
-		contentStatusChart      []dashboardChartSlice
-		contentCategoryChart    []dashboardChartSlice
-		contentRoleChart        []dashboardChartSlice
-		contentMonthlySeries    []dashboardActivitySeriesPoint
-		contentCumulativeSeries []dashboardActivitySeriesPoint
-	)
-
-	parsePeriod := func(input string) (time.Time, bool) {
-		layouts := []string{time.RFC3339, "2006-01-02", "2006-01"}
-		for _, layout := range layouts {
-			if t, err := time.Parse(layout, input); err == nil {
-				if layout == "2006-01" {
-					t = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, time.UTC)
-				}
-				return t, true
-			}
-		}
-		return time.Time{}, false
-	}
-
-	if content != nil {
-		totals = &content.Totals
-		statusTotal := content.Totals.Total
-		statusEntries := []struct {
-			label string
-			count int
-			state string
-		}{
-			{label: "Publicados", count: content.Totals.Published, state: "success"},
-			{label: "En revisión", count: content.Totals.InReview, state: "info"},
-			{label: "Borradores", count: content.Totals.Drafts, state: "warn"},
-			{label: "Programados", count: content.Totals.Scheduled, state: "info"},
-			{label: "Archivados", count: content.Totals.Archived, state: "danger"},
-		}
-		if content.Totals.Stale > 0 {
-			statusEntries = append(statusEntries, struct {
-				label string
-				count int
-				state string
-			}{label: "Obsoletos", count: content.Totals.Stale, state: "warn"})
-		}
-		for _, item := range statusEntries {
-			if item.count <= 0 {
-				continue
-			}
-			percent := 0.0
-			if statusTotal > 0 {
-				percent = (float64(item.count) / float64(statusTotal)) * 100
-			}
-			width := int(math.Round(percent))
-			if width <= 0 && item.count > 0 {
-				width = 4
-			}
-			if width > 100 {
-				width = 100
-			}
-			contentStatusChart = append(contentStatusChart, dashboardChartSlice{
-				Label:   item.label,
-				Count:   item.count,
-				Percent: percent,
-				State:   item.state,
-				Width:   width,
-			})
-		}
-
-		const maxSlices = 5
-		categoriesTotal := 0
-		for _, cat := range content.Categories {
-			categoriesTotal += cat.Count
-		}
-		otherCategories := 0
-		for _, cat := range content.Categories {
-			if cat.Count <= 0 {
-				continue
-			}
-			label := cat.Label
-			if label == "" {
-				label = cat.Category
-			}
-			if len(contentCategoryChart) < maxSlices {
-				percent := 0.0
-				if categoriesTotal > 0 {
-					percent = (float64(cat.Count) / float64(categoriesTotal)) * 100
-				}
-				width := int(math.Round(percent))
-				if width <= 0 && cat.Count > 0 {
-					width = 4
-				}
-				if width > 100 {
-					width = 100
-				}
-				contentCategoryChart = append(contentCategoryChart, dashboardChartSlice{
-					Label:   label,
-					Count:   cat.Count,
-					Percent: percent,
-					State:   "info",
-					Width:   width,
-				})
-			} else {
-				otherCategories += cat.Count
-			}
-		}
-		if otherCategories > 0 && categoriesTotal > 0 {
-			percent := (float64(otherCategories) / float64(categoriesTotal)) * 100
-			width := int(math.Round(percent))
-			if width <= 0 {
-				width = 4
-			}
-			if width > 100 {
-				width = 100
-			}
-			contentCategoryChart = append(contentCategoryChart, dashboardChartSlice{
-				Label:   "Otros",
-				Count:   otherCategories,
-				Percent: percent,
-				State:   "info",
-				Width:   width,
-			})
-		}
-
-		roleTotal := 0
-		for _, item := range content.RoleActivity {
-			roleTotal += item.Count
-		}
-		for _, item := range content.RoleActivity {
-			if item.Count <= 0 {
-				continue
-			}
-			percent := 0.0
-			if roleTotal > 0 {
-				percent = (float64(item.Count) / float64(roleTotal)) * 100
-			}
-			width := int(math.Round(percent))
-			if width <= 0 && item.Count > 0 {
-				width = 4
-			}
-			if width > 100 {
-				width = 100
-			}
-			label := item.Role
-			if label == "" {
-				label = "Sin rol"
-			}
-			contentRoleChart = append(contentRoleChart, dashboardChartSlice{
-				Label:   label,
-				Count:   item.Count,
-				Percent: percent,
-				State:   "info",
-				Width:   width,
-			})
-		}
-		if len(contentRoleChart) > maxSlices {
-			contentRoleChart = contentRoleChart[:maxSlices]
-		}
-
-		for _, point := range content.Monthly {
-			if t, ok := parsePeriod(point.Period); ok {
-				contentMonthlySeries = append(contentMonthlySeries, dashboardActivitySeriesPoint{
-					Bucket: t,
-					Count:  point.Total,
-				})
-			}
-		}
-		if len(contentMonthlySeries) > 1 {
-			sort.Slice(contentMonthlySeries, func(i, j int) bool {
-				return contentMonthlySeries[i].Bucket.Before(contentMonthlySeries[j].Bucket)
-			})
-		}
-
-		for _, point := range content.Cumulative {
-			if t, ok := parsePeriod(point.Period); ok {
-				contentCumulativeSeries = append(contentCumulativeSeries, dashboardActivitySeriesPoint{
-					Bucket: t,
-					Count:  point.Count,
-				})
-			}
-		}
-		if len(contentCumulativeSeries) > 1 {
-			sort.Slice(contentCumulativeSeries, func(i, j int) bool {
-				return contentCumulativeSeries[i].Bucket.Before(contentCumulativeSeries[j].Bucket)
-			})
-		}
-	}
-
 	return dashboardViewData{
-		Overview:                overview,
-		Metrics:                 metrics,
-		StatusChart:             statusChart,
-		StatusTotal:             statusTotal,
-		InvitationChart:         inviteChart,
-		InvitationTotal:         inviteTotal,
-		RecentOperations:        ops,
-		RecentActivity:          activity,
-		ActivitySeries:          activitySeries,
-		ContentTotals:           totals,
-		ContentStatusChart:      contentStatusChart,
-		ContentCategoryChart:    contentCategoryChart,
-		ContentRoleChart:        contentRoleChart,
-		ContentMonthlySeries:    contentMonthlySeries,
-		ContentCumulativeSeries: contentCumulativeSeries,
+		Overview:         overview,
+		Metrics:          metrics,
+		StatusChart:      statusChart,
+		StatusTotal:      statusTotal,
+		InvitationChart:  inviteChart,
+		InvitationTotal:  inviteTotal,
+		RecentOperations: ops,
+		RecentActivity:   activity,
+		ActivitySeries:   activitySeries,
 	}
 }
 
@@ -949,49 +717,6 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		write([]string{"Sección", "Fecha", "Evento", "Actor", "Entidad"})
 		for _, entry := range data.RecentActivity {
 			write([]string{"Actividad reciente", formatLocal(entry.Timestamp), entry.Label, entry.Actor, entry.Entity})
-		}
-		if data.ContentTotals != nil {
-			write([]string{})
-			write([]string{"Sección", "Indicador", "Valor"})
-			totals := data.ContentTotals
-			write([]string{"Contenido", "Total piezas", strconv.Itoa(totals.Total)})
-			write([]string{"Contenido", "Publicados", strconv.Itoa(totals.Published)})
-			write([]string{"Contenido", "En revisión", strconv.Itoa(totals.InReview)})
-			write([]string{"Contenido", "Borradores", strconv.Itoa(totals.Drafts)})
-			write([]string{"Contenido", "Programados", strconv.Itoa(totals.Scheduled)})
-			write([]string{"Contenido", "Archivados", strconv.Itoa(totals.Archived)})
-			write([]string{"Contenido", "Obsoletos", strconv.Itoa(totals.Stale)})
-			write([]string{"Contenido", "Autores activos", strconv.Itoa(totals.ActiveAuthors)})
-			write([]string{"Contenido", "Actualizaciones 30 días", strconv.Itoa(totals.UpdatesLast30Days)})
-			write([]string{})
-			write([]string{"Sección", "Categoria", "Total", "Participación"})
-			for _, item := range data.ContentCategoryChart {
-				write([]string{"Categorías", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
-			}
-			write([]string{})
-			write([]string{"Sección", "Rol", "Total", "Participación"})
-			for _, item := range data.ContentRoleChart {
-				write([]string{"Actividad por rol", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
-			}
-			write([]string{})
-			write([]string{"Sección", "Estatus", "Total", "Participación"})
-			for _, item := range data.ContentStatusChart {
-				write([]string{"Estatus de contenido", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
-			}
-		}
-		if len(data.ContentMonthlySeries) > 0 {
-			write([]string{})
-			write([]string{"Sección", "Periodo", "Total"})
-			for _, point := range data.ContentMonthlySeries {
-				write([]string{"Producción mensual", point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
-			}
-		}
-		if len(data.ContentCumulativeSeries) > 0 {
-			write([]string{})
-			write([]string{"Sección", "Periodo", "Acumulado"})
-			for _, point := range data.ContentCumulativeSeries {
-				write([]string{"Crecimiento acumulado", point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
-			}
 		}
 		writer.Flush()
 		if err := writer.Error(); err != nil && h.logger != nil {
@@ -1320,79 +1045,6 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		renderTable("Actividad por hora", []string{"Fecha/Hora", "Eventos"}, []float64{60, 28}, []string{"L", "R"}, timelineRows)
 
-		if data.ContentTotals != nil {
-			// Nueva página para contenido
-			pdf.AddPage()
-
-			// Sección: Gestión de Contenido
-			pdf.SetFont("Helvetica", "B", 14)
-			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
-			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-			pdf.CellFormat(0, 9, translator("5. GESTIÓN DE CONTENIDO"), "", 0, "L", true, 0, "")
-			pdf.Ln(8)
-
-			totals := data.ContentTotals
-			contentRows := [][]string{
-				{"Total piezas", strconv.Itoa(totals.Total)},
-				{"Publicados", strconv.Itoa(totals.Published)},
-				{"En revisión", strconv.Itoa(totals.InReview)},
-				{"Borradores", strconv.Itoa(totals.Drafts)},
-				{"Programados", strconv.Itoa(totals.Scheduled)},
-				{"Archivados", strconv.Itoa(totals.Archived)},
-				{"Obsoletos", strconv.Itoa(totals.Stale)},
-				{"Autores activos", strconv.Itoa(totals.ActiveAuthors)},
-				{"Actualizaciones 30 días", strconv.Itoa(totals.UpdatesLast30Days)},
-			}
-			renderTable("Resumen de contenido", []string{"Indicador", "Valor"}, []float64{120, 35}, []string{"L", "R"}, contentRows)
-
-			statusRows := make([][]string, 0, len(data.ContentStatusChart))
-			for _, item := range data.ContentStatusChart {
-				statusRows = append(statusRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
-			}
-			renderTable("Estatus de contenido", []string{"Estatus", "Total", "Participación"}, []float64{110, 30, 30}, []string{"L", "R", "R"}, statusRows)
-
-			categoryRows := make([][]string, 0, len(data.ContentCategoryChart))
-			for _, item := range data.ContentCategoryChart {
-				categoryRows = append(categoryRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
-			}
-			renderTable("Categorías principales", []string{"Categoría", "Total", "Participación"}, []float64{110, 30, 30}, []string{"L", "R", "R"}, categoryRows)
-
-			roleRows := make([][]string, 0, len(data.ContentRoleChart))
-			for _, item := range data.ContentRoleChart {
-				roleRows = append(roleRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
-			}
-			renderTable("Actividad por rol", []string{"Rol", "Total", "Participación"}, []float64{110, 30, 30}, []string{"L", "R", "R"}, roleRows)
-		}
-
-		if len(data.ContentMonthlySeries) > 0 {
-			// Sección: Tendencias de Producción
-			pdf.Ln(6)
-			pdf.SetFont("Helvetica", "B", 14)
-			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
-			pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-			pdf.CellFormat(0, 9, translator("6. TENDENCIAS DE PRODUCCIÓN"), "", 0, "L", true, 0, "")
-			pdf.Ln(8)
-
-			monthlyRows := make([][]string, 0, len(data.ContentMonthlySeries))
-			for idx, point := range data.ContentMonthlySeries {
-				if idx >= 24 {
-					break
-				}
-				monthlyRows = append(monthlyRows, []string{point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
-			}
-			renderTable("Producción mensual", []string{"Periodo", "Total"}, []float64{60, 28}, []string{"L", "R"}, monthlyRows)
-		}
-
-		if len(data.ContentCumulativeSeries) > 0 {
-			cumulativeRows := make([][]string, 0, len(data.ContentCumulativeSeries))
-			for idx, point := range data.ContentCumulativeSeries {
-				if idx >= 24 {
-					break
-				}
-				cumulativeRows = append(cumulativeRows, []string{point.Bucket.Format("2006-01"), strconv.Itoa(point.Count)})
-			}
-			renderTable("Crecimiento acumulado", []string{"Periodo", "Acumulado"}, []float64{60, 28}, []string{"L", "R"}, cumulativeRows)
-		}
 
 		// Página final con conclusiones
 		pdf.AddPage()
@@ -1537,67 +1189,6 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		writeSection("Curva de actividad horaria", "Concentración de eventos a lo largo de las últimas jornadas.", timelineLines)
 
-		if data.ContentTotals != nil {
-			totals := data.ContentTotals
-			summaryLines := []string{
-				fmt.Sprintf("Total de piezas gestionadas: %d", totals.Total),
-				fmt.Sprintf("Publicados: %d", totals.Published),
-				fmt.Sprintf("En revisión: %d", totals.InReview),
-				fmt.Sprintf("Borradores: %d", totals.Drafts),
-				fmt.Sprintf("Programados: %d", totals.Scheduled),
-				fmt.Sprintf("Archivados: %d", totals.Archived),
-			}
-			if totals.Stale > 0 {
-				summaryLines = append(summaryLines, fmt.Sprintf("Obsoletos identificados: %d", totals.Stale))
-			}
-			summaryLines = append(summaryLines,
-				fmt.Sprintf("Autores activos: %d", totals.ActiveAuthors),
-				fmt.Sprintf("Actualizaciones en los últimos 30 días: %d", totals.UpdatesLast30Days),
-			)
-			writeSection("Panorama de contenidos", "Inventario actualizado de activos editoriales.", summaryLines)
-
-			statusContentLines := make([]string, 0, len(data.ContentStatusChart))
-			for _, item := range data.ContentStatusChart {
-				statusContentLines = append(statusContentLines, fmt.Sprintf("%s: %d elementos (%s)", item.Label, item.Count, formatPercent(item.Percent)))
-			}
-			writeSection("Estatus editorial", "Distribución actual de los contenidos según su ciclo de vida.", statusContentLines)
-
-			categoryLines := make([]string, 0, len(data.ContentCategoryChart))
-			for _, item := range data.ContentCategoryChart {
-				categoryLines = append(categoryLines, fmt.Sprintf("%s: %d piezas (%s)", item.Label, item.Count, formatPercent(item.Percent)))
-			}
-			writeSection("Categorías con mayor actividad", "Participación de cada categoría sobre el total publicado.", categoryLines)
-
-			roleLines := make([]string, 0, len(data.ContentRoleChart))
-			for _, item := range data.ContentRoleChart {
-				roleLines = append(roleLines, fmt.Sprintf("%s: %d colaboraciones (%s del total reportado)", item.Label, item.Count, formatPercent(item.Percent)))
-			}
-			writeSection("Participación por rol", "Colaboración de los distintos roles en la generación de contenido.", roleLines)
-		}
-
-		if len(data.ContentMonthlySeries) > 0 {
-			monthlyLines := make([]string, 0, min(len(data.ContentMonthlySeries), 24))
-			for idx, point := range data.ContentMonthlySeries {
-				if idx >= 24 {
-					break
-				}
-				monthlyLines = append(monthlyLines, fmt.Sprintf("%s: %d piezas nuevas", point.Bucket.Format("2006-01"), point.Count))
-			}
-			writeSection("Producción mensual", "Evolución de piezas generadas mes contra mes.", monthlyLines)
-		}
-
-		if len(data.ContentCumulativeSeries) > 0 {
-			cumulativeLines := make([]string, 0, min(len(data.ContentCumulativeSeries), 24))
-			acum := 0
-			for idx, point := range data.ContentCumulativeSeries {
-				if idx >= 24 {
-					break
-				}
-				acum = point.Count
-				cumulativeLines = append(cumulativeLines, fmt.Sprintf("%s: %d piezas acumuladas", point.Bucket.Format("2006-01"), acum))
-			}
-			writeSection("Crecimiento acumulado", "Sumatoria histórica de contenido publicado.", cumulativeLines)
-		}
 
 		if err := pdf.Output(w); err != nil && h.logger != nil {
 			h.logger.Error("pdf export error", zap.Error(err))
@@ -1606,63 +1197,6 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-type contentListFilters struct {
-	Type     string
-	Status   string
-	Category string
-	Search   string
-}
-
-type contentListViewData struct {
-	Items      []models.ContentItem
-	Filters    contentListFilters
-	Statuses   []models.CatalogItem
-	Categories []models.CatalogItem
-	Types      []models.CatalogItem
-}
-
-type contentFormFields struct {
-	Title           string
-	Summary         string
-	Slug            string
-	Locale          string
-	Status          string
-	Category        string
-	Type            string
-	AuthorEmail     string
-	Body            string
-	Note            string
-	PublishedAt     string
-	ForceNewVersion bool
-}
-
-type contentFormViewData struct {
-	Item       *models.ContentDetail
-	Form       contentFormFields
-	Statuses   []models.CatalogItem
-	Categories []models.CatalogItem
-	Types      []models.CatalogItem
-	Authors    []models.ContentAuthor
-	Versions   []models.ContentVersion
-	IsNew      bool
-	Error      string
-}
-
-func (h *Handlers) loadContentCatalogs(ctx context.Context) (statuses, categories, types []models.CatalogItem, err error) {
-	statuses, err = h.repo.ListCatalog(ctx, "content_statuses", 100, 0)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	categories, err = h.repo.ListCatalog(ctx, "content_categories", 100, 0)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	types, err = h.repo.ListCatalog(ctx, "content_types", 100, 0)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	return statuses, categories, types, nil
-}
 
 func parseDateTimeLocal(input string) (*time.Time, error) {
 	trimmed := strings.TrimSpace(input)
@@ -1708,509 +1242,6 @@ func optionalFloat32(raw string) (*float32, error) {
 	}
 	f32 := float32(val)
 	return &f32, nil
-}
-
-func (h *Handlers) ContentIndex(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	rawType := strings.TrimSpace(r.URL.Query().Get("type"))
-	rawStatus := strings.TrimSpace(r.URL.Query().Get("status"))
-	rawCategory := strings.TrimSpace(r.URL.Query().Get("category"))
-	rawSearch := strings.TrimSpace(r.URL.Query().Get("q"))
-
-	filters := models.ContentFilters{Limit: 100, Offset: 0}
-	if rawType != "" {
-		lower := strings.ToLower(rawType)
-		filters.TypeCode = &lower
-	}
-	if rawStatus != "" {
-		lower := strings.ToLower(rawStatus)
-		filters.StatusCode = &lower
-	}
-	if rawCategory != "" {
-		lower := strings.ToLower(rawCategory)
-		filters.CategoryCode = &lower
-	}
-	if rawSearch != "" {
-		filters.Search = &rawSearch
-	}
-
-	items, err := h.repo.ListContent(ctx, filters)
-	if err != nil {
-		http.Error(w, "No se pudo cargar el contenido", http.StatusInternalServerError)
-		return
-	}
-
-	statuses, categories, types, err := h.loadContentCatalogs(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
-		return
-	}
-
-	data := contentListViewData{
-		Items: items,
-		Filters: contentListFilters{
-			Type:     rawType,
-			Status:   rawStatus,
-			Category: rawCategory,
-			Search:   rawSearch,
-		},
-		Statuses:   statuses,
-		Categories: categories,
-		Types:      types,
-	}
-
-	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Contenido"}}
-	h.render(w, r, "superadmin/content_list.html", "Contenido", data, crumbs)
-}
-
-func defaultContentForm(statuses, categories, types []models.CatalogItem) contentFormFields {
-	form := contentFormFields{Locale: "es"}
-	for _, status := range statuses {
-		if strings.EqualFold(status.Code, "draft") {
-			form.Status = status.Code
-			break
-		}
-	}
-	if form.Status == "" && len(statuses) > 0 {
-		form.Status = statuses[0].Code
-	}
-	if len(categories) > 0 {
-		form.Category = categories[0].Code
-	}
-	if len(types) > 0 {
-		form.Type = types[0].Code
-	}
-	return form
-}
-
-func (h *Handlers) renderContentForm(w http.ResponseWriter, r *http.Request, title string, data contentFormViewData) {
-	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Contenido", URL: "/superadmin/content"}}
-	switch {
-	case data.IsNew:
-		crumbs = append(crumbs, ui.Breadcrumb{Label: "Nuevo"})
-	case data.Item != nil && data.Item.Title != "":
-		crumbs = append(crumbs, ui.Breadcrumb{Label: data.Item.Title})
-	default:
-		crumbs = append(crumbs, ui.Breadcrumb{Label: title})
-	}
-	h.render(w, r, "superadmin/content_edit.html", title, data, crumbs)
-}
-
-func (h *Handlers) ContentNew(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	statuses, categories, types, err := h.loadContentCatalogs(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
-		return
-	}
-
-	authors, err := h.repo.ListContentAuthors(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los autores", http.StatusInternalServerError)
-		return
-	}
-
-	data := contentFormViewData{
-		Form:       defaultContentForm(statuses, categories, types),
-		Statuses:   statuses,
-		Categories: categories,
-		Types:      types,
-		Authors:    authors,
-		IsNew:      true,
-	}
-	h.renderContentForm(w, r, "Nuevo contenido", data)
-}
-
-func (h *Handlers) ContentCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Formulario inválido", http.StatusBadRequest)
-		return
-	}
-
-	form := contentFormFields{
-		Title:       strings.TrimSpace(r.FormValue("title")),
-		Summary:     strings.TrimSpace(r.FormValue("summary")),
-		Slug:        strings.TrimSpace(r.FormValue("slug")),
-		Locale:      strings.TrimSpace(r.FormValue("locale")),
-		Status:      strings.TrimSpace(r.FormValue("status")),
-		Category:    strings.TrimSpace(r.FormValue("category")),
-		Type:        strings.TrimSpace(r.FormValue("type")),
-		AuthorEmail: strings.TrimSpace(r.FormValue("author_email")),
-		Body:        strings.TrimSpace(r.FormValue("body")),
-		Note:        strings.TrimSpace(r.FormValue("note")),
-		PublishedAt: strings.TrimSpace(r.FormValue("published_at")),
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	statuses, categories, types, err := h.loadContentCatalogs(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
-		return
-	}
-
-	authors, err := h.repo.ListContentAuthors(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los autores", http.StatusInternalServerError)
-		return
-	}
-
-	validateError := ""
-	switch {
-	case form.Title == "":
-		validateError = "El título es obligatorio"
-	case form.Status == "":
-		validateError = "Selecciona un estatus"
-	case form.Category == "":
-		validateError = "Selecciona una categoría"
-	case form.Type == "":
-		validateError = "Selecciona un tipo de contenido"
-	case form.Body == "":
-		validateError = "El contenido principal no puede estar vacío"
-	}
-	if validateError != "" {
-		data := contentFormViewData{
-			Form:       form,
-			Statuses:   statuses,
-			Categories: categories,
-			Types:      types,
-			Authors:    authors,
-			IsNew:      true,
-			Error:      validateError,
-		}
-		h.renderContentForm(w, r, "Nuevo contenido", data)
-		return
-	}
-
-	publishedAt, err := parseDateTimeLocal(form.PublishedAt)
-	if err != nil {
-		data := contentFormViewData{
-			Form:       form,
-			Statuses:   statuses,
-			Categories: categories,
-			Types:      types,
-			Authors:    authors,
-			IsNew:      true,
-			Error:      "Fecha de publicación inválida",
-		}
-		h.renderContentForm(w, r, "Nuevo contenido", data)
-		return
-	}
-
-	input := models.ContentCreateInput{
-		Title:        form.Title,
-		StatusCode:   strings.ToLower(form.Status),
-		CategoryCode: strings.ToLower(form.Category),
-		TypeCode:     strings.ToLower(form.Type),
-		Body:         form.Body,
-	}
-	if form.Summary != "" {
-		input.Summary = &form.Summary
-	}
-	if form.Slug != "" {
-		input.Slug = &form.Slug
-	}
-	if form.Locale != "" {
-		input.Locale = &form.Locale
-	}
-	if form.AuthorEmail != "" {
-		input.AuthorEmail = &form.AuthorEmail
-	}
-	if form.Note != "" {
-		input.Note = &form.Note
-	}
-	if publishedAt != nil {
-		input.PublishedAt = publishedAt
-	}
-
-	actorID := middleware.UserIDFromContext(r.Context())
-	var actorPtr *string
-	if actorID != "" {
-		actorPtr = &actorID
-	}
-
-	detail, err := h.repo.CreateContent(ctx, input, actorPtr)
-	if err != nil {
-		message := "No se pudo crear el contenido"
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Message != "" {
-			message = pgErr.Message
-		}
-		if h.logger != nil {
-			h.logger.Error("content create", zap.Error(err))
-		}
-		data := contentFormViewData{
-			Form:       form,
-			Statuses:   statuses,
-			Categories: categories,
-			Types:      types,
-			Authors:    authors,
-			IsNew:      true,
-			Error:      message,
-		}
-		h.renderContentForm(w, r, "Nuevo contenido", data)
-		return
-	}
-
-	h.writeAudit(ctx, r, "CONTENT_CREATE", "content", &detail.ID, map[string]any{"status": detail.StatusCode, "category": detail.CategoryCode})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Contenido creado"})
-	http.Redirect(w, r, fmt.Sprintf("/superadmin/content/%s", detail.ID), http.StatusSeeOther)
-}
-
-func (h *Handlers) ContentEdit(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	detail, err := h.repo.GetContent(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			http.Error(w, "Contenido no encontrado", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "No se pudo cargar el contenido", http.StatusInternalServerError)
-		return
-	}
-
-	statuses, categories, types, err := h.loadContentCatalogs(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
-		return
-	}
-
-	authors, err := h.repo.ListContentAuthors(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los autores", http.StatusInternalServerError)
-		return
-	}
-
-	versions, err := h.repo.ListContentVersions(ctx, id, 10, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar las versiones", http.StatusInternalServerError)
-		return
-	}
-
-	form := contentFormFields{
-		Title:    detail.Title,
-		Locale:   detail.Locale,
-		Status:   detail.StatusCode,
-		Category: detail.CategoryCode,
-		Type:     detail.TypeCode,
-		Body:     detail.Body,
-	}
-	if detail.Summary != nil {
-		form.Summary = *detail.Summary
-	}
-	if detail.Slug != nil {
-		form.Slug = *detail.Slug
-	}
-	if detail.AuthorEmail != nil {
-		form.AuthorEmail = *detail.AuthorEmail
-	}
-	if detail.PublishedAt != nil {
-		form.PublishedAt = detail.PublishedAt.In(time.Local).Format("2006-01-02T15:04")
-	}
-
-	data := contentFormViewData{
-		Item:       detail,
-		Form:       form,
-		Statuses:   statuses,
-		Categories: categories,
-		Types:      types,
-		Authors:    authors,
-		Versions:   versions,
-		IsNew:      false,
-	}
-	title := fmt.Sprintf("Editar: %s", detail.Title)
-	h.renderContentForm(w, r, title, data)
-}
-
-func (h *Handlers) ContentUpdate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "Formulario inválido", http.StatusBadRequest)
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	detail, err := h.repo.GetContent(ctx, id)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			http.Error(w, "Contenido no encontrado", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "No se pudo cargar el contenido", http.StatusInternalServerError)
-		return
-	}
-
-	statuses, categories, types, err := h.loadContentCatalogs(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
-		return
-	}
-
-	authors, err := h.repo.ListContentAuthors(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los autores", http.StatusInternalServerError)
-		return
-	}
-
-	versions, err := h.repo.ListContentVersions(ctx, id, 10, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar las versiones", http.StatusInternalServerError)
-		return
-	}
-
-	form := contentFormFields{
-		Title:           strings.TrimSpace(r.FormValue("title")),
-		Summary:         strings.TrimSpace(r.FormValue("summary")),
-		Slug:            strings.TrimSpace(r.FormValue("slug")),
-		Locale:          strings.TrimSpace(r.FormValue("locale")),
-		Status:          strings.TrimSpace(r.FormValue("status")),
-		Category:        strings.TrimSpace(r.FormValue("category")),
-		Type:            strings.TrimSpace(r.FormValue("type")),
-		AuthorEmail:     strings.TrimSpace(r.FormValue("author_email")),
-		Body:            strings.TrimSpace(r.FormValue("body")),
-		Note:            strings.TrimSpace(r.FormValue("note")),
-		PublishedAt:     strings.TrimSpace(r.FormValue("published_at")),
-		ForceNewVersion: r.FormValue("force_new_version") != "",
-	}
-
-	validateError := ""
-	switch {
-	case form.Title == "":
-		validateError = "El título es obligatorio"
-	case form.Status == "":
-		validateError = "Selecciona un estatus"
-	case form.Category == "":
-		validateError = "Selecciona una categoría"
-	case form.Type == "":
-		validateError = "Selecciona un tipo de contenido"
-	case form.Body == "":
-		validateError = "El contenido principal no puede estar vacío"
-	}
-	if validateError != "" {
-		data := contentFormViewData{
-			Item:       detail,
-			Form:       form,
-			Statuses:   statuses,
-			Categories: categories,
-			Types:      types,
-			Authors:    authors,
-			Versions:   versions,
-			Error:      validateError,
-		}
-		title := fmt.Sprintf("Editar: %s", detail.Title)
-		h.renderContentForm(w, r, title, data)
-		return
-	}
-
-	publishedAt, err := parseDateTimeLocal(form.PublishedAt)
-	if err != nil {
-		data := contentFormViewData{
-			Item:       detail,
-			Form:       form,
-			Statuses:   statuses,
-			Categories: categories,
-			Types:      types,
-			Authors:    authors,
-			Versions:   versions,
-			Error:      "Fecha de publicación inválida",
-		}
-		title := fmt.Sprintf("Editar: %s", detail.Title)
-		h.renderContentForm(w, r, title, data)
-		return
-	}
-
-	input := models.ContentUpdateInput{
-		ForceNewVersion: form.ForceNewVersion,
-	}
-	titleCopy := form.Title
-	input.Title = &titleCopy
-	summaryCopy := form.Summary
-	input.Summary = &summaryCopy
-	slugCopy := form.Slug
-	input.Slug = &slugCopy
-	localeCopy := form.Locale
-	input.Locale = &localeCopy
-	statusCopy := strings.ToLower(form.Status)
-	input.StatusCode = &statusCopy
-	categoryCopy := strings.ToLower(form.Category)
-	input.CategoryCode = &categoryCopy
-	typeCopy := strings.ToLower(form.Type)
-	input.TypeCode = &typeCopy
-	authorCopy := form.AuthorEmail
-	input.AuthorEmail = &authorCopy
-	bodyCopy := form.Body
-	input.Body = &bodyCopy
-	noteCopy := form.Note
-	if form.Note != "" {
-		input.Note = &noteCopy
-	}
-	if publishedAt != nil {
-		input.PublishedAt = publishedAt
-	}
-
-	actorID := middleware.UserIDFromContext(r.Context())
-	var actorPtr *string
-	if actorID != "" {
-		actorPtr = &actorID
-	}
-
-	updated, err := h.repo.UpdateContent(ctx, id, input, actorPtr)
-	if err != nil {
-		message := "No se pudo actualizar el contenido"
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Message != "" {
-			message = pgErr.Message
-		}
-		if h.logger != nil {
-			h.logger.Error("content update", zap.Error(err), zap.String("id", id))
-		}
-		data := contentFormViewData{
-			Item:       detail,
-			Form:       form,
-			Statuses:   statuses,
-			Categories: categories,
-			Types:      types,
-			Authors:    authors,
-			Versions:   versions,
-			Error:      message,
-		}
-		title := fmt.Sprintf("Editar: %s", detail.Title)
-		h.renderContentForm(w, r, title, data)
-		return
-	}
-
-	h.writeAudit(ctx, r, "CONTENT_UPDATE", "content", &updated.ID, map[string]any{"status": updated.StatusCode})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Contenido actualizado"})
-	http.Redirect(w, r, fmt.Sprintf("/superadmin/content/%s", updated.ID), http.StatusSeeOther)
-}
-
-func (h *Handlers) ContentDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	if err := h.repo.DeleteContent(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			http.Error(w, "Contenido no encontrado", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "No se pudo eliminar el contenido", http.StatusInternalServerError)
-		return
-	}
-
-	h.writeAudit(ctx, r, "CONTENT_DELETE", "content", &id, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Contenido eliminado"})
-	http.Redirect(w, r, "/superadmin/content", http.StatusSeeOther)
 }
 
 type organizationForm struct {
@@ -2274,6 +1305,32 @@ type organizationDetailData struct {
 	Organization *models.Organization
 	Members      []models.Membership
 	Invitations  []models.OrgInvitation
+	Stats        *models.OrganizationStats
+	Patients     []models.Patient
+	CareTeams    []models.CareTeam
+}
+
+type userDetailData struct {
+	User        *models.User
+	CareTeams   []models.CareTeamMember
+	Caregiving  []models.CaregiverAssignment
+	PushDevices []models.PushDevice
+}
+
+type patientDetailData struct {
+	Patient   *models.Patient
+	RiskLevel string
+	CareTeams []models.PatientCareTeamLink
+	Caregivers []models.CaregiverAssignment
+	Locations []patientLocationRow
+}
+
+type patientLocationRow struct {
+	RecordedAt   time.Time
+	Latitude     float64
+	Longitude    float64
+	Source       *string
+	AccuracyText string
 }
 
 func (h *Handlers) OrganizationDetail(w http.ResponseWriter, r *http.Request) {
@@ -2295,10 +1352,28 @@ func (h *Handlers) OrganizationDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar las invitaciones", http.StatusInternalServerError)
 		return
 	}
+	stats, err := h.repo.GetOrganizationStats(ctx, id)
+	if err != nil {
+		http.Error(w, "No se pudieron obtener los indicadores", http.StatusInternalServerError)
+		return
+	}
+	patients, err := h.repo.ListOrganizationPatients(ctx, id, 25)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
+		return
+	}
+	careTeams, err := h.repo.ListOrganizationCareTeams(ctx, id, 25)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los equipos de cuidado", http.StatusInternalServerError)
+		return
+	}
 	data := organizationDetailData{
 		Organization: org,
 		Members:      members,
 		Invitations:  invitations,
+		Stats:        stats,
+		Patients:     patients,
+		CareTeams:    careTeams,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Organizaciones", URL: "/superadmin/organizations"}, {Label: org.Name}}
 	h.render(w, r, "superadmin/organization_detail.html", org.Name, data, crumbs)
@@ -2328,6 +1403,7 @@ type invitationsViewData struct {
 	Organizations []models.Organization
 	OrgNames      map[string]string
 	SelectedOrgID string
+	Roles         []models.CatalogItem
 }
 
 type userStatusOption struct {
@@ -2357,6 +1433,7 @@ type usersViewData struct {
 type rolesViewData struct {
 	Roles       []models.Role
 	Permissions map[string]rolePermissionsView
+	Users       []models.User
 	FormError   string
 	FormName    string
 	FormDesc    string
@@ -2365,6 +1442,8 @@ type rolesViewData struct {
 type rolePermissionsView struct {
 	Assigned  []models.RolePermission
 	Available []models.Permission
+	Members   []models.RoleAssignment
+	Assignable []models.User
 }
 
 type catalogNavItem struct {
@@ -2378,10 +1457,6 @@ type catalogsViewData struct {
 	CurrentMeta    catalogMeta
 	Items          []models.CatalogItem
 	RequiresWeight bool
-}
-
-type contentBlockTypesViewData struct {
-	Items []models.ContentBlockType
 }
 
 type patientsViewData struct {
@@ -2468,33 +1543,12 @@ type timeseriesBindingsViewData struct {
 	Bindings         []models.TimeseriesBinding
 }
 
-type batchExportViewItem struct {
-	models.BatchExport
-	TargetDisplay string
-	TargetURL     *string
-}
-
-type batchExportsViewData struct {
-	Items        []batchExportViewItem
-	Statuses     []models.CatalogItem
-	FilterStatus string
-	Search       string
-}
-
 type pushDevicesViewData struct {
 	Items          []models.PushDevice
 	Users          []models.User
 	Platforms      []models.CatalogItem
 	FilterUserID   string
 	FilterPlatform string
-}
-
-type userLocationsViewData struct {
-	Items          []models.UserLocation
-	Users          []models.User
-	SelectedUserID string
-	From           string
-	To             string
 }
 
 type signalStreamsViewData struct {
@@ -2616,6 +1670,12 @@ func (h *Handlers) InvitationsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	roles, err := h.repo.ListCatalog(ctx, "org_roles", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
+		return
+	}
+
 	var selected *string
 	selectedID := strings.TrimSpace(r.URL.Query().Get("org_id"))
 	if selectedID != "" {
@@ -2637,6 +1697,7 @@ func (h *Handlers) InvitationsIndex(w http.ResponseWriter, r *http.Request) {
 		Organizations: orgs,
 		OrgNames:      names,
 		SelectedOrgID: selectedID,
+		Roles:         roles,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Invitaciones"}}
 	h.render(w, r, "superadmin/invitations.html", "Invitaciones", data, crumbs)
@@ -2730,6 +1791,49 @@ func (h *Handlers) UsersIndex(w http.ResponseWriter, r *http.Request) {
 	h.render(w, r, "superadmin/users.html", "Usuarios", data, crumbs)
 }
 
+func (h *Handlers) UserDetail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	user, err := h.repo.GetUserWithRelations(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "Usuario no encontrado", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "No se pudo cargar el usuario", http.StatusInternalServerError)
+		return
+	}
+
+	careTeams, err := h.repo.ListUserCareTeams(ctx, id)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los equipos", http.StatusInternalServerError)
+		return
+	}
+	caregiverID := id
+	caregiving, err := h.repo.ListCaregiverAssignments(ctx, nil, &caregiverID, 100, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los pacientes asignados", http.StatusInternalServerError)
+		return
+	}
+	userID := id
+	pushDevices, err := h.repo.ListPushDevices(ctx, &userID, nil, 50, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los dispositivos", http.StatusInternalServerError)
+		return
+	}
+
+	data := userDetailData{
+		User:        user,
+		CareTeams:   careTeams,
+		Caregiving:  caregiving,
+		PushDevices: pushDevices,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Usuarios", URL: "/superadmin/users"}, {Label: user.Name}}
+	h.render(w, r, "superadmin/user_detail.html", user.Name, data, crumbs)
+}
+
 func (h *Handlers) UsersUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "formulario inválido", http.StatusBadRequest)
@@ -2767,6 +1871,14 @@ func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
 		return
 	}
+	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
+		return
+	}
+	sort.Slice(users, func(i, j int) bool {
+		return strings.ToLower(users[i].Name) < strings.ToLower(users[j].Name)
+	})
 	allPerms, err := h.repo.ListPermissions(ctx)
 	if err != nil {
 		http.Error(w, "No se pudieron cargar los permisos", http.StatusInternalServerError)
@@ -2790,9 +1902,25 @@ func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
 			}
 			available = append(available, perm)
 		}
-		permMap[role.ID] = rolePermissionsView{Assigned: assigned, Available: available}
+		members, err := h.repo.ListRoleAssignments(ctx, role.ID)
+		if err != nil {
+			http.Error(w, "No se pudieron cargar los miembros del rol", http.StatusInternalServerError)
+			return
+		}
+		memberSet := make(map[string]struct{}, len(members))
+		for _, m := range members {
+			memberSet[m.UserID] = struct{}{}
+		}
+		assignable := make([]models.User, 0, len(users))
+		for _, candidate := range users {
+			if _, exists := memberSet[candidate.ID]; exists {
+				continue
+			}
+			assignable = append(assignable, candidate)
+		}
+		permMap[role.ID] = rolePermissionsView{Assigned: assigned, Available: available, Members: members, Assignable: assignable}
 	}
-	data := rolesViewData{Roles: roles, Permissions: permMap}
+	data := rolesViewData{Roles: roles, Permissions: permMap, Users: users}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Roles"}}
 	h.render(w, r, "superadmin/roles.html", "Roles", data, crumbs)
 }
@@ -2908,6 +2036,72 @@ func (h *Handlers) RolesGrantPermission(w http.ResponseWriter, r *http.Request) 
 	}
 	h.writeAudit(ctx, r, "ROLE_PERMISSION_GRANT", "role", &roleID, map[string]any{"permission": permission})
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso asignado"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) RolesAssignMember(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	roleID := chi.URLParam(r, "id")
+	userID := strings.TrimSpace(r.FormValue("user_id"))
+	redirect := strings.TrimSpace(r.FormValue("redirect"))
+	if redirect == "" || !strings.HasPrefix(redirect, "/") {
+		redirect = "/superadmin/roles"
+	}
+	if userID == "" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un usuario"})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if _, err := h.repo.AssignRoleToUser(ctx, userID, roleID); err != nil {
+		msg := "No se pudo asignar el rol al usuario"
+		switch {
+		case errors.Is(err, pgx.ErrNoRows):
+			msg = "El rol seleccionado no existe"
+		default:
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) {
+				switch pgErr.Code {
+				case "22P02":
+					msg = "Identificadores inválidos"
+				case "23503":
+					msg = "Usuario no encontrado"
+				}
+			}
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "USER_ROLE_ASSIGN", "user", &userID, map[string]any{"role_id": roleID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Usuario asignado al rol"})
+	http.Redirect(w, r, redirect, http.StatusSeeOther)
+}
+
+func (h *Handlers) RolesRemoveMember(w http.ResponseWriter, r *http.Request) {
+	roleID := chi.URLParam(r, "id")
+	userID := chi.URLParam(r, "userID")
+	redirect := strings.TrimSpace(r.URL.Query().Get("redirect"))
+	if redirect == "" || !strings.HasPrefix(redirect, "/") {
+		redirect = "/superadmin/roles"
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	if err := h.repo.RemoveRoleFromUser(ctx, userID, roleID); err != nil {
+		msg := "No se pudo remover el rol"
+		if errors.Is(err, pgx.ErrNoRows) {
+			msg = "El usuario no tiene asignado este rol"
+		}
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
+		http.Redirect(w, r, redirect, http.StatusSeeOther)
+		return
+	}
+	h.writeAudit(ctx, r, "USER_ROLE_REMOVE", "user", &userID, map[string]any{"role_id": roleID})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Usuario removido del rol"})
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
@@ -3173,132 +2367,6 @@ func (h *Handlers) CatalogsDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/superadmin/catalogs/"+slug, http.StatusSeeOther)
 }
 
-func (h *Handlers) ContentBlockTypesIndex(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	items, err := h.repo.ListContentBlockTypes(ctx, 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los tipos de bloque", http.StatusInternalServerError)
-		return
-	}
-
-	data := contentBlockTypesViewData{Items: items}
-	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Tipos de bloque"}}
-	h.render(w, r, "superadmin/content_blocks.html", "Tipos de bloque", data, crumbs)
-}
-
-func (h *Handlers) ContentBlockTypesCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	code := strings.TrimSpace(r.FormValue("code"))
-	label := strings.TrimSpace(r.FormValue("label"))
-	descriptionRaw := strings.TrimSpace(r.FormValue("description"))
-	redirectURL := "/superadmin/content-block-types"
-
-	if code == "" || label == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y nombre son obligatorios"})
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		return
-	}
-
-	var description *string
-	if descriptionRaw != "" {
-		descCopy := descriptionRaw
-		description = &descCopy
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	item, err := h.repo.CreateContentBlockType(ctx, code, label, description)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) {
-			switch pgErr.Code {
-			case "23505":
-				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El código ya existe"})
-			case "23514":
-				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: pgErr.Message})
-			default:
-				h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el tipo de bloque"})
-			}
-		} else {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el tipo de bloque"})
-		}
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		return
-	}
-
-	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_CREATE", "content_block_type", &item.ID, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque creado"})
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-}
-
-func (h *Handlers) ContentBlockTypesUpdate(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	redirectURL := "/superadmin/content-block-types"
-	code := strings.TrimSpace(r.FormValue("code"))
-	label := strings.TrimSpace(r.FormValue("label"))
-	descriptionVal := strings.TrimSpace(r.FormValue("description"))
-
-	if code == "" || label == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Código y nombre son obligatorios"})
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		return
-	}
-
-	codeCopy := code
-	labelCopy := label
-	descCopy := descriptionVal
-	descPtr := &descCopy
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	item, err := h.repo.UpdateContentBlockType(ctx, id, &codeCopy, &labelCopy, descPtr)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El código ya existe"})
-		} else if errors.Is(err, pgx.ErrNoRows) {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Tipo de bloque no encontrado"})
-		} else {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el tipo de bloque"})
-		}
-		http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-		return
-	}
-
-	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_UPDATE", "content_block_type", &item.ID, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque actualizado"})
-	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
-}
-
-func (h *Handlers) ContentBlockTypesDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.DeleteContentBlockType(ctx, id); err != nil {
-		status := http.StatusInternalServerError
-		msg := "No se pudo eliminar"
-		if errors.Is(err, pgx.ErrNoRows) {
-			status = http.StatusNotFound
-			msg = "Tipo de bloque no encontrado"
-		}
-		http.Error(w, msg, status)
-		return
-	}
-
-	h.writeAudit(ctx, r, "CONTENT_BLOCK_TYPE_DELETE", "content_block_type", &id, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Tipo de bloque eliminado"})
-	http.Redirect(w, r, "/superadmin/content-block-types", http.StatusSeeOther)
-}
-
 // Patients
 
 func (h *Handlers) PatientsIndex(w http.ResponseWriter, r *http.Request) {
@@ -3324,6 +2392,67 @@ func (h *Handlers) PatientsIndex(w http.ResponseWriter, r *http.Request) {
 	data := patientsViewData{Items: patients, Organizations: orgs, Sexes: sexes}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes"}}
 	h.render(w, r, "superadmin/patients.html", "Pacientes", data, crumbs)
+}
+
+func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+
+	patient, err := h.repo.GetPatient(ctx, id)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "Paciente no encontrado", http.StatusNotFound)
+			return
+		}
+		http.Error(w, "No se pudo cargar el paciente", http.StatusInternalServerError)
+		return
+	}
+	careTeams, err := h.repo.ListPatientCareTeams(ctx, id)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los equipos", http.StatusInternalServerError)
+		return
+	}
+	patientID := id
+	caregivers, err := h.repo.ListCaregiverAssignments(ctx, &patientID, nil, 100, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los cuidadores", http.StatusInternalServerError)
+		return
+	}
+	filters := models.PatientLocationFilters{PatientID: &patientID}
+	locations, err := h.repo.ListPatientLocations(ctx, filters, 10, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
+		return
+	}
+	riskLevel := ""
+	if patient.RiskLevel != nil {
+		riskLevel = *patient.RiskLevel
+	}
+	locationRows := make([]patientLocationRow, len(locations))
+	for i, loc := range locations {
+		accuracy := ""
+		if loc.AccuracyM != nil {
+			accuracy = fmt.Sprintf("%.2f", *loc.AccuracyM)
+		}
+		locationRows[i] = patientLocationRow{
+			RecordedAt:   loc.RecordedAt,
+			Latitude:     loc.Latitude,
+			Longitude:    loc.Longitude,
+			Source:       loc.Source,
+			AccuracyText: accuracy,
+		}
+	}
+
+	data := patientDetailData{
+		Patient:    patient,
+		RiskLevel:  riskLevel,
+		CareTeams:  careTeams,
+		Caregivers: caregivers,
+		Locations: locationRows,
+	}
+	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes", URL: "/superadmin/patients"}, {Label: patient.Name}}
+	h.render(w, r, "superadmin/patient_detail.html", patient.Name, data, crumbs)
 }
 
 func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
@@ -3626,176 +2755,6 @@ func (h *Handlers) PatientLocationsDelete(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
-func (h *Handlers) UserLocationsIndex(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	userID := strings.TrimSpace(q.Get("user_id"))
-	fromStr := strings.TrimSpace(q.Get("from"))
-	toStr := strings.TrimSpace(q.Get("to"))
-
-	var fromTime *time.Time
-	if fromStr != "" {
-		if t, err := time.ParseInLocation("2006-01-02", fromStr, time.Local); err == nil {
-			utc := t.In(time.UTC)
-			fromTime = &utc
-		}
-	}
-	var toTime *time.Time
-	if toStr != "" {
-		if t, err := time.ParseInLocation("2006-01-02", toStr, time.Local); err == nil {
-			end := t.Add(24 * time.Hour).Add(-time.Nanosecond).In(time.UTC)
-			toTime = &end
-		}
-	}
-
-	filters := models.UserLocationFilters{From: fromTime, To: toTime}
-	if userID != "" {
-		filters.UserID = &userID
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	locations, err := h.repo.ListUserLocations(ctx, filters, 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
-		return
-	}
-	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
-		return
-	}
-
-	data := userLocationsViewData{
-		Items:          locations,
-		Users:          users,
-		SelectedUserID: userID,
-		From:           fromStr,
-		To:             toStr,
-	}
-	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Ubicaciones de usuarios"}}
-	h.render(w, r, "superadmin/user_locations.html", "Ubicaciones de usuarios", data, crumbs)
-}
-
-func (h *Handlers) UserLocationsCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	userID := strings.TrimSpace(r.FormValue("user_id"))
-	fromFilter := strings.TrimSpace(r.FormValue("from"))
-	toFilter := strings.TrimSpace(r.FormValue("to"))
-	redirect := buildLocationRedirect("/superadmin/locations/users", "user_id", userID, fromFilter, toFilter)
-
-	if userID == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario requerido"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-
-	lat, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("latitude")), 64)
-	if err != nil || math.IsNaN(lat) || math.IsInf(lat, 0) || lat < -90 || lat > 90 {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Latitud inválida"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	lng, err := strconv.ParseFloat(strings.TrimSpace(r.FormValue("longitude")), 64)
-	if err != nil || math.IsNaN(lng) || math.IsInf(lng, 0) || lng < -180 || lng > 180 {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Longitud inválida"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-
-	recordedRaw := strings.TrimSpace(r.FormValue("recorded_at"))
-	var recordedAt *time.Time
-	if recordedRaw != "" {
-		ts, err := parseDateTimeLocal(recordedRaw)
-		if err != nil {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha y hora inválidas"})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
-		}
-		if ts != nil {
-			utc := ts.In(time.UTC)
-			recordedAt = &utc
-		}
-	}
-
-	accuracyRaw := strings.TrimSpace(r.FormValue("accuracy_m"))
-	var accuracy *float64
-	if accuracyRaw != "" {
-		val, err := strconv.ParseFloat(accuracyRaw, 64)
-		if err != nil || math.IsNaN(val) || math.IsInf(val, 0) || val < 0 {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Precisión inválida"})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
-		}
-		accuracy = &val
-	}
-
-	sourceRaw := strings.TrimSpace(r.FormValue("source"))
-	if len(sourceRaw) > 40 {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fuente demasiado larga"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	source := optionalString(sourceRaw)
-
-	input := models.UserLocationInput{
-		UserID:     userID,
-		RecordedAt: recordedAt,
-		Latitude:   lat,
-		Longitude:  lng,
-		Source:     source,
-		AccuracyM:  accuracy,
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	location, err := h.repo.CreateUserLocation(ctx, input)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23503" {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario no encontrado"})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
-		}
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo registrar la ubicación"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	details := map[string]any{"user_id": location.UserID}
-	if location.Source != nil {
-		details["source"] = *location.Source
-	}
-	h.writeAudit(ctx, r, "USER_LOCATION_CREATE", "user_location", &location.ID, details)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación registrada"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) UserLocationsDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	userID := strings.TrimSpace(r.FormValue("user_id"))
-	fromFilter := strings.TrimSpace(r.FormValue("from"))
-	toFilter := strings.TrimSpace(r.FormValue("to"))
-	redirect := buildLocationRedirect("/superadmin/locations/users", "user_id", userID, fromFilter, toFilter)
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.DeleteUserLocation(ctx, id); err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar la ubicación"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "USER_LOCATION_DELETE", "user_location", &id, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Ubicación eliminada"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
 // Care teams
 
 func (h *Handlers) CareTeamsIndex(w http.ResponseWriter, r *http.Request) {
@@ -3822,24 +2781,38 @@ func (h *Handlers) CareTeamsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
 		return
 	}
+
 	members := make(map[string][]models.CareTeamMember, len(teams))
 	teamPatients := make(map[string][]models.PatientCareTeamLink, len(teams))
 	for _, team := range teams {
 		list, err := h.repo.ListCareTeamMembers(ctx, team.ID)
 		if err != nil {
+			if h.logger != nil {
+				h.logger.Error("care team members load", zap.Error(err), zap.String("care_team_id", team.ID))
+			}
 			http.Error(w, "No se pudieron cargar los miembros", http.StatusInternalServerError)
 			return
 		}
 		members[team.ID] = list
-		links, err := h.repo.ListCareTeamPatients(ctx, team.ID)
+		patientsList, err := h.repo.ListCareTeamPatients(ctx, team.ID)
 		if err != nil {
+			if h.logger != nil {
+				h.logger.Error("care team patients load", zap.Error(err), zap.String("care_team_id", team.ID))
+			}
 			http.Error(w, "No se pudieron cargar los pacientes del equipo", http.StatusInternalServerError)
 			return
 		}
-		teamPatients[team.ID] = links
+		teamPatients[team.ID] = patientsList
 	}
 
-	data := careTeamsViewData{Teams: teams, Organizations: orgs, Members: members, TeamPatients: teamPatients, Users: users, Patients: patients}
+	data := careTeamsViewData{
+		Teams:         teams,
+		Organizations: orgs,
+		Members:       members,
+		TeamPatients:  teamPatients,
+		Users:         users,
+		Patients:      patients,
+	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Equipos de cuidado"}}
 	h.render(w, r, "superadmin/care_teams.html", "Equipos de cuidado", data, crumbs)
 }
@@ -3851,15 +2824,12 @@ func (h *Handlers) CareTeamsCreate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre es obligatorio"})
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El nombre es obligatorio"})
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
-	orgRaw := strings.TrimSpace(r.FormValue("org_id"))
-	var orgID *string
-	if orgRaw != "" {
-		orgID = &orgRaw
-	}
+	orgID := optionalString(r.FormValue("org_id"))
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	team, err := h.repo.CreateCareTeam(ctx, models.CareTeamInput{OrgID: orgID, Name: name})
@@ -3868,7 +2838,7 @@ func (h *Handlers) CareTeamsCreate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
-	h.writeAudit(ctx, r, "CARE_TEAM_CREATE", "care_team", &team.ID, map[string]any{"name": team.Name})
+	h.writeAudit(ctx, r, "CARE_TEAM_CREATE", "care_team", &team.ID, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Equipo creado"})
 	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 }
@@ -3881,38 +2851,47 @@ func (h *Handlers) CareTeamsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	name := strings.TrimSpace(r.FormValue("name"))
 	if name == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Nombre es obligatorio"})
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El nombre es obligatorio"})
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
-	orgRaw := strings.TrimSpace(r.FormValue("org_id"))
-	var orgPtr *string
-	if orgRaw == "" {
-		empty := ""
-		orgPtr = &empty
-	} else {
-		orgPtr = &orgRaw
-	}
-	input := models.CareTeamUpdateInput{OrgID: orgPtr, Name: &name}
+	orgID := optionalString(r.FormValue("org_id"))
+
+	input := models.CareTeamUpdateInput{OrgID: orgID, Name: &name}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	team, err := h.repo.UpdateCareTeam(ctx, id, input)
 	if err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el equipo"})
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Equipo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el equipo"})
+		}
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
-	h.writeAudit(ctx, r, "CARE_TEAM_UPDATE", "care_team", &team.ID, map[string]any{"name": team.Name})
+	h.writeAudit(ctx, r, "CARE_TEAM_UPDATE", "care_team", &team.ID, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Equipo actualizado"})
 	http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 }
 
 func (h *Handlers) CareTeamsDelete(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	if err := h.repo.DeleteCareTeam(ctx, id); err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar el equipo"})
+		if h.logger != nil {
+			h.logger.Error("care team delete", zap.Error(err), zap.String("care_team_id", id))
+		}
+		if errors.Is(err, pgx.ErrNoRows) {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Equipo no encontrado"})
+		} else {
+			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo eliminar el equipo"})
+		}
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
@@ -4840,216 +3819,6 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 // Push devices
-
-func (h *Handlers) BatchExportsIndex(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	query := r.URL.Query()
-	statusFilter := strings.TrimSpace(query.Get("status"))
-	var statusPtr *string
-	if statusFilter != "" {
-		statusPtr = &statusFilter
-	}
-	search := strings.TrimSpace(query.Get("q"))
-	var searchPtr *string
-	if search != "" {
-		searchPtr = &search
-	}
-
-	exports, err := h.repo.ListBatchExports(ctx, statusPtr, searchPtr, 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los lotes", http.StatusInternalServerError)
-		return
-	}
-	statuses, err := h.repo.ListCatalog(ctx, "batch_export_statuses", 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los estados", http.StatusInternalServerError)
-		return
-	}
-
-	items := make([]batchExportViewItem, 0, len(exports))
-	for _, exp := range exports {
-		display := exp.TargetRef
-		var targetURL *string
-		lower := strings.ToLower(display)
-		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
-			url := exp.TargetRef
-			targetURL = &url
-		}
-		if strings.HasPrefix(lower, "file://") {
-			display = strings.TrimPrefix(display, "file://")
-		}
-		items = append(items, batchExportViewItem{
-			BatchExport:   exp,
-			TargetDisplay: display,
-			TargetURL:     targetURL,
-		})
-	}
-
-	data := batchExportsViewData{
-		Items:        items,
-		Statuses:     statuses,
-		FilterStatus: statusFilter,
-		Search:       search,
-	}
-	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Exportaciones por lotes"}}
-	h.render(w, r, "superadmin/batch_exports.html", "Exportaciones por lotes", data, crumbs)
-}
-
-func (h *Handlers) BatchExportsCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	jti := middleware.SessionJTIFromContext(r.Context())
-	purpose := strings.TrimSpace(r.FormValue("purpose"))
-	if purpose == "" {
-		h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Propósito requerido"})
-		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-		return
-	}
-	statusCode := strings.TrimSpace(r.FormValue("status_code"))
-	detailsStr := strings.TrimSpace(r.FormValue("details_json"))
-	var details map[string]any
-	if detailsStr != "" {
-		if err := json.Unmarshal([]byte(detailsStr), &details); err != nil {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Detalles inválidos (JSON)"})
-			http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-			return
-		}
-	}
-
-	var targetRef string
-	if r.MultipartForm != nil {
-		if files := r.MultipartForm.File["target_file"]; len(files) > 0 {
-			if files[0] != nil && files[0].Filename != "" {
-				var err error
-				targetRef, err = saveBatchExportUpload(files[0])
-				if err != nil {
-					switch {
-					case errors.Is(err, errBatchExportFileTooLarge):
-						h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Archivo demasiado grande"})
-					case errors.Is(err, errBatchExportMissingFile):
-						// sin archivo válido, se intentará con URL
-					default:
-						h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo guardar el archivo"})
-					}
-					if !errors.Is(err, errBatchExportMissingFile) {
-						http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-						return
-					}
-				}
-			}
-		}
-	}
-	if targetRef == "" {
-		targetRef = strings.TrimSpace(r.FormValue("target_url"))
-	}
-	if targetRef == "" {
-		h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Carga un archivo o especifica un enlace"})
-		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-		return
-	}
-
-	input := models.BatchExportInput{Purpose: purpose, TargetRef: targetRef, StatusCode: statusCode}
-	actor := middleware.UserIDFromContext(r.Context())
-	if actor != "" {
-		input.RequestedBy = &actor
-	}
-	if details != nil {
-		input.Details = details
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	export, err := h.repo.CreateBatchExport(ctx, input)
-	if err != nil {
-		if errors.Is(err, errInvalidBatchExportStatus) {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Estado inválido"})
-		} else {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo crear el lote"})
-		}
-		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "BATCH_EXPORT_CREATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
-	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "Lote creado"})
-	http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-}
-
-func (h *Handlers) BatchExportsUpdateStatus(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	jti := middleware.SessionJTIFromContext(r.Context())
-	statusCode := strings.TrimSpace(r.FormValue("status_code"))
-	if statusCode == "" {
-		h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Selecciona un estado"})
-		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-		return
-	}
-	completedStr := strings.TrimSpace(r.FormValue("completed_at"))
-	var completedAt *time.Time
-	if completedStr != "" {
-		if t, err := time.ParseInLocation("2006-01-02T15:04", completedStr, time.Local); err == nil {
-			completedAt = &t
-		} else {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Fecha de finalización inválida"})
-			http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-			return
-		}
-	}
-	detailsStr := strings.TrimSpace(r.FormValue("details_json"))
-	var details map[string]any
-	if detailsStr != "" {
-		if err := json.Unmarshal([]byte(detailsStr), &details); err != nil {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Detalles inválidos (JSON)"})
-			http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-			return
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	export, err := h.repo.UpdateBatchExportStatus(ctx, id, statusCode, completedAt, details)
-	if err != nil {
-		switch {
-		case errors.Is(err, errInvalidBatchExportStatus):
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Estado inválido"})
-		case errors.Is(err, pgx.ErrNoRows):
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Lote no encontrado"})
-		default:
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo actualizar el lote"})
-		}
-		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "BATCH_EXPORT_STATUS_UPDATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
-	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "Lote actualizado"})
-	http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-}
-
-func (h *Handlers) BatchExportsDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	jti := middleware.SessionJTIFromContext(r.Context())
-	if err := h.repo.DeleteBatchExport(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "Lote no encontrado"})
-		} else {
-			h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "error", Message: "No se pudo eliminar el lote"})
-		}
-		http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "BATCH_EXPORT_DELETE", "batch_export", &id, nil)
-	h.sessions.PushFlash(r.Context(), jti, session.Flash{Type: "success", Message: "Lote eliminado"})
-	http.Redirect(w, r, "/superadmin/batch-exports", http.StatusSeeOther)
-}
 
 func (h *Handlers) PushDevicesIndex(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)

@@ -8,6 +8,11 @@
 		<title>{{if .Title}}{{.Title}} · {{end}}HeartGuard Admin</title>
 		<link rel="stylesheet" href="/ui-assets/css/app.css" />
 		<script defer src="/ui-assets/js/app.js"></script>
+		{{if .SessionExpiresAt}}
+		<script>
+			window.sessionExpiresAt = {{.SessionExpiresAt.Unix}} * 1000;
+		</script>
+		{{end}}
 	</head>
 	<body class="hg-body">
 		<header class="hg-header">
@@ -33,13 +38,10 @@
 					<li><a href="/superadmin/invitations">Invitaciones</a></li>
 					<li><a href="/superadmin/users">Usuarios</a></li>
 					<li><a href="/superadmin/roles">Roles</a></li>
-					<li><a href="/superadmin/content">Contenido</a></li>
-					<li><a href="/superadmin/content-block-types">Tipos de bloque</a></li>
 					<li><a href="/superadmin/caregivers">Cuidadores</a></li>
 					<li><a href="/superadmin/care-teams">Equipos de cuidado</a></li>
 					<li><a href="/superadmin/patients">Pacientes</a></li>
 					<li><a href="/superadmin/locations/patients">Ubicaciones de pacientes</a></li>
-					<li><a href="/superadmin/locations/users">Ubicaciones de usuarios</a></li>
 					<li><a href="/superadmin/ground-truth">Ground Truth</a></li>
 					<li><a href="/superadmin/devices">Dispositivos</a></li>
 					<li><a href="/superadmin/push-devices">Dispositivos push</a></li>
@@ -50,7 +52,6 @@
 					<li><a href="/superadmin/alerts">Alertas</a></li>
 					<li><a href="/superadmin/catalogs">Catálogos</a></li>
 					<li><a href="/superadmin/api-keys">API Keys</a></li>
-					<li><a href="/superadmin/batch-exports">Exportaciones por lotes</a></li>
 					<li><a href="/superadmin/audit">Auditoría</a></li>
 					<li><a href="/superadmin/settings/system">Configuración</a></li>
 				</ul>
@@ -72,6 +73,23 @@
 				</div>
 				{{end}} {{if .ContentHTML}} {{.ContentHTML}} {{end}}
 			</main>
+		</div>
+
+		<!-- Session expiration warning modal -->
+		<div id="session-warning-modal" class="hg-modal" style="display: none">
+			<div class="hg-modal-content">
+				<div class="hg-modal-header">
+					<h2>⚠️ Tu sesión está por expirar</h2>
+				</div>
+				<div class="hg-modal-body">
+					<p>Tu sesión se cerrará automáticamente en <strong id="session-countdown">5:00</strong>.</p>
+					<p>¿Deseas continuar con tu sesión?</p>
+				</div>
+				<div class="hg-modal-footer">
+					<button id="extend-session-btn" class="hg-btn hg-btn-primary">Sí, extender sesión</button>
+					<button id="logout-now-btn" class="hg-btn hg-btn-secondary">Cerrar sesión ahora</button>
+				</div>
+			</div>
 		</div>
 	</body>
 </html>

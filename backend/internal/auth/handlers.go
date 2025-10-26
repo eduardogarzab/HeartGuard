@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -141,6 +142,37 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, h.sessions.ClearCookie())
 	http.Redirect(w, r, "/login?logout=1", http.StatusSeeOther)
 }
+
+func (h *Handlers) RefreshSession(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.UserIDFromContext(r.Context())
+	jti := middleware.SessionJTIFromContext(r.Context())
+	if userID == "" || jti == "" {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "No session"})
+		return
+	}
+
+	// Refresh the session TTL in Redis
+	h.sessions.Refresh(r.Context(), jti)
+
+	// Get remaining TTL to return to client
+	ttl := h.sessions.RemainingTTL(r.Context(), jti)
+	if ttl <= 0 {
+		w.WriteHeader(http.StatusUnauthorized)
+		json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "Session expired"})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	expiresAt := time.Now().Add(ttl)
+	json.NewEncoder(w).Encode(map[string]any{
+		"success":   true,
+		"expiresAt": expiresAt.Unix(),
+		"expiresIn": int(ttl.Seconds()),
+	})
+}
+
 
 func (h *Handlers) renderLoginWithError(w http.ResponseWriter, r *http.Request, email, message string) {
 	settings, err := h.repo.GetSystemSettings(r.Context())

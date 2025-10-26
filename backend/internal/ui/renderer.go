@@ -35,6 +35,7 @@ type ViewData struct {
 	IsSuperadmin    bool
 	ContentTemplate string
 	ContentHTML     template.HTML
+	SessionExpiresAt *time.Time
 }
 
 func NewRenderer() (*Renderer, error) {

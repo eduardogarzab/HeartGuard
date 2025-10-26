@@ -9,7 +9,7 @@ const HG_STATE_COLORS = {
 
 function hgGetPaletteColor(index, offset = 0) {
 	const paletteLength = HG_COLOR_PALETTE.length || 1;
-	const normalizedIndex = ((offset + index) % paletteLength + paletteLength) % paletteLength;
+	const normalizedIndex = (((offset + index) % paletteLength) + paletteLength) % paletteLength;
 	return HG_COLOR_PALETTE[normalizedIndex];
 }
 
@@ -534,6 +534,132 @@ function hgAttachDoughnutInteractions(canvas) {
 	canvas.__hgHasHover = true;
 }
 
+// Session expiration monitoring
+const SESSION_WARNING_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes
+let sessionCheckInterval = null;
+let sessionWarningShown = false;
+
+function hgInitSessionMonitor() {
+	// Check session every 30 seconds
+	sessionCheckInterval = setInterval(hgCheckSession, 30000);
+	// Also check immediately
+	hgCheckSession();
+}
+
+function hgCheckSession() {
+	if (!window.sessionExpiresAt) {
+		return;
+	}
+
+	const now = Date.now();
+	const expiresAt = window.sessionExpiresAt;
+	const timeRemaining = expiresAt - now;
+
+	// If session already expired, redirect to login
+	if (timeRemaining <= 0) {
+		window.location.href = "/login";
+		return;
+	}
+
+	// Show warning if within threshold and not already shown
+	if (timeRemaining <= SESSION_WARNING_THRESHOLD_MS && !sessionWarningShown) {
+		hgShowSessionWarning(timeRemaining);
+	}
+}
+
+function hgShowSessionWarning(initialTimeRemaining) {
+	sessionWarningShown = true;
+	const modal = document.getElementById("session-warning-modal");
+	const countdown = document.getElementById("session-countdown");
+	const extendBtn = document.getElementById("extend-session-btn");
+	const logoutBtn = document.getElementById("logout-now-btn");
+
+	if (!modal || !countdown || !extendBtn || !logoutBtn) {
+		return;
+	}
+
+	modal.style.display = "flex";
+
+	// Update countdown every second
+	const countdownInterval = setInterval(() => {
+		const now = Date.now();
+		const timeRemaining = window.sessionExpiresAt - now;
+
+		if (timeRemaining <= 0) {
+			clearInterval(countdownInterval);
+			window.location.href = "/login";
+			return;
+		}
+
+		const minutes = Math.floor(timeRemaining / 60000);
+		const seconds = Math.floor((timeRemaining % 60000) / 1000);
+		countdown.textContent = `${minutes}:${seconds.toString().padStart(2, "0")}`;
+	}, 1000);
+
+	// Handle extend session
+	extendBtn.onclick = async () => {
+		try {
+			const response = await fetch("/session/refresh", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				if (data.success && data.expiresAt) {
+					// Update session expiration time
+					window.sessionExpiresAt = data.expiresAt * 1000;
+					sessionWarningShown = false;
+					clearInterval(countdownInterval);
+					modal.style.display = "none";
+
+					// Show success flash
+					const flashContainer =
+						document.querySelector(".hg-flashes") ||
+						(() => {
+							const container = document.createElement("div");
+							container.className = "hg-flashes";
+							const main = document.querySelector(".hg-main");
+							if (main) {
+								main.insertBefore(container, main.firstChild);
+							}
+							return container;
+						})();
+
+					const flash = document.createElement("div");
+					flash.className = "hg-flash hg-flash-success";
+					flash.textContent = "Sesión extendida exitosamente";
+					flashContainer.appendChild(flash);
+
+					setTimeout(() => {
+						flash.classList.add("is-dismissed");
+						flash.addEventListener("transitionend", () => flash.remove(), { once: true });
+					}, 4000);
+				}
+			} else {
+				throw new Error("Failed to refresh session");
+			}
+		} catch (error) {
+			console.error("Error refreshing session:", error);
+			alert("No se pudo extender la sesión. Por favor, inicia sesión nuevamente.");
+			window.location.href = "/login";
+		}
+	};
+
+	// Handle logout
+	logoutBtn.onclick = () => {
+		// Find logout form and submit it
+		const logoutForm = document.querySelector('form[action="/logout"]');
+		if (logoutForm) {
+			logoutForm.submit();
+		} else {
+			window.location.href = "/login?logout=1";
+		}
+	};
+}
+
 document.addEventListener("DOMContentLoaded", () => {
 	const currentPath = window.location.pathname.replace(/\/$/, "");
 	document.querySelectorAll(".hg-sidebar a").forEach((link) => {
@@ -572,26 +698,31 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
-        document.querySelectorAll("form.hg-autoform select").forEach((select) => {
-                select.addEventListener("change", () => {
-                        const form = select.closest("form.hg-autoform");
-                        if (!form) {
-                                return;
-                        }
-                        form.submit();
-                });
-        });
+	document.querySelectorAll("form.hg-autoform select").forEach((select) => {
+		select.addEventListener("change", () => {
+			const form = select.closest("form.hg-autoform");
+			if (!form) {
+				return;
+			}
+			form.submit();
+		});
+	});
 
-        document.querySelectorAll("[data-hg-stream-selector]").forEach((select) => {
-                select.addEventListener("change", () => {
-                        const form = select.closest("form");
-                        if (form) {
-                                form.submit();
-                        }
-                });
-        });
+	document.querySelectorAll("[data-hg-stream-selector]").forEach((select) => {
+		select.addEventListener("change", () => {
+			const form = select.closest("form");
+			if (form) {
+				form.submit();
+			}
+		});
+	});
 
-        hgInitDashboardCharts();
+	hgInitDashboardCharts();
+
+	// Session expiration warning
+	if (window.sessionExpiresAt) {
+		hgInitSessionMonitor();
+	}
 });
 
 window.addEventListener(

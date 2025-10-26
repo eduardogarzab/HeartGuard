@@ -1,61 +1,158 @@
 {{define "superadmin/organization_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/organization_detail.html:content"}}
 <section class="hg-section">
-	<h1>{{.Data.Organization.Name}}</h1>
-	<p><strong>Código:</strong> {{.Data.Organization.Code}}</p>
-	<p><strong>Creada:</strong> {{formatTime .Data.Organization.CreatedAt}}</p>
+	<div class="hg-detail-header">
+		<div>
+			<h1>{{.Data.Organization.Name}}</h1>
+			<p class="hg-detail-subtitle">Creada {{formatTime .Data.Organization.CreatedAt}}</p>
+		</div>
+		<div class="hg-detail-meta">
+			<span class="hg-detail-pill">Código: {{.Data.Organization.Code}}</span>
+		</div>
+	</div>
+	{{if .Data.Stats}}
+	<div class="hg-summary-grid">
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Miembros activos</span>
+			<span class="hg-summary-value">{{.Data.Stats.MemberCount}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Pacientes asociados</span>
+			<span class="hg-summary-value">{{.Data.Stats.PatientCount}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Equipos de cuidado</span>
+			<span class="hg-summary-value">{{.Data.Stats.CareTeamCount}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Cuidadores asignados</span>
+			<span class="hg-summary-value">{{.Data.Stats.CaregiverCount}}</span>
+		</article>
+	</div>
+	{{end}}
 </section>
+
 <section class="hg-section">
-	<h2>Miembros</h2>
-	<table class="hg-table">
-		<thead>
-			<tr>
-				<th>Nombre</th>
-				<th>Correo</th>
-				<th>Rol</th>
-				<th>Ingresó</th>
-			</tr>
-		</thead>
-		<tbody>
-			{{range .Data.Members}}
-			<tr>
-				<td>{{.Name}}</td>
-				<td>{{.Email}}</td>
-				<td>{{.OrgRoleLabel}}</td>
-				<td>{{formatTime .JoinedAt}}</td>
-			</tr>
-			{{else}}
-			<tr>
-				<td colspan="4" class="hg-empty-cell">Sin miembros.</td>
-			</tr>
-			{{end}}
-		</tbody>
-	</table>
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Miembros</h2>
+			<span class="hg-card-meta">{{len .Data.Members}} en total</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Nombre</th>
+					<th>Correo</th>
+					<th>Rol</th>
+					<th>Ingresó</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Members}}
+				<tr>
+					<td><a href="/superadmin/users/{{.UserID}}" class="hg-link">{{.Name}}</a></td>
+					<td>{{.Email}}</td>
+					<td>{{.OrgRoleLabel}}</td>
+					<td>{{formatTime .JoinedAt}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="4" class="hg-empty-cell">Sin miembros registrados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
 </section>
+
 <section class="hg-section">
-	<h2>Invitaciones</h2>
-	<table class="hg-table">
-		<thead>
-			<tr>
-				<th>Correo</th>
-				<th>Rol</th>
-				<th>Expira</th>
-				<th>Estatus</th>
-			</tr>
-		</thead>
-		<tbody>
-			{{range .Data.Invitations}}
-			<tr>
-				<td>{{if .Email}}{{.Email}}{{else}}—{{end}}</td>
-				<td>{{.OrgRoleCode}}</td>
-				<td>{{formatTime .ExpiresAt}}</td>
-				<td>{{.Status}}</td>
-			</tr>
-			{{else}}
-			<tr>
-				<td colspan="4" class="hg-empty-cell">Sin invitaciones.</td>
-			</tr>
-			{{end}}
-		</tbody>
-	</table>
+	<div class="hg-split-grid">
+		<div class="hg-card">
+			<header class="hg-card-header">
+				<h2>Equipos de cuidado</h2>
+				<span class="hg-card-meta">{{len .Data.CareTeams}} listados</span>
+			</header>
+			<table class="hg-table">
+				<thead>
+					<tr>
+						<th>Nombre</th>
+						<th>Creado</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Data.CareTeams}}
+					<tr>
+						<td>{{.Name}}</td>
+						<td>{{formatTime .CreatedAt}}</td>
+					</tr>
+					{{else}}
+					<tr>
+						<td colspan="2" class="hg-empty-cell">Sin equipos registrados.</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+		<div class="hg-card">
+			<header class="hg-card-header">
+				<h2>Pacientes recientes</h2>
+				<span class="hg-card-meta">{{len .Data.Patients}} listados</span>
+			</header>
+			<table class="hg-table">
+				<thead>
+					<tr>
+						<th>Nombre</th>
+						<th>Riesgo</th>
+						<th>Creado</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Data.Patients}}
+					<tr>
+						<td><a href="/superadmin/patients/{{.ID}}" class="hg-link">{{.Name}}</a></td>
+						<td>{{if .RiskLevel}}{{.RiskLevel}}{{else}}—{{end}}</td>
+						<td>{{formatTime .CreatedAt}}</td>
+					</tr>
+					{{else}}
+					<tr>
+						<td colspan="3" class="hg-empty-cell">Sin pacientes registrados.</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Invitaciones</h2>
+			<span class="hg-card-meta">{{len .Data.Invitations}} registradas</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Correo</th>
+					<th>Rol</th>
+					<th>Expira</th>
+					<th>Estatus</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Invitations}}
+				<tr>
+					<td>{{if .Email}}{{.Email}}{{else}}—{{end}}</td>
+					<td>{{.OrgRoleCode}}</td>
+					<td>{{formatTime .ExpiresAt}}</td>
+					<td>{{.Status}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="4" class="hg-empty-cell">Sin invitaciones activas.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
 </section>
 {{end}}

@@ -73,38 +73,35 @@ La cookie de sesión es HttpOnly/SameSite Strict. Los formularios internos inclu
 
 Todas las rutas están bajo `/superadmin` y exigen sesión con rol `superadmin`. Los templates viven en `templates/superadmin/`. A continuación un resumen actualizado de módulos y vistas:
 
-| Ruta base             | Vista(s)                                              | Contenido                                                                            |
-| --------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `/dashboard`          | `dashboard.html`                                      | Métricas, actividad reciente y export CSV (`/dashboard/export`).                     |
-| `/organizations`      | `organizations_list.html`, `organization_detail.html` | Alta rápida, detalle, baja lógica y gestión de miembros.                             |
-| `/content`            | `content_list.html`, `content_edit.html`, etc.        | CMS SSR para contenido estático; incluye catálogo de tipos (`/content-block-types`). |
-| `/patients`           | `patients.html`                                       | CRUD de pacientes demo con validaciones reforzadas.                                  |
-| `/locations/patients` | `patient_locations.html`                              | Registro manual y timeline tabular de ubicaciones (sin componente de mapa).          |
-| `/locations/users`    | `user_locations.html`                                 | Historial de ubicaciones de usuarios finales con filtros y carga manual.             |
-| `/care-teams`         | `care_teams.html`                                     | Gestión integral de equipos, miembros y pacientes asociados.                         |
-| `/caregivers`         | `caregivers.html`                                     | Assignments cuidador-paciente, tipos de relación y auditoría asociada.               |
-| `/ground-truth`       | `ground_truth.html`                                   | Etiquetas de verdad terreno para datasets de entrenamiento.                          |
-| `/devices`            | `devices.html`                                        | Inventario de dispositivos físicos.                                                  |
-| `/push-devices`       | `push_devices.html`                                   | Tokens push con asignaciones a usuarios/orgs.                                        |
-| `/batch-exports`      | `batch_exports.html`                                  | Solicitud, seguimiento y gestión de exports (soporta formularios multipart).         |
-| `/signal-streams`     | `signal_streams.html`, `timeseries_bindings.html`     | CRUD de streams, bindings y etiquetas por binding.                                   |
-| `/models`             | `models.html`                                         | Catálogo de modelos ML demo.                                                         |
-| `/event-types`        | `event_types.html`                                    | Administración de tipos de evento clínico.                                           |
-| `/inferences`         | `inferences.html`                                     | Registro de inferencias con metadatos.                                               |
-| `/alerts`             | `alerts.html`                                         | Creación, asignaciones, ACKs, resoluciones y entregas.                               |
-| `/invitations`        | `invitations.html`                                    | Invitaciones, filtros por organización, cancelación.                                 |
-| `/users`              | `users.html`                                          | Listado de usuarios y cambio de estatus (`active`, `pending`, `blocked`).            |
-| `/roles`              | `roles.html`                                          | Alta/baja de roles, asignación de permisos y usuarios.                               |
-| `/catalogs`           | `catalogs.html`                                       | CRUD unificado para catálogos parametrizables (`?catalog=...`).                      |
-| `/api-keys`           | `api_keys.html`                                       | Generación, actualización de permisos y revocación de API keys.                      |
-| `/audit`              | `audit.html`                                          | Visor con filtros de acciones y entidades.                                           |
-| `/settings/system`    | `settings.html`                                       | Configuración global (branding, contacto, mensajes de mantenimiento).                |
+| Ruta base             | Vista(s)                                              | Contenido                                                                   |
+| --------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------- |
+| `/dashboard`          | `dashboard.html`                                      | Métricas, actividad reciente y export CSV (`/dashboard/export`).            |
+| `/organizations`      | `organizations_list.html`, `organization_detail.html` | Alta rápida, detalle, baja lógica y gestión de miembros.                    |
+| `/patients`           | `patients.html`                                       | CRUD de pacientes demo con validaciones reforzadas.                         |
+| `/locations/patients` | `patient_locations.html`                              | Registro manual y timeline tabular de ubicaciones (sin componente de mapa). |
+| `/care-teams`         | `care_teams.html`                                     | Gestión integral de equipos, miembros y pacientes asociados.                |
+| `/caregivers`         | `caregivers.html`                                     | Assignments cuidador-paciente, tipos de relación y auditoría asociada.      |
+| `/ground-truth`       | `ground_truth.html`                                   | Etiquetas de verdad terreno para datasets de entrenamiento.                 |
+| `/devices`            | `devices.html`                                        | Inventario de dispositivos físicos.                                         |
+| `/push-devices`       | `push_devices.html`                                   | Tokens push con asignaciones a usuarios/orgs.                               |
+| `/signal-streams`     | `signal_streams.html`, `timeseries_bindings.html`     | CRUD de streams, bindings y etiquetas por binding.                          |
+| `/models`             | `models.html`                                         | Catálogo de modelos ML demo.                                                |
+| `/event-types`        | `event_types.html`                                    | Administración de tipos de evento clínico.                                  |
+| `/inferences`         | `inferences.html`                                     | Registro de inferencias con metadatos.                                      |
+| `/alerts`             | `alerts.html`                                         | Creación, asignaciones, ACKs, resoluciones y entregas.                      |
+| `/invitations`        | `invitations.html`                                    | Invitaciones, filtros por organización, cancelación.                        |
+| `/users`              | `users.html`                                          | Listado de usuarios y cambio de estatus (`active`, `pending`, `blocked`).   |
+| `/roles`              | `roles.html`                                          | Alta/baja de roles, asignación de permisos y usuarios.                      |
+| `/catalogs`           | `catalogs.html`                                       | CRUD unificado para catálogos parametrizables (`?catalog=...`).             |
+| `/api-keys`           | `api_keys.html`                                       | Generación, actualización de permisos y revocación de API keys.             |
+| `/audit`              | `audit.html`                                          | Visor con filtros de acciones y entidades.                                  |
+| `/settings/system`    | `settings.html`                                       | Configuración global (branding, contacto, mensajes de mantenimiento).       |
 
 > Los breadcrumbs y flashes se resuelven a través de `ui.ViewData` y utilidades CSS en `ui/assets/css/app.css`.
 
 ## Assets estáticos
 
-`ui/assets` contiene el CSS y JS del panel. El router expone `/ui-assets/*` con `http.FileServer`. Personaliza estilos en `ui/assets/css/app.css`; los módulos de ubicaciones ya no dependen de librerías de mapas de terceros.
+`ui/assets` contiene el CSS y JS del panel. El router expone `/ui-assets/*` con `http.FileServer`. Personaliza estilos en `ui/assets/css/app.css`; el módulo de ubicaciones de pacientes no depende de librerías de mapas de terceros.
 
 ## Auditoría
 

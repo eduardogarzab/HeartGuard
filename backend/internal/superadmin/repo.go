@@ -56,7 +56,6 @@ var nowFn = time.Now
 
 var (
 	errInvalidPlatform              = errors.New("invalid platform")
-	errInvalidBatchExportStatus     = errors.New("invalid batch export status")
 	ErrDuplicateCaregiverAssignment = errors.New("duplicate caregiver assignment")
 )
 
@@ -124,43 +123,6 @@ func scanTimeseriesBinding(scanner scanTarget) (*models.TimeseriesBinding, error
 		binding.RetentionHint = &v
 	}
 	return &binding, nil
-}
-
-func scanBatchExport(scanner scanTarget) (*models.BatchExport, error) {
-	var (
-		exp            models.BatchExport
-		requestedBy    sql.NullString
-		requestedName  sql.NullString
-		requestedEmail sql.NullString
-		completedAt    sql.NullTime
-		detailsRaw     []byte
-	)
-	if err := scanner.Scan(&exp.ID, &exp.Purpose, &exp.TargetRef, &requestedBy, &requestedName, &requestedEmail, &exp.RequestedAt, &completedAt, &exp.StatusID, &exp.StatusCode, &exp.StatusLabel, &detailsRaw); err != nil {
-		return nil, err
-	}
-	if requestedBy.Valid {
-		v := requestedBy.String
-		exp.RequestedBy = &v
-	}
-	if requestedName.Valid {
-		v := requestedName.String
-		exp.RequestedByName = &v
-	}
-	if requestedEmail.Valid {
-		v := requestedEmail.String
-		exp.RequestedByEmail = &v
-	}
-	if completedAt.Valid {
-		t := completedAt.Time
-		exp.CompletedAt = &t
-	}
-	if len(detailsRaw) > 0 {
-		var details map[string]any
-		if err := json.Unmarshal(detailsRaw, &details); err == nil {
-			exp.Details = details
-		}
-	}
-	return &exp, nil
 }
 
 func jsonParam(ptr *string) any {
@@ -236,6 +198,36 @@ WHERE id = $1
 	return &m, err
 }
 
+func (r *Repo) GetOrganizationStats(ctx context.Context, id string) (*models.OrganizationStats, error) {
+	var (
+		members   int64
+		patients  int64
+		careTeams int64
+		caregivers int64
+	)
+	err := r.pool.QueryRow(ctx, `
+SELECT
+	COALESCE((SELECT COUNT(*) FROM user_org_membership WHERE org_id = $1::uuid), 0) AS member_count,
+	COALESCE((SELECT COUNT(*) FROM patients WHERE org_id = $1::uuid), 0) AS patient_count,
+	COALESCE((SELECT COUNT(*) FROM care_teams WHERE org_id = $1::uuid), 0) AS care_team_count,
+	COALESCE((
+		SELECT COUNT(*)
+		FROM caregiver_patient cp
+		JOIN patients p ON p.id = cp.patient_id
+		WHERE p.org_id = $1::uuid
+	), 0) AS caregiver_count
+`, id).Scan(&members, &patients, &careTeams, &caregivers)
+	if err != nil {
+		return nil, err
+	}
+	return &models.OrganizationStats{
+		MemberCount:    int(members),
+		PatientCount:   int(patients),
+		CareTeamCount:  int(careTeams),
+		CaregiverCount: int(caregivers),
+	}, nil
+}
+
 func (r *Repo) UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error) {
 	var m models.Organization
 	err := r.pool.QueryRow(ctx, `
@@ -257,6 +249,76 @@ func (r *Repo) DeleteOrganization(ctx context.Context, id string) error {
 		return pgx.ErrNoRows
 	}
 	return nil
+}
+
+func (r *Repo) ListOrganizationPatients(ctx context.Context, orgID string, limit int) ([]models.Patient, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT
+	p.id::text,
+	p.org_id::text,
+	o.name::text,
+	p.person_name::text,
+	p.birthdate,
+	sx.code::text,
+	sx.label::text,
+	p.risk_level::text,
+	p.created_at
+FROM heartguard.patients p
+LEFT JOIN heartguard.organizations o ON o.id = p.org_id
+LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+WHERE p.org_id = $1::uuid
+ORDER BY p.created_at DESC, p.person_name
+LIMIT $2
+`, orgID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.Patient, 0, limit)
+	for rows.Next() {
+		var (
+			patient  models.Patient
+			orgIDVal sql.NullString
+			orgName  sql.NullString
+			birth    sql.NullTime
+			sexCode  sql.NullString
+			sexLabel sql.NullString
+			risk     sql.NullString
+		)
+		if err := rows.Scan(&patient.ID, &orgIDVal, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt); err != nil {
+			return nil, err
+		}
+		if orgIDVal.Valid {
+			v := orgIDVal.String
+			patient.OrgID = &v
+		}
+		if orgName.Valid {
+			v := orgName.String
+			patient.OrgName = &v
+		}
+		if birth.Valid {
+			bt := birth.Time
+			patient.Birthdate = &bt
+		}
+		if sexCode.Valid {
+			v := sexCode.String
+			patient.SexCode = &v
+		}
+		if sexLabel.Valid {
+			v := sexLabel.String
+			patient.SexLabel = &v
+		}
+		if risk.Valid {
+			v := risk.String
+			patient.RiskLevel = &v
+		}
+		out = append(out, patient)
+	}
+	return out, rows.Err()
 }
 
 // ------------------------------
@@ -494,6 +556,62 @@ func (r *Repo) DeleteCatalogItem(ctx context.Context, catalog, id string) error 
 // ------------------------------
 // Patients
 // ------------------------------
+
+func (r *Repo) GetPatient(ctx context.Context, id string) (*models.Patient, error) {
+	var (
+		patient  models.Patient
+		orgID    sql.NullString
+		orgName  sql.NullString
+		birth    sql.NullTime
+		sexCode  sql.NullString
+		sexLabel sql.NullString
+		risk     sql.NullString
+	)
+	err := r.pool.QueryRow(ctx, `
+SELECT
+	p.id::text,
+	p.org_id::text,
+	o.name::text,
+	p.person_name::text,
+	p.birthdate,
+	sx.code::text,
+	sx.label::text,
+	p.risk_level::text,
+	p.created_at
+FROM heartguard.patients p
+LEFT JOIN heartguard.organizations o ON o.id = p.org_id
+LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+WHERE p.id = $1::uuid
+`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if orgID.Valid {
+		v := orgID.String
+		patient.OrgID = &v
+	}
+	if orgName.Valid {
+		v := orgName.String
+		patient.OrgName = &v
+	}
+	if birth.Valid {
+		bt := birth.Time
+		patient.Birthdate = &bt
+	}
+	if sexCode.Valid {
+		v := sexCode.String
+		patient.SexCode = &v
+	}
+	if sexLabel.Valid {
+		v := sexLabel.String
+		patient.SexLabel = &v
+	}
+	if risk.Valid {
+		v := risk.String
+		patient.RiskLevel = &v
+	}
+	return &patient, nil
+}
 
 func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error) {
 	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_patients_list($1, $2)`, limit, offset)
@@ -768,126 +886,6 @@ func (r *Repo) DeletePatientLocation(ctx context.Context, id string) error {
 	return nil
 }
 
-func (r *Repo) ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error) {
-	query := `SELECT ul.id::text, ul.user_id::text, u.name, u.email, ul.ts, ST_Y(ul.geom), ST_X(ul.geom), ul.source, ul.accuracy_m
-FROM user_locations ul
-LEFT JOIN users u ON u.id = ul.user_id`
-	var (
-		clauses []string
-		args    []any
-	)
-	idx := 1
-	if filters.UserID != nil {
-		clauses = append(clauses, fmt.Sprintf("ul.user_id = $%d", idx))
-		args = append(args, *filters.UserID)
-		idx++
-	}
-	if filters.From != nil {
-		clauses = append(clauses, fmt.Sprintf("ul.ts >= $%d", idx))
-		args = append(args, *filters.From)
-		idx++
-	}
-	if filters.To != nil {
-		clauses = append(clauses, fmt.Sprintf("ul.ts <= $%d", idx))
-		args = append(args, *filters.To)
-		idx++
-	}
-	if len(clauses) > 0 {
-		query += " WHERE " + strings.Join(clauses, " AND ")
-	}
-	query += fmt.Sprintf(" ORDER BY ul.ts DESC LIMIT $%d OFFSET $%d", idx, idx+1)
-	args = append(args, limit, offset)
-
-	rows, err := r.pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	var out []models.UserLocation
-	for rows.Next() {
-		var (
-			loc      models.UserLocation
-			name     sql.NullString
-			email    sql.NullString
-			source   sql.NullString
-			accuracy sql.NullFloat64
-		)
-		if err := rows.Scan(&loc.ID, &loc.UserID, &name, &email, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy); err != nil {
-			return nil, err
-		}
-		if name.Valid {
-			v := name.String
-			loc.UserName = &v
-		}
-		if email.Valid {
-			v := email.String
-			loc.UserEmail = &v
-		}
-		if source.Valid {
-			v := strings.TrimSpace(source.String)
-			if v != "" {
-				loc.Source = &v
-			}
-		}
-		if accuracy.Valid {
-			val := accuracy.Float64
-			loc.AccuracyM = &val
-		}
-		out = append(out, loc)
-	}
-	return out, rows.Err()
-}
-
-func (r *Repo) CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error) {
-	var (
-		loc      models.UserLocation
-		name     sql.NullString
-		email    sql.NullString
-		source   sql.NullString
-		accuracy sql.NullFloat64
-	)
-	err := r.pool.QueryRow(ctx, `
-INSERT INTO user_locations (user_id, ts, geom, source, accuracy_m)
-VALUES ($1, COALESCE($2, NOW()), ST_SetSRID(ST_MakePoint($3, $4), 4326), $5, $6)
-RETURNING id::text, user_id::text, (SELECT name FROM users WHERE id = user_id), (SELECT email FROM users WHERE id = user_id), ts, ST_Y(geom), ST_X(geom), source, accuracy_m
-`, input.UserID, timeParam(input.RecordedAt), input.Longitude, input.Latitude, stringParam(input.Source, true), float64Param(input.AccuracyM)).
-		Scan(&loc.ID, &loc.UserID, &name, &email, &loc.RecordedAt, &loc.Latitude, &loc.Longitude, &source, &accuracy)
-	if err != nil {
-		return nil, err
-	}
-	if name.Valid {
-		v := name.String
-		loc.UserName = &v
-	}
-	if email.Valid {
-		v := email.String
-		loc.UserEmail = &v
-	}
-	if source.Valid {
-		v := strings.TrimSpace(source.String)
-		if v != "" {
-			loc.Source = &v
-		}
-	}
-	if accuracy.Valid {
-		val := accuracy.Float64
-		loc.AccuracyM = &val
-	}
-	return &loc, nil
-}
-
-func (r *Repo) DeleteUserLocation(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM user_locations WHERE id = $1`, id)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
 // ------------------------------
 // Care teams and caregivers
 // ------------------------------
@@ -910,6 +908,34 @@ func scanCareTeam(row scanTarget) (*models.CareTeam, error) {
 		ct.OrgName = &v
 	}
 	return &ct, nil
+}
+
+func (r *Repo) ListOrganizationCareTeams(ctx context.Context, orgID string, limit int) ([]models.CareTeam, error) {
+	if limit <= 0 {
+		limit = 20
+	}
+	rows, err := r.pool.Query(ctx, `
+SELECT ct.id::text, ct.org_id::text, o.name, ct.name, ct.created_at
+FROM care_teams ct
+LEFT JOIN organizations o ON o.id = ct.org_id
+WHERE ct.org_id = $1::uuid
+ORDER BY ct.created_at DESC, ct.name
+LIMIT $2
+`, orgID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.CareTeam
+	for rows.Next() {
+		ct, err := scanCareTeam(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *ct)
+	}
+	return out, rows.Err()
 }
 
 func (r *Repo) ListCareTeams(ctx context.Context, limit, offset int) ([]models.CareTeam, error) {
@@ -1076,6 +1102,31 @@ func (r *Repo) RemoveCareTeamMember(ctx context.Context, careTeamID, userID stri
 	return nil
 }
 
+func (r *Repo) ListUserCareTeams(ctx context.Context, userID string) ([]models.CareTeamMember, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT ctm.care_team_id::text, ct.name, ctm.user_id::text, u.name, u.email, ctm.role_in_team, ctm.joined_at
+FROM care_team_member ctm
+JOIN users u ON u.id = ctm.user_id
+JOIN care_teams ct ON ct.id = ctm.care_team_id
+WHERE ctm.user_id = $1::uuid
+ORDER BY ct.name
+`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.CareTeamMember
+	for rows.Next() {
+		member, err := scanCareTeamMember(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *member)
+	}
+	return out, rows.Err()
+}
+
 func scanPatientCareTeam(row scanTarget) (*models.PatientCareTeamLink, error) {
 	var link models.PatientCareTeamLink
 	if err := row.Scan(&link.CareTeamID, &link.CareTeamName, &link.PatientID, &link.PatientName); err != nil {
@@ -1093,6 +1144,31 @@ JOIN patients p ON p.id = pct.patient_id
 WHERE pct.care_team_id = $1
 ORDER BY p.person_name
 `, careTeamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.PatientCareTeamLink
+	for rows.Next() {
+		link, err := scanPatientCareTeam(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, *link)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) ListPatientCareTeams(ctx context.Context, patientID string) ([]models.PatientCareTeamLink, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT pct.care_team_id::text, ct.name, pct.patient_id::text, p.person_name
+FROM patient_care_team pct
+JOIN care_teams ct ON ct.id = pct.care_team_id
+JOIN patients p ON p.id = pct.patient_id
+WHERE pct.patient_id = $1::uuid
+ORDER BY ct.name
+`, patientID)
 	if err != nil {
 		return nil, err
 	}
@@ -1409,192 +1485,6 @@ LEFT JOIN caregiver_relationship_types crt ON crt.id = u.rel_type_id
 
 func (r *Repo) DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM caregiver_patient WHERE patient_id = $1 AND user_id = $2`, patientID, caregiverID)
-	if err != nil {
-		return err
-	}
-	if tag.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-// ------------------------------
-// ------------------------------
-// Batch exports
-// ------------------------------
-
-func (r *Repo) batchExportStatusID(ctx context.Context, code string) (string, error) {
-	var id string
-	if err := r.pool.QueryRow(ctx, `SELECT id FROM batch_export_statuses WHERE code = $1`, strings.TrimSpace(code)).Scan(&id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return "", errInvalidBatchExportStatus
-		}
-		return "", err
-	}
-	return id, nil
-}
-
-func (r *Repo) getBatchExport(ctx context.Context, id string) (*models.BatchExport, error) {
-	row := r.pool.QueryRow(ctx, `
-SELECT be.id, be.purpose, be.target_ref, be.requested_by, u.name, u.email,
-       be.requested_at, be.completed_at, s.id, s.code, s.label, be.details
-FROM batch_exports be
-JOIN batch_export_statuses s ON s.id = be.batch_export_status_id
-LEFT JOIN users u ON u.id = be.requested_by
-WHERE be.id = $1
-`, id)
-	return scanBatchExport(row)
-}
-
-func (r *Repo) ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error) {
-	query := `
-SELECT be.id, be.purpose, be.target_ref, be.requested_by, u.name, u.email,
-       be.requested_at, be.completed_at, s.id, s.code, s.label, be.details
-FROM batch_exports be
-JOIN batch_export_statuses s ON s.id = be.batch_export_status_id
-LEFT JOIN users u ON u.id = be.requested_by
-`
-	var (
-		clauses []string
-		args    []any
-		idx     = 1
-	)
-	if statusCode != nil {
-		sc := strings.TrimSpace(*statusCode)
-		if sc != "" {
-			clauses = append(clauses, fmt.Sprintf("s.code = $%d", idx))
-			args = append(args, sc)
-			idx++
-		}
-	}
-	if search != nil {
-		term := strings.TrimSpace(*search)
-		if term != "" {
-			clauses = append(clauses, fmt.Sprintf("(be.purpose ILIKE $%d OR be.target_ref ILIKE $%d)", idx, idx))
-			args = append(args, "%"+term+"%")
-			idx++
-		}
-	}
-	if len(clauses) > 0 {
-		query += "WHERE " + strings.Join(clauses, " AND ") + "\n"
-	}
-	query += fmt.Sprintf("ORDER BY be.requested_at DESC LIMIT $%d OFFSET $%d", idx, idx+1)
-	args = append(args, limit, offset)
-
-	rows, err := r.pool.Query(ctx, query, args...)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	exports := make([]models.BatchExport, 0, limit)
-	for rows.Next() {
-		exp, err := scanBatchExport(rows)
-		if err != nil {
-			return nil, err
-		}
-		exports = append(exports, *exp)
-	}
-	return exports, rows.Err()
-}
-
-func (r *Repo) CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error) {
-	purpose := strings.TrimSpace(input.Purpose)
-	if purpose == "" {
-		return nil, fmt.Errorf("purpose is required")
-	}
-	targetRef := strings.TrimSpace(input.TargetRef)
-	if targetRef == "" {
-		return nil, fmt.Errorf("target_ref is required")
-	}
-
-	statusCode := strings.TrimSpace(input.StatusCode)
-	if statusCode == "" {
-		statusCode = "queued"
-	}
-	statusID, err := r.batchExportStatusID(ctx, statusCode)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		detailsJSON []byte
-		detailsVal  any
-	)
-	if input.Details != nil {
-		detailsJSON, err = json.Marshal(input.Details)
-		if err != nil {
-			return nil, err
-		}
-		if len(detailsJSON) > 0 {
-			detailsVal = detailsJSON
-		}
-	}
-
-	var id string
-	err = r.pool.QueryRow(ctx, `
-INSERT INTO batch_exports (purpose, target_ref, requested_by, batch_export_status_id, details)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id
-`, purpose, targetRef, stringParam(input.RequestedBy, true), statusID, detailsVal).Scan(&id)
-	if err != nil {
-		return nil, err
-	}
-	return r.getBatchExport(ctx, id)
-}
-
-func (r *Repo) UpdateBatchExportStatus(ctx context.Context, id string, statusCode string, completedAt *time.Time, details map[string]any) (*models.BatchExport, error) {
-	status := strings.TrimSpace(statusCode)
-	if status == "" {
-		return nil, fmt.Errorf("status is required")
-	}
-	statusID, err := r.batchExportStatusID(ctx, status)
-	if err != nil {
-		return nil, err
-	}
-
-	var (
-		detailsJSON     []byte
-		detailsProvided bool
-	)
-	if details != nil {
-		detailsJSON, err = json.Marshal(details)
-		if err != nil {
-			return nil, err
-		}
-		detailsProvided = true
-	}
-
-	var completedVal any
-	if completedAt != nil {
-		completedVal = *completedAt
-	} else if status == "done" {
-		completedVal = nowFn()
-	}
-
-	query := "UPDATE batch_exports SET batch_export_status_id = $1, completed_at = $2"
-	params := []any{statusID, completedVal}
-	idx := 3
-	if detailsProvided {
-		query += fmt.Sprintf(", details = $%d", idx)
-		params = append(params, detailsJSON)
-		idx++
-	}
-	query += fmt.Sprintf(" WHERE id = $%d", idx)
-	params = append(params, id)
-
-	tag, err := r.pool.Exec(ctx, query, params...)
-	if err != nil {
-		return nil, err
-	}
-	if tag.RowsAffected() == 0 {
-		return nil, pgx.ErrNoRows
-	}
-	return r.getBatchExport(ctx, id)
-}
-
-func (r *Repo) DeleteBatchExport(ctx context.Context, id string) error {
-	tag, err := r.pool.Exec(ctx, `DELETE FROM batch_exports WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}
@@ -3292,460 +3182,6 @@ RETURNING id::text,
 	return &delivery, nil
 }
 
-func (r *Repo) ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error) {
-	if limit <= 0 {
-		limit = 100
-	} else if limit > 200 {
-		limit = 200
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_content_block_types_list($1, $2)`, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.ContentBlockType, 0, limit)
-	for rows.Next() {
-		var (
-			bt   models.ContentBlockType
-			desc sql.NullString
-		)
-		if err := rows.Scan(&bt.ID, &bt.Code, &bt.Label, &desc); err != nil {
-			return nil, err
-		}
-		if desc.Valid {
-			d := desc.String
-			bt.Description = &d
-		}
-		out = append(out, bt)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error) {
-	var (
-		bt   models.ContentBlockType
-		desc sql.NullString
-	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_block_type_create($1, $2, $3)`, code, label, description).
-		Scan(&bt.ID, &bt.Code, &bt.Label, &desc)
-	if err != nil {
-		return nil, err
-	}
-	if desc.Valid {
-		d := desc.String
-		bt.Description = &d
-	}
-	return &bt, nil
-}
-
-func (r *Repo) UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error) {
-	var (
-		bt   models.ContentBlockType
-		desc sql.NullString
-	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_block_type_update($1, $2, $3, $4)`, id, code, label, description).
-		Scan(&bt.ID, &bt.Code, &bt.Label, &desc)
-	if err != nil {
-		return nil, err
-	}
-	if desc.Valid {
-		d := desc.String
-		bt.Description = &d
-	}
-	return &bt, nil
-}
-
-func (r *Repo) DeleteContentBlockType(ctx context.Context, id string) error {
-	var ok bool
-	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_content_block_type_delete($1)`, id).Scan(&ok); err != nil {
-		return err
-	}
-	if !ok {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-// ------------------------------
-// Content
-// ------------------------------
-
-func (r *Repo) ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error) {
-	limit := filters.Limit
-	if limit <= 0 {
-		limit = 50
-	} else if limit > 200 {
-		limit = 200
-	}
-	offset := filters.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	var typeCode any
-	if filters.TypeCode != nil {
-		if trimmed := strings.TrimSpace(*filters.TypeCode); trimmed != "" {
-			typeCode = strings.ToLower(trimmed)
-		}
-	}
-	var statusCode any
-	if filters.StatusCode != nil {
-		if trimmed := strings.TrimSpace(*filters.StatusCode); trimmed != "" {
-			statusCode = strings.ToLower(trimmed)
-		}
-	}
-	var categoryCode any
-	if filters.CategoryCode != nil {
-		if trimmed := strings.TrimSpace(*filters.CategoryCode); trimmed != "" {
-			categoryCode = strings.ToLower(trimmed)
-		}
-	}
-	var search any
-	if filters.Search != nil {
-		if trimmed := strings.TrimSpace(*filters.Search); trimmed != "" {
-			search = trimmed
-		}
-	}
-
-	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_content_list($1, $2, $3, $4, $5, $6)`,
-		typeCode, statusCode, categoryCode, search, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.ContentItem, 0, limit)
-	for rows.Next() {
-		var (
-			item            models.ContentItem
-			statusCodeVal   string
-			statusLabel     string
-			statusWeight    int32
-			categoryCodeVal string
-			categoryLabel   string
-			typeCodeVal     string
-			typeLabel       string
-			authorName      sql.NullString
-			authorEmail     sql.NullString
-			publishedAt     sql.NullTime
-		)
-		if err := rows.Scan(
-			&item.ID,
-			&item.Title,
-			&statusCodeVal,
-			&statusLabel,
-			&statusWeight,
-			&categoryCodeVal,
-			&categoryLabel,
-			&typeCodeVal,
-			&typeLabel,
-			&authorName,
-			&authorEmail,
-			&item.UpdatedAt,
-			&publishedAt,
-			&item.CreatedAt,
-		); err != nil {
-			return nil, err
-		}
-		item.StatusCode = strings.ToLower(statusCodeVal)
-		item.StatusLabel = statusLabel
-		item.StatusWeight = int(statusWeight)
-		item.CategoryCode = strings.ToLower(categoryCodeVal)
-		item.CategoryLabel = categoryLabel
-		item.TypeCode = strings.ToLower(typeCodeVal)
-		item.TypeLabel = typeLabel
-		if authorName.Valid {
-			name := authorName.String
-			item.AuthorName = &name
-		}
-		if authorEmail.Valid {
-			email := authorEmail.String
-			item.AuthorEmail = &email
-		}
-		if publishedAt.Valid {
-			t := publishedAt.Time
-			item.PublishedAt = &t
-		}
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) GetContent(ctx context.Context, id string) (*models.ContentDetail, error) {
-	row := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_detail($1)`, id)
-	return scanContentDetail(row)
-}
-
-func (r *Repo) CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error) {
-	blocksJSON, err := contentBlocksToJSON(input.Blocks)
-	if err != nil {
-		return nil, err
-	}
-	var summaryParam any
-	if input.Summary != nil {
-		if trimmed := strings.TrimSpace(*input.Summary); trimmed != "" {
-			summaryParam = trimmed
-		}
-	}
-	var slugParam any
-	if input.Slug != nil {
-		if trimmed := strings.TrimSpace(*input.Slug); trimmed != "" {
-			slugParam = trimmed
-		}
-	}
-	var localeParam any
-	if input.Locale != nil {
-		if trimmed := strings.TrimSpace(*input.Locale); trimmed != "" {
-			localeParam = trimmed
-		}
-	}
-	var authorParam any
-	if input.AuthorEmail != nil {
-		if trimmed := strings.TrimSpace(*input.AuthorEmail); trimmed != "" {
-			authorParam = trimmed
-		}
-	}
-	var noteParam any
-	if input.Note != nil {
-		if trimmed := strings.TrimSpace(*input.Note); trimmed != "" {
-			noteParam = trimmed
-		}
-	}
-	var publishedAtParam any
-	if input.PublishedAt != nil {
-		publishedAtParam = *input.PublishedAt
-	}
-	var actorParam any
-	if actorID != nil {
-		if trimmed := strings.TrimSpace(*actorID); trimmed != "" {
-			actorParam = trimmed
-		}
-	}
-
-	row := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_create($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-		input.Title,
-		strings.ToLower(strings.TrimSpace(input.StatusCode)),
-		strings.ToLower(strings.TrimSpace(input.CategoryCode)),
-		strings.ToLower(strings.TrimSpace(input.TypeCode)),
-		summaryParam,
-		slugParam,
-		localeParam,
-		authorParam,
-		input.Body,
-		blocksJSON,
-		actorParam,
-		noteParam,
-		publishedAtParam,
-	)
-	return scanContentDetail(row)
-}
-
-func (r *Repo) UpdateContent(ctx context.Context, id string, input models.ContentUpdateInput, actorID *string) (*models.ContentDetail, error) {
-	blocksJSON, err := contentBlocksToJSON(input.Blocks)
-	if err != nil {
-		return nil, err
-	}
-	var titleParam any
-	if input.Title != nil {
-		if trimmed := strings.TrimSpace(*input.Title); trimmed != "" {
-			titleParam = trimmed
-		} else {
-			titleParam = ""
-		}
-	}
-	var summaryParam any
-	if input.Summary != nil {
-		summaryParam = strings.TrimSpace(*input.Summary)
-	}
-	var slugParam any
-	if input.Slug != nil {
-		slugParam = strings.TrimSpace(*input.Slug)
-	}
-	var localeParam any
-	if input.Locale != nil {
-		if trimmed := strings.TrimSpace(*input.Locale); trimmed != "" {
-			localeParam = trimmed
-		} else {
-			localeParam = ""
-		}
-	}
-	var statusParam any
-	if input.StatusCode != nil {
-		if trimmed := strings.TrimSpace(*input.StatusCode); trimmed != "" {
-			statusParam = strings.ToLower(trimmed)
-		}
-	}
-	var categoryParam any
-	if input.CategoryCode != nil {
-		if trimmed := strings.TrimSpace(*input.CategoryCode); trimmed != "" {
-			categoryParam = strings.ToLower(trimmed)
-		}
-	}
-	var typeParam any
-	if input.TypeCode != nil {
-		if trimmed := strings.TrimSpace(*input.TypeCode); trimmed != "" {
-			typeParam = strings.ToLower(trimmed)
-		}
-	}
-	var authorParam any
-	if input.AuthorEmail != nil {
-		trimmed := strings.TrimSpace(*input.AuthorEmail)
-		authorParam = trimmed
-		if trimmed == "" {
-			authorParam = ""
-		}
-	}
-	var bodyParam any
-	if input.Body != nil {
-		bodyParam = *input.Body
-	}
-	var noteParam any
-	if input.Note != nil {
-		if trimmed := strings.TrimSpace(*input.Note); trimmed != "" {
-			noteParam = trimmed
-		}
-	}
-	var publishedAtParam any
-	if input.PublishedAt != nil {
-		publishedAtParam = *input.PublishedAt
-	}
-	var actorParam any
-	if actorID != nil {
-		if trimmed := strings.TrimSpace(*actorID); trimmed != "" {
-			actorParam = trimmed
-		}
-	}
-
-	row := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_content_update($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-		id,
-		titleParam,
-		summaryParam,
-		slugParam,
-		localeParam,
-		statusParam,
-		categoryParam,
-		typeParam,
-		authorParam,
-		bodyParam,
-		blocksJSON,
-		actorParam,
-		noteParam,
-		publishedAtParam,
-		input.ForceNewVersion,
-	)
-	return scanContentDetail(row)
-}
-
-func (r *Repo) DeleteContent(ctx context.Context, id string) error {
-	var ok bool
-	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_content_delete($1)`, id).Scan(&ok); err != nil {
-		return err
-	}
-	if !ok {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (r *Repo) ListContentVersions(ctx context.Context, id string, limit, offset int) ([]models.ContentVersion, error) {
-	if limit <= 0 {
-		limit = 20
-	} else if limit > 100 {
-		limit = 100
-	}
-	if offset < 0 {
-		offset = 0
-	}
-
-	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_content_versions($1, $2, $3)`, id, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.ContentVersion, 0, limit)
-	for rows.Next() {
-		var (
-			item       models.ContentVersion
-			editorID   sql.NullString
-			editorName sql.NullString
-			note       sql.NullString
-		)
-		if err := rows.Scan(
-			&item.ID,
-			&item.VersionNo,
-			&item.CreatedAt,
-			&editorID,
-			&editorName,
-			&item.ChangeType,
-			&note,
-			&item.Published,
-			&item.Body,
-		); err != nil {
-			return nil, err
-		}
-		if editorID.Valid {
-			idVal := editorID.String
-			item.EditorUserID = &idVal
-		}
-		if editorName.Valid {
-			name := editorName.String
-			item.EditorName = &name
-		}
-		if note.Valid {
-			noteText := note.String
-			item.Note = &noteText
-		}
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) ListContentAuthors(ctx context.Context) ([]models.ContentAuthor, error) {
-	rows, err := r.pool.Query(ctx, `
-SELECT u.id::text, u.name, u.email, LOWER(us.code)
-FROM heartguard.users u
-JOIN heartguard.user_statuses us ON us.id = u.user_status_id
-WHERE LOWER(us.code) <> 'blocked'
-ORDER BY LOWER(u.name), LOWER(u.email)
-`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	authors := make([]models.ContentAuthor, 0, 32)
-	for rows.Next() {
-		var item models.ContentAuthor
-		if err := rows.Scan(&item.UserID, &item.Name, &item.Email, &item.StatusCode); err != nil {
-			return nil, err
-		}
-		authors = append(authors, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return authors, nil
-}
-
-// ------------------------------
-// Metrics
-// ------------------------------
-
 func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
 	var (
 		avg         sql.NullFloat64
@@ -3861,166 +3297,6 @@ func (r *Repo) MetricsInvitationBreakdown(ctx context.Context) ([]models.Invitat
 		return nil, err
 	}
 	return out, nil
-}
-
-func (r *Repo) MetricsContentSnapshot(ctx context.Context) (*models.ContentMetrics, error) {
-	var (
-		totalsRaw     []byte
-		monthlyRaw    []byte
-		categoriasRaw []byte
-		statusRaw     []byte
-		roleRaw       []byte
-		cumulativeRaw []byte
-		heatmapRaw    []byte
-	)
-	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_content_snapshot()`).
-		Scan(&totalsRaw, &monthlyRaw, &categoriasRaw, &statusRaw, &roleRaw, &cumulativeRaw, &heatmapRaw); err != nil {
-		return nil, err
-	}
-	metrics := &models.ContentMetrics{}
-	if len(totalsRaw) > 0 {
-		if err := json.Unmarshal(totalsRaw, &metrics.Totals); err != nil {
-			return nil, err
-		}
-	}
-	if len(monthlyRaw) > 0 {
-		if err := json.Unmarshal(monthlyRaw, &metrics.Monthly); err != nil {
-			return nil, err
-		}
-	}
-	if len(categoriasRaw) > 0 {
-		if err := json.Unmarshal(categoriasRaw, &metrics.Categories); err != nil {
-			return nil, err
-		}
-	}
-	if len(statusRaw) > 0 {
-		if err := json.Unmarshal(statusRaw, &metrics.StatusTrends); err != nil {
-			return nil, err
-		}
-	}
-	if len(roleRaw) > 0 {
-		if err := json.Unmarshal(roleRaw, &metrics.RoleActivity); err != nil {
-			return nil, err
-		}
-	}
-	if len(cumulativeRaw) > 0 {
-		if err := json.Unmarshal(cumulativeRaw, &metrics.Cumulative); err != nil {
-			return nil, err
-		}
-	}
-	if len(heatmapRaw) > 0 {
-		if err := json.Unmarshal(heatmapRaw, &metrics.UpdateHeatmap); err != nil {
-			return nil, err
-		}
-	}
-	if metrics.Monthly == nil {
-		metrics.Monthly = make([]models.ContentMonthlyPoint, 0)
-	}
-	if metrics.Categories == nil {
-		metrics.Categories = make([]models.ContentCategorySlice, 0)
-	}
-	if metrics.StatusTrends == nil {
-		metrics.StatusTrends = make([]models.ContentStatusTrend, 0)
-	}
-	if metrics.RoleActivity == nil {
-		metrics.RoleActivity = make([]models.ContentRoleActivity, 0)
-	}
-	if metrics.Cumulative == nil {
-		metrics.Cumulative = make([]models.ContentCumulativePoint, 0)
-	}
-	if metrics.UpdateHeatmap == nil {
-		metrics.UpdateHeatmap = make([]models.ContentUpdateHeatmapPoint, 0)
-	}
-	return metrics, nil
-}
-
-func (r *Repo) MetricsContentReport(ctx context.Context, filters models.ContentReportFilters) (*models.ContentReportResult, error) {
-	limit := filters.Limit
-	if limit <= 0 {
-		limit = 50
-	} else if limit > 500 {
-		limit = 500
-	}
-	offset := filters.Offset
-	if offset < 0 {
-		offset = 0
-	}
-
-	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_content_report($1, $2, $3, $4, $5, $6, $7)`,
-		filters.From,
-		filters.To,
-		filters.Status,
-		filters.Category,
-		filters.Search,
-		limit,
-		offset,
-	)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	result := &models.ContentReportResult{
-		Rows:   make([]models.ContentReportRow, 0, limit),
-		Limit:  limit,
-		Offset: offset,
-	}
-
-	for rows.Next() {
-		var (
-			row          models.ContentReportRow
-			authorName   sql.NullString
-			authorEmail  sql.NullString
-			publishedAt  sql.NullTime
-			lastUpdateAt sql.NullTime
-			lastEditor   sql.NullString
-			totalCount   int
-		)
-		if err := rows.Scan(
-			&row.ID,
-			&row.Title,
-			&row.StatusCode,
-			&row.StatusLabel,
-			&row.CategoryCode,
-			&row.CategoryLabel,
-			&authorName,
-			&authorEmail,
-			&publishedAt,
-			&row.UpdatedAt,
-			&lastUpdateAt,
-			&lastEditor,
-			&row.Updates30d,
-			&totalCount,
-		); err != nil {
-			return nil, err
-		}
-		if authorName.Valid {
-			s := authorName.String
-			row.AuthorName = &s
-		}
-		if authorEmail.Valid {
-			s := authorEmail.String
-			row.AuthorEmail = &s
-		}
-		if publishedAt.Valid {
-			t := publishedAt.Time
-			row.PublishedAt = &t
-		}
-		if lastUpdateAt.Valid {
-			t := lastUpdateAt.Time
-			row.LastUpdateAt = &t
-		}
-		if lastEditor.Valid {
-			s := lastEditor.String
-			row.LastEditorName = &s
-		}
-		result.Rows = append(result.Rows, row)
-		result.Total = totalCount
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return result, nil
 }
 
 func (r *Repo) MetricsOperationsReport(ctx context.Context, filters models.OperationsReportFilters) (*models.OperationsReportResult, error) {
@@ -4241,6 +3517,67 @@ LIMIT $2 OFFSET $3
 // ------------------------------
 // Users
 // ------------------------------
+func (r *Repo) GetUserWithRelations(ctx context.Context, userID string) (*models.User, error) {
+	var (
+		user           models.User
+		membershipsRaw []byte
+		rolesRaw       []byte
+	)
+	err := r.pool.QueryRow(ctx, `
+SELECT
+	u.id,
+	u.name,
+	u.email,
+	us.code AS status,
+	u.created_at,
+	COALESCE(
+		jsonb_agg(
+			jsonb_build_object(
+				'org_id', o.id,
+				'org_code', o.code,
+				'org_name', o.name,
+				'org_role_code', orl.code,
+				'org_role_label', orl.label,
+				'joined_at', to_char(mum.joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+			)
+		) FILTER (WHERE o.id IS NOT NULL),
+		'[]'::jsonb
+	) AS memberships,
+	COALESCE(
+		jsonb_agg(DISTINCT jsonb_build_object(
+			'role_id', gr.id,
+			'role_name', gr.name,
+			'description', gr.description,
+			'assigned_at', to_char(ur.assigned_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+		)) FILTER (WHERE gr.id IS NOT NULL),
+		'[]'::jsonb
+	) AS roles
+FROM users u
+JOIN user_statuses us ON us.id = u.user_status_id
+LEFT JOIN user_org_membership mum ON mum.user_id = u.id
+LEFT JOIN organizations o ON o.id = mum.org_id
+LEFT JOIN org_roles orl ON orl.id = mum.org_role_id
+LEFT JOIN user_role ur ON ur.user_id = u.id
+LEFT JOIN roles gr ON gr.id = ur.role_id
+WHERE u.id = $1::uuid
+GROUP BY u.id, u.name, u.email, us.code, u.created_at
+`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.Status, &user.CreatedAt, &membershipsRaw, &rolesRaw)
+	if err != nil {
+		return nil, err
+	}
+	if len(membershipsRaw) > 0 {
+		if err := json.Unmarshal(membershipsRaw, &user.Memberships); err != nil {
+			return nil, err
+		}
+	}
+	if len(rolesRaw) > 0 {
+		if err := json.Unmarshal(rolesRaw, &user.Roles); err != nil {
+			return nil, err
+		}
+	}
+	return &user, nil
+}
+
 func (r *Repo) SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error) {
 	rows, err := r.pool.Query(ctx, `
 SELECT
@@ -4383,6 +3720,33 @@ ORDER BY p.code
 		}
 		if desc.Valid {
 			item.Description = desc.String
+		}
+		out = append(out, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (r *Repo) ListRoleAssignments(ctx context.Context, roleID string) ([]models.RoleAssignment, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT u.id::text, u.name, u.email, ur.assigned_at
+FROM user_role ur
+JOIN users u ON u.id = ur.user_id
+WHERE ur.role_id = $1::uuid
+ORDER BY ur.assigned_at DESC
+`, roleID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]models.RoleAssignment, 0, 8)
+	for rows.Next() {
+		var item models.RoleAssignment
+		if err := rows.Scan(&item.UserID, &item.UserName, &item.UserEmail, &item.AssignedAt); err != nil {
+			return nil, err
 		}
 		out = append(out, item)
 	}
@@ -5146,160 +4510,6 @@ WHERE token_hash = $1 AND revoked_at IS NULL
 		}
 	}
 	return nil
-}
-
-func contentBlocksToJSON(blocks []models.ContentBlockInput) ([]byte, error) {
-	if len(blocks) == 0 {
-		return nil, nil
-	}
-	type blockPayload struct {
-		BlockType string  `json:"block_type"`
-		Title     *string `json:"title,omitempty"`
-		Content   string  `json:"content"`
-		Position  int     `json:"position"`
-	}
-	payload := make([]blockPayload, 0, len(blocks))
-	for _, block := range blocks {
-		payload = append(payload, blockPayload{
-			BlockType: strings.TrimSpace(block.BlockType),
-			Title:     block.Title,
-			Content:   block.Content,
-			Position:  block.Position,
-		})
-	}
-	return json.Marshal(payload)
-}
-
-func scanContentDetail(row pgx.Row) (*models.ContentDetail, error) {
-	var (
-		id                     string
-		title                  string
-		summary                sql.NullString
-		slug                   sql.NullString
-		locale                 sql.NullString
-		statusCode             string
-		statusLabel            string
-		statusWeight           int32
-		categoryCode           string
-		categoryLabel          string
-		typeCode               string
-		typeLabel              string
-		authorUserID           sql.NullString
-		authorName             sql.NullString
-		authorEmail            sql.NullString
-		createdAt              time.Time
-		updatedAt              time.Time
-		publishedAt            sql.NullTime
-		archivedAt             sql.NullTime
-		latestVersionNo        sql.NullInt32
-		latestVersionID        sql.NullString
-		latestVersionCreatedAt sql.NullTime
-		body                   sql.NullString
-		blocksRaw              []byte
-	)
-	if err := row.Scan(
-		&id,
-		&title,
-		&summary,
-		&slug,
-		&locale,
-		&statusCode,
-		&statusLabel,
-		&statusWeight,
-		&categoryCode,
-		&categoryLabel,
-		&typeCode,
-		&typeLabel,
-		&authorUserID,
-		&authorName,
-		&authorEmail,
-		&createdAt,
-		&updatedAt,
-		&publishedAt,
-		&archivedAt,
-		&latestVersionNo,
-		&latestVersionID,
-		&latestVersionCreatedAt,
-		&body,
-		&blocksRaw,
-	); err != nil {
-		return nil, err
-	}
-
-	detail := &models.ContentDetail{
-		ContentItem: models.ContentItem{
-			ID:            id,
-			Title:         title,
-			Locale:        strings.TrimSpace(locale.String),
-			StatusCode:    strings.ToLower(statusCode),
-			StatusLabel:   statusLabel,
-			StatusWeight:  int(statusWeight),
-			CategoryCode:  strings.ToLower(categoryCode),
-			CategoryLabel: categoryLabel,
-			TypeCode:      strings.ToLower(typeCode),
-			TypeLabel:     typeLabel,
-			UpdatedAt:     updatedAt,
-			CreatedAt:     createdAt,
-		},
-		Body:   body.String,
-		Blocks: make([]models.ContentBlock, 0),
-	}
-
-	if detail.Locale == "" {
-		detail.Locale = locale.String
-	}
-
-	if summary.Valid {
-		val := summary.String
-		detail.Summary = &val
-	}
-	if slug.Valid {
-		val := slug.String
-		detail.Slug = &val
-	}
-	if authorName.Valid {
-		val := authorName.String
-		detail.AuthorName = &val
-	}
-	if authorEmail.Valid {
-		val := authorEmail.String
-		detail.AuthorEmail = &val
-	}
-	if publishedAt.Valid {
-		val := publishedAt.Time
-		detail.PublishedAt = &val
-	}
-	if archivedAt.Valid {
-		val := archivedAt.Time
-		detail.ArchivedAt = &val
-	}
-	if latestVersionNo.Valid {
-		v := int(latestVersionNo.Int32)
-		detail.LatestVersionNo = &v
-	}
-	if latestVersionID.Valid {
-		val := latestVersionID.String
-		detail.LatestVersionID = &val
-	}
-	if latestVersionCreatedAt.Valid {
-		val := latestVersionCreatedAt.Time
-		detail.LatestVersionCreatedAt = &val
-	}
-
-	if len(blocksRaw) > 0 {
-		var blocks []models.ContentBlock
-		if err := json.Unmarshal(blocksRaw, &blocks); err != nil {
-			return nil, err
-		}
-		if blocks != nil {
-			detail.Blocks = blocks
-		}
-	}
-	if detail.Blocks == nil {
-		detail.Blocks = make([]models.ContentBlock, 0)
-	}
-
-	return detail, nil
 }
 
 // ------------------------------

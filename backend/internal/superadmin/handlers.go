@@ -4,7 +4,6 @@
 package superadmin
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/csv"
@@ -39,6 +38,9 @@ type Repository interface {
 	CreateOrganization(ctx context.Context, code, name string) (*models.Organization, error)
 	ListOrganizations(ctx context.Context, limit, offset int) ([]models.Organization, error)
 	GetOrganization(ctx context.Context, id string) (*models.Organization, error)
+	GetOrganizationStats(ctx context.Context, id string) (*models.OrganizationStats, error)
+	ListOrganizationPatients(ctx context.Context, orgID string, limit int) ([]models.Patient, error)
+	ListOrganizationCareTeams(ctx context.Context, orgID string, limit int) ([]models.CareTeam, error)
 	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
 	DeleteOrganization(ctx context.Context, id string) error
 
@@ -56,12 +58,8 @@ type Repository interface {
 	UpdateCatalogItem(ctx context.Context, catalog, id string, code, label *string, weight *int) (*models.CatalogItem, error)
 	DeleteCatalogItem(ctx context.Context, catalog, id string) error
 
-	ListContentBlockTypes(ctx context.Context, limit, offset int) ([]models.ContentBlockType, error)
-	CreateContentBlockType(ctx context.Context, code, label string, description *string) (*models.ContentBlockType, error)
-	UpdateContentBlockType(ctx context.Context, id string, code, label, description *string) (*models.ContentBlockType, error)
-	DeleteContentBlockType(ctx context.Context, id string) error
-
 	ListPatients(ctx context.Context, limit, offset int) ([]models.Patient, error)
+	GetPatient(ctx context.Context, id string) (*models.Patient, error)
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
@@ -79,6 +77,7 @@ type Repository interface {
 	UpdateCareTeamMember(ctx context.Context, careTeamID, userID string, input models.CareTeamMemberUpdateInput) (*models.CareTeamMember, error)
 	RemoveCareTeamMember(ctx context.Context, careTeamID, userID string) error
 	ListCareTeamPatients(ctx context.Context, careTeamID string) ([]models.PatientCareTeamLink, error)
+	ListPatientCareTeams(ctx context.Context, patientID string) ([]models.PatientCareTeamLink, error)
 	AddCareTeamPatient(ctx context.Context, careTeamID, patientID string) (*models.PatientCareTeamLink, error)
 	RemoveCareTeamPatient(ctx context.Context, careTeamID, patientID string) error
 
@@ -91,11 +90,6 @@ type Repository interface {
 	UpdateCaregiverAssignment(ctx context.Context, patientID, caregiverID string, input models.CaregiverAssignmentUpdateInput) (*models.CaregiverAssignment, error)
 	DeleteCaregiverAssignment(ctx context.Context, patientID, caregiverID string) error
 
-	ListBatchExports(ctx context.Context, statusCode, search *string, limit, offset int) ([]models.BatchExport, error)
-	CreateBatchExport(ctx context.Context, input models.BatchExportInput) (*models.BatchExport, error)
-	UpdateBatchExportStatus(ctx context.Context, id string, statusCode string, completedAt *time.Time, details map[string]any) (*models.BatchExport, error)
-	DeleteBatchExport(ctx context.Context, id string) error
-
 	ListPushDevices(ctx context.Context, userID, platformCode *string, limit, offset int) ([]models.PushDevice, error)
 	CreatePushDevice(ctx context.Context, input models.PushDeviceInput) (*models.PushDevice, error)
 	UpdatePushDevice(ctx context.Context, id string, input models.PushDeviceInput) (*models.PushDevice, error)
@@ -106,10 +100,6 @@ type Repository interface {
 	UpdateDevice(ctx context.Context, id string, input models.DeviceInput) (*models.Device, error)
 	DeleteDevice(ctx context.Context, id string) error
 	ListDeviceTypes(ctx context.Context) ([]models.DeviceType, error)
-
-	ListUserLocations(ctx context.Context, filters models.UserLocationFilters, limit, offset int) ([]models.UserLocation, error)
-	CreateUserLocation(ctx context.Context, input models.UserLocationInput) (*models.UserLocation, error)
-	DeleteUserLocation(ctx context.Context, id string) error
 
 	ListSignalStreams(ctx context.Context, limit, offset int) ([]models.SignalStream, error)
 	CreateSignalStream(ctx context.Context, input models.SignalStreamInput) (*models.SignalStream, error)
@@ -159,26 +149,21 @@ type Repository interface {
 	CreateAlertResolution(ctx context.Context, alertID string, resolvedBy *string, outcome, note *string) (*models.AlertResolution, error)
 	ListAlertDeliveries(ctx context.Context, alertID string) ([]models.AlertDelivery, error)
 	CreateAlertDelivery(ctx context.Context, alertID, channelID, target, deliveryStatusID string, responsePayload *string) (*models.AlertDelivery, error)
-	ListContent(ctx context.Context, filters models.ContentFilters) ([]models.ContentItem, error)
-	GetContent(ctx context.Context, id string) (*models.ContentDetail, error)
-	CreateContent(ctx context.Context, input models.ContentCreateInput, actorID *string) (*models.ContentDetail, error)
-	UpdateContent(ctx context.Context, id string, input models.ContentUpdateInput, actorID *string) (*models.ContentDetail, error)
-	DeleteContent(ctx context.Context, id string) error
-	ListContentVersions(ctx context.Context, id string, limit, offset int) ([]models.ContentVersion, error)
 
 	MetricsOverview(ctx context.Context) (*models.MetricsOverview, error)
 	MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error)
 	MetricsUserStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
 	MetricsInvitationBreakdown(ctx context.Context) ([]models.InvitationBreakdown, error)
-	MetricsContentSnapshot(ctx context.Context) (*models.ContentMetrics, error)
-	MetricsContentReport(ctx context.Context, filters models.ContentReportFilters) (*models.ContentReportResult, error)
 	MetricsOperationsReport(ctx context.Context, filters models.OperationsReportFilters) (*models.OperationsReportResult, error)
 	MetricsUserActivityReport(ctx context.Context, filters models.UserActivityReportFilters) (*models.UserActivityReportResult, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
+	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)
+	ListUserCareTeams(ctx context.Context, userID string) ([]models.CareTeamMember, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
 	ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error)
 	ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error)
+	ListRoleAssignments(ctx context.Context, roleID string) ([]models.RoleAssignment, error)
 	CreateRole(ctx context.Context, name string, description *string) (*models.Role, error)
 	UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error)
 	DeleteRole(ctx context.Context, id string) error
@@ -316,8 +301,6 @@ var operationLabels = map[string]string{
 
 	"PATIENT_LOCATION_CREATE": "Registro de ubicación de paciente",
 	"PATIENT_LOCATION_DELETE": "Eliminación de ubicación de paciente",
-	"USER_LOCATION_CREATE":    "Registro de ubicación de usuario",
-	"USER_LOCATION_DELETE":    "Eliminación de ubicación de usuario",
 
 	"CARE_TEAM_CREATE":         "Alta de equipo de cuidado",
 	"CARE_TEAM_UPDATE":         "Actualización de equipo de cuidado",
@@ -626,17 +609,13 @@ var allowedCatalogs = map[string]catalogMeta{
 	"user_statuses":         {Label: "Estatus de usuarios"},
 	"signal_types":          {Label: "Tipos de señal"},
 	"alert_channels":        {Label: "Canales de alerta"},
-	"alert_levels":          {Label: "Niveles de alerta", RequiresWeight: true},
-	"sexes":                 {Label: "Sexos"},
-	"platforms":             {Label: "Plataformas"},
-	"service_statuses":      {Label: "Estados de servicio"},
-	"delivery_statuses":     {Label: "Estados de entrega"},
-	"batch_export_statuses": {Label: "Estados de exportación"},
-	"org_roles":             {Label: "Roles de organización"},
-	"device_types":          {Label: "Tipos de dispositivo"},
-	"content_statuses":      {Label: "Estatus de contenido", RequiresWeight: true},
-	"content_categories":    {Label: "Categorías de contenido"},
-	"content_types":         {Label: "Tipos de contenido"},
+	"alert_levels":     {Label: "Niveles de alerta", RequiresWeight: true},
+	"sexes":            {Label: "Sexos"},
+	"platforms":        {Label: "Plataformas"},
+	"service_statuses": {Label: "Estados de servicio"},
+	"delivery_statuses": {Label: "Estados de entrega"},
+	"org_roles":        {Label: "Roles de organización"},
+	"device_types":     {Label: "Tipos de dispositivo"},
 }
 
 func catalogInfo(slug string) (catalogMeta, bool) {
@@ -1168,17 +1147,6 @@ func (h *Handlers) MetricsInvitationBreakdown(w http.ResponseWriter, r *http.Req
 	writeJSON(w, 200, list)
 }
 
-func (h *Handlers) MetricsContentInsights(w http.ResponseWriter, r *http.Request) {
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	data, err := h.repo.MetricsContentSnapshot(ctx)
-	if err != nil {
-		writeProblem(w, 500, "db_error", err.Error(), nil)
-		return
-	}
-	writeJSON(w, 200, data)
-}
-
 func parseDateParam(raw string) (*time.Time, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {
@@ -1640,226 +1608,6 @@ func (h *Handlers) MetricsUsersReport(w http.ResponseWriter, r *http.Request) {
 			"status": statusFilter,
 			"search": searchValue,
 		})
-		return
-	default:
-		w.Header().Set("X-Total-Count", strconv.Itoa(result.Total))
-		writeJSON(w, 200, result)
-	}
-}
-
-func (h *Handlers) MetricsContentReport(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit := 50
-	if raw := strings.TrimSpace(q.Get("limit")); raw != "" {
-		if val, err := strconv.Atoi(raw); err == nil {
-			limit = val
-		}
-	}
-	if limit <= 0 {
-		limit = 50
-	} else if limit > 500 {
-		limit = 500
-	}
-	offset := 0
-	if raw := strings.TrimSpace(q.Get("offset")); raw != "" {
-		if val, err := strconv.Atoi(raw); err == nil && val >= 0 {
-			offset = val
-		}
-	}
-
-	from, err := parseDateParam(q.Get("from"))
-	if err != nil {
-		writeProblem(w, 400, "bad_request", "invalid 'from' date", map[string]string{"from": "invalid"})
-		return
-	}
-	to, err := parseDateParam(q.Get("to"))
-	if err != nil {
-		writeProblem(w, 400, "bad_request", "invalid 'to' date", map[string]string{"to": "invalid"})
-		return
-	}
-
-	var statusPtr *string
-	if v := strings.TrimSpace(q.Get("status")); v != "" {
-		s := v
-		statusPtr = &s
-	}
-	var categoryPtr *string
-	if v := strings.TrimSpace(q.Get("category")); v != "" {
-		s := v
-		categoryPtr = &s
-	}
-	var searchPtr *string
-	if v := strings.TrimSpace(q.Get("search")); v != "" {
-		s := v
-		searchPtr = &s
-	}
-	sortKey := strings.TrimSpace(q.Get("sort"))
-	direction := strings.ToLower(strings.TrimSpace(q.Get("direction")))
-	if direction != "asc" {
-		direction = "desc"
-	}
-	format := strings.ToLower(strings.TrimSpace(q.Get("format")))
-
-	filters := models.ContentReportFilters{
-		From:      from,
-		To:        to,
-		Status:    statusPtr,
-		Category:  categoryPtr,
-		Search:    searchPtr,
-		Sort:      sortKey,
-		Direction: direction,
-		Limit:     limit,
-		Offset:    offset,
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
-	defer cancel()
-	result, err := h.repo.MetricsContentReport(ctx, filters)
-	if err != nil {
-		writeProblem(w, 500, "db_error", err.Error(), nil)
-		return
-	}
-
-	formatTimestamp := func(t *time.Time) string {
-		if t == nil {
-			return ""
-		}
-		return t.In(time.Local).Format("2006-01-02 15:04")
-	}
-	valueOrEmpty := func(v *string) string {
-		if v == nil {
-			return ""
-		}
-		return *v
-	}
-
-	filename := fmt.Sprintf("contenido-%s", time.Now().Format("20060102-150405"))
-
-	switch format {
-	case "csv":
-		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.csv\"", filename))
-		if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
-			if h.logger != nil {
-				h.logger.Error("csv bom write error", zap.Error(err))
-			}
-		}
-		writer := csv.NewWriter(w)
-		headers := []string{"ID", "Título", "Categoría", "Estatus", "Autor", "Email", "Publicado", "Actualizado", "Última edición", "Editor", "Actualizaciones 30d"}
-		if err := writer.Write(headers); err != nil {
-			if h.logger != nil {
-				h.logger.Error("csv header write error", zap.Error(err))
-			}
-			writer.Flush()
-			h.writeAudit(ctx, r, "AUDIT_EXPORT", "content_report", nil, map[string]any{"format": "csv", "rows": len(result.Rows)})
-			return
-		}
-		for _, row := range result.Rows {
-			record := []string{
-				row.ID,
-				row.Title,
-				row.CategoryLabel,
-				row.StatusLabel,
-				valueOrEmpty(row.AuthorName),
-				valueOrEmpty(row.AuthorEmail),
-				formatTimestamp(row.PublishedAt),
-				row.UpdatedAt.In(time.Local).Format("2006-01-02 15:04"),
-				formatTimestamp(row.LastUpdateAt),
-				valueOrEmpty(row.LastEditorName),
-				strconv.Itoa(row.Updates30d),
-			}
-			if err := writer.Write(record); err != nil {
-				if h.logger != nil {
-					h.logger.Error("csv row write error", zap.Error(err))
-				}
-				break
-			}
-		}
-		writer.Flush()
-		if err := writer.Error(); err != nil && h.logger != nil {
-			h.logger.Error("csv export error", zap.Error(err))
-		}
-		h.writeAudit(ctx, r, "AUDIT_EXPORT", "content_report", nil, map[string]any{"format": "csv", "rows": len(result.Rows)})
-		return
-	case "pdf":
-		w.Header().Set("Content-Type", "application/pdf")
-		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pdf\"", filename))
-		pdf := gofpdf.New("L", "mm", "A4", "")
-		pdf.SetTitle("Reporte de contenido", false)
-		pdf.SetMargins(12, 16, 12)
-		pdf.SetAutoPageBreak(true, 18)
-		pdf.AddPage()
-		translator := pdf.UnicodeTranslatorFromDescriptor("")
-		pdf.SetFont("Helvetica", "B", 16)
-		pdf.Cell(0, 10, translator("Reporte de contenido editorial"))
-		pdf.Ln(12)
-		pdf.SetFont("Helvetica", "", 11)
-		pdf.Cell(0, 8, translator(fmt.Sprintf("Generado %s | Total registros %d", time.Now().Format("02/01/2006 15:04"), result.Total)))
-		pdf.Ln(10)
-		headers := []string{"Título", "Categoría", "Estatus", "Autor", "Publicado", "Actualizado", "Última edición", "Editor", "Actualizaciones"}
-		widths := []float64{60, 32, 28, 42, 24, 24, 28, 24, 15}
-		rowHeight := 6.2
-		pdf.SetFont("Helvetica", "B", 10)
-		pdf.SetFillColor(40, 64, 96)
-		pdf.SetDrawColor(210, 218, 235)
-		pdf.SetLineWidth(0.15)
-		pdf.SetTextColor(255, 255, 255)
-		for i, head := range headers {
-			pdf.CellFormat(widths[i], 8, translator(head), "1", 0, "L", true, 0, "")
-		}
-		pdf.Ln(-1)
-		pdf.SetFont("Helvetica", "", 9)
-		pdf.SetTextColor(0, 0, 0)
-		fill := false
-		leftMargin, _, _, _ := pdf.GetMargins()
-		for _, row := range result.Rows {
-			fill = !fill
-			if fill {
-				pdf.SetFillColor(245, 247, 252)
-			} else {
-				pdf.SetFillColor(255, 255, 255)
-			}
-			cells := []string{
-				row.Title,
-				row.CategoryLabel,
-				row.StatusLabel,
-				valueOrEmpty(row.AuthorName),
-				formatTimestamp(row.PublishedAt),
-				row.UpdatedAt.In(time.Local).Format("2006-01-02 15:04"),
-				formatTimestamp(row.LastUpdateAt),
-				valueOrEmpty(row.LastEditorName),
-				strconv.Itoa(row.Updates30d),
-			}
-			joinedLines := make([]string, len(cells))
-			maxLines := 1
-			for i, cell := range cells {
-				translated := translator(strings.TrimSpace(cell))
-				if translated == "" {
-					translated = translator("-")
-				}
-				split := pdf.SplitLines([]byte(translated), widths[i])
-				if len(split) == 0 {
-					split = [][]byte{[]byte(translated)}
-				}
-				if len(split) > maxLines {
-					maxLines = len(split)
-				}
-				joinedLines[i] = string(bytes.Join(split, []byte("\n")))
-			}
-			y := pdf.GetY()
-			x := leftMargin
-			totalHeight := float64(maxLines) * rowHeight
-			for i := range joinedLines {
-				pdf.SetXY(x, y)
-				pdf.MultiCell(widths[i], rowHeight, joinedLines[i], "1", "L", fill)
-				x += widths[i]
-			}
-			pdf.SetXY(leftMargin, y+totalHeight)
-		}
-		if err := pdf.Output(w); err != nil && h.logger != nil {
-			h.logger.Error("pdf export error", zap.Error(err))
-		}
-		h.writeAudit(ctx, r, "AUDIT_EXPORT", "content_report", nil, map[string]any{"format": "pdf", "rows": len(result.Rows)})
 		return
 	default:
 		w.Header().Set("X-Total-Count", strconv.Itoa(result.Total))
@@ -2878,187 +2626,6 @@ func (h *Handlers) DeleteCaregiverAssignment(w http.ResponseWriter, r *http.Requ
 
 // Push devices
 
-type batchExportCreateReq struct {
-	Purpose    string         `json:"purpose" validate:"required"`
-	TargetRef  string         `json:"target_ref" validate:"required"`
-	StatusCode string         `json:"status_code"`
-	Details    map[string]any `json:"details,omitempty"`
-}
-
-type batchExportStatusReq struct {
-	StatusCode  string         `json:"status_code" validate:"required"`
-	CompletedAt *time.Time     `json:"completed_at,omitempty"`
-	Details     map[string]any `json:"details,omitempty"`
-}
-
-// Batch exports
-
-func (h *Handlers) ListBatchExports(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseLimitOffset(r)
-	query := r.URL.Query()
-	var (
-		statusPtr *string
-		searchPtr *string
-	)
-	if status := strings.TrimSpace(query.Get("status")); status != "" {
-		statusPtr = &status
-	}
-	if q := strings.TrimSpace(query.Get("q")); q != "" {
-		searchPtr = &q
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	list, err := h.repo.ListBatchExports(ctx, statusPtr, searchPtr, limit, offset)
-	if err != nil {
-		writeProblem(w, 500, "db_error", err.Error(), nil)
-		return
-	}
-	writeJSON(w, 200, list)
-}
-
-func (h *Handlers) CreateBatchExport(w http.ResponseWriter, r *http.Request) {
-	ct := r.Header.Get("Content-Type")
-	requestedBy := actorPtr(r)
-
-	var (
-		purpose    string
-		targetRef  string
-		statusCode string
-		details    map[string]any
-	)
-
-	if strings.HasPrefix(ct, "multipart/form-data") {
-		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			writeProblem(w, 400, "bad_request", "invalid multipart form", nil)
-			return
-		}
-		purpose = strings.TrimSpace(r.FormValue("purpose"))
-		statusCode = strings.TrimSpace(r.FormValue("status_code"))
-		detailsRaw := strings.TrimSpace(r.FormValue("details_json"))
-		if detailsRaw != "" {
-			if err := json.Unmarshal([]byte(detailsRaw), &details); err != nil {
-				writeProblem(w, 422, "validation_error", "details_json must be valid JSON", map[string]string{"details_json": "invalid"})
-				return
-			}
-		}
-		if r.MultipartForm != nil {
-			if files := r.MultipartForm.File["target_file"]; len(files) > 0 {
-				if files[0] != nil && files[0].Filename != "" {
-					var err error
-					targetRef, err = saveBatchExportUpload(files[0])
-					if err != nil {
-						switch {
-						case errors.Is(err, errBatchExportMissingFile):
-							// ignore, we'll fallback to URL
-						case errors.Is(err, errBatchExportFileTooLarge):
-							writeProblem(w, 413, "file_too_large", "uploaded file is too large", map[string]string{"target_file": "too_large"})
-							return
-						default:
-							writeProblem(w, 500, "upload_error", err.Error(), nil)
-							return
-						}
-					}
-				}
-			}
-		}
-		if targetRef == "" {
-			targetRef = strings.TrimSpace(r.FormValue("target_url"))
-		}
-	} else {
-		var req batchExportCreateReq
-		fields, err := decodeAndValidate(r, &req, h.validate)
-		if err != nil {
-			writeProblem(w, 400, "bad_request", "invalid payload", fields)
-			return
-		}
-		purpose = strings.TrimSpace(req.Purpose)
-		targetRef = strings.TrimSpace(req.TargetRef)
-		statusCode = strings.TrimSpace(req.StatusCode)
-		if req.Details != nil {
-			details = req.Details
-		}
-	}
-
-	if purpose == "" {
-		writeProblem(w, 422, "validation_error", "purpose is required", map[string]string{"purpose": "required"})
-		return
-	}
-	if targetRef == "" {
-		writeProblem(w, 422, "validation_error", "target_ref is required", map[string]string{"target_ref": "required"})
-		return
-	}
-
-	input := models.BatchExportInput{
-		Purpose:     purpose,
-		TargetRef:   targetRef,
-		RequestedBy: requestedBy,
-		StatusCode:  statusCode,
-	}
-	if details != nil {
-		input.Details = details
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	export, err := h.repo.CreateBatchExport(ctx, input)
-	if err != nil {
-		if errors.Is(err, errInvalidBatchExportStatus) {
-			writeProblem(w, 400, "invalid_status", "unknown status code", map[string]string{"status_code": "invalid"})
-			return
-		}
-		writeProblem(w, 400, "db_error", err.Error(), nil)
-		return
-	}
-	h.writeAudit(ctx, r, "BATCH_EXPORT_CREATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
-	writeJSON(w, 201, export)
-}
-
-func (h *Handlers) UpdateBatchExportStatus(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	var req batchExportStatusReq
-	fields, err := decodeAndValidate(r, &req, h.validate)
-	if err != nil {
-		writeProblem(w, 400, "bad_request", "invalid payload", fields)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	export, err := h.repo.UpdateBatchExportStatus(ctx, id, req.StatusCode, req.CompletedAt, req.Details)
-	if err != nil {
-		switch {
-		case errors.Is(err, errInvalidBatchExportStatus):
-			writeProblem(w, 400, "invalid_status", "unknown status code", map[string]string{"status_code": "invalid"})
-			return
-		case errors.Is(err, pgx.ErrNoRows):
-			writeProblem(w, 404, "not_found", "batch export not found", nil)
-			return
-		default:
-			writeProblem(w, 400, "db_error", err.Error(), nil)
-			return
-		}
-	}
-	h.writeAudit(ctx, r, "BATCH_EXPORT_STATUS_UPDATE", "batch_export", &export.ID, map[string]any{"status": export.StatusCode})
-	writeJSON(w, 200, export)
-}
-
-func (h *Handlers) DeleteBatchExport(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.DeleteBatchExport(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeProblem(w, 404, "not_found", "batch export not found", nil)
-			return
-		}
-		writeProblem(w, 400, "db_error", err.Error(), nil)
-		return
-	}
-	h.writeAudit(ctx, r, "BATCH_EXPORT_DELETE", "batch_export", &id, nil)
-	w.WriteHeader(204)
-}
-
-// Push devices
-
 type pushDeviceReq struct {
 	UserID       string     `json:"user_id" validate:"required,uuid4"`
 	PlatformCode string     `json:"platform_code" validate:"required"`
@@ -3313,107 +2880,6 @@ func (h *Handlers) ListPatientLocations(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	list, err := h.repo.ListPatientLocations(ctx, filters, limit, offset)
-	if err != nil {
-		writeProblem(w, 500, "db_error", err.Error(), nil)
-		return
-	}
-	writeJSON(w, 200, list)
-}
-
-type userLocationReq struct {
-	UserID     string     `json:"user_id" validate:"required,uuid4"`
-	Latitude   float64    `json:"latitude" validate:"required,gte=-90,lte=90"`
-	Longitude  float64    `json:"longitude" validate:"required,gte=-180,lte=180"`
-	RecordedAt *time.Time `json:"recorded_at,omitempty"`
-	Source     *string    `json:"source,omitempty" validate:"omitempty,max=40"`
-	AccuracyM  *float64   `json:"accuracy_m,omitempty" validate:"omitempty,gte=0,lte=100000"`
-}
-
-func (h *Handlers) CreateUserLocation(w http.ResponseWriter, r *http.Request) {
-	var req userLocationReq
-	fields, err := decodeAndValidate(r, &req, h.validate)
-	if err != nil {
-		writeProblem(w, 400, "bad_request", "invalid payload", fields)
-		return
-	}
-	if coordErrs := validateCoordinates(req.Latitude, req.Longitude); coordErrs != nil {
-		writeProblem(w, 422, "validation_error", "invalid coordinates", coordErrs)
-		return
-	}
-	if !validateAccuracy(req.AccuracyM) {
-		writeProblem(w, 422, "validation_error", "invalid accuracy", map[string]string{"accuracy_m": "invalid"})
-		return
-	}
-	input := models.UserLocationInput{
-		UserID:     req.UserID,
-		RecordedAt: req.RecordedAt,
-		Latitude:   req.Latitude,
-		Longitude:  req.Longitude,
-		Source:     normalizeStringPtr(req.Source),
-		AccuracyM:  req.AccuracyM,
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	location, err := h.repo.CreateUserLocation(ctx, input)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) {
-			if pgErr.Code == "23503" {
-				writeProblem(w, 404, "not_found", "user not found", map[string]string{"user_id": "unknown"})
-				return
-			}
-		}
-		writeProblem(w, 400, "db_error", err.Error(), nil)
-		return
-	}
-	details := map[string]any{"user_id": location.UserID}
-	if location.Source != nil {
-		details["source"] = *location.Source
-	}
-	h.writeAudit(ctx, r, "USER_LOCATION_CREATE", "user_location", &location.ID, details)
-	writeJSON(w, 201, location)
-}
-
-func (h *Handlers) DeleteUserLocation(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if id == "" {
-		writeProblem(w, 400, "bad_request", "missing id", nil)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.DeleteUserLocation(ctx, id); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			writeProblem(w, 404, "not_found", "location not found", nil)
-			return
-		}
-		writeProblem(w, 400, "db_error", err.Error(), nil)
-		return
-	}
-	h.writeAudit(ctx, r, "USER_LOCATION_DELETE", "user_location", &id, nil)
-	w.WriteHeader(204)
-}
-
-func (h *Handlers) ListUserLocations(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseLimitOffset(r)
-	q := r.URL.Query()
-	filters := models.UserLocationFilters{}
-	if v := strings.TrimSpace(q.Get("user_id")); v != "" {
-		filters.UserID = &v
-	}
-	if v := strings.TrimSpace(q.Get("from")); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			filters.From = &t
-		}
-	}
-	if v := strings.TrimSpace(q.Get("to")); v != "" {
-		if t, err := time.Parse(time.RFC3339, v); err == nil {
-			filters.To = &t
-		}
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	list, err := h.repo.ListUserLocations(ctx, filters, limit, offset)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return

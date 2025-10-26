@@ -16,9 +16,14 @@
 				<span class="hg-field-hint">El enlace quedará asociado a la organización seleccionada.</span>
 			</div>
 			<div class="hg-form-field">
-				<label for="org_role">Rol (código)</label>
-				<input id="org_role" name="org_role" placeholder="Ej. ADMIN" required maxlength="60" />
-				<span class="hg-field-hint">Utiliza el código corto del rol que tendrá la persona invitada.</span>
+				<label for="org_role">Rol</label>
+				<select id="org_role" name="org_role" required>
+					<option value="">Selecciona...</option>
+					{{range .Data.Roles}}
+					<option value="{{.Code}}">{{.Label}} ({{.Code}})</option>
+					{{end}}
+				</select>
+				<span class="hg-field-hint">Selecciona el rol que se asignará automáticamente cuando se use la invitación.</span>
 			</div>
 			<div class="hg-form-field">
 				<label for="email">Correo electrónico (opcional)</label>

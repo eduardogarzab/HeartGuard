@@ -28,7 +28,7 @@
 				<textarea id="model-hyperparams" name="hyperparams" rows="3" placeholder='{"lr":0.01}'></textarea>
 			</div>
 			<div class="hg-form-actions">
-				<button type="submit">Crear modelo</button>
+				<button type="submit">Registrar modelo</button>
 			</div>
 		</form>
 	</div>
@@ -50,8 +50,7 @@
 				</tr>
 			</thead>
 			<tbody>
-				{{range .Data.Items}}
-				{{$model := .}}
+				{{range .Data.Items}} {{$model := .}}
 				<tr>
 					<td>{{$model.Name}}</td>
 					<td>{{$model.Version}}</td>

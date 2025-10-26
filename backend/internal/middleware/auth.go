@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"strings"
+	"time"
 
 	"heartguard-superadmin/internal/models"
 	"heartguard-superadmin/internal/session"
@@ -12,11 +13,12 @@ import (
 type ctxKey string
 
 const (
-	CtxUserIDKey        ctxKey = "actor_user_id"
-	CtxSessionJTIKey    ctxKey = "session_jti"
-	CtxCSRFFromSession  ctxKey = "csrf_token"
-	CtxCurrentUserKey   ctxKey = "current_user"
-	CtxIsSuperadminKey  ctxKey = "is_superadmin"
+	CtxUserIDKey          ctxKey = "actor_user_id"
+	CtxSessionJTIKey      ctxKey = "session_jti"
+	CtxCSRFFromSession    ctxKey = "csrf_token"
+	CtxCurrentUserKey     ctxKey = "current_user"
+	CtxIsSuperadminKey    ctxKey = "is_superadmin"
+	CtxSessionExpiresAtKey ctxKey = "session_expires_at"
 )
 
 // repoIface aggregates dependencies required by session middleware.
@@ -62,6 +64,13 @@ func SessionLoader(sm *session.Manager, repo repoIface) func(http.Handler) http.
 			}
 
 			sm.Refresh(r.Context(), claims.JTI)
+			
+			// Add session expiration time to context
+			if ttl := sm.RemainingTTL(r.Context(), claims.JTI); ttl > 0 {
+				expiresAt := time.Now().Add(ttl)
+				ctx = context.WithValue(ctx, CtxSessionExpiresAtKey, expiresAt)
+			}
+			
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -191,4 +200,11 @@ func IsSuperadmin(ctx context.Context) bool {
 		return v
 	}
 	return false
+}
+
+func SessionExpiresAtFromContext(ctx context.Context) *time.Time {
+	if v, ok := ctx.Value(CtxSessionExpiresAtKey).(time.Time); ok {
+		return &v
+	}
+	return nil
 }

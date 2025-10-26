@@ -36,6 +36,7 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 	r.Get("/login", authHandlers.LoginForm)
 	r.Post("/login", authHandlers.LoginSubmit)
 	r.With(authmw.CSRF(sessions)).Post("/logout", authHandlers.Logout)
+	r.With(authmw.RequireSuperadmin(sessions, repo)).Post("/session/refresh", authHandlers.RefreshSession)
 
 	r.Route("/superadmin", func(s chi.Router) {
 		s.Use(authmw.RequireSuperadmin(sessions, repo))
@@ -52,24 +53,9 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			or.Post("/{id}/delete", uiHandlers.OrganizationDelete)
 		})
 
-		s.Route("/content", func(cr chi.Router) {
-			cr.Get("/", uiHandlers.ContentIndex)
-			cr.Get("/new", uiHandlers.ContentNew)
-			cr.Post("/", uiHandlers.ContentCreate)
-			cr.Get("/{id}", uiHandlers.ContentEdit)
-			cr.Post("/{id}", uiHandlers.ContentUpdate)
-			cr.Post("/{id}/delete", uiHandlers.ContentDelete)
-		})
-
-		s.Route("/content-block-types", func(br chi.Router) {
-			br.Get("/", uiHandlers.ContentBlockTypesIndex)
-			br.Post("/", uiHandlers.ContentBlockTypesCreate)
-			br.Post("/{id}/update", uiHandlers.ContentBlockTypesUpdate)
-			br.Post("/{id}/delete", uiHandlers.ContentBlockTypesDelete)
-		})
-
 		s.Route("/patients", func(pr chi.Router) {
 			pr.Get("/", uiHandlers.PatientsIndex)
+			pr.Get("/{id}", uiHandlers.PatientDetail)
 			pr.Post("/", uiHandlers.PatientsCreate)
 			pr.Post("/{id}/update", uiHandlers.PatientsUpdate)
 			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
@@ -80,11 +66,6 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 				pr.Get("/", uiHandlers.PatientLocationsIndex)
 				pr.Post("/", uiHandlers.PatientLocationsCreate)
 				pr.Post("/{id}/delete", uiHandlers.PatientLocationsDelete)
-			})
-			lr.Route("/users", func(ur chi.Router) {
-				ur.Get("/", uiHandlers.UserLocationsIndex)
-				ur.Post("/", uiHandlers.UserLocationsCreate)
-				ur.Post("/{id}/delete", uiHandlers.UserLocationsDelete)
 			})
 		})
 
@@ -124,23 +105,16 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			dr.Post("/{id}/delete", uiHandlers.DevicesDelete)
 		})
 
-		s.Route("/push-devices", func(pr chi.Router) {
-			pr.Get("/", uiHandlers.PushDevicesIndex)
-			pr.Post("/", uiHandlers.PushDevicesCreate)
-			pr.Post("/{id}/update", uiHandlers.PushDevicesUpdate)
-			pr.Post("/{id}/delete", uiHandlers.PushDevicesDelete)
-		})
+	s.Route("/push-devices", func(pr chi.Router) {
+		pr.Get("/", uiHandlers.PushDevicesIndex)
+		pr.Post("/", uiHandlers.PushDevicesCreate)
+		pr.Post("/{id}/update", uiHandlers.PushDevicesUpdate)
+		pr.Post("/{id}/delete", uiHandlers.PushDevicesDelete)
+	})
 
-		s.Route("/batch-exports", func(br chi.Router) {
-			br.Get("/", uiHandlers.BatchExportsIndex)
-			br.Post("/", uiHandlers.BatchExportsCreate)
-			br.Post("/{id}/status", uiHandlers.BatchExportsUpdateStatus)
-			br.Post("/{id}/delete", uiHandlers.BatchExportsDelete)
-		})
-
-		s.Route("/signal-streams", func(sr chi.Router) {
-			sr.Get("/", uiHandlers.SignalStreamsIndex)
-			sr.Post("/", uiHandlers.SignalStreamsCreate)
+	s.Route("/signal-streams", func(sr chi.Router) {
+		sr.Get("/", uiHandlers.SignalStreamsIndex)
+		sr.Post("/", uiHandlers.SignalStreamsCreate)
 			sr.Post("/{id}/update", uiHandlers.SignalStreamsUpdate)
 			sr.Post("/{id}/delete", uiHandlers.SignalStreamsDelete)
 			sr.Post("/{id}/bindings", uiHandlers.SignalStreamsBindingsCreate)
@@ -191,6 +165,7 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 
 		s.Route("/users", func(ur chi.Router) {
 			ur.Get("/", uiHandlers.UsersIndex)
+				ur.Get("/{id}", uiHandlers.UserDetail)
 			ur.Post("/{id}/status", uiHandlers.UsersUpdateStatus)
 		})
 
@@ -199,6 +174,8 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			rr.Post("/", uiHandlers.RolesCreate)
 			rr.Post("/{id}/permissions", uiHandlers.RolesGrantPermission)
 			rr.Post("/{id}/permissions/{code}/delete", uiHandlers.RolesRevokePermission)
+			rr.Post("/{id}/members", uiHandlers.RolesAssignMember)
+			rr.Post("/{id}/members/{userID}/delete", uiHandlers.RolesRemoveMember)
 			rr.Post("/users/{id}", uiHandlers.RolesUpdateUserAssignment)
 			rr.Post("/{id}/delete", uiHandlers.RolesDelete)
 		})

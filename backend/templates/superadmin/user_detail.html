@@ -1,0 +1,187 @@
+{{define "superadmin/user_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/user_detail.html:content"}}
+<section class="hg-section">
+	<div class="hg-detail-header">
+		<div>
+			<h1>{{.Data.User.Name}}</h1>
+			<p class="hg-detail-subtitle">Registrado {{formatTime .Data.User.CreatedAt}}</p>
+		</div>
+		<div class="hg-detail-meta">
+			<span class="hg-detail-pill">{{.Data.User.Email}}</span>
+			<span class="hg-status-chip {{if eq .Data.User.Status "active"}}is-success{{else if eq .Data.User.Status "blocked"}}is-danger{{else}}is-warn{{end}}">
+				{{if eq .Data.User.Status "active"}}Activo{{else if eq .Data.User.Status "blocked"}}Bloqueado{{else if eq .Data.User.Status "pending"}}Pendiente{{else}}{{.Data.User.Status}}{{end}}
+			</span>
+		</div>
+	</div>
+	<div class="hg-summary-grid">
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Organizaciones</span>
+			<span class="hg-summary-value">{{len .Data.User.Memberships}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Roles</span>
+			<span class="hg-summary-value">{{len .Data.User.Roles}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Equipos de cuidado</span>
+			<span class="hg-summary-value">{{len .Data.CareTeams}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Pacientes asignados</span>
+			<span class="hg-summary-value">{{len .Data.Caregiving}}</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Dispositivos push</span>
+			<span class="hg-summary-value">{{len .Data.PushDevices}}</span>
+		</article>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Organizaciones</h2>
+			<span class="hg-card-meta">{{len .Data.User.Memberships}} miembros</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Organización</th>
+					<th>Rol</th>
+					<th>Ingreso</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.User.Memberships}}
+				<tr>
+					<td>{{.OrgName}}</td>
+					<td>{{.OrgRoleLabel}}</td>
+					<td>{{if .JoinedAt}}{{formatTimePtr .JoinedAt}}{{else}}—{{end}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="3" class="hg-empty-cell">Sin organizaciones asignadas.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-split-grid">
+		<div class="hg-card">
+			<header class="hg-card-header">
+				<h2>Roles asignados</h2>
+				<span class="hg-card-meta">{{len .Data.User.Roles}} roles</span>
+			</header>
+			{{if .Data.User.Roles}}
+			<div class="hg-inline-roles">
+				{{range .Data.User.Roles}}
+				<span class="hg-tag">{{.RoleName}}</span>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="remark">Sin roles asignados.</p>
+			{{end}}
+		</div>
+		<div class="hg-card">
+			<header class="hg-card-header">
+				<h2>Equipos de cuidado</h2>
+				<span class="hg-card-meta">{{len .Data.CareTeams}} equipos</span>
+			</header>
+			<table class="hg-table">
+				<thead>
+					<tr>
+						<th>Equipo</th>
+						<th>Rol</th>
+						<th>Ingreso</th>
+					</tr>
+				</thead>
+				<tbody>
+					{{range .Data.CareTeams}}
+					<tr>
+						<td>{{.CareTeamName}}</td>
+						<td>{{.RoleInTeam}}</td>
+						<td>{{formatTime .JoinedAt}}</td>
+					</tr>
+					{{else}}
+					<tr>
+						<td colspan="3" class="hg-empty-cell">Sin participación en equipos.</td>
+					</tr>
+					{{end}}
+				</tbody>
+			</table>
+		</div>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Pacientes a cargo</h2>
+			<span class="hg-card-meta">{{len .Data.Caregiving}} asignaciones</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Paciente</th>
+					<th>Relación</th>
+					<th>Primario</th>
+					<th>Desde</th>
+					<th>Hasta</th>
+					<th>Nota</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.Caregiving}}
+				<tr>
+					<td><a href="/superadmin/patients/{{.PatientID}}" class="hg-link">{{.PatientName}}</a></td>
+					<td>{{if .RelationshipTypeLabel}}{{.RelationshipTypeLabel}}{{else}}—{{end}}</td>
+					<td>{{if .IsPrimary}}Sí{{else}}No{{end}}</td>
+					<td>{{formatDate .StartedAt}}</td>
+					<td>{{if .EndedAt}}{{formatDatePtr .EndedAt}}{{else}}—{{end}}</td>
+					<td>{{if .Note}}{{.Note}}{{else}}—{{end}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="6" class="hg-empty-cell">Sin pacientes asignados como cuidador.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Dispositivos push registrados</h2>
+			<span class="hg-card-meta">{{len .Data.PushDevices}} dispositivos</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Plataforma</th>
+					<th>Token</th>
+					<th>Última conexión</th>
+					<th>Estado</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.PushDevices}}
+				<tr>
+					<td>{{.PlatformLabel}}</td>
+					<td><code class="hg-code">{{.PushToken}}</code></td>
+					<td>{{formatTime .LastSeenAt}}</td>
+					<td>{{if .Active}}Activo{{else}}Inactivo{{end}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="4" class="hg-empty-cell">Sin dispositivos registrados.</td>
+				</tr>
+				{{end}}
+			</tbody>
+		</table>
+	</div>
+</section>
+{{end}}
