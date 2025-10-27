@@ -21,6 +21,7 @@
 	<table class="hg-table">
 		<thead>
 			<tr>
+				<th></th>
 				<th>Nombre</th>
 				<th>Correo</th>
 				<th>Estado</th>
@@ -34,6 +35,9 @@
 		<tbody>
 			{{range .Data.Users}} {{$user := .}}
 			<tr>
+				<td>
+					<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+				</td>
 				<td>{{.Name}}</td>
 				<td>{{.Email}}</td>
 				<td>

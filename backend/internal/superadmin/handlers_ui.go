@@ -2494,7 +2494,13 @@ func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
 		risk = &riskRaw
 	}
 
-	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk}
+	photoURLRaw := strings.TrimSpace(r.FormValue("profile_photo_url"))
+	var photoURL *string
+	if photoURLRaw != "" {
+		photoURL = &photoURLRaw
+	}
+
+	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk, ProfilePhotoURL: photoURL}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	patient, err := h.repo.CreatePatient(ctx, input)
@@ -2547,7 +2553,12 @@ func (h *Handlers) PatientsUpdate(w http.ResponseWriter, r *http.Request) {
 	if riskRaw != "" {
 		risk = &riskRaw
 	}
-	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk}
+	photoURLRaw := strings.TrimSpace(r.FormValue("profile_photo_url"))
+	var photoURL *string
+	if photoURLRaw != "" {
+		photoURL = &photoURLRaw
+	}
+	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk, ProfilePhotoURL: photoURL}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	patient, err := h.repo.UpdatePatient(ctx, id, input)

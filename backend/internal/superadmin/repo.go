@@ -559,13 +559,14 @@ func (r *Repo) DeleteCatalogItem(ctx context.Context, catalog, id string) error 
 
 func (r *Repo) GetPatient(ctx context.Context, id string) (*models.Patient, error) {
 	var (
-		patient  models.Patient
-		orgID    sql.NullString
-		orgName  sql.NullString
-		birth    sql.NullTime
-		sexCode  sql.NullString
-		sexLabel sql.NullString
-		risk     sql.NullString
+		patient         models.Patient
+		orgID           sql.NullString
+		orgName         sql.NullString
+		birth           sql.NullTime
+		sexCode         sql.NullString
+		sexLabel        sql.NullString
+		risk            sql.NullString
+		profilePhotoURL sql.NullString
 	)
 	err := r.pool.QueryRow(ctx, `
 SELECT
@@ -577,14 +578,19 @@ SELECT
 	sx.code::text,
 	sx.label::text,
 	p.risk_level::text,
+	p.profile_photo_url,
 	p.created_at
 FROM heartguard.patients p
 LEFT JOIN heartguard.organizations o ON o.id = p.org_id
 LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
 WHERE p.id = $1::uuid
-`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if profilePhotoURL.Valid {
+		v := profilePhotoURL.String
+		patient.ProfilePhotoURL = &v
 	}
 	if orgID.Valid {
 		v := orgID.String
@@ -627,12 +633,17 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 			orgID    sql.NullString
 			org      sql.NullString
 			birth    sql.NullTime
-			sexCode  sql.NullString
-			sexLabel sql.NullString
-			risk     sql.NullString
+			sexCode         sql.NullString
+			sexLabel        sql.NullString
+			risk            sql.NullString
+			profilePhotoURL sql.NullString
 		)
-		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt); err != nil {
+		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt); err != nil {
 			return nil, err
+		}
+		if profilePhotoURL.Valid {
+			v := profilePhotoURL.String
+			patient.ProfilePhotoURL = &v
 		}
 		if orgID.Valid {
 			v := orgID.String
@@ -665,18 +676,23 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 
 func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error) {
 	var (
-		patient  models.Patient
-		orgID    sql.NullString
-		org      sql.NullString
-		birth    sql.NullTime
-		sexCode  sql.NullString
-		sexLabel sql.NullString
-		risk     sql.NullString
+		patient         models.Patient
+		orgID           sql.NullString
+		org             sql.NullString
+		birth           sql.NullTime
+		sexCode         sql.NullString
+		sexLabel        sql.NullString
+		risk            sql.NullString
+		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5)`, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6)`, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true), stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if profilePhotoURL.Valid {
+		v := profilePhotoURL.String
+		patient.ProfilePhotoURL = &v
 	}
 	if orgID.Valid {
 		v := orgID.String
@@ -707,18 +723,23 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 
 func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error) {
 	var (
-		patient  models.Patient
-		orgID    sql.NullString
-		org      sql.NullString
-		birth    sql.NullTime
-		sexCode  sql.NullString
-		sexLabel sql.NullString
-		risk     sql.NullString
+		patient         models.Patient
+		orgID           sql.NullString
+		org             sql.NullString
+		birth           sql.NullTime
+		sexCode         sql.NullString
+		sexLabel        sql.NullString
+		risk            sql.NullString
+		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6)`, id, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7)`, id, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true), stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if profilePhotoURL.Valid {
+		v := profilePhotoURL.String
+		patient.ProfilePhotoURL = &v
 	}
 	if orgID.Valid {
 		v := orgID.String
@@ -3519,9 +3540,10 @@ LIMIT $2 OFFSET $3
 // ------------------------------
 func (r *Repo) GetUserWithRelations(ctx context.Context, userID string) (*models.User, error) {
 	var (
-		user           models.User
-		membershipsRaw []byte
-		rolesRaw       []byte
+		user            models.User
+		membershipsRaw  []byte
+		rolesRaw        []byte
+		profilePhotoURL sql.NullString
 	)
 	err := r.pool.QueryRow(ctx, `
 SELECT
@@ -3529,6 +3551,7 @@ SELECT
 	u.name,
 	u.email,
 	us.code AS status,
+	u.profile_photo_url,
 	u.created_at,
 	COALESCE(
 		jsonb_agg(
@@ -3561,9 +3584,13 @@ LEFT JOIN user_role ur ON ur.user_id = u.id
 LEFT JOIN roles gr ON gr.id = ur.role_id
 WHERE u.id = $1::uuid
 GROUP BY u.id, u.name, u.email, us.code, u.created_at
-`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.Status, &user.CreatedAt, &membershipsRaw, &rolesRaw)
+`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.Status, &profilePhotoURL, &user.CreatedAt, &membershipsRaw, &rolesRaw)
 	if err != nil {
 		return nil, err
+	}
+	if profilePhotoURL.Valid {
+		v := profilePhotoURL.String
+		user.ProfilePhotoURL = &v
 	}
 	if len(membershipsRaw) > 0 {
 		if err := json.Unmarshal(membershipsRaw, &user.Memberships); err != nil {
@@ -3585,6 +3612,7 @@ SELECT
 	u.name,
 	u.email,
 	us.code AS status,
+	u.profile_photo_url,
 	u.created_at,
 	COALESCE(
 		jsonb_agg(
@@ -3628,12 +3656,17 @@ LIMIT $2 OFFSET $3
 	var out []models.User
 	for rows.Next() {
 		var (
-			m              models.User
-			membershipsRaw []byte
-			rolesRaw       []byte
+			m               models.User
+			membershipsRaw  []byte
+			rolesRaw        []byte
+			profilePhotoURL sql.NullString
 		)
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &m.CreatedAt, &membershipsRaw, &rolesRaw); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &profilePhotoURL, &m.CreatedAt, &membershipsRaw, &rolesRaw); err != nil {
 			return nil, err
+		}
+		if profilePhotoURL.Valid {
+			v := profilePhotoURL.String
+			m.ProfilePhotoURL = &v
 		}
 		if len(membershipsRaw) > 0 {
 			if err := json.Unmarshal(membershipsRaw, &m.Memberships); err != nil {
