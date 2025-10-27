@@ -69,7 +69,7 @@
 				{{$patient := .}}
 				<tr>
 					<td>
-						<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+						<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/assets/img/patient_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
 					</td>
 					<td>{{$patient.Name}}</td>
 					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
