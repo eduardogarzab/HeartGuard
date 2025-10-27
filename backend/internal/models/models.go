@@ -77,18 +77,20 @@ type Patient struct {
 	OrgName   *string    `json:"org_name,omitempty"`
 	Name      string     `json:"name"`
 	Birthdate *time.Time `json:"birthdate,omitempty"`
-	SexCode   *string    `json:"sex_code,omitempty"`
-	SexLabel  *string    `json:"sex_label,omitempty"`
-	RiskLevel *string    `json:"risk_level,omitempty"`
-	CreatedAt time.Time  `json:"created_at"`
+	SexCode         *string    `json:"sex_code,omitempty"`
+	SexLabel        *string    `json:"sex_label,omitempty"`
+	RiskLevel       *string    `json:"risk_level,omitempty"`
+	ProfilePhotoURL *string    `json:"profile_photo_url,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type PatientInput struct {
 	OrgID     *string    `json:"org_id,omitempty"`
-	Name      string     `json:"name"`
-	Birthdate *time.Time `json:"birthdate,omitempty"`
-	SexCode   *string    `json:"sex_code,omitempty"`
-	RiskLevel *string    `json:"risk_level,omitempty"`
+	Name            string     `json:"name"`
+	Birthdate       *time.Time `json:"birthdate,omitempty"`
+	SexCode         *string    `json:"sex_code,omitempty"`
+	RiskLevel       *string    `json:"risk_level,omitempty"`
+	ProfilePhotoURL *string    `json:"profile_photo_url,omitempty"`
 }
 
 type CareTeam struct {
@@ -582,12 +584,13 @@ type UserActivityReportResult struct {
 
 type User struct {
 	ID          string           `json:"id"`
-	Name        string           `json:"name"`
-	Email       string           `json:"email"`
-	Status      string           `json:"status"`
-	CreatedAt   time.Time        `json:"created_at"`
-	Memberships []UserMembership `json:"memberships"`
-	Roles       []UserRole       `json:"roles"`
+	Name            string           `json:"name"`
+	Email           string           `json:"email"`
+	Status          string           `json:"status"`
+	ProfilePhotoURL *string          `json:"profile_photo_url,omitempty"`
+	CreatedAt       time.Time        `json:"created_at"`
+	Memberships     []UserMembership `json:"memberships"`
+	Roles           []UserRole       `json:"roles"`
 }
 
 type Role struct {

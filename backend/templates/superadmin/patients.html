@@ -37,6 +37,10 @@
 				<label for="patient-risk">Nivel de riesgo</label>
 				<input id="patient-risk" name="risk_level" type="text" placeholder="Por ejemplo: alto" />
 			</div>
+			<div class="hg-form-field">
+				<label for="patient-photo">URL de la foto</label>
+				<input id="patient-photo" name="profile_photo_url" type="url" placeholder="https://..." />
+			</div>
 			<div class="hg-form-actions">
 				<button type="submit">Crear paciente</button>
 			</div>
@@ -50,6 +54,7 @@
 		<table class="hg-table">
 			<thead>
 				<tr>
+					<th></th>
 					<th>Nombre</th>
 					<th>Organización</th>
 					<th>Sexo</th>
@@ -63,6 +68,9 @@
 				{{range .Data.Items}}
 				{{$patient := .}}
 				<tr>
+					<td>
+						<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+					</td>
 					<td>{{$patient.Name}}</td>
 					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
 					<td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
@@ -103,6 +111,10 @@
 								<div class="hg-form-field">
 									<label>Riesgo</label>
 									<input name="risk_level" type="text" value="{{stringValue $patient.RiskLevel}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>URL de la foto</label>
+									<input name="profile_photo_url" type="url" value="{{stringValue $patient.ProfilePhotoURL}}" />
 								</div>
 								<div class="hg-form-actions">
 									<button type="submit">Guardar</button>

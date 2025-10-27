@@ -1,6 +1,7 @@
 {{define "superadmin/patient_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/patient_detail.html:content"}}
 <section class="hg-section">
 	<div class="hg-detail-header">
+		<img src="{{if .Data.Patient.ProfilePhotoURL}}{{.Data.Patient.ProfilePhotoURL}}{{else}}/placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar hg-avatar--large" />
 		<div>
 			<h1>{{.Data.Patient.Name}}</h1>
 			<p class="hg-detail-subtitle">Registrado {{formatTime .Data.Patient.CreatedAt}}</p>

@@ -151,6 +151,7 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash      TEXT NOT NULL,
   user_status_id     UUID NOT NULL REFERENCES user_statuses(id) ON DELETE RESTRICT,
   two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+  profile_photo_url  TEXT,
   created_at         TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
@@ -205,13 +206,14 @@ CREATE TABLE IF NOT EXISTS user_org_membership (
 -- C) Dominio clínico
 -- =========================================================
 CREATE TABLE IF NOT EXISTS patients (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  org_id        UUID REFERENCES organizations(id) ON DELETE RESTRICT,
-  person_name   VARCHAR(120) NOT NULL,
-  birthdate     DATE,
-  sex_id        UUID REFERENCES sexes(id) ON DELETE RESTRICT,
-  risk_level    VARCHAR(20),
-  created_at    TIMESTAMP NOT NULL DEFAULT NOW()
+  id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  org_id            UUID REFERENCES organizations(id) ON DELETE RESTRICT,
+  person_name       VARCHAR(120) NOT NULL,
+  birthdate         DATE,
+  sex_id            UUID REFERENCES sexes(id) ON DELETE RESTRICT,
+  risk_level        VARCHAR(20),
+  profile_photo_url TEXT,
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_patients_org ON patients(org_id);
 
@@ -245,6 +247,9 @@ CREATE TABLE IF NOT EXISTS caregiver_relationship_types (
 
 ALTER TABLE IF EXISTS caregiver_relationship_types ALTER COLUMN label SET NOT NULL;
 
+ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+
 CREATE TABLE IF NOT EXISTS caregiver_patient (
   patient_id  UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
   user_id     UUID NOT NULL REFERENCES users(id)    ON DELETE CASCADE,
@@ -268,6 +273,7 @@ RETURNS TABLE (
   sex_code text,
   sex_label text,
   risk_level text,
+  profile_photo_url text,
   created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
@@ -285,6 +291,7 @@ BEGIN
     sx.code::text,
     sx.label::text,
     p.risk_level::text,
+    p.profile_photo_url::text,
     p.created_at
   FROM heartguard.patients p
   LEFT JOIN heartguard.organizations o ON o.id = p.org_id
@@ -299,7 +306,8 @@ CREATE OR REPLACE FUNCTION heartguard.sp_patient_create(
   p_person_name text,
   p_birthdate date DEFAULT NULL,
   p_sex_code text DEFAULT NULL,
-  p_risk_level text DEFAULT NULL)
+  p_risk_level text DEFAULT NULL,
+  p_profile_photo_url text DEFAULT NULL)
 RETURNS TABLE (
   id text,
   org_id text,
@@ -309,6 +317,7 @@ RETURNS TABLE (
   sex_code text,
   sex_label text,
   risk_level text,
+  profile_photo_url text,
   created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
@@ -316,6 +325,7 @@ DECLARE
   v_name text;
   v_sex_id uuid := NULL;
   v_risk text;
+  v_photo_url text;
 BEGIN
   v_name := NULLIF(btrim(p_person_name), '');
   IF v_name IS NULL THEN
@@ -337,10 +347,11 @@ BEGIN
   END IF;
 
   v_risk := NULLIF(btrim(p_risk_level), '');
+  v_photo_url := NULLIF(btrim(p_profile_photo_url), '');
 
   RETURN QUERY
-  INSERT INTO heartguard.patients AS p (org_id, person_name, birthdate, sex_id, risk_level)
-  VALUES (p_org_id, v_name, p_birthdate, v_sex_id, v_risk)
+  INSERT INTO heartguard.patients AS p (org_id, person_name, birthdate, sex_id, risk_level, profile_photo_url)
+  VALUES (p_org_id, v_name, p_birthdate, v_sex_id, v_risk, v_photo_url)
   RETURNING
     p.id::text,
     p.org_id::text,
@@ -350,6 +361,7 @@ BEGIN
     (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     p.risk_level::text,
+    p.profile_photo_url::text,
     p.created_at;
 END;
 $$;
@@ -360,7 +372,8 @@ CREATE OR REPLACE FUNCTION heartguard.sp_patient_update(
   p_person_name text,
   p_birthdate date,
   p_sex_code text,
-  p_risk_level text)
+  p_risk_level text,
+  p_profile_photo_url text)
 RETURNS TABLE (
   id text,
   org_id text,
@@ -370,6 +383,7 @@ RETURNS TABLE (
   sex_code text,
   sex_label text,
   risk_level text,
+  profile_photo_url text,
   created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
@@ -377,6 +391,7 @@ DECLARE
   v_name text;
   v_sex_id uuid := NULL;
   v_risk text;
+  v_photo_url text;
 BEGIN
   v_name := NULLIF(btrim(p_person_name), '');
   IF v_name IS NULL THEN
@@ -398,6 +413,7 @@ BEGIN
   END IF;
 
   v_risk := NULLIF(btrim(p_risk_level), '');
+  v_photo_url := NULLIF(btrim(p_profile_photo_url), '');
 
   RETURN QUERY
   UPDATE heartguard.patients AS p
@@ -405,7 +421,8 @@ BEGIN
          person_name = v_name,
          birthdate = CASE WHEN p_birthdate IS NULL THEN p.birthdate ELSE p_birthdate END,
          sex_id = CASE WHEN p_sex_code IS NULL THEN p.sex_id ELSE v_sex_id END,
-         risk_level = CASE WHEN p_risk_level IS NULL THEN p.risk_level ELSE v_risk END
+         risk_level = CASE WHEN p_risk_level IS NULL THEN p.risk_level ELSE v_risk END,
+         profile_photo_url = CASE WHEN p_profile_photo_url IS NULL THEN p.profile_photo_url ELSE v_photo_url END
    WHERE p.id = p_id
   RETURNING
     p.id::text,
@@ -416,6 +433,7 @@ BEGIN
     (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     p.risk_level::text,
+    p.profile_photo_url::text,
     p.created_at;
 END;
 $$;
