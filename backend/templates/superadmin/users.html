@@ -36,7 +36,7 @@
 			{{range .Data.Users}} {{$user := .}}
 			<tr>
 				<td>
-					<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+					<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/assets/img/user_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
 				</td>
 				<td>{{.Name}}</td>
 				<td>{{.Email}}</td>
