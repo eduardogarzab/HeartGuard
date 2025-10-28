@@ -26,8 +26,20 @@ class Settings:
 
     DATABASE_URL = os.getenv("AUTH_DATABASE_URL") or os.getenv("DATABASE_URL")
 
-    PGHOST = os.getenv("PGHOST", "127.0.0.1")
-    PGPORT = int(os.getenv("PGPORT", "5432"))
+    PGHOST = (
+        os.getenv("PGHOST")
+        or os.getenv("POSTGRES_HOST")
+        or os.getenv("DBHOST")
+        or os.getenv("AUTH_DBHOST")
+        or "127.0.0.1"
+    )
+    PGPORT = int(
+        os.getenv("PGPORT")
+        or os.getenv("POSTGRES_PORT")
+        or os.getenv("DBPORT")
+        or os.getenv("AUTH_DBPORT")
+        or "5432"
+    )
     PGDATABASE = (
         os.getenv("PGDATABASE")
         or os.getenv("DBNAME")
@@ -63,9 +75,24 @@ class Settings:
         os.getenv("AUTH_REFRESH_TTL_DAYS", os.getenv("REFRESH_TTL_DAYS", "7"))
     )
 
-    REDIS_URL = os.getenv("AUTH_REDIS_URL") or os.getenv(
-        "REDIS_URL", "redis://127.0.0.1:6379/0"
-    )
+    _redis_url = os.getenv("AUTH_REDIS_URL") or os.getenv("REDIS_URL")
+    if not _redis_url:
+        redis_host = (
+            os.getenv("REDIS_HOST")
+            or os.getenv("AUTH_REDIS_HOST")
+            or os.getenv("POSTGRES_HOST")
+            or "127.0.0.1"
+        )
+        redis_port = (
+            os.getenv("REDIS_PORT")
+            or os.getenv("AUTH_REDIS_PORT")
+            or os.getenv("POSTGRES_REDIS_PORT")
+            or os.getenv("POSTGRES_PORT")
+            or "6379"
+        )
+        redis_db = os.getenv("REDIS_DB") or os.getenv("AUTH_REDIS_DB") or "0"
+        _redis_url = f"redis://{redis_host}:{redis_port}/{redis_db}"
+    REDIS_URL = _redis_url
     REDIS_PREFIX = os.getenv("AUTH_REDIS_PREFIX", "authsvc")
 
     DEFAULT_ORG_ID = os.getenv("DEFAULT_ORG_ID")

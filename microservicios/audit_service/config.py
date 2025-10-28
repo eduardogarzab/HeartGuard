@@ -24,8 +24,20 @@ class Settings:
     # --- Configuración de Base de Datos (Compartida) ---
     # Lee las variables de BD globales del .env raíz
     
-    PGHOST = os.getenv("PGHOST", "127.0.0.1")
-    PGPORT = int(os.getenv("PGPORT", "5432"))
+    PGHOST = (
+        os.getenv("PGHOST")
+        or os.getenv("POSTGRES_HOST")
+        or os.getenv("DBHOST")
+        or os.getenv("AUDIT_DBHOST")
+        or "127.0.0.1"
+    )
+    PGPORT = int(
+        os.getenv("PGPORT")
+        or os.getenv("POSTGRES_PORT")
+        or os.getenv("DBPORT")
+        or os.getenv("AUDIT_DBPORT")
+        or "5432"
+    )
     PGDATABASE = os.getenv("PGDATABASE") or os.getenv("DBNAME") or "heartguard"
     PGUSER = os.getenv("PGUSER") or os.getenv("DBUSER") or "heartguard_app"
     PGPASSWORD = os.getenv("PGPASSWORD") or os.getenv("DBPASS") or "dev_change_me"

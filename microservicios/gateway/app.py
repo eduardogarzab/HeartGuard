@@ -17,9 +17,9 @@ def _load_service_map() -> dict[str, str]:
     base_map = {
         "auth": Config.AUTH_SERVICE_URL,
         "orgs": Config.ORG_SERVICE_URL,
-    # Mientras no exista patient_service reutilizamos org_service
-    "patients": Config.ORG_SERVICE_URL,
-    "audit": Config.AUDIT_SERVICE_URL,
+        # Mientras no exista patient_service reutilizamos org_service
+        "patients": Config.ORG_SERVICE_URL,
+        "audit": Config.AUDIT_SERVICE_URL,
     }
 
     raw_map = os.getenv("GATEWAY_SERVICE_MAP", "")
@@ -58,15 +58,18 @@ def _proxy_request(service_url: str, path: str):
 
     headers = {key: value for (key, value) in request.headers if key.lower() != 'host'}
 
-    if 'x-org-id' not in (k.lower() for k in headers.keys()):
-        if hasattr(g, 'org_id') and g.org_id:
-            headers['x-org-id'] = str(g.org_id)
+    existing_header_names = {k.lower() for k in headers.keys()}
+    if 'x-org-id' not in existing_header_names and getattr(g, 'org_id', None):
+        headers['x-org-id'] = str(g.org_id)
+        existing_header_names.add('x-org-id')
 
     client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
-    if client_ip and 'x-forwarded-for' not in (k.lower() for k in headers.keys()):
+    if client_ip and 'x-forwarded-for' not in existing_header_names:
         headers['X-Forwarded-For'] = client_ip
-    if 'x-forwarded-proto' not in (k.lower() for k in headers.keys()):
+        existing_header_names.add('x-forwarded-for')
+    if 'x-forwarded-proto' not in existing_header_names:
         headers['X-Forwarded-Proto'] = request.scheme
+        existing_header_names.add('x-forwarded-proto')
 
     try:
         resp = requests.request(
@@ -151,5 +154,7 @@ def health_check():
 if __name__ == '__main__':
     port = Config.SERVICE_PORT
     debug = Config.FLASK_ENV == 'development'
-    print(f"--- Iniciando Gateway en modo {'DEBUG' if debug else 'PROD'} en puerto {port} ---")
+    print(
+        f"--- Iniciando Gateway en modo {'DEBUG' if debug else 'PROD'} en puerto {port} ---"
+    )
     app.run(host='0.0.0.0', port=port, debug=debug)
