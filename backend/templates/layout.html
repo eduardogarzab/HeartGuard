@@ -7,8 +7,6 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>{{if .Title}}{{.Title}} · {{end}}HeartGuard Admin</title>
 		<link rel="stylesheet" href="/ui-assets/css/app.css" />
-		<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-		<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/choices.js/public/assets/styles/choices.min.css" />
 		<script defer src="/ui-assets/js/app.js"></script>
 		{{if .SessionExpiresAt}}
 		<script>
@@ -43,7 +41,6 @@
 					<li><a href="/superadmin/caregivers">Cuidadores</a></li>
 					<li><a href="/superadmin/care-teams">Equipos de cuidado</a></li>
 					<li><a href="/superadmin/patients">Pacientes</a></li>
-					<li><a href="/superadmin/locations/patients">Ubicaciones de pacientes</a></li>
 					<li><a href="/superadmin/ground-truth">Ground Truth</a></li>
 					<li><a href="/superadmin/devices">Dispositivos</a></li>
 					<li><a href="/superadmin/push-devices">Dispositivos push</a></li>
@@ -92,8 +89,6 @@
 				</div>
 			</div>
 		</div>
-		<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-		<script src="https://cdn.jsdelivr.net/npm/choices.js/public/assets/scripts/choices.min.js"></script>
 	</body>
 </html>
 {{end}}

@@ -660,37 +660,6 @@ function hgShowSessionWarning(initialTimeRemaining) {
     };
 }
 
-const initSelects = () => {
-	if (typeof Choices === "undefined") {
-		if (document.querySelector(".hg-select-search")) {
-			console.warn("Choices.js no está cargado. No se pueden inicializar los selectores.");
-		}
-		return;
-	}
-
-	document.querySelectorAll(".hg-select-search").forEach((el) => {
-		if (!el.dataset.choicesInit) {
-			el.dataset.choicesInit = "true";
-			
-			let placeholderText = null;
-			const firstOption = el.querySelector('option[value=""]');
-			if (firstOption && firstOption.innerText) {
-				placeholderText = firstOption.innerText;
-			}
-
-			new Choices(el, {
-				searchEnabled: true,
-				itemSelectText: "",
-				searchPlaceholderValue: "Buscar...",
-				placeholder: true,
-				placeholderValue: placeholderText,
-				allowHTML: false,
-				maxItemCount: 10,
-			});
-		}
-	});
-};
-
 document.addEventListener("DOMContentLoaded", () => {
     const currentPath = window.location.pathname.replace(/\/$/, "");
     document.querySelectorAll(".hg-sidebar a").forEach((link) => {
@@ -763,8 +732,6 @@ document.addEventListener("DOMContentLoaded", () => {
     if (window.sessionExpiresAt) {
   	   	 hgInitSessionMonitor();
     }
-
-    initSelects();
 });
 
 window.addEventListener(
