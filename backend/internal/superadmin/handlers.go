@@ -156,6 +156,10 @@ type Repository interface {
 	MetricsInvitationBreakdown(ctx context.Context) ([]models.InvitationBreakdown, error)
 	MetricsOperationsReport(ctx context.Context, filters models.OperationsReportFilters) (*models.OperationsReportResult, error)
 	MetricsUserActivityReport(ctx context.Context, filters models.UserActivityReportFilters) (*models.UserActivityReportResult, error)
+	GetPatientRiskBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([]models.StatusBreakdown, error)
+	GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error)
+	GetDeviceStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)

@@ -188,6 +188,108 @@ LIMIT $1 OFFSET $2
 	return out, rows.Err()
 }
 
+func (r *Repo) GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([]models.StatusBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+	outcome AS code,
+	outcome AS label,
+	COUNT(*) AS count
+FROM alert_resolutions
+WHERE resolved_at >= $1
+GROUP BY outcome
+ORDER BY count DESC;
+`, since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.StatusBreakdown
+	for rows.Next() {
+		var item models.StatusBreakdown
+		if err := rows.Scan(&item.Code, &item.Label, &item.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error) {
+	var stats models.AlertResponseStats
+	err := r.pool.QueryRow(ctx, `
+SELECT
+    COALESCE(AVG(EXTRACT(EPOCH FROM ack.ack_at - a.created_at)), 0) * interval '1 second' AS avg_ack_duration,
+    COALESCE(AVG(EXTRACT(EPOCH FROM res.resolved_at - a.created_at)), 0) * interval '1 second' AS avg_resolve_duration
+FROM alerts a
+LEFT JOIN alert_ack ack ON ack.alert_id = a.id
+LEFT JOIN alert_resolution res ON res.alert_id = a.id
+WHERE a.created_at >= $1;
+`, since).Scan(&stats.AvgAckDuration, &stats.AvgResolveDuration)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
+}
+
+func (r *Repo) GetDeviceStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+	CASE WHEN active THEN 'active' ELSE 'inactive' END AS code,
+	CASE WHEN active THEN 'Activos' ELSE 'Inactivos' END AS label,
+	COUNT(*) AS count
+FROM devices
+GROUP BY active
+ORDER BY active DESC;
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.StatusBreakdown
+	for rows.Next() {
+		var item models.StatusBreakdown
+		if err := rows.Scan(&item.Code, &item.Label, &item.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) GetPatientRiskBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+	risk_level_code AS code,
+	risk_level_label AS label,
+	COUNT(*) AS count
+FROM v_patients
+GROUP BY risk_level_code, risk_level_label
+ORDER BY
+	CASE
+		WHEN risk_level_code = 'high' THEN 1
+		WHEN risk_level_code = 'medium' THEN 2
+		WHEN risk_level_code = 'low' THEN 3
+		ELSE 4
+	END;
+`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.StatusBreakdown
+	for rows.Next() {
+		var item models.StatusBreakdown
+		if err := rows.Scan(&item.Code, &item.Label, &item.Count); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
 func (r *Repo) GetOrganization(ctx context.Context, id string) (*models.Organization, error) {
 	var m models.Organization
 	err := r.pool.QueryRow(ctx, `
@@ -200,9 +302,9 @@ WHERE id = $1
 
 func (r *Repo) GetOrganizationStats(ctx context.Context, id string) (*models.OrganizationStats, error) {
 	var (
-		members   int64
-		patients  int64
-		careTeams int64
+		members    int64
+		patients   int64
+		careTeams  int64
 		caregivers int64
 	)
 	err := r.pool.QueryRow(ctx, `
@@ -284,15 +386,15 @@ LIMIT $2
 	out := make([]models.Patient, 0, limit)
 	for rows.Next() {
 		var (
-			patient       models.Patient
-			orgIDVal      sql.NullString
-			orgName       sql.NullString
-			birth         sql.NullTime
-			sexCode       sql.NullString
-			sexLabel      sql.NullString
-			riskID        sql.NullString
-			riskCode      sql.NullString
-			riskLabel     sql.NullString
+			patient   models.Patient
+			orgIDVal  sql.NullString
+			orgName   sql.NullString
+			birth     sql.NullTime
+			sexCode   sql.NullString
+			sexLabel  sql.NullString
+			riskID    sql.NullString
+			riskCode  sql.NullString
+			riskLabel sql.NullString
 		)
 		if err := rows.Scan(&patient.ID, &orgIDVal, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &patient.CreatedAt); err != nil {
 			return nil, err

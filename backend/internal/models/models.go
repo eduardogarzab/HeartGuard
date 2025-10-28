@@ -62,6 +62,11 @@ type InvitationBreakdown struct {
 	Count  int    `json:"count"`
 }
 
+type AlertResponseStats struct {
+	AvgAckDuration     time.Duration `json:"avg_ack_duration"`
+	AvgResolveDuration time.Duration `json:"avg_resolve_duration"`
+}
+
 type MetricsOverview struct {
 	AvgResponseMs      float64         `json:"avg_response_ms"`
 	TotalUsers         int             `json:"total_users"`
@@ -587,7 +592,7 @@ type UserActivityReportResult struct {
 }
 
 type User struct {
-	ID          string           `json:"id"`
+	ID              string           `json:"id"`
 	Name            string           `json:"name"`
 	Email           string           `json:"email"`
 	Status          string           `json:"status"`
@@ -714,10 +719,10 @@ type SystemSettingsInput struct {
 }
 
 type RiskLevel struct {
-	ID     string  `json:"id"`
-	Code   string  `json:"code"`
-	Label  string  `json:"label"`
-	Weight *int    `json:"weight,omitempty"`
+	ID     string `json:"id"`
+	Code   string `json:"code"`
+	Label  string `json:"label"`
+	Weight *int   `json:"weight,omitempty"`
 }
 
 type TeamMemberRole struct {

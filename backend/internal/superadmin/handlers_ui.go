@@ -180,6 +180,10 @@ type Repository interface {
 	MetricsInvitationBreakdown(ctx context.Context) ([]models.InvitationBreakdown, error)
 	MetricsOperationsReport(ctx context.Context, filters models.OperationsReportFilters) (*models.OperationsReportResult, error)
 	MetricsUserActivityReport(ctx context.Context, filters models.UserActivityReportFilters) (*models.UserActivityReportResult, error)
+	GetPatientRiskBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([]models.StatusBreakdown, error)
+	GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error)
+	GetDeviceStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)
@@ -225,89 +229,89 @@ type catalogMeta struct {
 }
 
 var allowedCatalogs = map[string]catalogMeta{
-	"user_statuses":    {Label: "Estatus de usuarios"},
-	"signal_types":     {Label: "Tipos de señal"},
-	"alert_channels":   {Label: "Canales de alerta"},
-	"alert_levels":     {Label: "Niveles de alerta", RequiresWeight: true},
-	"sexes":            {Label: "Sexos"},
-	"platforms":        {Label: "Plataformas"},
-	"service_statuses": {Label: "Estados de servicio"},
+	"user_statuses":     {Label: "Estatus de usuarios"},
+	"signal_types":      {Label: "Tipos de señal"},
+	"alert_channels":    {Label: "Canales de alerta"},
+	"alert_levels":      {Label: "Niveles de alerta", RequiresWeight: true},
+	"sexes":             {Label: "Sexos"},
+	"platforms":         {Label: "Plataformas"},
+	"service_statuses":  {Label: "Estados de servicio"},
 	"delivery_statuses": {Label: "Estados de entrega"},
-	"org_roles":        {Label: "Roles de organización"},
-	"device_types":     {Label: "Tipos de dispositivo"},
-	"risk_levels":      {Label: "Niveles de riesgo", RequiresWeight: true},
+	"org_roles":         {Label: "Roles de organización"},
+	"device_types":      {Label: "Tipos de dispositivo"},
+	"risk_levels":       {Label: "Niveles de riesgo", RequiresWeight: true},
 	"team_member_roles": {Label: "Roles de equipo"},
 }
 
 var operationLabels = map[string]string{
-	"ORG_CREATE":                 "Alta de organización",
-	"ORG_UPDATE":                 "Actualización de organización",
-	"ORG_DELETE":                 "Eliminación de organización",
-	"INVITE_CREATE":              "Emisión de invitación",
-	"INVITE_CANCEL":              "Cancelación de invitación",
-	"INVITE_CONSUME":             "Consumo de invitación",
-	"MEMBER_ADD":                 "Alta de miembro",
-	"MEMBER_REMOVE":              "Baja de miembro",
-	"USER_STATUS_UPDATE":         "Actualización de estatus de usuario",
-	"PUSH_DEVICE_CREATE":         "Registro de dispositivo push",
-	"PUSH_DEVICE_UPDATE":         "Actualización de dispositivo push",
-	"PUSH_DEVICE_DELETE":         "Eliminación de dispositivo push",
-	"PATIENT_LOCATION_CREATE":    "Registro de ubicación de paciente",
-	"PATIENT_LOCATION_DELETE":    "Eliminación de ubicación de paciente",
-	"CARE_TEAM_CREATE":           "Alta de equipo de cuidado",
-	"CARE_TEAM_UPDATE":           "Actualización de equipo de cuidado",
-	"CARE_TEAM_DELETE":           "Eliminación de equipo de cuidado",
-	"CARE_TEAM_MEMBER_ADD":       "Asignación a equipo de cuidado",
-	"CARE_TEAM_MEMBER_UPDATE":    "Actualización de miembro de equipo",
-	"CARE_TEAM_MEMBER_REMOVE":    "Baja de miembro de equipo",
-	"CARE_TEAM_PATIENT_ADD":      "Vinculación de paciente a equipo",
-	"CARE_TEAM_PATIENT_REMOVE":   "Desvinculación de paciente de equipo",
-	"CAREGIVER_RELTYPE_CREATE":   "Alta de relación de cuidador",
-	"CAREGIVER_RELTYPE_UPDATE":   "Actualización de relación de cuidador",
-	"CAREGIVER_RELTYPE_DELETE":   "Eliminación de relación de cuidador",
-	"CAREGIVER_ASSIGN_CREATE":    "Asignación de cuidador",
-	"CAREGIVER_ASSIGN_UPDATE":    "Actualización de cuidador asignado",
-	"CAREGIVER_ASSIGN_DELETE":    "Baja de cuidador asignado",
-	"ROLE_PERMISSION_GRANT":      "Asignación de permiso a rol",
-	"ROLE_PERMISSION_REVOKE":     "Revocación de permiso de rol",
-	"CATALOG_CREATE":             "Alta en catálogo",
-	"CATALOG_UPDATE":             "Actualización de catálogo",
-	"CATALOG_DELETE":             "Eliminación de catálogo",
-	"PATIENT_CREATE":             "Alta de paciente",
-	"PATIENT_UPDATE":             "Actualización de paciente",
-	"PATIENT_DELETE":             "Eliminación de paciente",
-	"DEVICE_CREATE":              "Alta de dispositivo",
-	"DEVICE_UPDATE":              "Actualización de dispositivo",
-	"DEVICE_DELETE":              "Eliminación de dispositivo",
-	"SIGNAL_STREAM_CREATE":       "Alta de stream de señal",
-	"SIGNAL_STREAM_UPDATE":       "Actualización de stream de señal",
-	"SIGNAL_STREAM_DELETE":       "Eliminación de stream de señal",
-	"TIMESERIES_BINDING_CREATE":  "Alta de binding de series",
-	"TIMESERIES_BINDING_UPDATE":  "Actualización de binding de series",
-	"TIMESERIES_BINDING_DELETE":  "Eliminación de binding de series",
-	"TIMESERIES_TAG_CREATE":      "Alta de etiqueta de binding",
-	"TIMESERIES_TAG_UPDATE":      "Actualización de etiqueta de binding",
-	"TIMESERIES_TAG_DELETE":      "Eliminación de etiqueta de binding",
-	"MODEL_CREATE":               "Alta de modelo ML",
-	"MODEL_UPDATE":               "Actualización de modelo ML",
-	"MODEL_DELETE":               "Eliminación de modelo ML",
-	"EVENT_TYPE_CREATE":          "Alta de tipo de evento",
-	"EVENT_TYPE_UPDATE":          "Actualización de tipo de evento",
-	"EVENT_TYPE_DELETE":          "Eliminación de tipo de evento",
-	"INFERENCE_CREATE":           "Alta de inferencia",
-	"INFERENCE_UPDATE":           "Actualización de inferencia",
-	"INFERENCE_DELETE":           "Eliminación de inferencia",
-	"GROUND_TRUTH_CREATE":        "Alta de etiqueta ground truth",
-	"GROUND_TRUTH_UPDATE":        "Actualización de etiqueta ground truth",
-	"GROUND_TRUTH_DELETE":        "Eliminación de etiqueta ground truth",
-	"ALERT_CREATE":               "Alta de alerta",
-	"ALERT_UPDATE":               "Actualización de alerta",
-	"ALERT_DELETE":               "Eliminación de alerta",
-	"ALERT_ASSIGNMENT_CREATE":    "Registro de asignación de alerta",
-	"ALERT_ACK_CREATE":           "Registro de acuse de alerta",
-	"ALERT_RESOLUTION_CREATE":    "Registro de resolución de alerta",
-	"ALERT_DELIVERY_CREATE":      "Registro de entrega de alerta",
-	"AUDIT_EXPORT":               "Exportación de auditoría",
+	"ORG_CREATE":                "Alta de organización",
+	"ORG_UPDATE":                "Actualización de organización",
+	"ORG_DELETE":                "Eliminación de organización",
+	"INVITE_CREATE":             "Emisión de invitación",
+	"INVITE_CANCEL":             "Cancelación de invitación",
+	"INVITE_CONSUME":            "Consumo de invitación",
+	"MEMBER_ADD":                "Alta de miembro",
+	"MEMBER_REMOVE":             "Baja de miembro",
+	"USER_STATUS_UPDATE":        "Actualización de estatus de usuario",
+	"PUSH_DEVICE_CREATE":        "Registro de dispositivo push",
+	"PUSH_DEVICE_UPDATE":        "Actualización de dispositivo push",
+	"PUSH_DEVICE_DELETE":        "Eliminación de dispositivo push",
+	"PATIENT_LOCATION_CREATE":   "Registro de ubicación de paciente",
+	"PATIENT_LOCATION_DELETE":   "Eliminación de ubicación de paciente",
+	"CARE_TEAM_CREATE":          "Alta de equipo de cuidado",
+	"CARE_TEAM_UPDATE":          "Actualización de equipo de cuidado",
+	"CARE_TEAM_DELETE":          "Eliminación de equipo de cuidado",
+	"CARE_TEAM_MEMBER_ADD":      "Asignación a equipo de cuidado",
+	"CARE_TEAM_MEMBER_UPDATE":   "Actualización de miembro de equipo",
+	"CARE_TEAM_MEMBER_REMOVE":   "Baja de miembro de equipo",
+	"CARE_TEAM_PATIENT_ADD":     "Vinculación de paciente a equipo",
+	"CARE_TEAM_PATIENT_REMOVE":  "Desvinculación de paciente de equipo",
+	"CAREGIVER_RELTYPE_CREATE":  "Alta de relación de cuidador",
+	"CAREGIVER_RELTYPE_UPDATE":  "Actualización de relación de cuidador",
+	"CAREGIVER_RELTYPE_DELETE":  "Eliminación de relación de cuidador",
+	"CAREGIVER_ASSIGN_CREATE":   "Asignación de cuidador",
+	"CAREGIVER_ASSIGN_UPDATE":   "Actualización de cuidador asignado",
+	"CAREGIVER_ASSIGN_DELETE":   "Baja de cuidador asignado",
+	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
+	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
+	"CATALOG_CREATE":            "Alta en catálogo",
+	"CATALOG_UPDATE":            "Actualización de catálogo",
+	"CATALOG_DELETE":            "Eliminación de catálogo",
+	"PATIENT_CREATE":            "Alta de paciente",
+	"PATIENT_UPDATE":            "Actualización de paciente",
+	"PATIENT_DELETE":            "Eliminación de paciente",
+	"DEVICE_CREATE":             "Alta de dispositivo",
+	"DEVICE_UPDATE":             "Actualización de dispositivo",
+	"DEVICE_DELETE":             "Eliminación de dispositivo",
+	"SIGNAL_STREAM_CREATE":      "Alta de stream de señal",
+	"SIGNAL_STREAM_UPDATE":      "Actualización de stream de señal",
+	"SIGNAL_STREAM_DELETE":      "Eliminación de stream de señal",
+	"TIMESERIES_BINDING_CREATE": "Alta de binding de series",
+	"TIMESERIES_BINDING_UPDATE": "Actualización de binding de series",
+	"TIMESERIES_BINDING_DELETE": "Eliminación de binding de series",
+	"TIMESERIES_TAG_CREATE":     "Alta de etiqueta de binding",
+	"TIMESERIES_TAG_UPDATE":     "Actualización de etiqueta de binding",
+	"TIMESERIES_TAG_DELETE":     "Eliminación de etiqueta de binding",
+	"MODEL_CREATE":              "Alta de modelo ML",
+	"MODEL_UPDATE":              "Actualización de modelo ML",
+	"MODEL_DELETE":              "Eliminación de modelo ML",
+	"EVENT_TYPE_CREATE":         "Alta de tipo de evento",
+	"EVENT_TYPE_UPDATE":         "Actualización de tipo de evento",
+	"EVENT_TYPE_DELETE":         "Eliminación de tipo de evento",
+	"INFERENCE_CREATE":          "Alta de inferencia",
+	"INFERENCE_UPDATE":          "Actualización de inferencia",
+	"INFERENCE_DELETE":          "Eliminación de inferencia",
+	"GROUND_TRUTH_CREATE":       "Alta de etiqueta ground truth",
+	"GROUND_TRUTH_UPDATE":       "Actualización de etiqueta ground truth",
+	"GROUND_TRUTH_DELETE":       "Eliminación de etiqueta ground truth",
+	"ALERT_CREATE":              "Alta de alerta",
+	"ALERT_UPDATE":              "Actualización de alerta",
+	"ALERT_DELETE":              "Eliminación de alerta",
+	"ALERT_ASSIGNMENT_CREATE":   "Registro de asignación de alerta",
+	"ALERT_ACK_CREATE":          "Registro de acuse de alerta",
+	"ALERT_RESOLUTION_CREATE":   "Registro de resolución de alerta",
+	"ALERT_DELIVERY_CREATE":     "Registro de entrega de alerta",
+	"AUDIT_EXPORT":              "Exportación de auditoría",
 }
 
 func humanizeToken(input string) string {
@@ -446,19 +450,31 @@ type dashboardActivitySeriesPoint struct {
 	Count  int
 }
 
-type dashboardViewData struct {
-	Overview                *models.MetricsOverview
-	Metrics                 []dashboardMetric
-	StatusChart             []dashboardChartSlice
-	StatusTotal             int
-	InvitationChart         []dashboardChartSlice
-	InvitationTotal         int
-	RecentOperations        []dashboardOperation
-	RecentActivity          []dashboardActivityEntry
-	ActivitySeries          []dashboardActivitySeriesPoint
+type timeFilterOption struct {
+	Value    string
+	Label    string
+	IsActive bool
 }
 
-func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData {
+type dashboardViewData struct {
+	Overview           *models.MetricsOverview
+	Metrics            []dashboardMetric
+	StatusChart        []dashboardChartSlice
+	StatusTotal        int
+	InvitationChart    []dashboardChartSlice
+	InvitationTotal    int
+	RecentOperations   []dashboardOperation
+	RecentActivity     []dashboardActivityEntry
+	ActivitySeries     []dashboardActivitySeriesPoint
+	PatientRiskChart   []dashboardChartSlice
+	AlertOutcomeChart  []dashboardChartSlice
+	ResponseStats      *models.AlertResponseStats
+	DeviceStatusChart  []dashboardChartSlice
+	TimeFilterOptions  []timeFilterOption
+	SelectedTimeFilter string
+}
+
+func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) dashboardViewData {
 	overview, err := h.repo.MetricsOverview(ctx)
 	if err != nil && h.logger != nil {
 		h.logger.Error("metrics overview", zap.Error(err))
@@ -475,6 +491,24 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 	if err != nil && h.logger != nil {
 		h.logger.Error("metrics invites", zap.Error(err))
 	}
+
+	patientRisk, err := h.repo.GetPatientRiskBreakdown(ctx)
+	if err != nil && h.logger != nil {
+		h.logger.Error("patient risk breakdown", zap.Error(err))
+	}
+	alertOutcomes, err := h.repo.GetAlertOutcomeBreakdown(ctx, since)
+	if err != nil && h.logger != nil {
+		h.logger.Error("alert outcome breakdown", zap.Error(err))
+	}
+	responseStats, err := h.repo.GetAlertResponseStats(ctx, since)
+	if err != nil && h.logger != nil {
+		h.logger.Error("alert response stats", zap.Error(err))
+	}
+	deviceStatus, err := h.repo.GetDeviceStatusBreakdown(ctx)
+	if err != nil && h.logger != nil {
+		h.logger.Error("device status breakdown", zap.Error(err))
+	}
+
 	metrics := make([]dashboardMetric, 0, 4)
 	ops := make([]dashboardOperation, 0)
 	activity := make([]dashboardActivityEntry, 0)
@@ -602,16 +636,96 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context) dashboardViewData
 		})
 	}
 
+	patientRiskChart := make([]dashboardChartSlice, 0, len(patientRisk))
+	patientRiskTotal := 0
+	for _, item := range patientRisk {
+		patientRiskTotal += item.Count
+	}
+	for _, item := range patientRisk {
+		percent := 0.0
+		if patientRiskTotal > 0 {
+			percent = (float64(item.Count) / float64(patientRiskTotal)) * 100
+		}
+		state := "info"
+		switch strings.ToLower(item.Code) {
+		case "high":
+			state = "danger"
+		case "medium":
+			state = "warn"
+		case "low":
+			state = "success"
+		}
+		width := int(math.Round(percent))
+		if width <= 0 && item.Count > 0 {
+			width = 4
+		}
+		if width > 100 {
+			width = 100
+		}
+		patientRiskChart = append(patientRiskChart, dashboardChartSlice{
+			Label:   item.Label,
+			Count:   item.Count,
+			Percent: percent,
+			State:   state,
+			Width:   width,
+		})
+	}
+
+	alertOutcomeChart := make([]dashboardChartSlice, 0, len(alertOutcomes))
+	for _, item := range alertOutcomes {
+		alertOutcomeChart = append(alertOutcomeChart, dashboardChartSlice{
+			Label: item.Label,
+			Count: item.Count,
+		})
+	}
+
+	deviceStatusChart := make([]dashboardChartSlice, 0, len(deviceStatus))
+	deviceStatusTotal := 0
+	for _, item := range deviceStatus {
+		deviceStatusTotal += item.Count
+	}
+	for _, item := range deviceStatus {
+		percent := 0.0
+		if deviceStatusTotal > 0 {
+			percent = (float64(item.Count) / float64(deviceStatusTotal)) * 100
+		}
+		state := "info"
+		switch strings.ToLower(item.Code) {
+		case "active":
+			state = "success"
+		case "inactive":
+			state = "danger"
+		}
+		width := int(math.Round(percent))
+		if width <= 0 && item.Count > 0 {
+			width = 4
+		}
+		if width > 100 {
+			width = 100
+		}
+		deviceStatusChart = append(deviceStatusChart, dashboardChartSlice{
+			Label:   item.Label,
+			Count:   item.Count,
+			Percent: percent,
+			State:   state,
+			Width:   width,
+		})
+	}
+
 	return dashboardViewData{
-		Overview:         overview,
-		Metrics:          metrics,
-		StatusChart:      statusChart,
-		StatusTotal:      statusTotal,
-		InvitationChart:  inviteChart,
-		InvitationTotal:  inviteTotal,
-		RecentOperations: ops,
-		RecentActivity:   activity,
-		ActivitySeries:   activitySeries,
+		Overview:          overview,
+		Metrics:           metrics,
+		StatusChart:       statusChart,
+		StatusTotal:       statusTotal,
+		InvitationChart:   inviteChart,
+		InvitationTotal:   inviteTotal,
+		RecentOperations:  ops,
+		RecentActivity:    activity,
+		ActivitySeries:    activitySeries,
+		PatientRiskChart:  patientRiskChart,
+		AlertOutcomeChart: alertOutcomeChart,
+		ResponseStats:     responseStats,
+		DeviceStatusChart: deviceStatusChart,
 	}
 }
 
@@ -619,7 +733,30 @@ func (h *Handlers) Dashboard(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	data := h.buildDashboardViewData(ctx)
+	period := r.URL.Query().Get("period")
+	if period == "" {
+		period = "30d"
+	}
+
+	now := time.Now()
+	var since time.Time
+	switch period {
+	case "7d":
+		since = now.AddDate(0, 0, -7)
+	case "90d":
+		since = now.AddDate(0, 0, -90)
+	default:
+		period = "30d"
+		since = now.AddDate(0, 0, -30)
+	}
+
+	data := h.buildDashboardViewData(ctx, since)
+	data.SelectedTimeFilter = period
+	data.TimeFilterOptions = []timeFilterOption{
+		{Value: "7d", Label: "Últimos 7 días", IsActive: period == "7d"},
+		{Value: "30d", Label: "Últimos 30 días", IsActive: period == "30d"},
+		{Value: "90d", Label: "Últimos 90 días", IsActive: period == "90d"},
+	}
 
 	h.render(w, r, "superadmin/dashboard.html", "Panel", data, []ui.Breadcrumb{{Label: "Panel"}})
 }
@@ -628,7 +765,9 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 	defer cancel()
 
-	data := h.buildDashboardViewData(ctx)
+	// Default to 30 days for export, similar to dashboard's default view.
+	since := time.Now().AddDate(0, 0, -30)
+	data := h.buildDashboardViewData(ctx, since)
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 	if format != "csv" {
 		format = "pdf"
@@ -667,8 +806,27 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		for _, metric := range data.Metrics {
 			write([]string{sectionName, metric.Label, metric.Value, metric.Caption})
 		}
+		if data.ResponseStats != nil {
+			write([]string{"Eficiencia Operativa", "Tiempo Medio de Acuse (MTTA)", data.ResponseStats.AvgAckDuration.String(), "Tiempo promedio para acusar alertas"})
+			write([]string{"Eficiencia Operativa", "Tiempo Medio de Resolución (MTTR)", data.ResponseStats.AvgResolveDuration.String(), "Tiempo promedio para resolver alertas"})
+		}
 		if data.Overview != nil {
 			write([]string{sectionName, "Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
+		}
+		write([]string{})
+		write([]string{"Sección", "Riesgo", "Total", "Participación"})
+		for _, item := range data.PatientRiskChart {
+			write([]string{"Salud de la Población", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		write([]string{})
+		write([]string{"Sección", "Resultado", "Total", "Participación"})
+		for _, item := range data.AlertOutcomeChart {
+			write([]string{"Calidad de Alertas", item.Label, strconv.Itoa(item.Count), ""})
+		}
+		write([]string{})
+		write([]string{"Sección", "Estado", "Total", "Participación"})
+		for _, item := range data.DeviceStatusChart {
+			write([]string{"Salud de Infraestructura", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
 		write([]string{})
 		write([]string{"Sección", "Estatus", "Total", "Participación"})
@@ -955,6 +1113,10 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		if data.Overview != nil {
 			metricsRows = append(metricsRows, []string{"Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
 		}
+		if data.ResponseStats != nil {
+			metricsRows = append(metricsRows, []string{"Tiempo Medio de Acuse (MTTA)", data.ResponseStats.AvgAckDuration.String(), "Tiempo promedio para acusar alertas"})
+			metricsRows = append(metricsRows, []string{"Tiempo Medio de Resolución (MTTR)", data.ResponseStats.AvgResolveDuration.String(), "Tiempo promedio para resolver alertas"})
+		}
 
 		// Sección: Indicadores Clave
 		pdf.SetFont("Helvetica", "B", 14)
@@ -973,6 +1135,24 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			statusRows = append(statusRows, []string{"Total", strconv.Itoa(data.StatusTotal), ""})
 		}
 		renderTable("Usuarios por estatus", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, statusRows)
+
+		patientRiskRows := make([][]string, 0, len(data.PatientRiskChart))
+		for _, item := range data.PatientRiskChart {
+			patientRiskRows = append(patientRiskRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		renderTable("Salud de la Población por Riesgo", []string{"Nivel de Riesgo", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, patientRiskRows)
+
+		alertOutcomeRows := make([][]string, 0, len(data.AlertOutcomeChart))
+		for _, item := range data.AlertOutcomeChart {
+			alertOutcomeRows = append(alertOutcomeRows, []string{item.Label, strconv.Itoa(item.Count), ""})
+		}
+		renderTable("Calidad de Alertas por Resultado", []string{"Resultado", "Total", ""}, []float64{90, 28, 32}, []string{"L", "R", "R"}, alertOutcomeRows)
+
+		deviceStatusRows := make([][]string, 0, len(data.DeviceStatusChart))
+		for _, item := range data.DeviceStatusChart {
+			deviceStatusRows = append(deviceStatusRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+		}
+		renderTable("Salud de Infraestructura por Dispositivo", []string{"Estado", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, deviceStatusRows)
 
 		// Sección: Gestión de Invitaciones
 		pdf.Ln(6)
@@ -1027,7 +1207,6 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 			timelineRows = append(timelineRows, []string{formatLocal(point.Bucket), strconv.Itoa(point.Count)})
 		}
 		renderTable("Actividad por hora", []string{"Fecha/Hora", "Eventos"}, []float64{60, 28}, []string{"L", "R"}, timelineRows)
-
 
 		// Página final con conclusiones
 		pdf.AddPage()
@@ -1172,14 +1351,12 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		writeSection("Curva de actividad horaria", "Concentración de eventos a lo largo de las últimas jornadas.", timelineLines)
 
-
 		if err := pdf.Output(w); err != nil && h.logger != nil {
 			h.logger.Error("pdf export error", zap.Error(err))
 		}
 		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "pdf", "rows": len(data.RecentActivity)})
 	}
 }
-
 
 func parseDateTimeLocal(input string) (*time.Time, error) {
 	trimmed := strings.TrimSpace(input)
@@ -1422,9 +1599,9 @@ type rolesViewData struct {
 }
 
 type rolePermissionsView struct {
-	Assigned  []models.RolePermission
-	Available []models.Permission
-	Members   []models.RoleAssignment
+	Assigned   []models.RolePermission
+	Available  []models.Permission
+	Members    []models.RoleAssignment
 	Assignable []models.User
 }
 
@@ -2419,7 +2596,7 @@ func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
 		Patient:    patient,
 		CareTeams:  careTeams,
 		Caregivers: caregivers,
-		Locations: locationRows,
+		Locations:  locationRows,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes", URL: "/superadmin/patients"}, {Label: patient.Name}}
 	h.render(w, r, "superadmin/patient_detail.html", patient.Name, data, crumbs)
@@ -2964,7 +3141,7 @@ func (h *Handlers) CaregiversAssignmentsUpdate(w http.ResponseWriter, r *http.Re
 	if _, ok := r.Form["rel_type_id"]; ok {
 		relRaw := strings.TrimSpace(r.FormValue("rel_type_id"))
 		if h.logger != nil {
-			h.logger.Info("caregiver update rel_type_id", 
+			h.logger.Info("caregiver update rel_type_id",
 				zap.String("patient_id", patientID),
 				zap.String("caregiver_id", caregiverID),
 				zap.String("rel_type_id_raw", relRaw),
@@ -3028,8 +3205,8 @@ func (h *Handlers) CaregiversAssignmentsUpdate(w http.ResponseWriter, r *http.Re
 	assignment, err := h.repo.UpdateCaregiverAssignment(ctx, patientID, caregiverID, input)
 	if err != nil {
 		if h.logger != nil {
-			h.logger.Error("caregiver assignment update", 
-				zap.String("patient_id", patientID), 
+			h.logger.Error("caregiver assignment update",
+				zap.String("patient_id", patientID),
 				zap.String("caregiver_id", caregiverID),
 				zap.Error(err))
 		}
@@ -3602,10 +3779,10 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Formulario inválido", http.StatusBadRequest)
 		return
 	}
-	
+
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	
+
 	if err := h.repo.DeleteDevice(ctx, id); err != nil {
 		if h.logger != nil {
 			h.logger.Error("device delete", zap.String("id", id), zap.Error(err))
@@ -3618,7 +3795,7 @@ func (h *Handlers) DevicesDelete(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)
 		return
 	}
-	
+
 	h.writeAudit(ctx, r, "DEVICE_DELETE", "device", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Dispositivo eliminado"})
 	http.Redirect(w, r, "/superadmin/devices", http.StatusSeeOther)

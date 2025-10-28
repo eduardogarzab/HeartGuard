@@ -119,6 +119,27 @@ func NewRenderer() (*Renderer, error) {
 			}
 			return template.JS(b)
 		},
+		"formatDuration": func(d time.Duration) string {
+			if d.Hours() >= 1 {
+				return strconv.FormatFloat(d.Hours(), 'f', 1, 64) + "h"
+			}
+			if d.Minutes() >= 1 {
+				return strconv.FormatFloat(d.Minutes(), 'f', 1, 64) + "m"
+			}
+			return strconv.FormatFloat(d.Seconds(), 'f', 1, 64) + "s"
+		},
+		"formatTimeFilter": func(s string) string {
+			switch s {
+			case "7d":
+				return "7 días"
+			case "30d":
+				return "30 días"
+			case "90d":
+				return "90 días"
+			default:
+				return s
+			}
+		},
 	}
 	root := template.New("root").Funcs(funcMap)
 	var files []string
