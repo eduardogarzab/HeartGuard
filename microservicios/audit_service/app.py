@@ -13,7 +13,7 @@ def health_check():
     return jsonify({"status": "ok", "service": "audit_service"}), 200
 
 
-@app.route('/v1/audit', methods=['POST'])
+@app.route('/v1/audit', methods=['POST'], strict_slashes=False)
 def create_audit_log():
     """
     Endpoint para CREAR un nuevo registro de auditoría.
@@ -30,7 +30,7 @@ def create_audit_log():
         return jsonify({"message": "Error interno al crear log", "error": str(e)}), 500
 
 
-@app.route('/v1/audit', methods=['GET'])
+@app.route('/v1/audit', methods=['GET'], strict_slashes=False)
 def get_audit_logs():
     """
     Endpoint para CONSULTAR registros de auditoría.

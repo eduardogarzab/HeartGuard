@@ -6,10 +6,9 @@ from dotenv import load_dotenv
 
 def _load_environment() -> None:
     service_dir = Path(__file__).resolve().parent
-    root_dir = service_dir.parents[2]
-    root_env = root_dir / ".env"
-    if root_env.exists():
-        load_dotenv(root_env, override=False)
+    shared_env = service_dir.parent / ".env"
+    if shared_env.exists():
+        load_dotenv(shared_env, override=False)
 
 
 _load_environment()

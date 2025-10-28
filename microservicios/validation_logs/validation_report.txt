@@ -1,0 +1,36 @@
+Validation run started at 2025-10-28 14:45:31 
+==================================================
+[2025-10-28 14:45:31] [INFO] Repositorio: C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard
+[2025-10-28 14:45:31] [INFO] Logs: C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\microservicios\validation_logs
+[2025-10-28 14:45:31] [INFO] Python: Usando interprete py
+[2025-10-28 14:45:31] [INFO] Setup auth: Entorno virtual existente
+[2025-10-28 14:45:32] [INFO] Setup auth: Instalando dependencias
+[2025-10-28 14:45:34] [PASS] Setup auth - Entorno virtual listo
+[2025-10-28 14:45:35] [INFO] Setup org: Entorno virtual existente
+[2025-10-28 14:45:35] [INFO] Setup org: Instalando dependencias
+[2025-10-28 14:45:37] [PASS] Setup org - Entorno virtual listo
+[2025-10-28 14:45:38] [INFO] Setup audit: Entorno virtual existente
+[2025-10-28 14:45:38] [INFO] Setup audit: Instalando dependencias
+[2025-10-28 14:45:41] [PASS] Setup audit - Entorno virtual listo
+[2025-10-28 14:45:41] [INFO] Setup gateway: Entorno virtual existente
+[2025-10-28 14:45:41] [INFO] Setup gateway: Instalando dependencias
+[2025-10-28 14:45:44] [PASS] Setup gateway - Entorno virtual listo
+[2025-10-28 14:45:56] [PASS] Conectividad PostgreSQL - Puerto 5432 accesible
+[2025-10-28 14:46:07] [PASS] Conectividad Redis - Puerto 6379 accesible
+[2025-10-28 14:46:08] [PASS] Conexion Postgres - Consulta SELECT 1 exitosa
+[2025-10-28 14:46:09] [PASS] Conexion Redis - Ping exitoso
+[2025-10-28 14:46:09] [INFO] Start AUTH: PID 4732
+[2025-10-28 14:46:15] [FAIL] Start AUTH - Proceso finalizo prematuramente (ver stderr)
+[2025-10-28 14:46:15] [INFO] Start ORG: PID 29840
+[2025-10-28 14:46:21] [FAIL] Start ORG - Proceso finalizo prematuramente (ver stderr)
+[2025-10-28 14:46:22] [INFO] Start AUDIT: PID 34368
+[2025-10-28 14:46:28] [PASS] Start AUDIT - Servicio activo
+[2025-10-28 14:46:29] [INFO] Start GATEWAY: PID 10932
+[2025-10-28 14:46:35] [PASS] Start GATEWAY - Servicio activo
+[2025-10-28 14:46:35] [INFO] Cleanup: Deteniendo microservicios
+[2025-10-28 14:46:36] [INFO] Stop AUTH: PID 4732 detenido
+[2025-10-28 14:46:36] [INFO] Stop ORG: PID 29840 detenido
+[2025-10-28 14:46:37] [INFO] Stop AUDIT: PID 34368 detenido
+[2025-10-28 14:46:37] [INFO] Stop GATEWAY: PID 10932 detenido
+==================================================
+Validation run finished at 2025-10-28 14:46:37

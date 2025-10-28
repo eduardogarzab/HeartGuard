@@ -6,10 +6,11 @@ LOG_DIR="$ROOT_DIR/.logs"
 PID_DIR="$ROOT_DIR/.pids"
 mkdir -p "$LOG_DIR" "$PID_DIR"
 
-if [ -f "$ROOT_DIR/.env" ]; then
+SHARED_ENV="$ROOT_DIR/microservicios/.env"
+if [ -f "$SHARED_ENV" ]; then
   set -a
-  # Export shared configuration expected by both services
-  source "$ROOT_DIR/.env"
+  # Export shared configuration expected by the microservices
+  source "$SHARED_ENV"
   set +a
 fi
 

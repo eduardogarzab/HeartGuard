@@ -96,9 +96,17 @@ def _proxy_request(service_url: str, path: str):
 
 
 # --- Rutas Protegidas (Requieren JWT) ---
-@app.route('/v1/<service_prefix>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], defaults={'path': ''})
-@app.route('/v1/<service_prefix>/', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], defaults={'path': ''})
-@app.route('/v1/<service_prefix>/<path:path>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+@app.route(
+    '/v1/<service_prefix>',
+    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    defaults={'path': ''},
+    strict_slashes=False,
+)
+@app.route(
+    '/v1/<service_prefix>/<path:path>',
+    methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    strict_slashes=False,
+)
 @token_required
 def proxy_protected(service_prefix, path):
     """Catch-all para peticiones autenticadas hacia los microservicios internos."""

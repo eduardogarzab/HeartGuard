@@ -5,12 +5,11 @@ from dotenv import load_dotenv
 
 
 def _load_environment() -> None:
-    """Carga el .env raíz para compartir configuración."""
+    """Carga el .env central ubicado en microservicios/."""
     service_dir = Path(__file__).resolve().parent
-    root_dir = service_dir.parents[1]
-    root_env = root_dir / ".env"
-    if root_env.exists():
-        load_dotenv(root_env, override=False)
+    shared_env = service_dir.parent / ".env"
+    if shared_env.exists():
+        load_dotenv(shared_env, override=False)
 
 
 _load_environment()

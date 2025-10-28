@@ -11,26 +11,35 @@ def create_log_entry(data):
     
     # Extraer datos, proveyendo None como default si la llave no existe
     user_id = data.get('user_id')
-    org_id = data.get('org_id')
     action = data.get('action')
     entity = data.get('entity')
     entity_id = data.get('entity_id')
     ip = data.get('ip')
-    details = data.get('details') # Debe ser un dict
-    
+
+    details_payload = data.get('details') or {}
+    if isinstance(details_payload, dict):
+        details_data = details_payload.copy()
+    else:
+        details_data = {'details': details_payload}
+
+    for key in ('source', 'actor', 'org_id'):
+        value = data.get(key)
+        if value is not None and key not in details_data:
+            details_data[key] = value
+
     # 'details' debe ser un string JSONB
-    details_json = json.dumps(details) if details else None
+    details_json = json.dumps(details_data) if details_data else None
 
     # Consulta SQL basada en la tabla 'audit_logs'
     sql = """
         INSERT INTO audit_logs 
-        (user_id, org_id, action, entity, entity_id, ip, details)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
+        (user_id, action, entity, entity_id, ip, details)
+        VALUES (%s, %s, %s, %s, %s, %s)
         RETURNING id, ts;
     """
     try:
         cursor.execute(sql, (
-            user_id, org_id, action, entity, entity_id, ip, details_json
+            user_id, action, entity, entity_id, ip, details_json
         ))
         new_log = cursor.fetchone()
         db.commit()
@@ -52,11 +61,10 @@ def get_logs(params):
     
     # Base de la consulta
     sql = """
-        SELECT l.id, l.ts, l.action, l.entity, l.entity_id, l.ip,
-               u.email as user_email, o.name as org_name, l.details
-        FROM audit_logs l
-        LEFT JOIN users u ON l.user_id = u.id
-        LEFT JOIN organizations o ON l.org_id = o.id
+     SELECT l.id, l.ts, l.action, l.entity, l.entity_id, l.ip,
+         u.email as user_email, l.details
+     FROM audit_logs l
+     LEFT JOIN users u ON l.user_id = u.id
     """
     
     filters = []

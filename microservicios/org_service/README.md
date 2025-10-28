@@ -12,7 +12,7 @@ Desarrollado en **Flask puro**, con soporte **dual JSON/XML** y autenticación *
 
 org_service/
 ├─ app.py               # Punto de entrada del servicio
-├─ config.py            # Configuración global (lee el .env de la raíz)
+├─ config.py            # Configuración global (lee el .env centralizado)
 ├─ db.py                # Pool de conexiones PostgreSQL
 ├─ responses.py         # Respuestas JSON/XML unificadas
 ├─ repository.py        # Consultas SQL a organizations / invitations / membership
@@ -28,13 +28,13 @@ org_service/
 
 ## ⚙️ Configuración
 
-Este servicio reutiliza el archivo **`.env` ubicado en la raíz del proyecto**, por lo tanto **no necesita un `.env` local propio**. Si necesitas valores distintos para pruebas, ajusta el `.env` global o exporta las variables antes de ejecutar el servicio.
+Este servicio reutiliza el archivo **`.env` centralizado en `microservicios/.env`**, por lo tanto **no necesita un `.env` local propio**. Si necesitas valores distintos para pruebas, ajusta ese archivo compartido o exporta las variables antes de ejecutar el servicio.
 
-Ejemplo de `.env` global:
+Ejemplo de `.env` compartido:
 
 ```bash
 FLASK_ENV=development
-SERVICE_PORT=5002
+ORG_SERVICE_PORT=5002
 
 PGHOST=localhost
 PGPORT=5432
@@ -43,12 +43,12 @@ PGUSER=heartguard_app
 PGPASSWORD=dev_change_me
 PGSCHEMA=heartguard
 
-JWT_SECRET=supersecret123
-ACCESS_TTL_MIN=30
-REFRESH_TTL_DAYS=7
+AUTH_JWT_SECRET=supersecret123
+ORG_INVITE_TTL_HOURS=72
+ORG_INVITE_ROLE=org_user
 ````
 
-> Asegúrate de que `JWT_SECRET` sea **idéntico** al de `auth_service`, para que ambos validen los mismos tokens.
+> Asegúrate de que `AUTH_JWT_SECRET` sea **idéntico** al de `auth_service`, para que ambos validen los mismos tokens.
 
 ---
 

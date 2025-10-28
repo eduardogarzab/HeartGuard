@@ -3,17 +3,15 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 def _load_environment() -> None:
-    """Carga el .env raíz para compartir configuración."""
+    """Carga el archivo .env central ubicado en microservicios/."""
     service_dir = Path(__file__).resolve().parent
-    # Sube dos niveles (audit_service/ -> microservicios/ -> raíz)
-    root_dir = service_dir.parents[1] 
-    root_env = root_dir / ".env"
-    
-    if root_env.exists():
-        print(f"[AuditService] Cargando configuración desde {root_env}")
-        load_dotenv(root_env, override=False)
+    shared_env = service_dir.parent / ".env"
+
+    if shared_env.exists():
+        print(f"[AuditService] Cargando configuración desde {shared_env}")
+        load_dotenv(shared_env, override=False)
     else:
-        print(f"[AuditService] ADVERTENCIA: No se encontró {root_env}. Usando valores por defecto.")
+        print(f"[AuditService] ADVERTENCIA: No se encontró {shared_env}. Usando valores por defecto.")
 
 _load_environment()
 

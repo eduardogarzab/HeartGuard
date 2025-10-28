@@ -21,7 +21,6 @@ auth_service/
 │  ├─ auth.py           # Login, refresh, logout
 │  └─ users.py          # Registro y perfil /me
 ├─ requirements.txt     # Dependencias
-├─ .env.example         # Referencia: recuerda usar el .env raíz del monorepo
 └─ README.md
 
 ````
@@ -50,7 +49,7 @@ pip install -r requirements.txt
 
 ## ⚙️ Configuración
 
-El microservicio reutiliza exclusivamente el archivo `.env` que vive en la raíz del monorepo, de modo que comparte credenciales con el resto de componentes. Ajusta los valores ahí (o vía variables de entorno) cuando necesites cambios.
+El microservicio reutiliza exclusivamente el archivo `.env` centralizado en `microservicios/.env`, de modo que comparte credenciales con el resto de componentes Python. Parte de la plantilla `microservicios/.env.example` y ajusta los valores ahí (o vía variables de entorno) cuando necesites cambios.
 
 ### Variables clave
 
@@ -58,12 +57,12 @@ El microservicio reutiliza exclusivamente el archivo `.env` que vive en la raíz
 | ---------------------------------------------- | ------------------------------------------------ |
 | `DATABASE_URL` / `PGHOST`, `PGUSER`, `PGPASSWORD`, `PGDATABASE` | Cadena o parámetros de PostgreSQL                |
 | `PGSCHEMA`                                     | Debe apuntar al esquema `heartguard`             |
-| `JWT_SECRET`                                   | Llave para firmar JWT                            |
-| `ACCESS_TTL_MIN`                               | Duración del access token (minutos)              |
-| `REFRESH_TTL_DAYS`                             | Duración del refresh token (días)                |
-| `SERVICE_PORT`                                 | Puerto donde correrá Flask                       |
+| `AUTH_JWT_SECRET` / `JWT_SECRET`               | Llave para firmar JWT                            |
+| `AUTH_ACCESS_TTL_MIN`                          | Duración del access token (minutos)              |
+| `AUTH_REFRESH_TTL_DAYS`                        | Duración del refresh token (días)                |
+| `AUTH_SERVICE_PORT`                            | Puerto donde correrá Flask                       |
 | `DEFAULT_ORG_ID`                               | Organización por defecto para testing (opcional) |
-| `REDIS_URL`                                    | URL de Redis para la lista de revocación JWT     |
+| `AUTH_REDIS_URL`                               | URL de Redis para la lista de revocación JWT     |
 | `AUTH_REDIS_PREFIX`                            | Prefijo de claves en Redis (opcional)            |
 
 ---
