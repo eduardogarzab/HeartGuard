@@ -36,5 +36,8 @@ postgres_data/
 .DS_Store
 Thumbs.db
 
-.venv/
-__pycache__/
+# Ignorar cualquier carpeta .venv en cualquier lugar del proyecto
+**/.venv/
+
+# Ignorar cualquier carpeta __pycache__ en cualquier lugar del proyecto
+**/__pycache__/
