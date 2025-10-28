@@ -631,17 +631,6 @@ type UserRole struct {
 	AssignedAt  *time.Time `json:"assigned_at,omitempty"`
 }
 
-type APIKey struct {
-	ID          string     `json:"id"`
-	Label       string     `json:"label"`
-	OwnerUserID *string    `json:"owner_user_id,omitempty"`
-	Scopes      []string   `json:"scopes,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
-	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
-	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
-	Revoked     bool       `json:"revoked"`
-}
-
 type Membership struct {
 	OrgID        string    `json:"org_id"`
 	UserID       string    `json:"user_id"`

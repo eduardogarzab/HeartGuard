@@ -4184,147 +4184,18 @@ RETURNING
 }
 
 // ------------------------------
-// API Keys
-// ------------------------------
-func (r *Repo) ListPermissions(ctx context.Context) ([]models.Permission, error) {
-	rows, err := r.pool.Query(ctx, `
-	SELECT code, COALESCE(description,'')
-	FROM permissions
-	ORDER BY code
-	`)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.Permission, 0, 32)
-	for rows.Next() {
-		var item models.Permission
-		if err := rows.Scan(&item.Code, &item.Description); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error) {
-	var id string
-	err := r.pool.QueryRow(ctx, `
-INSERT INTO api_keys (id, key_hash, label, owner_user_id, created_at, expires_at)
-VALUES (gen_random_uuid(), $1, $2, $3, NOW(), $4)
-RETURNING id
-`, hashHex, label, ownerUserID, expires).Scan(&id)
-	return id, err
-}
-
-func (r *Repo) RevokeAPIKey(ctx context.Context, id string) error {
-	uid, err := uuid.Parse(id)
-	if err != nil {
-		return err
-	}
-	cmd, err := r.pool.Exec(ctx, `
-UPDATE api_keys
-SET revoked_at = NOW()
-WHERE id = $1 AND revoked_at IS NULL
-`, uid)
-	if err != nil {
-		return err
-	}
-	if cmd.RowsAffected() == 0 {
-		return errors.New("not_found_or_already_revoked")
-	}
-	return nil
-}
-
-func (r *Repo) SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error {
-	return withTx(ctx, r.pool, func(tx pgx.Tx) error {
-		if _, err := tx.Exec(ctx, `DELETE FROM api_key_permission WHERE api_key_id=$1`, id); err != nil {
-			return err
-		}
-		for _, code := range permCodes {
-			if _, err := tx.Exec(ctx, `
-INSERT INTO api_key_permission (api_key_id, permission_id, granted_at)
-SELECT $1, p.id, NOW()
-FROM permissions p WHERE p.code=$2
-`, id, code); err != nil {
-				return err
-			}
-		}
-		return nil
-	})
-}
-
-func (r *Repo) ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error) {
-	// Construimos scopes desde permisos relacionados
-	where := ""
-	if activeOnly {
-		where = "WHERE k.revoked_at IS NULL"
-	}
-	q := fmt.Sprintf(`
-SELECT
-  k.id,
-  COALESCE(k.label,'')                           AS label,
-  k.owner_user_id,
-  COALESCE(
-    array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL),
-    ARRAY[]::text[]
-  )                                              AS scopes,
-  k.expires_at,
-  k.created_at,
-  k.revoked_at,
-  (k.revoked_at IS NOT NULL)                     AS revoked
-FROM api_keys k
-LEFT JOIN api_key_permission akp ON akp.api_key_id = k.id
-LEFT JOIN permissions p          ON p.id = akp.permission_id
-%s
-GROUP BY k.id
-ORDER BY COALESCE(k.revoked_at, k.created_at) DESC
-LIMIT $1 OFFSET $2
-`, where)
-
-	rows, err := r.pool.Query(ctx, q, limit, offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.APIKey, 0, 32)
-	for rows.Next() {
-		var item models.APIKey
-		var owner *uuid.UUID
-		var scopes []string
-		if err := rows.Scan(
-			&item.ID,
-			&item.Label,
-			&owner,
-			&scopes,
-			&item.ExpiresAt,
-			&item.CreatedAt,
-			&item.RevokedAt,
-			&item.Revoked,
-		); err != nil {
-			return nil, err
-		}
-		if owner != nil {
-			s := owner.String()
-			item.OwnerUserID = &s
-		}
-		item.Scopes = scopes
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// ------------------------------
 // Audit
 // ------------------------------
+
+func (r *Repo) ListPermissions(ctx context.Context) ([]models.Permission, error) {
+	rows, err := r.pool.Query(ctx, "SELECT code, description FROM permissions ORDER BY code")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return pgx.CollectRows(rows, pgx.RowToStructByName[models.Permission])
+}
+
 func (r *Repo) ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error) {
 	where := "WHERE 1=1\n"
 	args := []any{}

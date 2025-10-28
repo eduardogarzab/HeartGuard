@@ -56,7 +56,7 @@ Tablas como `user_statuses`, `alert_channels`, `alert_levels`, `service_statuses
 -   `roles`, `permissions`, `role_permission`
 -   `users`, `user_role`
 -   `organizations`, `org_roles`, `user_org_membership`
--   Refresh tokens (`refresh_tokens`), revocaciones (`session_revocations`) y API keys (`api_keys`, `api_key_permission`)
+-   Refresh tokens (`refresh_tokens`), revocaciones (`session_revocations`)
 
 ### Ubicaciones y movilidad
 
@@ -70,7 +70,7 @@ Incluye entidades base (`patients`, `care_teams`, `caregiver_patient`, `alert_ty
 
 ### Auditoría y métricas
 
--   `audit_logs` almacena eventos generados por el backend (`ORG_CREATE`, `APIKEY_CREATE`, etc.).
+-   `audit_logs` almacena eventos generados por el backend (`ORG_CREATE`, etc.).
 -   Procedimientos `sp_metrics_*` devuelven agregados para el dashboard (overview, actividad reciente, breakdowns).
 
 ## Seeds incluidos
