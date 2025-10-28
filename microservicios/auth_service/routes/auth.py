@@ -2,6 +2,7 @@ from flask import Blueprint, request
 from flask_jwt_extended import jwt_required, get_jwt, get_jwt_identity
 from responses import ok, err
 from repository import (
+    fetch_primary_org_for_user,
     fetch_user_by_email,
     insert_refresh_token,
     revoke_refresh_token,
@@ -39,6 +40,9 @@ def login():
     user = fetch_user_by_email(email)
     if not user or not verify_password(password, user["password_hash"]):
         return err("Credenciales inválidas", code="invalid_credentials", status=401)
+
+    if not org_id:
+        org_id = fetch_primary_org_for_user(user["id"]) or ""
 
     identity = {
         "user_id": user["id"],

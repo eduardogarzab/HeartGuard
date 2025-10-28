@@ -25,8 +25,20 @@ class Settings:
 
     DATABASE_URL = os.getenv("ORG_DATABASE_URL") or os.getenv("DATABASE_URL")
 
-    PGHOST = os.getenv("PGHOST", "127.0.0.1")
-    PGPORT = int(os.getenv("PGPORT", "5432"))
+    PGHOST = (
+        os.getenv("PGHOST")
+        or os.getenv("POSTGRES_HOST")
+        or os.getenv("DBHOST")
+        or os.getenv("ORG_DBHOST")
+        or "127.0.0.1"
+    )
+    PGPORT = int(
+        os.getenv("PGPORT")
+        or os.getenv("POSTGRES_PORT")
+        or os.getenv("DBPORT")
+        or os.getenv("ORG_DBPORT")
+        or "5432"
+    )
     PGDATABASE = (
         os.getenv("PGDATABASE")
         or os.getenv("DBNAME")
