@@ -73,24 +73,47 @@ ORG_CANDIDATES=(
   "${HEARTGUARD_PYTHON:-}"
   "/tmp/heartguard-test-venv/bin/python"
 )
+GATEWAY_CANDIDATES=(
+  "$ROOT_DIR/microservicios/gateway/.venv/bin/python"
+  "$ROOT_DIR/microservicios/auth_service/.venv/bin/python"
+  "$ROOT_DIR/.venv/bin/python"
+  "${HEARTGUARD_PYTHON:-}"
+  "/tmp/heartguard-test-venv/bin/python"
+)
+AUDIT_CANDIDATES=(
+  "$ROOT_DIR/microservicios/audit_service/.venv/bin/python"
+  "$ROOT_DIR/.venv/bin/python"
+  "${HEARTGUARD_PYTHON:-}"
+  "/tmp/heartguard-test-venv/bin/python"
+)
 
 AUTH_PYTHON="$(resolve_python "${AUTH_CANDIDATES[@]}")"
 ORG_PYTHON="$(resolve_python "${ORG_CANDIDATES[@]}")"
+GATEWAY_PYTHON="$(resolve_python "${GATEWAY_CANDIDATES[@]}")"
+AUDIT_PYTHON="$(resolve_python "${AUDIT_CANDIDATES[@]}")"
 
 start_service "auth_service" "$ROOT_DIR/microservicios/auth_service/app.py" "$AUTH_PYTHON"
 start_service "org_service" "$ROOT_DIR/microservicios/org_service/app.py" "$ORG_PYTHON"
+start_service "gateway" "$ROOT_DIR/microservicios/gateway/app.py" "$GATEWAY_PYTHON"
+start_service "audit_service" "$ROOT_DIR/microservicios/audit_service/app.py" "$AUDIT_PYTHON"
 
 echo
 cat <<'EOF'
 Servicios en background. Pruebas rápidas:
   curl -s -w '\n%{http_code}\n' http://localhost:5001/health
   curl -s -w '\n%{http_code}\n' http://localhost:5002/health
+  curl -s -w '\n%{http_code}\n' http://localhost:5000/health
+  curl -s -w '\n%{http_code}\n' http://localhost:5006/health
 
 Comandos útiles:
   tail -f .logs/auth_service.log
   tail -f .logs/org_service.log
+  tail -f .logs/gateway.log
+  tail -f .logs/audit_service.log
 
 Para detener:
   if [ -f .pids/auth_service.pid ]; then kill "$(cat .pids/auth_service.pid)"; fi
   if [ -f .pids/org_service.pid ]; then kill "$(cat .pids/org_service.pid)"; fi
+  if [ -f .pids/gateway.pid ]; then kill "$(cat .pids/gateway.pid)"; fi
+  if [ -f .pids/audit_service.pid ]; then kill "$(cat .pids/audit_service.pid)"; fi
 EOF

@@ -33,6 +33,7 @@ class Config:
     AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://127.0.0.1:5001")
     ORG_SERVICE_URL = os.getenv("ORG_SERVICE_URL", "http://127.0.0.1:5002")
     
+    AUDIT_SERVICE_URL = os.getenv("AUDIT_SERVICE_URL", "http://127.0.0.1:5006")
     # Agrega aquí las URLs de los nuevos servicios cuando los crees
     # SIGNAL_SERVICE_URL = os.getenv("SIGNAL_SERVICE_URL", "http://127.0.0.1:5003")
     # INFERENCE_SERVICE_URL = os.getenv("INFERENCE_SERVICE_URL", "http://127.0.0.1:5004")

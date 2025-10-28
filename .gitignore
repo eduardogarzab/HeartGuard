@@ -35,3 +35,6 @@ postgres_data/
 # OS
 .DS_Store
 Thumbs.db
+
+.venv/
+__pycache__/

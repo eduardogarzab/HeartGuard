@@ -17,8 +17,9 @@ def _load_service_map() -> dict[str, str]:
     base_map = {
         "auth": Config.AUTH_SERVICE_URL,
         "orgs": Config.ORG_SERVICE_URL,
-        # Mientras no exista patient_service reutilizamos org_service
-        "patients": Config.ORG_SERVICE_URL,
+    # Mientras no exista patient_service reutilizamos org_service
+    "patients": Config.ORG_SERVICE_URL,
+    "audit": Config.AUDIT_SERVICE_URL,
     }
 
     raw_map = os.getenv("GATEWAY_SERVICE_MAP", "")

@@ -25,7 +25,8 @@ GATEWAY_SERVICE_PORT=5000
 # Servicios destino
 AUTH_SERVICE_URL=http://127.0.0.1:5001
 ORG_SERVICE_URL=http://127.0.0.1:5002
-GATEWAY_SERVICE_MAP=auth=http://127.0.0.1:5001,orgs=http://127.0.0.1:5002,patients=http://127.0.0.1:5002
+AUDIT_SERVICE_URL=http://127.0.0.1:5006
+GATEWAY_SERVICE_MAP=auth=http://127.0.0.1:5001,orgs=http://127.0.0.1:5002,patients=http://127.0.0.1:5002,audit=http://127.0.0.1:5006
 
 # JWT compartido con auth_service
 AUTH_JWT_SECRET=super_secreto
@@ -110,6 +111,20 @@ curl.exe -X GET "http://127.0.0.1:5000/v1/orgs/me" ^
 
 El gateway propagara los headers al microservicio y anadira automaticamente `x-org-id` si el token incluye `org_id`.
 
+### Registrar auditoria `/v1/audit`
+```powershell
+$token = "<ACCESS_TOKEN_DEVUELTO_POR_LOGIN>"
+curl.exe -X POST "http://127.0.0.1:5000/v1/audit" ^
+  -H "Authorization: Bearer $token" ^
+  -H "Content-Type: application/json" ^
+  -d "{\"action\":\"login_success\",\"user_id\":\"<uuid_usuario>\",\"org_id\":\"<uuid_org>\",\"entity\":\"auth\",\"details\":{\"note\":\"login via mobile\"}}"
+
+curl.exe -X GET "http://127.0.0.1:5000/v1/audit?from=2024-01-01" ^
+  -H "Authorization: Bearer $token"
+```
+
+Los datos deben existir en la tabla `audit_logs`; ajusta los UUIDs reales de `users` y `organizations`.
+
 ---
 
 ## Mapeo de rutas
@@ -119,11 +134,12 @@ El gateway propagara los headers al microservicio y anadira automaticamente `x-o
 | `/v1/auth/*` | `AUTH_SERVICE_URL` | Edita `AUTH_SERVICE_URL` o `GATEWAY_SERVICE_MAP` |
 | `/v1/orgs/*` | `ORG_SERVICE_URL` | Usa `ORG_SERVICE_URL` o `GATEWAY_SERVICE_MAP` |
 | `/v1/patients/*` | `ORG_SERVICE_URL` (temporal) | Cambia cuando exista `patient_service` |
+| `/v1/audit/*` | `AUDIT_SERVICE_URL` | Configura `AUDIT_SERVICE_URL` o `GATEWAY_SERVICE_MAP` |
 
 Para nuevos microservicios anade la entrada en `GATEWAY_SERVICE_MAP`, por ejemplo:
 
 ```
-GATEWAY_SERVICE_MAP=auth=http://127.0.0.1:5001,orgs=http://127.0.0.1:5002,media=http://127.0.0.1:5004
+GATEWAY_SERVICE_MAP=auth=http://127.0.0.1:5001,orgs=http://127.0.0.1:5002,media=http://127.0.0.1:5004,audit=http://127.0.0.1:5006
 ```
 
 ---

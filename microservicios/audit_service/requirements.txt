@@ -1,0 +1,11 @@
+# Framework
+Flask==3.0.3
+
+# Configuración
+python-dotenv==1.0.1
+
+# Base de Datos
+psycopg2-binary==2.9.9
+
+# Servidor WSGI
+gunicorn==22.0.0
