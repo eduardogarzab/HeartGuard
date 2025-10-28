@@ -10,7 +10,106 @@
 			<a class="hg-link-button hg-button-muted" href="/superadmin/dashboard/export?format=csv">Exportar CSV</a>
 		</div>
 	</div>
-	{{if .Data.Metrics}}
+</section>
+
+<section class="hg-section">
+	<header class="hg-dashboard-section-header">
+		<div>
+			<h2>Inteligencia Estratégica</h2>
+			<p>KPIs clave sobre la salud de la población, eficacia de las alertas y eficiencia operativa.</p>
+		</div>
+		<form method="get" class="hg-time-filter">
+			{{range .Data.TimeFilterOptions}}
+			<button name="period" type="submit" value="{{.Value}}" class="hg-link-button {{if .IsActive}}is-active{{end}}">{{.Label}}</button>
+			{{end}}
+		</form>
+	</header>
+	<div class="hg-dashboard-kpis">
+		{{if .Data.ResponseStats}}
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">Tiempo Medio de Acuse (MTTA)</span>
+			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgAckDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgAckDuration}}{{else}}—{{end}}</span>
+			<span class="hg-kpi-caption">Tiempo promedio para acusar alertas</span>
+		</article>
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">Tiempo Medio de Resolución (MTTR)</span>
+			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgResolveDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgResolveDuration}}{{else}}—{{end}}</span>
+			<span class="hg-kpi-caption">Tiempo promedio para resolver alertas</span>
+		</article>
+		{{end}}
+	</div>
+	<div class="hg-dashboard-grid">
+		<article class="hg-chart-card">
+			<header>
+				<h3>Salud de la Población</h3>
+				<span class="hg-chart-meta">Distribución por Nivel de Riesgo</span>
+			</header>
+			{{if .Data.PatientRiskChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartPatientRisk" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Pacientes" data-hg-chart="{{toJSON .Data.PatientRiskChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range $idx, $entry := .Data.PatientRiskChart}}
+				<div class="hg-chart-bar" data-hg-entry-index="{{$idx}}">
+					<span class="hg-chart-bar-label">{{$entry.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill is-{{$entry.State}}" style="--hg-bar-width: {{$entry.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{$entry.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin datos de riesgo de pacientes.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Calidad de Alertas</h3>
+				<span class="hg-chart-meta">Resultados de Triaje ({{.Data.SelectedTimeFilter | formatTimeFilter}})</span>
+			</header>
+			{{if .Data.AlertOutcomeChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartAlertOutcomes" class="hg-chart-canvas" data-hg-type="bar" data-hg-index-axis="y" data-hg-series-label="Alertas" data-hg-chart="{{toJSON .Data.AlertOutcomeChart}}"></canvas>
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin resultados de alertas en este período.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Salud de Infraestructura</h3>
+				<span class="hg-chart-meta">Estado de Adherencia de Dispositivos</span>
+			</header>
+			{{if .Data.DeviceStatusChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartDeviceStatus" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Dispositivos" data-hg-chart="{{toJSON .Data.DeviceStatusChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range $idx, $entry := .Data.DeviceStatusChart}}
+				<div class="hg-chart-bar" data-hg-entry-index="{{$idx}}">
+					<span class="hg-chart-bar-label">{{$entry.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill is-{{$entry.State}}" style="--hg-bar-width: {{$entry.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{$entry.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">Sin datos de estado de dispositivos.</p>
+			{{end}}
+		</article>
+	</div>
+</section>
+
+<section class="hg-section">
+	<header class="hg-dashboard-section-header">
+		<div>
+			<h2>Métricas Operativas</h2>
+			<p>Estado de cuentas, invitaciones y actividad auditada más reciente.</p>
+		</div>
+	</header>
 	<div class="hg-dashboard-kpis">
 		{{range .Data.Metrics}}
 		<article class="hg-kpi-card">
@@ -20,16 +119,6 @@
 		</article>
 		{{end}}
 	</div>
-	{{end}}
-</section>
-
-<section class="hg-section">
-	<header class="hg-dashboard-section-header">
-		<div>
-			<h2>Operación y usuarios</h2>
-			<p>Estado de cuentas, invitaciones y actividad auditada más reciente.</p>
-		</div>
-	</header>
 	<div class="hg-dashboard-grid">
 		<article class="hg-chart-card">
 			<header>
