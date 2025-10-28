@@ -2379,25 +2379,6 @@ CREATE TABLE IF NOT EXISTS refresh_tokens (
 CREATE INDEX IF NOT EXISTS idx_refresh_not_revoked
   ON refresh_tokens(user_id) WHERE revoked_at IS NULL;
 
-CREATE TABLE IF NOT EXISTS api_keys (
-  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  owner_user_id  UUID REFERENCES users(id) ON DELETE SET NULL,
-  key_hash       TEXT NOT NULL,
-  label          VARCHAR(120),
-  created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
-  expires_at     TIMESTAMP,
-  revoked_at     TIMESTAMP,
-  scopes         TEXT[] NOT NULL DEFAULT '{}'::text[],
-  UNIQUE (key_hash)
-);
-
-CREATE TABLE IF NOT EXISTS api_key_permission (
-  api_key_id     UUID NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
-  permission_id  UUID NOT NULL REFERENCES permissions(id) ON DELETE RESTRICT,
-  granted_at     TIMESTAMP NOT NULL DEFAULT NOW(),
-  PRIMARY KEY (api_key_id, permission_id)
-);
-
 CREATE TABLE IF NOT EXISTS push_devices (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id        UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,

@@ -58,7 +58,6 @@ All notable changes to this project are documented here.
     -   CRUD for organizations
     -   User and membership management
     -   Invitation flows
-    -   API key management
     -   Audit logs with structured writes
 -   **Unified project structure**:
     -   Separated `db/` and `backend/` directories

@@ -801,39 +801,3 @@ CROSS JOIN platforms p
 WHERE u.email='martin.ops@heartguard.com'
   AND p.code='android'
 ON CONFLICT (user_id, platform_id, push_token) DO NOTHING;
-
-INSERT INTO api_keys (id, owner_user_id, key_hash, label, created_at, expires_at, revoked_at, scopes)
-VALUES
-  (
-    'a79994c5-66a9-451a-b414-c864306416e3'::uuid,
-    (SELECT id FROM users WHERE email='admin@heartguard.com'),
-    encode(digest('HGDEMO-KEY-1', 'sha256'), 'hex'),
-    'Demo - Integración CLI',
-    NOW() - INTERVAL '15 days',
-    NOW() + INTERVAL '15 days',
-    NULL,
-    ARRAY['alerts.read','patients.read']
-  ),
-  (
-    '7c2746e8-848c-4a21-aa98-d58d84374e95'::uuid,
-    (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
-    encode(digest('HGDEMO-KEY-2', 'sha256'), 'hex'),
-    'Integración Operaciones (revocada)',
-    NOW() - INTERVAL '120 days',
-    NOW() - INTERVAL '30 days',
-    NOW() - INTERVAL '10 days',
-    ARRAY['alerts.manage']
-  )
-ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO api_key_permission (api_key_id, permission_id)
-SELECT 'a79994c5-66a9-451a-b414-c864306416e3'::uuid, p.id
-FROM permissions p
-WHERE p.code IN ('alerts.read','patients.read')
-ON CONFLICT DO NOTHING;
-
-INSERT INTO api_key_permission (api_key_id, permission_id)
-SELECT '7c2746e8-848c-4a21-aa98-d58d84374e95'::uuid, p.id
-FROM permissions p
-WHERE p.code IN ('alerts.manage')
-ON CONFLICT DO NOTHING;

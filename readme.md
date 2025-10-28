@@ -322,7 +322,6 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | `users`                    | `GET /`, `POST /{id}/status`                                                    | Gestión de usuarios y cambio de estados.                                        |
 | `roles`                    | `GET /`, `POST /`, permisos, asignación de usuarios, baja                       | Control RBAC global.                                                            |
 | `catalogs`                 | `GET /`, `GET /{catalog}`, `POST /{catalog}`, updates/delete                    | CRUD de catálogos parametrizables.                                              |
-| `api-keys`                 | `GET /`, `POST /`, `POST /{id}/permissions`, `POST /{id}/revoke`                | Generación y revocación de API keys demo.                                       |
 | `audit`                    | `GET /`                                                                         | Visor de auditoría con filtros.                                                 |
 | `settings/system`          | `GET /`, `POST /`                                                               | Configuración global (branding, contacto, mensajes).                            |
 
@@ -350,7 +349,6 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
     ```
 -   **Dependencias Go faltantes:** `make tidy` regenerará `go.sum`.
 -   **Puerto 5432 ocupado:** ajusta el mapeo `5432:5432` en `docker-compose.yml` y las variables `PGPORT`/`DATABASE_URL`.
--   **Regenerar API key demo:** usa `/superadmin/api-keys` en el panel para generar una nueva y guarda el secreto mostrado.
 -   **Redis no responde:** revisa `make logs-redis` y confirma que `REDIS_URL` use el puerto correcto (`6379`).
 
 ### Error "CSRF inválido" al iniciar sesión

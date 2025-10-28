@@ -2,11 +2,7 @@ package superadmin
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,13 +200,7 @@ type Repository interface {
 
 	GetSystemSettings(ctx context.Context) (*models.SystemSettings, error)
 	UpdateSystemSettings(ctx context.Context, payload models.SystemSettingsInput, updatedBy *string) (*models.SystemSettings, error)
-
-	CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error)
-	SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error
-	RevokeAPIKey(ctx context.Context, id string) error
-	ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error)
 	ListPermissions(ctx context.Context) ([]models.Permission, error)
-
 	ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error)
 }
 
@@ -255,9 +245,6 @@ var operationLabels = map[string]string{
 	"MEMBER_ADD":                 "Alta de miembro",
 	"MEMBER_REMOVE":              "Baja de miembro",
 	"USER_STATUS_UPDATE":         "Actualización de estatus de usuario",
-	"APIKEY_CREATE":              "Creación de API Key",
-	"APIKEY_SET_PERMS":           "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":              "Revocación de API Key",
 	"PUSH_DEVICE_CREATE":         "Registro de dispositivo push",
 	"PUSH_DEVICE_UPDATE":         "Actualización de dispositivo push",
 	"PUSH_DEVICE_DELETE":         "Eliminación de dispositivo push",
@@ -365,14 +352,6 @@ func parseBoolDefault(s string, def bool) bool {
 	default:
 		return def
 	}
-}
-
-func generateAPIKeySecret() (string, error) {
-	buf := make([]byte, 32)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return base64.RawURLEncoding.EncodeToString(buf), nil
 }
 
 func (h *Handlers) Healthz(w http.ResponseWriter, r *http.Request) {
@@ -1608,12 +1587,6 @@ type alertsViewData struct {
 	AlertChannels    []models.CatalogItem
 	DeliveryStatuses []models.CatalogItem
 	CurrentUserID    string
-}
-
-type apiKeysViewData struct {
-	Keys         []models.APIKey
-	Permissions  []models.Permission
-	ShowInactive bool
 }
 
 type systemSettingsViewData struct {
@@ -5093,123 +5066,6 @@ func (h *Handlers) AlertDeliveriesCreate(w http.ResponseWriter, r *http.Request)
 	h.writeAudit(ctx, r, "ALERT_DELIVERY_CREATE", "alert_delivery", &delivery.ID, details)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Entrega registrada"})
 	http.Redirect(w, r, "/superadmin/alerts", http.StatusSeeOther)
-}
-
-func (h *Handlers) APIKeysIndex(w http.ResponseWriter, r *http.Request) {
-	showAll := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("show")), "all")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	keys, err := h.repo.ListAPIKeys(ctx, !showAll, 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar las API Keys", http.StatusInternalServerError)
-		return
-	}
-	perms, err := h.repo.ListPermissions(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los permisos", http.StatusInternalServerError)
-		return
-	}
-	data := apiKeysViewData{Keys: keys, Permissions: perms, ShowInactive: showAll}
-	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "API Keys"}}
-	h.render(w, r, "superadmin/api_keys.html", "API Keys", data, crumbs)
-}
-
-func (h *Handlers) APIKeysCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	label := strings.TrimSpace(r.FormValue("label"))
-	if label == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El nombre es obligatorio"})
-		http.Redirect(w, r, "/superadmin/api-keys", http.StatusSeeOther)
-		return
-	}
-	owner := strings.TrimSpace(r.FormValue("owner_user_id"))
-	var ownerPtr *string
-	if owner != "" {
-		ownerPtr = &owner
-	}
-	expiresStr := strings.TrimSpace(r.FormValue("expires_at"))
-	var expiresAt *time.Time
-	if expiresStr != "" {
-		if t, err := time.ParseInLocation("2006-01-02T15:04", expiresStr, time.Local); err == nil {
-			utc := t.In(time.UTC)
-			expiresAt = &utc
-		} else {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Fecha de expiración inválida"})
-			http.Redirect(w, r, "/superadmin/api-keys", http.StatusSeeOther)
-			return
-		}
-	}
-	secret, err := generateAPIKeySecret()
-	if err != nil {
-		http.Error(w, "No se pudo generar el secreto", http.StatusInternalServerError)
-		return
-	}
-	hash := sha256.Sum256([]byte(secret))
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	id, err := h.repo.CreateAPIKey(ctx, label, expiresAt, hex.EncodeToString(hash[:]), ownerPtr)
-	if err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear la API Key"})
-		http.Redirect(w, r, "/superadmin/api-keys", http.StatusSeeOther)
-		return
-	}
-	perms := r.Form["permissions"]
-	if len(perms) > 0 {
-		if err := h.repo.SetAPIKeyPermissions(ctx, id, perms); err != nil {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "La API Key se creó, pero no se pudieron asignar los permisos"})
-		}
-	}
-	h.writeAudit(ctx, r, "APIKEY_CREATE", "api_key", &id, map[string]any{"label": label})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "API Key creada. Guarda el secreto: " + secret})
-	http.Redirect(w, r, "/superadmin/api-keys", http.StatusSeeOther)
-}
-
-func (h *Handlers) APIKeysUpdatePermissions(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	perms := r.Form["permissions"]
-	redirect := strings.TrimSpace(r.FormValue("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/api-keys"
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.SetAPIKeyPermissions(ctx, id, perms); err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudieron actualizar los permisos"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "APIKEY_SET_PERMS", "api_key", &id, map[string]any{"count": len(perms)})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permisos actualizados"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) APIKeysRevoke(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	if err := r.ParseForm(); err != nil && err != http.ErrNotMultipart {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	redirect := strings.TrimSpace(r.FormValue("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/api-keys"
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.RevokeAPIKey(ctx, id); err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo revocar la API Key"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "APIKEY_REVOKE", "api_key", &id, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "API Key revocada"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 func (h *Handlers) SystemSettingsForm(w http.ResponseWriter, r *http.Request) {

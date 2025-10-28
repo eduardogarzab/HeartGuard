@@ -5,9 +5,7 @@ package superadmin
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/csv"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -174,13 +172,7 @@ type Repository interface {
 	RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error
 	GetSystemSettings(ctx context.Context) (*models.SystemSettings, error)
 	UpdateSystemSettings(ctx context.Context, payload models.SystemSettingsInput, updatedBy *string) (*models.SystemSettings, error)
-
-	CreateAPIKey(ctx context.Context, label string, expires *time.Time, hashHex string, ownerUserID *string) (string, error)
-	SetAPIKeyPermissions(ctx context.Context, id string, permCodes []string) error
-	RevokeAPIKey(ctx context.Context, id string) error
-	ListAPIKeys(ctx context.Context, activeOnly bool, limit, offset int) ([]models.APIKey, error)
 	ListPermissions(ctx context.Context) ([]models.Permission, error)
-
 	ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error)
 }
 
@@ -291,9 +283,6 @@ var operationLabels = map[string]string{
 	"MEMBER_ADD":         "Alta de miembro",
 	"MEMBER_REMOVE":      "Baja de miembro",
 	"USER_STATUS_UPDATE": "Actualización de estatus de usuario",
-	"APIKEY_CREATE":      "Creación de API Key",
-	"APIKEY_SET_PERMS":   "Configuración de permisos de API Key",
-	"APIKEY_REVOKE":      "Revocación de API Key",
 
 	"PUSH_DEVICE_CREATE": "Registro de dispositivo push",
 	"PUSH_DEVICE_UPDATE": "Actualización de dispositivo push",
@@ -2880,81 +2869,6 @@ func (h *Handlers) ListPatientLocations(w http.ResponseWriter, r *http.Request) 
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	list, err := h.repo.ListPatientLocations(ctx, filters, limit, offset)
-	if err != nil {
-		writeProblem(w, 500, "db_error", err.Error(), nil)
-		return
-	}
-	writeJSON(w, 200, list)
-}
-
-// API Keys
-
-type apiKeyCreateReq struct {
-	Label     string     `json:"label" validate:"required,min=3,max=120"`
-	ExpiresAt *time.Time `json:"expires_at"`
-	RawKey    string     `json:"raw_key" validate:"required,min=24"`
-	OwnerUser *string    `json:"owner_user_id" validate:"omitempty,uuid4"`
-}
-
-func (h *Handlers) CreateAPIKey(w http.ResponseWriter, r *http.Request) {
-	var req apiKeyCreateReq
-	fields, err := decodeAndValidate(r, &req, h.validate)
-	if err != nil {
-		writeProblem(w, 400, "bad_request", "invalid payload", fields)
-		return
-	}
-	hash := sha256.Sum256([]byte(req.RawKey))
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	id, err := h.repo.CreateAPIKey(ctx, req.Label, req.ExpiresAt, hex.EncodeToString(hash[:]), req.OwnerUser)
-	if err != nil {
-		writeProblem(w, 500, "db_error", err.Error(), nil)
-		return
-	}
-	h.writeAudit(ctx, r, "APIKEY_CREATE", "api_key", &id, map[string]any{"label": req.Label})
-	writeJSON(w, 201, map[string]string{"id": id, "hash": hex.EncodeToString(hash[:])})
-}
-
-type apiKeyPermsReq struct {
-	Permissions []string `json:"permissions" validate:"required,min=1,dive,required"`
-}
-
-func (h *Handlers) SetAPIKeyPermissions(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	var req apiKeyPermsReq
-	fields, err := decodeAndValidate(r, &req, h.validate)
-	if err != nil {
-		writeProblem(w, 400, "bad_request", "invalid payload", fields)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.SetAPIKeyPermissions(ctx, id, req.Permissions); err != nil {
-		writeProblem(w, 400, "db_error", err.Error(), nil)
-		return
-	}
-	h.writeAudit(ctx, r, "APIKEY_SET_PERMS", "api_key", &id, map[string]any{"count": len(req.Permissions)})
-	w.WriteHeader(204)
-}
-
-func (h *Handlers) RevokeAPIKey(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.RevokeAPIKey(ctx, id); err != nil {
-		writeProblem(w, 400, "db_error", err.Error(), nil)
-		return
-	}
-	h.writeAudit(ctx, r, "APIKEY_REVOKE", "api_key", &id, nil)
-	w.WriteHeader(204)
-}
-
-func (h *Handlers) ListAPIKeys(w http.ResponseWriter, r *http.Request) {
-	limit, offset := parseLimitOffset(r)
-	activeOnly := parseBool(r.URL.Query().Get("active_only"), false)
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	list, err := h.repo.ListAPIKeys(ctx, activeOnly, limit, offset)
 	if err != nil {
 		writeProblem(w, 500, "db_error", err.Error(), nil)
 		return

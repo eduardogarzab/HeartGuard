@@ -93,7 +93,6 @@ Todas las rutas están bajo `/superadmin` y exigen sesión con rol `superadmin`.
 | `/users`              | `users.html`                                          | Listado de usuarios y cambio de estatus (`active`, `pending`, `blocked`).   |
 | `/roles`              | `roles.html`                                          | Alta/baja de roles, asignación de permisos y usuarios.                      |
 | `/catalogs`           | `catalogs.html`                                       | CRUD unificado para catálogos parametrizables (`?catalog=...`).             |
-| `/api-keys`           | `api_keys.html`                                       | Generación, actualización de permisos y revocación de API keys.             |
 | `/audit`              | `audit.html`                                          | Visor con filtros de acciones y entidades.                                  |
 | `/settings/system`    | `settings.html`                                       | Configuración global (branding, contacto, mensajes de mantenimiento).       |
 

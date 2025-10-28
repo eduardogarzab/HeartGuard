@@ -188,13 +188,6 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			cr.Post("/{catalog}/{id}/delete", uiHandlers.CatalogsDelete)
 		})
 
-		s.Route("/api-keys", func(ar chi.Router) {
-			ar.Get("/", uiHandlers.APIKeysIndex)
-			ar.Post("/", uiHandlers.APIKeysCreate)
-			ar.Post("/{id}/permissions", uiHandlers.APIKeysUpdatePermissions)
-			ar.Post("/{id}/revoke", uiHandlers.APIKeysRevoke)
-		})
-
 		s.Get("/audit", uiHandlers.AuditIndex)
 		s.Get("/settings/system", uiHandlers.SystemSettingsForm)
 		s.Post("/settings/system", uiHandlers.SystemSettingsUpdate)
