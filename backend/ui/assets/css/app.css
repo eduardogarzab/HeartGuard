@@ -1,3 +1,18 @@
+/* Tamaño aumentado para fotos de perfil */
+.hg-avatar {
+	width: 48px;
+	height: 48px;
+	border-radius: 50%;
+	object-fit: cover;
+}
+.hg-avatar--large {
+	width: 90px;
+	height: 90px;
+}
+/* Centrado vertical únicamente en tablas */
+table th, table td {
+	vertical-align: middle !important;
+}
 :root {
 	--hg-font-sans: "Inter", "Segoe UI", Roboto, system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
 	--hg-font-mono: "JetBrains Mono", "Fira Code", Menlo, Consolas, "Liberation Mono", monospace;

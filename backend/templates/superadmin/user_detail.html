@@ -1,7 +1,7 @@
 {{define "superadmin/user_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/user_detail.html:content"}}
 <section class="hg-section">
 	<div class="hg-detail-header">
-		<img src="{{if .Data.User.ProfilePhotoURL}}{{.Data.User.ProfilePhotoURL}}{{else}}/assets/img/user_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar hg-avatar--large" />
+	<img src="{{if .Data.User.ProfilePhotoURL}}{{.Data.User.ProfilePhotoURL}}{{else}}/ui-assets/img/user_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar hg-avatar--large" />
 		<div>
 			<h1>{{.Data.User.Name}}</h1>
 			<p class="hg-detail-subtitle">Registrado {{formatTime .Data.User.CreatedAt}}</p>
