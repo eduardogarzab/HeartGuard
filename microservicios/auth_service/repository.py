@@ -1,4 +1,5 @@
 from typing import Optional, Dict, Any, List
+
 from db import get_conn, put_conn
 
 def fetch_user_by_email(email: str) -> Optional[Dict[str, Any]]:
@@ -22,6 +23,24 @@ def fetch_user_by_email(email: str) -> Optional[Dict[str, Any]]:
                 "password_hash": row[3],
                 "user_status_id": str(row[4]) if row[4] else None
             }
+    finally:
+        put_conn(conn)
+
+
+def fetch_primary_org_for_user(user_id: str) -> Optional[str]:
+    sql = """
+        SELECT org_id
+          FROM user_org_membership
+         WHERE user_id = %s
+         ORDER BY joined_at ASC
+         LIMIT 1;
+    """
+    conn = get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, (user_id,))
+            row = cur.fetchone()
+            return str(row[0]) if row else None
     finally:
         put_conn(conn)
 
