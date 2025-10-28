@@ -20,42 +20,8 @@ LAST_RESULT="UNKNOWN"
 EXIT_CODE=0
 ABORT_TESTS=0
 
-PID_AUTH=""
-PID_ORG=""
-PID_AUDIT=""
-PID_GATEWAY=""
+declare -A SERVICE_PIDS
 ORG_PID_KILLED=0
-
-set_service_pid() {
-  local tag="$1"
-  local pid="$2"
-  case "$tag" in
-    AUTH) PID_AUTH="$pid" ;;
-    ORG) PID_ORG="$pid" ;;
-    AUDIT) PID_AUDIT="$pid" ;;
-    GATEWAY) PID_GATEWAY="$pid" ;;
-  esac
-}
-
-get_service_pid() {
-  local tag="$1"
-  case "$tag" in
-    AUTH) echo "$PID_AUTH" ;;
-    ORG) echo "$PID_ORG" ;;
-    AUDIT) echo "$PID_AUDIT" ;;
-    GATEWAY) echo "$PID_GATEWAY" ;;
-  esac
-}
-
-clear_service_pid() {
-  local tag="$1"
-  case "$tag" in
-    AUTH) PID_AUTH="" ;;
-    ORG) PID_ORG="" ;;
-    AUDIT) PID_AUDIT="" ;;
-    GATEWAY) PID_GATEWAY="" ;;
-  esac
-}
 
 mkdir -p "$LOG_DIR"
 : > "$REPORT"
@@ -258,7 +224,7 @@ start_service() {
     return 1
   fi
 
-  set_service_pid "$tag" "$pid"
+  SERVICE_PIDS[$tag]="$pid"
   log "Start $tag" "PID $pid"
   sleep 6
   if kill -0 "$pid" >/dev/null 2>&1; then
@@ -272,13 +238,12 @@ start_service() {
 
 stop_service() {
   local tag="$1"
-  local pid
-  pid="$(get_service_pid "$tag")"
+  local pid="${SERVICE_PIDS[$tag]:-}"
   if [[ -n "$pid" ]]; then
     if kill "$pid" >/dev/null 2>&1; then
       log "Stop $tag" "PID $pid detenido"
     fi
-    clear_service_pid "$tag"
+    unset "SERVICE_PIDS[$tag]"
   fi
 }
 
@@ -457,13 +422,12 @@ PY
 }
 
 degradation_test() {
-  local org_pid
-  org_pid="$(get_service_pid ORG)"
+  local org_pid="${SERVICE_PIDS[ORG]:-}"
   if [[ -n "$org_pid" && -n "${GW_ACCESS_TOKEN:-}" ]]; then
     log "Degradacion" "Deteniendo org_service (PID $org_pid)"
     if kill "$org_pid" >>"$LOG_DIR/stop_org_service.log" 2>&1; then
       ORG_PID_KILLED=1
-      clear_service_pid ORG
+      unset "SERVICE_PIDS[ORG]"
     fi
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local tmp_file="$LOG_DIR/test_${TEST_COUNTER}.json"
