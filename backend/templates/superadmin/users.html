@@ -39,9 +39,11 @@
 				{{range .Data.Users}} {{$user := .}}
 				<tr>
 					<td>
-					<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/ui-assets/img/user_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+						<a href="/superadmin/users/{{.ID}}">
+							<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/ui-assets/img/user_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+						</a>
 					</td>
-					<td>{{.Name}}</td>
+						<td><a href="/superadmin/users/{{.ID}}">{{.Name}}</a></td>
 					<td>{{.Email}}</td>
 					<td>
 						<span class="hg-status-chip {{if eq .Status "active"}}is-success{{else if eq .Status "blocked"}}is-danger{{else}}is-warn{{end}}">
@@ -93,7 +95,7 @@
 				</tr>
 				{{else}}
 				<tr>
-					<td colspan="8" class="hg-empty-cell">No se encontraron usuarios.</td>
+					<td colspan="9" class="hg-empty-cell">No se encontraron usuarios.</td>
 				</tr>
 				{{end}}
 			</tbody>

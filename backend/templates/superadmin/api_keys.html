@@ -40,7 +40,7 @@
 <section class="hg-section">
 	<div class="hg-toolbar">
 		<form method="get" action="/superadmin/api-keys" class="hg-form-inline">
-			<label> <input type="checkbox" name="show" value="all" {{if .Data.ShowInactive}}checked{{end}} onchange="this.form.submit()" /> Mostrar revocadas </label>
+			<label> <input type="checkbox" name="show" value="all" {{if .Data.ShowInactive}}checked{{end}} class="hg-autoform" /> Mostrar revocadas </label>
 		</form>
 	</div>
 	<table class="hg-table">

@@ -69,9 +69,11 @@
 				{{$patient := .}}
 				<tr>
 					<td>
-						<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/ui-assets/img/patient_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+						<a href="/superadmin/patients/{{$patient.ID}}">
+							<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/ui-assets/img/patient_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
+						</a>
 					</td>
-					<td>{{$patient.Name}}</td>
+					<td><a href="/superadmin/patients/{{$patient.ID}}">{{$patient.Name}}</a></td>
 					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
 					<td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
 					<td>{{if ne (stringValue $patient.RiskLevel) ""}}{{stringValue $patient.RiskLevel}}{{else}}—{{end}}</td>
@@ -129,7 +131,7 @@
 				</tr>
 				{{else}}
 				<tr>
-					<td colspan="7" class="hg-empty-cell">Sin pacientes registrados.</td>
+					<td colspan="8" class="hg-empty-cell">Sin pacientes registrados.</td>
 				</tr>
 				{{end}}
 			</tbody>

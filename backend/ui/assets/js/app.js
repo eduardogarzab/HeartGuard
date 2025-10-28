@@ -708,6 +708,16 @@ document.addEventListener("DOMContentLoaded", () => {
 		});
 	});
 
+	document.querySelectorAll("form.hg-autoform input").forEach((input) => {
+		input.addEventListener("change", () => {
+			const form = input.closest("form.hg-autoform");
+			if (!form) {
+				return;
+			}
+			form.submit();
+		});
+	});
+
 	document.querySelectorAll("[data-hg-stream-selector]").forEach((select) => {
 		select.addEventListener("change", () => {
 			const form = select.closest("form");
