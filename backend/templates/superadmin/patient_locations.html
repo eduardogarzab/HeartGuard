@@ -121,7 +121,7 @@
 		</table>
 	</div>
 </section>
-{{end}} {{define "scripts"}}
+{{end}} {{define "scripts"}} {{if .Data.LocationsJSON}}
 <script>
 	document.addEventListener('DOMContentLoaded', function () {
 		new SlimSelect({
@@ -138,7 +138,7 @@
 			},
 		});
 
-		const locationsData = {{.Data.LocationsJSON}};
+		const locationsData = JSON.parse(`{{js .Data.LocationsJSON}}`);
 		if (locationsData.length > 0) {
 			const map = L.map('locations-map').setView([locationsData[0].lat, locationsData[0].lng], 13);
 			L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
@@ -170,4 +170,4 @@
 		}
 	});
 </script>
-{{end}}
+{{end}} {{end}}

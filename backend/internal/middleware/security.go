@@ -10,11 +10,12 @@ func SecurityHeaders() func(http.Handler) http.Handler {
         return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
             csp := []string{
                 "default-src 'self'",
-                "script-src 'self' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js 'unsafe-inline'",
-                "style-src 'self' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css 'unsafe-inline'",
+                "script-src 'self' https://unpkg.com/leaflet@1.9.4/dist/leaflet.js https://cdnjs.cloudflare.com 'unsafe-inline'",
+                "style-src 'self' https://unpkg.com/leaflet@1.9.4/dist/leaflet.css https://cdnjs.cloudflare.com 'unsafe-inline'",
                 "img-src 'self' data: https://tiles.stadiamaps.com/ https://unpkg.com/leaflet@1.9.4/dist/images/",
                 "font-src 'self'",
                 "frame-ancestors 'none'",
+                "connect-src 'self' https://unpkg.com",
             }
             w.Header().Set("Content-Security-Policy", strings.Join(csp, "; "))
             w.Header().Set("X-Frame-Options", "DENY")
