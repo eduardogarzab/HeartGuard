@@ -397,6 +397,7 @@ type Inference struct {
 	Score        *float32  `json:"score,omitempty"`
 	Threshold    *float32  `json:"threshold,omitempty"`
 	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
 	SeriesRef    *string   `json:"series_ref,omitempty"`
 }
 

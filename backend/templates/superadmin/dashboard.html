@@ -28,12 +28,12 @@
 		{{if .Data.ResponseStats}}
 		<article class="hg-kpi-card">
 			<span class="hg-kpi-label">Tiempo Medio de Acuse (MTTA)</span>
-			<span class="hg-kpi-value">{{if gt .Data.ResponseStats.AvgAckDuration.Seconds 0}}{{formatDuration .Data.ResponseStats.AvgAckDuration}}{{else}}—{{end}}</span>
+			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgAckDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgAckDuration}}{{else}}—{{end}}</span>
 			<span class="hg-kpi-caption">Tiempo promedio para acusar alertas</span>
 		</article>
 		<article class="hg-kpi-card">
 			<span class="hg-kpi-label">Tiempo Medio de Resolución (MTTR)</span>
-			<span class="hg-kpi-value">{{if gt .Data.ResponseStats.AvgResolveDuration.Seconds 0}}{{formatDuration .Data.ResponseStats.AvgResolveDuration}}{{else}}—{{end}}</span>
+			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgResolveDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgResolveDuration}}{{else}}—{{end}}</span>
 			<span class="hg-kpi-caption">Tiempo promedio para resolver alertas</span>
 		</article>
 		{{end}}

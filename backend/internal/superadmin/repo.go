@@ -190,15 +190,15 @@ LIMIT $1 OFFSET $2
 
 func (r *Repo) GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([]models.StatusBreakdown, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT
-	outcome AS code,
-	outcome AS label,
-	COUNT(*) AS count
-FROM alert_resolutions
-WHERE resolved_at >= $1
-GROUP BY outcome
-ORDER BY count DESC;
-`, since)
+        SELECT
+            outcome AS code,
+            outcome AS label,
+            COUNT(*) AS count
+        FROM alert_resolution
+        WHERE resolved_at >= $1
+        GROUP BY outcome
+        ORDER BY count DESC;
+    `, since)
 	if err != nil {
 		return nil, err
 	}
@@ -260,20 +260,21 @@ ORDER BY active DESC;
 
 func (r *Repo) GetPatientRiskBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT
-	risk_level_code AS code,
-	risk_level_label AS label,
-	COUNT(*) AS count
-FROM v_patients
-GROUP BY risk_level_code, risk_level_label
-ORDER BY
-	CASE
-		WHEN risk_level_code = 'high' THEN 1
-		WHEN risk_level_code = 'medium' THEN 2
-		WHEN risk_level_code = 'low' THEN 3
-		ELSE 4
-	END;
-`)
+        SELECT
+            rl.code AS code,
+            rl.label AS label,
+            COUNT(*) AS count
+        FROM patients p
+        LEFT JOIN risk_levels rl ON rl.id = p.risk_level_id
+        GROUP BY rl.code, rl.label
+        ORDER BY
+            CASE
+                WHEN rl.code = 'high' THEN 1
+                WHEN rl.code = 'medium' THEN 2
+                WHEN rl.code = 'low' THEN 3
+                ELSE 4
+            END;
+    `)
 	if err != nil {
 		return nil, err
 	}
@@ -2694,38 +2695,130 @@ func (r *Repo) DeleteInference(ctx context.Context, id string) error {
 	return nil
 }
 
-type groundTruthScanner interface {
-	Scan(dest ...any) error
+func (r *Repo) ListUserInferences(ctx context.Context, userID string, limit, offset int) ([]models.Inference, error) {
+	rows, err := r.pool.Query(ctx, `
+SELECT
+	i.id,
+	i.model_id,
+	m.name AS model_name,
+	i.stream_id,
+	i.event_code,
+	i.event_label,
+	i.window_start,
+	i.window_end,
+	i.score,
+	i.threshold,
+	i.created_at,
+	i.updated_at
+FROM heartguard.inferences i
+JOIN heartguard.models m ON m.id = i.model_id
+WHERE i.user_id = $1
+ORDER BY i.created_at DESC
+LIMIT $2 OFFSET $3
+`, userID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.Inference
+	for rows.Next() {
+		var (
+			inf          models.Inference
+			modelName    sql.NullString
+			eventCode    sql.NullString
+			eventLabel   sql.NullString
+			windowStart  sql.NullTime
+			windowEnd    sql.NullTime
+			score        sql.NullFloat64
+			threshold    sql.NullFloat64
+			seriesRef    sql.NullString
+		)
+		if err := rows.Scan(&inf.ID, &inf.ModelID, &modelName, &inf.StreamID, &eventCode, &eventLabel, &windowStart, &windowEnd, &score, &threshold, &inf.CreatedAt, &inf.UpdatedAt); err != nil {
+			return nil, err
+		}
+		if modelName.Valid {
+			v := modelName.String
+			inf.ModelName = &v
+		}
+		if eventCode.Valid {
+			v := eventCode.String
+			inf.EventCode = v
+		}
+		if eventLabel.Valid {
+			v := eventLabel.String
+			inf.EventLabel = v
+		}
+		if windowStart.Valid {
+			inf.WindowStart = windowStart.Time
+		}
+		if windowEnd.Valid {
+			inf.WindowEnd = windowEnd.Time
+		}
+		if score.Valid {
+			v := float32(score.Float64)
+			inf.Score = &v
+		}
+		if threshold.Valid {
+			v := float32(threshold.Float64)
+			inf.Threshold = &v
+		}
+		if seriesRef.Valid {
+			v := seriesRef.String
+			inf.SeriesRef = &v
+		}
+		out = append(out, inf)
+	}
+	return out, rows.Err()
 }
 
-func scanGroundTruthLabel(scan groundTruthScanner) (models.GroundTruthLabel, error) {
+// ------------------------------
+// Ground truth labels
+// ------------------------------
+
+func scanGroundTruthLabel(scanner scanTarget) (models.GroundTruthLabel, error) {
 	var (
-		label         models.GroundTruthLabel
-		eventLabel    sql.NullString
-		offset        sql.NullTime
-		annotatedID   sql.NullString
-		annotatedName sql.NullString
-		source        sql.NullString
-		note          sql.NullString
+		label models.GroundTruthLabel
+		eventTypeCode sql.NullString
+		eventTypeLabel sql.NullString
+		offsetAt sql.NullTime
+		annotatedByUserID sql.NullString
+		annotatedByName sql.NullString
+		source sql.NullString
+		note sql.NullString
 	)
-	if err := scan.Scan(&label.ID, &label.PatientID, &label.PatientName, &label.EventTypeID, &label.EventTypeCode, &eventLabel, &label.Onset, &offset, &annotatedID, &annotatedName, &source, &note); err != nil {
-		return models.GroundTruthLabel{}, err
+	if err := scanner.Scan(
+		&label.ID,
+		&label.PatientID,
+		&label.PatientName,
+		&label.EventTypeID,
+		&eventTypeCode,
+		&eventTypeLabel,
+		&label.Onset,
+		&offsetAt,
+		&annotatedByUserID,
+		&annotatedByName,
+		&source,
+		&note,
+	); err != nil {
+		return label, err
 	}
-	if eventLabel.Valid && eventLabel.String != "" {
-		label.EventTypeLabel = eventLabel.String
-	} else {
-		label.EventTypeLabel = label.EventTypeCode
+	if eventTypeCode.Valid {
+		label.EventTypeCode = eventTypeCode.String
 	}
-	if offset.Valid {
-		ts := offset.Time
-		label.OffsetAt = &ts
+	if eventTypeLabel.Valid {
+		label.EventTypeLabel = eventTypeLabel.String
 	}
-	if annotatedID.Valid {
-		v := annotatedID.String
+	if offsetAt.Valid {
+		t := offsetAt.Time
+		label.OffsetAt = &t
+	}
+	if annotatedByUserID.Valid {
+		v := annotatedByUserID.String
 		label.AnnotatedByUserID = &v
 	}
-	if annotatedName.Valid {
-		v := annotatedName.String
+	if annotatedByName.Valid {
+		v := annotatedByName.String
 		label.AnnotatedByName = &v
 	}
 	if source.Valid {
@@ -2738,10 +2831,6 @@ func scanGroundTruthLabel(scan groundTruthScanner) (models.GroundTruthLabel, err
 	}
 	return label, nil
 }
-
-// ------------------------------
-// Ground truth labels
-// ------------------------------
 
 func (r *Repo) ListGroundTruthByPatient(ctx context.Context, patientID string, limit, offset int) ([]models.GroundTruthLabel, error) {
 	rows, err := r.pool.Query(ctx, `
