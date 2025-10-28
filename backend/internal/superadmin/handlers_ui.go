@@ -66,6 +66,8 @@ type Repository interface {
 	ListOrganizationCareTeams(ctx context.Context, orgID string, limit int) ([]models.CareTeam, error)
 	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
 	DeleteOrganization(ctx context.Context, id string) error
+	ListRiskLevels(ctx context.Context) ([]models.RiskLevel, error)
+	ListTeamMemberRoles(ctx context.Context) ([]models.TeamMemberRole, error)
 
 	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error)
 	ListInvitations(ctx context.Context, orgID *string, limit, offset int) ([]models.OrgInvitation, error)
@@ -233,6 +235,8 @@ var allowedCatalogs = map[string]catalogMeta{
 	"delivery_statuses": {Label: "Estados de entrega"},
 	"org_roles":        {Label: "Roles de organización"},
 	"device_types":     {Label: "Tipos de dispositivo"},
+	"risk_levels":      {Label: "Niveles de riesgo", RequiresWeight: true},
+	"team_member_roles": {Label: "Roles de equipo"},
 }
 
 var operationLabels = map[string]string{
@@ -1297,11 +1301,10 @@ type userDetailData struct {
 }
 
 type patientDetailData struct {
-	Patient   *models.Patient
-	RiskLevel string
-	CareTeams []models.PatientCareTeamLink
+	Patient    *models.Patient
+	CareTeams  []models.PatientCareTeamLink
 	Caregivers []models.CaregiverAssignment
-	Locations []patientLocationRow
+	Locations  []patientLocationRow
 }
 
 type patientLocationRow struct {
@@ -1442,6 +1445,7 @@ type patientsViewData struct {
 	Items         []models.Patient
 	Organizations []models.Organization
 	Sexes         []models.CatalogItem
+	RiskLevels    []models.RiskLevel
 }
 
 type groundTruthViewData struct {
@@ -1538,6 +1542,7 @@ type careTeamsViewData struct {
 	TeamPatients  map[string][]models.PatientCareTeamLink
 	Users         []models.User
 	Patients      []models.Patient
+	Roles         []models.TeamMemberRole
 }
 
 type caregiversViewData struct {
@@ -2353,8 +2358,13 @@ func (h *Handlers) PatientsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los catálogos", http.StatusInternalServerError)
 		return
 	}
+	riskLevels, err := h.repo.ListRiskLevels(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los niveles de riesgo", http.StatusInternalServerError)
+		return
+	}
 
-	data := patientsViewData{Items: patients, Organizations: orgs, Sexes: sexes}
+	data := patientsViewData{Items: patients, Organizations: orgs, Sexes: sexes, RiskLevels: riskLevels}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes"}}
 	h.render(w, r, "superadmin/patients.html", "Pacientes", data, crumbs)
 }
@@ -2390,10 +2400,6 @@ func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
 		return
 	}
-	riskLevel := ""
-	if patient.RiskLevel != nil {
-		riskLevel = *patient.RiskLevel
-	}
 	locationRows := make([]patientLocationRow, len(locations))
 	for i, loc := range locations {
 		accuracy := ""
@@ -2411,7 +2417,6 @@ func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
 
 	data := patientDetailData{
 		Patient:    patient,
-		RiskLevel:  riskLevel,
 		CareTeams:  careTeams,
 		Caregivers: caregivers,
 		Locations: locationRows,
@@ -2453,7 +2458,7 @@ func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
 		lower := strings.ToLower(sexRaw)
 		sexCode = &lower
 	}
-	riskRaw := strings.TrimSpace(r.FormValue("risk_level"))
+	riskRaw := strings.TrimSpace(r.FormValue("risk_level_id"))
 	var risk *string
 	if riskRaw != "" {
 		risk = &riskRaw
@@ -2465,7 +2470,7 @@ func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
 		photoURL = &photoURLRaw
 	}
 
-	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk, ProfilePhotoURL: photoURL}
+	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevelID: risk, ProfilePhotoURL: photoURL}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	patient, err := h.repo.CreatePatient(ctx, input)
@@ -2513,7 +2518,7 @@ func (h *Handlers) PatientsUpdate(w http.ResponseWriter, r *http.Request) {
 		lower := strings.ToLower(sexRaw)
 		sexCode = &lower
 	}
-	riskRaw := strings.TrimSpace(r.FormValue("risk_level"))
+	riskRaw := strings.TrimSpace(r.FormValue("risk_level_id"))
 	var risk *string
 	if riskRaw != "" {
 		risk = &riskRaw
@@ -2523,7 +2528,7 @@ func (h *Handlers) PatientsUpdate(w http.ResponseWriter, r *http.Request) {
 	if photoURLRaw != "" {
 		photoURL = &photoURLRaw
 	}
-	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevel: risk, ProfilePhotoURL: photoURL}
+	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevelID: risk, ProfilePhotoURL: photoURL}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	patient, err := h.repo.UpdatePatient(ctx, id, input)
@@ -2576,6 +2581,11 @@ func (h *Handlers) CareTeamsIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los pacientes", http.StatusInternalServerError)
 		return
 	}
+	roles, err := h.repo.ListTeamMemberRoles(ctx)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
+		return
+	}
 
 	members := make(map[string][]models.CareTeamMember, len(teams))
 	teamPatients := make(map[string][]models.PatientCareTeamLink, len(teams))
@@ -2607,6 +2617,7 @@ func (h *Handlers) CareTeamsIndex(w http.ResponseWriter, r *http.Request) {
 		TeamPatients:  teamPatients,
 		Users:         users,
 		Patients:      patients,
+		Roles:         roles,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Equipos de cuidado"}}
 	h.render(w, r, "superadmin/care_teams.html", "Equipos de cuidado", data, crumbs)
@@ -2702,15 +2713,15 @@ func (h *Handlers) CareTeamMembersAdd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := strings.TrimSpace(r.FormValue("user_id"))
-	role := strings.TrimSpace(r.FormValue("role_in_team"))
-	if userID == "" || role == "" {
+	roleID := strings.TrimSpace(r.FormValue("role_id"))
+	if userID == "" || roleID == "" {
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Usuario y rol son obligatorios"})
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	member, err := h.repo.AddCareTeamMember(ctx, teamID, models.CareTeamMemberInput{UserID: userID, RoleInTeam: role})
+	member, err := h.repo.AddCareTeamMember(ctx, teamID, models.CareTeamMemberInput{UserID: userID, RoleID: roleID})
 	if err != nil {
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo agregar al equipo"})
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
@@ -2728,15 +2739,15 @@ func (h *Handlers) CareTeamMembersUpdate(w http.ResponseWriter, r *http.Request)
 		http.Error(w, "formulario inválido", http.StatusBadRequest)
 		return
 	}
-	role := strings.TrimSpace(r.FormValue("role_in_team"))
-	if role == "" {
+	roleID := strings.TrimSpace(r.FormValue("role_id"))
+	if roleID == "" {
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El rol es obligatorio"})
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)
 		return
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	_, err := h.repo.UpdateCareTeamMember(ctx, teamID, userID, models.CareTeamMemberUpdateInput{RoleInTeam: &role})
+	_, err := h.repo.UpdateCareTeamMember(ctx, teamID, userID, models.CareTeamMemberUpdateInput{RoleID: &roleID})
 	if err != nil {
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el miembro"})
 		http.Redirect(w, r, "/superadmin/care-teams", http.StatusSeeOther)

@@ -72,24 +72,26 @@ type MetricsOverview struct {
 }
 
 type Patient struct {
-	ID        string     `json:"id"`
-	OrgID     *string    `json:"org_id,omitempty"`
-	OrgName   *string    `json:"org_name,omitempty"`
-	Name      string     `json:"name"`
-	Birthdate *time.Time `json:"birthdate,omitempty"`
+	ID              string     `json:"id"`
+	OrgID           *string    `json:"org_id,omitempty"`
+	OrgName         *string    `json:"org_name,omitempty"`
+	Name            string     `json:"name"`
+	Birthdate       *time.Time `json:"birthdate,omitempty"`
 	SexCode         *string    `json:"sex_code,omitempty"`
 	SexLabel        *string    `json:"sex_label,omitempty"`
-	RiskLevel       *string    `json:"risk_level,omitempty"`
+	RiskLevelID     *string    `json:"risk_level_id,omitempty"`
+	RiskLevelCode   *string    `json:"risk_level_code,omitempty"`
+	RiskLevelLabel  *string    `json:"risk_level_label,omitempty"`
 	ProfilePhotoURL *string    `json:"profile_photo_url,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type PatientInput struct {
-	OrgID     *string    `json:"org_id,omitempty"`
+	OrgID           *string    `json:"org_id,omitempty"`
 	Name            string     `json:"name"`
 	Birthdate       *time.Time `json:"birthdate,omitempty"`
 	SexCode         *string    `json:"sex_code,omitempty"`
-	RiskLevel       *string    `json:"risk_level,omitempty"`
+	RiskLevelID     *string    `json:"risk_level_id,omitempty"`
 	ProfilePhotoURL *string    `json:"profile_photo_url,omitempty"`
 }
 
@@ -117,17 +119,19 @@ type CareTeamMember struct {
 	UserID       string    `json:"user_id"`
 	UserName     string    `json:"user_name"`
 	UserEmail    string    `json:"user_email"`
-	RoleInTeam   string    `json:"role_in_team"`
+	RoleID       string    `json:"role_id"`
+	RoleCode     string    `json:"role_code"`
+	RoleLabel    string    `json:"role_label"`
 	JoinedAt     time.Time `json:"joined_at"`
 }
 
 type CareTeamMemberInput struct {
-	UserID     string `json:"user_id"`
-	RoleInTeam string `json:"role_in_team"`
+	UserID string `json:"user_id"`
+	RoleID string `json:"role_id"`
 }
 
 type CareTeamMemberUpdateInput struct {
-	RoleInTeam *string `json:"role_in_team,omitempty"`
+	RoleID *string `json:"role_id,omitempty"`
 }
 
 type PatientCareTeamLink struct {
@@ -707,4 +711,17 @@ type SystemSettingsInput struct {
 	DefaultTimezone    string  `json:"default_timezone"`
 	MaintenanceMode    bool    `json:"maintenance_mode"`
 	MaintenanceMessage *string `json:"maintenance_message,omitempty"`
+}
+
+type RiskLevel struct {
+	ID     string  `json:"id"`
+	Code   string  `json:"code"`
+	Label  string  `json:"label"`
+	Weight *int    `json:"weight,omitempty"`
+}
+
+type TeamMemberRole struct {
+	ID    string `json:"id"`
+	Code  string `json:"code"`
+	Label string `json:"label"`
 }

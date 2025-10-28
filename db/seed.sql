@@ -47,6 +47,19 @@ INSERT INTO delivery_statuses(code,label) VALUES
   ('SENT','Enviado'),('DELIVERED','Entregado'),('FAILED','Fallido')
 ON CONFLICT (code) DO NOTHING;
 
+INSERT INTO risk_levels(code, label, weight) VALUES
+  ('low', 'Bajo', 1),
+  ('medium', 'Medio', 2),
+  ('high', 'Alto', 3)
+ON CONFLICT (code) DO NOTHING;
+
+INSERT INTO team_member_roles(code, label) VALUES
+  ('doctor', 'Doctor/a'),
+  ('nurse', 'Enfermero/a'),
+  ('admin', 'Administrador/a de Equipo'),
+  ('specialist', 'Especialista')
+ON CONFLICT (code) DO NOTHING;
+
 -- Roles globales y permisos
 INSERT INTO roles(name, description) VALUES
   ('superadmin','Full system access'),
@@ -352,7 +365,7 @@ ON CONFLICT (id) DO NOTHING;
 -- Datos demo clínicos y operativos
 -- =========================================================
 
-INSERT INTO patients (id, org_id, person_name, birthdate, sex_id, risk_level, created_at)
+INSERT INTO patients (id, org_id, person_name, birthdate, sex_id, risk_level_id, created_at)
 VALUES
   (
     '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
@@ -360,7 +373,7 @@ VALUES
     'María Delgado',
     '1978-03-22',
     (SELECT id FROM sexes WHERE code='F'),
-    'high',
+    (SELECT id FROM risk_levels WHERE code='high'),
     NOW() - INTERVAL '120 days'
   ),
   (
@@ -369,7 +382,7 @@ VALUES
     'José Hernández',
     '1965-11-04',
     (SELECT id FROM sexes WHERE code='M'),
-    'medium',
+    (SELECT id FROM risk_levels WHERE code='medium'),
     NOW() - INTERVAL '180 days'
   ),
   (
@@ -378,7 +391,7 @@ VALUES
     'Valeria Ortiz',
     '1992-07-15',
     (SELECT id FROM sexes WHERE code='F'),
-    'low',
+    (SELECT id FROM risk_levels WHERE code='low'),
     NOW() - INTERVAL '45 days'
   )
 ON CONFLICT (id) DO NOTHING;
@@ -399,20 +412,20 @@ VALUES
   )
 ON CONFLICT (id) DO NOTHING;
 
-INSERT INTO care_team_member (care_team_id, user_id, role_in_team, joined_at)
-SELECT '1ad17404-323c-4469-86eb-aef83336d1c9'::uuid, u.id, 'Cardióloga tratante', NOW() - INTERVAL '120 days'
+INSERT INTO care_team_member (care_team_id, user_id, role_id, joined_at)
+SELECT '1ad17404-323c-4469-86eb-aef83336d1c9'::uuid, u.id, (SELECT id FROM team_member_roles WHERE code='specialist'), NOW() - INTERVAL '120 days'
 FROM users u
 WHERE u.email='ana.ruiz@heartguard.com'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO care_team_member (care_team_id, user_id, role_in_team, joined_at)
-SELECT '1ad17404-323c-4469-86eb-aef83336d1c9'::uuid, u.id, 'Analista de monitoreo', NOW() - INTERVAL '100 days'
+INSERT INTO care_team_member (care_team_id, user_id, role_id, joined_at)
+SELECT '1ad17404-323c-4469-86eb-aef83336d1c9'::uuid, u.id, (SELECT id FROM team_member_roles WHERE code='admin'), NOW() - INTERVAL '100 days'
 FROM users u
 WHERE u.email='martin.ops@heartguard.com'
 ON CONFLICT DO NOTHING;
 
-INSERT INTO care_team_member (care_team_id, user_id, role_in_team, joined_at)
-SELECT 'a9c83e54-30e5-4487-abb5-1f97a10cca17'::uuid, u.id, 'Supervisor clínico', NOW() - INTERVAL '150 days'
+INSERT INTO care_team_member (care_team_id, user_id, role_id, joined_at)
+SELECT 'a9c83e54-30e5-4487-abb5-1f97a10cca17'::uuid, u.id, (SELECT id FROM team_member_roles WHERE code='doctor'), NOW() - INTERVAL '150 days'
 FROM users u
 WHERE u.email='admin@heartguard.com'
 ON CONFLICT DO NOTHING;
