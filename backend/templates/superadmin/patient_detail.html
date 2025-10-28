@@ -8,8 +8,8 @@
 		</div>
 		<div class="hg-detail-meta">
 			{{if .Data.Patient.OrgName}}<span class="hg-detail-pill">{{.Data.Patient.OrgName}}</span>{{end}}
-			{{with .Data.Patient.RiskLevelCode}}
-			<span class="hg-status-chip {{if eq . "high"}}is-danger{{else if eq . "medium"}}is-warn{{else if eq . "low"}}is-success{{end}}">Riesgo: {{$.Data.Patient.RiskLevelLabel}}</span>
+			{{if .Data.Patient.RiskLevelCode}}
+			<span class="hg-status-chip {{if eq (stringValue .Data.Patient.RiskLevelCode) "high"}}is-danger{{else if eq (stringValue .Data.Patient.RiskLevelCode) "medium"}}is-warn{{else if eq (stringValue .Data.Patient.RiskLevelCode) "low"}}is-success{{end}}">Riesgo: {{if .Data.Patient.RiskLevelLabel}}{{stringValue .Data.Patient.RiskLevelLabel}}{{else}}—{{end}}</span>
 			{{end}}
 		</div>
 	</div>
