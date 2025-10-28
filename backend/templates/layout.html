@@ -7,11 +7,6 @@
 		<meta name="viewport" content="width=device-width, initial-scale=1" />
 		<title>{{if .Title}}{{.Title}} · {{end}}HeartGuard Admin</title>
 		<link rel="stylesheet" href="/ui-assets/css/app.css" />
-		<!-- Leaflet CSS for maps -->
-		<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-		<!-- Slim Select CSS for better dropdowns -->
-		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/slim-select/2.8.2/slimselect.min.css" integrity="sha512-QeMy1+3lMHWG33oW+cczcHLIsE5m2QhO8Bct2f/kLV2LdF1n2r3aY1V5T9aA2cHlD2llxadgN1fE3U2i8G1PqQ==" crossorigin="anonymous" referrerpolicy="no-referrer" />
-
 		<script defer src="/ui-assets/js/app.js"></script>
 		{{if .SessionExpiresAt}}
 		<script>
@@ -95,11 +90,6 @@
 				</div>
 			</div>
 		</div>
-		<!-- Leaflet JS for maps -->
-		<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-		<!-- Slim Select JS for better dropdowns -->
-		<script src="https://cdnjs.cloudflare.com/ajax/libs/slim-select/2.8.2/slimselect.min.js" integrity="sha512-T9tA4j6zWNroD3loB99jM2aK9n02fgzYyQsQ/FgwD/KyS++FwS7z9y3L/SzY2e/1j3ZJzKsnMPO8E1WeAy42Kw==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-		{{template "scripts" .}}
 	</body>
 </html>
-{{end}} {{define "scripts"}} {{end}}
+{{end}}
