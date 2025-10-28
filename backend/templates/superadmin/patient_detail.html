@@ -1,7 +1,7 @@
 {{define "superadmin/patient_detail.html"}} {{template "layout" .}} {{end}} {{define "superadmin/patient_detail.html:content"}}
 <section class="hg-section">
 	<div class="hg-detail-header">
-		<img src="{{if .Data.Patient.ProfilePhotoURL}}{{.Data.Patient.ProfilePhotoURL}}{{else}}/assets/img/patient_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar hg-avatar--large" />
+		<img src="{{if .Data.Patient.ProfilePhotoURL}}{{.Data.Patient.ProfilePhotoURL}}{{else}}/ui-assets/img/patient_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar hg-avatar--large" />
 		<div>
 			<h1>{{.Data.Patient.Name}}</h1>
 			<p class="hg-detail-subtitle">Registrado {{formatTime .Data.Patient.CreatedAt}}</p>
@@ -105,32 +105,78 @@
 			<h2>Últimas ubicaciones</h2>
 			<span class="hg-card-meta">{{len .Data.Locations}} registros</span>
 		</header>
-		<table class="hg-table">
-			<thead>
-				<tr>
-					<th>Registrado</th>
-					<th>Latitud</th>
-					<th>Longitud</th>
-					<th>Fuente</th>
-					<th>Precisión (m)</th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Data.Locations}}
-				<tr>
-					<td>{{formatTime .RecordedAt}}</td>
-					<td>{{printf "%.5f" .Latitude}}</td>
-					<td>{{printf "%.5f" .Longitude}}</td>
-					<td>{{if .Source}}{{.Source}}{{else}}—{{end}}</td>
-					<td>{{if .AccuracyText}}{{.AccuracyText}}{{else}}—{{end}}</td>
-				</tr>
-				{{else}}
-				<tr>
-					<td colspan="5" class="hg-empty-cell">Sin ubicaciones registradas.</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
+		<div id="patient-map" style="height: 400px; border-radius: 8px;"></div>
 	</div>
 </section>
+
+<script>
+	window.addEventListener('load', () => {
+		{{if .Data.Locations}}
+			// 1. Inicializar el mapa
+			const map = L.map('patient-map');
+			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+			}).addTo(map);
+
+			// 2. Definir íconos (actual vs. historial)
+			// *** INICIO DE CORRECCIÓN DE ÍCONOS ***
+			// Las URLs de cdn.rawgit.com estaban rotas. Usamos raw.githubusercontent.com
+			const currentIcon = L.icon({
+				iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-red.png',
+				shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+				iconSize: [25, 41],
+				iconAnchor: [12, 41],
+				popupAnchor: [1, -34],
+				shadowSize: [41, 41]
+			});
+
+			const historyIcon = L.icon({
+				iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+				shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+				iconSize: [25, 41],
+				iconAnchor: [12, 41],
+				popupAnchor: [1, -34],
+				shadowSize: [41, 41]
+			});
+			// *** FIN DE CORRECCIÓN DE ÍCONOS ***
+
+			const markers = [];
+
+			// 3. Iterar sobre las ubicaciones y agregar marcadores
+			{{range $i, $loc := .Data.Locations}}
+				// *** INICIO DE CORRECCIÓN JS (preventivo) ***
+				// Usamos una IIFE para asegurar un scope nuevo en cada iteración
+				(function() {
+					const lat = {{printf "%.5f" $loc.Latitude}};
+					const lng = {{printf "%.5f" $loc.Longitude}};
+					const timestamp = "{{formatTime $loc.RecordedAt}}";
+					let marker;
+
+					if ({{$i}} === 0) {
+						// Marcador para la ubicación MÁS RECIENTE (actual)
+						marker = L.marker([lat, lng], { icon: currentIcon });
+						marker.bindPopup(`<b>Ubicación Actual</b><br>${timestamp}<br>Fuente: {{if .Source}}{{.Source}}{{else}}—{{end}}`);
+					} else {
+						// Marcadores para ubicaciones RECIENTES (historial)
+						marker = L.marker([lat, lng], { icon: historyIcon });
+						marker.bindPopup(`<b>Ubicación Reciente</b><br>${timestamp}<br>Fuente: {{if .Source}}{{.Source}}{{else}}—{{end}}`);
+					}
+					
+					marker.addTo(map);
+					markers.push([lat, lng]);
+				})();
+				// *** FIN DE CORRECCIÓN JS ***
+			{{end}}
+
+			// 4. Centrar el mapa para que muestre todos los marcadores
+			if (markers.length > 0) {
+				map.fitBounds(markers);
+			}
+
+		{{else}}
+			// Mensaje si no hay ubicaciones
+			document.getElementById('patient-map').innerHTML = '<p style="padding: 20px; text-align: center;">Sin ubicaciones registradas para mostrar en el mapa.</p>';
+		{{end}}
+	});
+</script>
 {{end}}

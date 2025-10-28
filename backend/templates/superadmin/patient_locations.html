@@ -7,7 +7,7 @@
 		<form method="get" action="/superadmin/locations/patients" class="hg-form-grid">
 			<div class="hg-form-field">
 				<label for="patient-filter">Paciente</label>
-				<select id="patient-filter" name="patient_id">
+				<select id="patient-filter" name="patient_id" class="hg-select-search">
 					<option value="">Todos</option>
 					{{range .Data.Patients}}
 					<option value="{{.ID}}" {{if eq $.Data.SelectedPatientID .ID}}selected{{end}}>{{.Name}}</option>
@@ -38,7 +38,7 @@
 			<input type="hidden" name="to" value="{{.Data.To}}" />
 			<div class="hg-form-field">
 				<label for="patient-select">Paciente</label>
-				<select id="patient-select" name="patient_id" required>
+				<select id="patient-select" name="patient_id" required class="hg-select-search">
 					<option value="">Seleccione un paciente</option>
 					{{range .Data.Patients}}
 					<option value="{{.ID}}" {{if eq $.Data.SelectedPatientID .ID}}selected{{end}}>{{.Name}}</option>
@@ -76,44 +76,61 @@
 <section class="hg-section">
 	<div class="hg-card">
 		<h3>Historial de ubicaciones</h3>
-		<table class="hg-table">
-			<thead>
-				<tr>
-					<th>Paciente</th>
-					<th>Registrada</th>
-					<th>Latitud</th>
-					<th>Longitud</th>
-					<th>Fuente</th>
-					<th>Precisión (m)</th>
-					<th></th>
-				</tr>
-			</thead>
-			<tbody>
-				{{range .Data.Items}}
-				<tr>
-					<td>{{if .PatientName}}{{.PatientName}}{{else}}—{{end}}</td>
-					<td>{{formatTime .RecordedAt}}</td>
-					<td>{{printf "%.6f" .Latitude}}</td>
-					<td>{{printf "%.6f" .Longitude}}</td>
-					<td>{{if .Source}}{{.Source}}{{else}}—{{end}}</td>
-					<td>{{if .AccuracyM}}{{formatFloat64 .AccuracyM 2}}{{else}}—{{end}}</td>
-					<td class="hg-actions">
-						<form method="post" action="/superadmin/locations/patients/{{.ID}}/delete" data-hg-confirm="¿Eliminar ubicación?" class="hg-inline-form">
-							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-							<input type="hidden" name="patient_id" value="{{$.Data.SelectedPatientID}}" />
-							<input type="hidden" name="from" value="{{$.Data.From}}" />
-							<input type="hidden" name="to" value="{{$.Data.To}}" />
-							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
-						</form>
-					</td>
-				</tr>
-				{{else}}
-				<tr>
-					<td colspan="7" class="hg-empty-cell">Sin ubicaciones registradas.</td>
-				</tr>
-				{{end}}
-			</tbody>
-		</table>
+		<div id="locations-map" style="height: 500px; border-radius: 8px;"></div>
 	</div>
 </section>
+
+<script>
+	window.addEventListener('load', () => {
+		// 1. Inicializar el mapa de historial
+		const mapElement = document.getElementById('locations-map');
+		{{if .Data.Items}}
+			const map = L.map(mapElement);
+			L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+				attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+			}).addTo(map);
+
+			// Definición del ícono
+			const historyIcon = L.icon({
+				iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-blue.png',
+				shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+				iconSize: [25, 41],
+				iconAnchor: [12, 41],
+				popupAnchor: [1, -34],
+				shadowSize: [41, 41]
+			});
+
+			const markers = [];
+
+			// 2. Iterar sobre las ubicaciones y agregar marcadores
+			{{range $i, $loc := .Data.Items}}
+				(function() {
+					const lat = {{printf "%.6f" $loc.Latitude}};
+					const lng = {{printf "%.6f" $loc.Longitude}};
+					const timestamp = "{{formatTime $loc.RecordedAt}}";
+					const patientName = "{{$loc.PatientName}}";
+					
+					const marker = L.marker([lat, lng], { icon: historyIcon });
+					
+					let popupContent = `<b>Paciente:</b> ${patientName}<br><b>Registrada:</b> ${timestamp}`;
+					{{if .Source}} popupContent += `<br><b>Fuente:</b> {{.Source}}`; {{end}}
+					{{if .AccuracyM}} popupContent += `<br><b>Precisión:</b> {{formatFloat64 .AccuracyM 2}}m`; {{end}}
+
+					marker.bindPopup(popupContent);
+					marker.addTo(map);
+					markers.push([lat, lng]);
+				})();
+			{{end}}
+
+			// 3. Centrar el mapa
+			if (markers.length > 0) {
+				map.fitBounds(markers);
+			}
+
+		{{else}}
+			// Mensaje si no hay ubicaciones
+			mapElement.innerHTML = '<p style="padding: 20px; text-align: center;">Sin ubicaciones registradas para los filtros seleccionados.</p>';
+		{{end}}
+	});
+</script>
 {{end}}
