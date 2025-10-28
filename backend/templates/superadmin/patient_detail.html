@@ -8,8 +8,8 @@
 		</div>
 		<div class="hg-detail-meta">
 			{{if .Data.Patient.OrgName}}<span class="hg-detail-pill">{{.Data.Patient.OrgName}}</span>{{end}}
-			{{with .Data.RiskLevel}}
-			<span class="hg-status-chip {{if eq . "alto"}}is-danger{{else if eq . "medio"}}is-warn{{else if eq . "bajo"}}is-success{{end}}">Riesgo: {{.}}</span>
+			{{with .Data.Patient.RiskLevelCode}}
+			<span class="hg-status-chip {{if eq . "high"}}is-danger{{else if eq . "medium"}}is-warn{{else if eq . "low"}}is-success{{end}}">Riesgo: {{$.Data.Patient.RiskLevelLabel}}</span>
 			{{end}}
 		</div>
 	</div>
@@ -20,7 +20,7 @@
 		</article>
 		<article class="hg-summary-card">
 			<span class="hg-summary-label">Nivel de riesgo</span>
-			<span class="hg-summary-value">{{if .Data.RiskLevel}}{{.Data.RiskLevel}}{{else}}—{{end}}</span>
+			<span class="hg-summary-value">{{if .Data.Patient.RiskLevelLabel}}{{stringValue .Data.Patient.RiskLevelLabel}}{{else}}—{{end}}</span>
 		</article>
 		<article class="hg-summary-card">
 			<span class="hg-summary-label">Sexo</span>

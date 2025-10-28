@@ -113,6 +113,21 @@ CREATE TABLE IF NOT EXISTS delivery_statuses (
   label VARCHAR(80) NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS risk_levels (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code    VARCHAR(20) UNIQUE NOT NULL, -- ej: 'low', 'medium', 'high'
+  label   VARCHAR(50) NOT NULL, -- ej: 'Bajo', 'Medio', 'Alto'
+  weight  INT -- Ordenamiento opcional
+);
+CREATE INDEX IF NOT EXISTS idx_risk_levels_code ON risk_levels(code);
+
+CREATE TABLE IF NOT EXISTS team_member_roles (
+  id      UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  code    VARCHAR(30) UNIQUE NOT NULL, -- ej: 'doctor', 'nurse',...
+  label   VARCHAR(60) NOT NULL -- ej: 'Doctor/a', 'Enfermero/a',
+);
+CREATE INDEX IF NOT EXISTS idx_team_member_roles_code ON team_member_roles(code);
+
 ALTER TABLE IF EXISTS user_statuses ALTER COLUMN label SET NOT NULL;
 ALTER TABLE IF EXISTS signal_types ALTER COLUMN label SET NOT NULL;
 ALTER TABLE IF EXISTS alert_channels ALTER COLUMN label SET NOT NULL;
@@ -155,6 +170,7 @@ CREATE TABLE IF NOT EXISTS users (
   created_at         TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
+CREATE INDEX IF NOT EXISTS idx_users_status ON users(user_status_id);
 
 CREATE TABLE IF NOT EXISTS user_role (
   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -162,6 +178,7 @@ CREATE TABLE IF NOT EXISTS user_role (
   assigned_at TIMESTAMP NOT NULL DEFAULT NOW(),
   PRIMARY KEY(user_id, role_id)
 );
+CREATE INDEX IF NOT EXISTS idx_user_role_role ON user_role(role_id);
 
 CREATE TABLE IF NOT EXISTS system_settings (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -178,6 +195,7 @@ CREATE TABLE IF NOT EXISTS system_settings (
   updated_at TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_by UUID REFERENCES users(id) ON DELETE SET NULL
 );
+CREATE INDEX IF NOT EXISTS idx_system_settings_updated_by ON system_settings(updated_by);
 
 CREATE TABLE IF NOT EXISTS organizations (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -201,6 +219,7 @@ CREATE TABLE IF NOT EXISTS user_org_membership (
   joined_at   TIMESTAMP NOT NULL DEFAULT NOW(),
   PRIMARY KEY (org_id, user_id)
 );
+CREATE INDEX IF NOT EXISTS idx_user_org_membership_role ON user_org_membership(org_role_id);
 
 -- =========================================================
 -- C) Dominio clínico
@@ -211,11 +230,13 @@ CREATE TABLE IF NOT EXISTS patients (
   person_name       VARCHAR(120) NOT NULL,
   birthdate         DATE,
   sex_id            UUID REFERENCES sexes(id) ON DELETE RESTRICT,
-  risk_level        VARCHAR(20),
+  risk_level_id     UUID REFERENCES risk_levels(id) ON DELETE SET NULL,
   profile_photo_url TEXT,
   created_at        TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_patients_org ON patients(org_id);
+CREATE INDEX IF NOT EXISTS idx_patients_sex ON patients(sex_id);
+CREATE INDEX IF NOT EXISTS idx_patients_risk_level ON patients(risk_level_id);
 
 CREATE TABLE IF NOT EXISTS care_teams (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -228,10 +249,11 @@ CREATE INDEX IF NOT EXISTS idx_care_teams_org ON care_teams(org_id);
 CREATE TABLE IF NOT EXISTS care_team_member (
   care_team_id  UUID NOT NULL REFERENCES care_teams(id) ON DELETE CASCADE,
   user_id       UUID NOT NULL REFERENCES users(id)      ON DELETE CASCADE,
-  role_in_team  VARCHAR(50) NOT NULL,
+  role_id       UUID NOT NULL REFERENCES team_member_roles(id) ON DELETE RESTRICT,
   joined_at     TIMESTAMP NOT NULL DEFAULT NOW(),
   PRIMARY KEY (care_team_id, user_id)
 );
+CREATE INDEX IF NOT EXISTS idx_care_team_member_role ON care_team_member(role_id);
 
 CREATE TABLE IF NOT EXISTS patient_care_team (
   patient_id    UUID NOT NULL REFERENCES patients(id)   ON DELETE CASCADE,
@@ -260,6 +282,7 @@ CREATE TABLE IF NOT EXISTS caregiver_patient (
   note        TEXT,
   PRIMARY KEY (patient_id, user_id)
 );
+CREATE INDEX IF NOT EXISTS idx_caregiver_patient_rel_type ON caregiver_patient(rel_type_id);
 
 CREATE OR REPLACE FUNCTION heartguard.sp_patients_list(
   p_limit integer DEFAULT 100,
@@ -272,7 +295,9 @@ RETURNS TABLE (
   birthdate date,
   sex_code text,
   sex_label text,
-  risk_level text,
+  risk_level_id text,
+  risk_level_code text,
+  risk_level_label text,
   profile_photo_url text,
   created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
@@ -290,12 +315,15 @@ BEGIN
     p.birthdate,
     sx.code::text,
     sx.label::text,
-    p.risk_level::text,
+    p.risk_level_id::text,
+    rl.code::text,
+    rl.label::text,
     p.profile_photo_url::text,
     p.created_at
   FROM heartguard.patients p
   LEFT JOIN heartguard.organizations o ON o.id = p.org_id
   LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+  LEFT JOIN heartguard.risk_levels rl ON rl.id = p.risk_level_id
   ORDER BY p.created_at DESC, p.person_name
   LIMIT safe_limit OFFSET safe_offset;
 END;
@@ -306,7 +334,7 @@ CREATE OR REPLACE FUNCTION heartguard.sp_patient_create(
   p_person_name text,
   p_birthdate date DEFAULT NULL,
   p_sex_code text DEFAULT NULL,
-  p_risk_level text DEFAULT NULL,
+  p_risk_level_id uuid DEFAULT NULL,
   p_profile_photo_url text DEFAULT NULL)
 RETURNS TABLE (
   id text,
@@ -316,7 +344,9 @@ RETURNS TABLE (
   birthdate date,
   sex_code text,
   sex_label text,
-  risk_level text,
+  risk_level_id text,
+  risk_level_code text,
+  risk_level_label text,
   profile_photo_url text,
   created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
@@ -324,7 +354,6 @@ AS $$
 DECLARE
   v_name text;
   v_sex_id uuid := NULL;
-  v_risk text;
   v_photo_url text;
 BEGIN
   v_name := NULLIF(btrim(p_person_name), '');
@@ -346,12 +375,11 @@ BEGIN
     END IF;
   END IF;
 
-  v_risk := NULLIF(btrim(p_risk_level), '');
   v_photo_url := NULLIF(btrim(p_profile_photo_url), '');
 
   RETURN QUERY
-  INSERT INTO heartguard.patients AS p (org_id, person_name, birthdate, sex_id, risk_level, profile_photo_url)
-  VALUES (p_org_id, v_name, p_birthdate, v_sex_id, v_risk, v_photo_url)
+  INSERT INTO heartguard.patients AS p (org_id, person_name, birthdate, sex_id, risk_level_id, profile_photo_url)
+  VALUES (p_org_id, v_name, p_birthdate, v_sex_id, p_risk_level_id, v_photo_url)
   RETURNING
     p.id::text,
     p.org_id::text,
@@ -360,7 +388,9 @@ BEGIN
     p.birthdate,
     (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
-    p.risk_level::text,
+    p.risk_level_id::text,
+    (SELECT rl.code::text FROM heartguard.risk_levels rl WHERE rl.id = p.risk_level_id),
+    (SELECT rl.label::text FROM heartguard.risk_levels rl WHERE rl.id = p.risk_level_id),
     p.profile_photo_url::text,
     p.created_at;
 END;
@@ -372,7 +402,7 @@ CREATE OR REPLACE FUNCTION heartguard.sp_patient_update(
   p_person_name text,
   p_birthdate date,
   p_sex_code text,
-  p_risk_level text,
+  p_risk_level_id uuid,
   p_profile_photo_url text)
 RETURNS TABLE (
   id text,
@@ -382,7 +412,9 @@ RETURNS TABLE (
   birthdate date,
   sex_code text,
   sex_label text,
-  risk_level text,
+  risk_level_id text,
+  risk_level_code text,
+  risk_level_label text,
   profile_photo_url text,
   created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
@@ -390,7 +422,6 @@ AS $$
 DECLARE
   v_name text;
   v_sex_id uuid := NULL;
-  v_risk text;
   v_photo_url text;
 BEGIN
   v_name := NULLIF(btrim(p_person_name), '');
@@ -412,7 +443,6 @@ BEGIN
     END IF;
   END IF;
 
-  v_risk := NULLIF(btrim(p_risk_level), '');
   v_photo_url := NULLIF(btrim(p_profile_photo_url), '');
 
   RETURN QUERY
@@ -421,7 +451,7 @@ BEGIN
          person_name = v_name,
          birthdate = CASE WHEN p_birthdate IS NULL THEN p.birthdate ELSE p_birthdate END,
          sex_id = CASE WHEN p_sex_code IS NULL THEN p.sex_id ELSE v_sex_id END,
-         risk_level = CASE WHEN p_risk_level IS NULL THEN p.risk_level ELSE v_risk END,
+         risk_level_id = CASE WHEN p_risk_level_id IS NULL THEN p.risk_level_id ELSE p_risk_level_id END,
          profile_photo_url = CASE WHEN p_profile_photo_url IS NULL THEN p.profile_photo_url ELSE v_photo_url END
    WHERE p.id = p_id
   RETURNING
@@ -432,7 +462,9 @@ BEGIN
     p.birthdate,
     (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
-    p.risk_level::text,
+    p.risk_level_id::text,
+    (SELECT rl.code::text FROM heartguard.risk_levels rl WHERE rl.id = p.risk_level_id),
+    (SELECT rl.label::text FROM heartguard.risk_levels rl WHERE rl.id = p.risk_level_id),
     p.profile_photo_url::text,
     p.created_at;
 END;
@@ -465,6 +497,8 @@ CREATE TABLE IF NOT EXISTS org_invitations (
   created_at   TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_org_inv_org ON org_invitations(org_id);
+CREATE INDEX IF NOT EXISTS idx_org_inv_role ON org_invitations(org_role_id);
+CREATE INDEX IF NOT EXISTS idx_org_inv_created_by ON org_invitations(created_by);
 
 -- =========================================================
 -- Stored procedures: CATÁLOGOS
@@ -490,11 +524,13 @@ BEGIN
     WHEN 'delivery_statuses' THEN table_name := 'delivery_statuses';
     WHEN 'org_roles'         THEN table_name := 'org_roles';
     WHEN 'device_types'      THEN table_name := 'device_types';
+    WHEN 'risk_levels'       THEN table_name := 'risk_levels';       -- con weight
+    WHEN 'team_member_roles' THEN table_name := 'team_member_roles';
   END CASE;
   IF table_name IS NULL THEN
     RAISE EXCEPTION 'Catalogo % no soportado', p_catalog;
   END IF;
-  IF lower(p_catalog) = 'alert_levels' THEN
+  IF lower(p_catalog) IN ('alert_levels', 'risk_levels') THEN
     has_weight := TRUE;
   END IF;
 END;
@@ -782,6 +818,8 @@ CREATE TABLE IF NOT EXISTS devices (
   active           BOOLEAN NOT NULL DEFAULT TRUE
 );
 CREATE INDEX IF NOT EXISTS idx_devices_org ON devices(org_id);
+CREATE INDEX IF NOT EXISTS idx_devices_type ON devices(device_type_id);
+CREATE INDEX IF NOT EXISTS idx_devices_owner ON devices(owner_patient_id);
 
 CREATE TABLE IF NOT EXISTS signal_streams (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -793,6 +831,9 @@ CREATE TABLE IF NOT EXISTS signal_streams (
   ended_at       TIMESTAMP,
   CONSTRAINT stream_time_ok CHECK (ended_at IS NULL OR ended_at > started_at)
 );
+CREATE INDEX IF NOT EXISTS idx_signal_streams_patient ON signal_streams(patient_id);
+CREATE INDEX IF NOT EXISTS idx_signal_streams_device ON signal_streams(device_id);
+CREATE INDEX IF NOT EXISTS idx_signal_streams_type ON signal_streams(signal_type_id);
 
 CREATE TABLE IF NOT EXISTS timeseries_binding (
   id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -804,6 +845,7 @@ CREATE TABLE IF NOT EXISTS timeseries_binding (
   created_at     TIMESTAMP NOT NULL DEFAULT NOW(),
   UNIQUE (stream_id, influx_bucket, measurement)
 );
+CREATE INDEX IF NOT EXISTS idx_timeseries_binding_stream ON timeseries_binding(stream_id);
 
 CREATE TABLE IF NOT EXISTS timeseries_binding_tag (
   id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -812,6 +854,7 @@ CREATE TABLE IF NOT EXISTS timeseries_binding_tag (
   tag_value  VARCHAR(240) NOT NULL,
   UNIQUE (binding_id, tag_key)
 );
+CREATE INDEX IF NOT EXISTS idx_timeseries_binding_tag_binding ON timeseries_binding_tag(binding_id);
 
 CREATE OR REPLACE FUNCTION heartguard.sp_signal_streams_list(
   p_limit integer DEFAULT 100,
@@ -1326,6 +1369,7 @@ CREATE TABLE IF NOT EXISTS event_types (
   description         TEXT,
   severity_default_id UUID NOT NULL REFERENCES alert_levels(id) ON DELETE RESTRICT
 );
+CREATE INDEX IF NOT EXISTS idx_event_types_severity ON event_types(severity_default_id);
 
 CREATE OR REPLACE FUNCTION heartguard.sp_event_types_list(
   p_limit integer DEFAULT 100,
@@ -1479,6 +1523,8 @@ CREATE TABLE IF NOT EXISTS inferences (
 );
 CREATE INDEX IF NOT EXISTS idx_inferences_stream_time
   ON inferences(stream_id, window_start, window_end);
+CREATE INDEX IF NOT EXISTS idx_inferences_model ON inferences(model_id);
+CREATE INDEX IF NOT EXISTS idx_inferences_event ON inferences(predicted_event_id);
 
 CREATE OR REPLACE FUNCTION heartguard.sp_inferences_list(
   p_limit integer DEFAULT 100,
@@ -1697,6 +1743,9 @@ CREATE TABLE IF NOT EXISTS ground_truth_labels (
   source               VARCHAR(40),
   note                 TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_ground_truth_patient ON ground_truth_labels(patient_id);
+CREATE INDEX IF NOT EXISTS idx_ground_truth_event_type ON ground_truth_labels(event_type_id);
+CREATE INDEX IF NOT EXISTS idx_ground_truth_user ON ground_truth_labels(annotated_by_user_id);
 
 -- =========================================================
 -- G) Alertas y ciclo de vida
@@ -1708,6 +1757,8 @@ CREATE TABLE IF NOT EXISTS alert_types (
   severity_min_id UUID NOT NULL REFERENCES alert_levels(id) ON DELETE RESTRICT,
   severity_max_id UUID NOT NULL REFERENCES alert_levels(id) ON DELETE RESTRICT
 );
+CREATE INDEX IF NOT EXISTS idx_alert_types_sev_min ON alert_types(severity_min_id);
+CREATE INDEX IF NOT EXISTS idx_alert_types_sev_max ON alert_types(severity_max_id);
 
 CREATE TABLE IF NOT EXISTS alert_status (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1733,6 +1784,11 @@ CREATE INDEX IF NOT EXISTS idx_alerts_patient_status ON alerts(patient_id, statu
 CREATE INDEX IF NOT EXISTS idx_alerts_level ON alerts(alert_level_id);
 CREATE INDEX IF NOT EXISTS idx_alerts_loc_gix ON alerts USING GIST(location);
 CREATE INDEX IF NOT EXISTS idx_alerts_created_at ON alerts(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_alerts_type ON alerts(type_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_model ON alerts(created_by_model_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_inference ON alerts(source_inference_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_status ON alerts(status_id);
+CREATE INDEX IF NOT EXISTS idx_alerts_duplicate ON alerts(duplicate_of_alert_id);
 
 CREATE OR REPLACE FUNCTION heartguard.sp_alerts_list(
   p_limit integer DEFAULT 100,
@@ -1989,6 +2045,7 @@ CREATE TABLE IF NOT EXISTS alert_assignment (
   assigned_at         TIMESTAMP NOT NULL DEFAULT NOW(),
   PRIMARY KEY(alert_id, assignee_user_id, assigned_at)
 );
+CREATE INDEX IF NOT EXISTS idx_alert_assignment_by ON alert_assignment(assigned_by_user_id);
 
 CREATE TABLE IF NOT EXISTS alert_ack (
   id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -1997,6 +2054,8 @@ CREATE TABLE IF NOT EXISTS alert_ack (
   ack_at          TIMESTAMP NOT NULL DEFAULT NOW(),
   note            TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_alert_ack_alert ON alert_ack(alert_id);
+CREATE INDEX IF NOT EXISTS idx_alert_ack_user ON alert_ack(ack_by_user_id);
 
 CREATE TABLE IF NOT EXISTS alert_resolution (
   id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2006,6 +2065,8 @@ CREATE TABLE IF NOT EXISTS alert_resolution (
   outcome             VARCHAR(80),
   note                TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_alert_resolution_alert ON alert_resolution(alert_id);
+CREATE INDEX IF NOT EXISTS idx_alert_resolution_user ON alert_resolution(resolved_by_user_id);
 
 CREATE TABLE IF NOT EXISTS alert_delivery (
   id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -2017,6 +2078,7 @@ CREATE TABLE IF NOT EXISTS alert_delivery (
   response_payload   JSONB
 );
 CREATE INDEX IF NOT EXISTS idx_delivery_alert_channel ON alert_delivery(alert_id, channel_id);
+CREATE INDEX IF NOT EXISTS idx_delivery_status ON alert_delivery(delivery_status_id);
 
 -- =========================================================
 -- H) Ubicaciones
@@ -2053,6 +2115,7 @@ CREATE TABLE IF NOT EXISTS service_health (
   version            VARCHAR(40)
 );
 CREATE INDEX IF NOT EXISTS idx_service_health_service_time ON service_health(service_id, checked_at DESC);
+CREATE INDEX IF NOT EXISTS idx_service_health_status ON service_health(service_status_id);
 
 -- Stored procedure para métricas del panel
 CREATE OR REPLACE FUNCTION heartguard.sp_metrics_overview()
@@ -2360,6 +2423,7 @@ CREATE TABLE IF NOT EXISTS audit_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_logs(ts DESC);
 CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_logs(entity_id);
 
 -- =========================================================
 -- K) Tokens y API Keys

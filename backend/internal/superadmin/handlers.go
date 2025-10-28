@@ -41,6 +41,8 @@ type Repository interface {
 	ListOrganizationCareTeams(ctx context.Context, orgID string, limit int) ([]models.CareTeam, error)
 	UpdateOrganization(ctx context.Context, id string, code, name *string) (*models.Organization, error)
 	DeleteOrganization(ctx context.Context, id string) error
+	ListRiskLevels(ctx context.Context) ([]models.RiskLevel, error)
+	ListTeamMemberRoles(ctx context.Context) ([]models.TeamMemberRole, error)
 
 	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error)
 	ListInvitations(ctx context.Context, orgID *string, limit, offset int) ([]models.OrgInvitation, error)

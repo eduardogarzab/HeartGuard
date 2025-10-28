@@ -264,11 +264,14 @@ SELECT
 	p.birthdate,
 	sx.code::text,
 	sx.label::text,
-	p.risk_level::text,
+	p.risk_level_id::text,
+	rl.code::text,
+	rl.label::text,
 	p.created_at
 FROM heartguard.patients p
 LEFT JOIN heartguard.organizations o ON o.id = p.org_id
 LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+LEFT JOIN heartguard.risk_levels rl ON rl.id = p.risk_level_id
 WHERE p.org_id = $1::uuid
 ORDER BY p.created_at DESC, p.person_name
 LIMIT $2
@@ -281,15 +284,17 @@ LIMIT $2
 	out := make([]models.Patient, 0, limit)
 	for rows.Next() {
 		var (
-			patient  models.Patient
-			orgIDVal sql.NullString
-			orgName  sql.NullString
-			birth    sql.NullTime
-			sexCode  sql.NullString
-			sexLabel sql.NullString
-			risk     sql.NullString
+			patient       models.Patient
+			orgIDVal      sql.NullString
+			orgName       sql.NullString
+			birth         sql.NullTime
+			sexCode       sql.NullString
+			sexLabel      sql.NullString
+			riskID        sql.NullString
+			riskCode      sql.NullString
+			riskLabel     sql.NullString
 		)
-		if err := rows.Scan(&patient.ID, &orgIDVal, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &patient.CreatedAt); err != nil {
+		if err := rows.Scan(&patient.ID, &orgIDVal, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &patient.CreatedAt); err != nil {
 			return nil, err
 		}
 		if orgIDVal.Valid {
@@ -312,9 +317,17 @@ LIMIT $2
 			v := sexLabel.String
 			patient.SexLabel = &v
 		}
-		if risk.Valid {
-			v := risk.String
-			patient.RiskLevel = &v
+		if riskID.Valid {
+			v := riskID.String
+			patient.RiskLevelID = &v
+		}
+		if riskCode.Valid {
+			v := riskCode.String
+			patient.RiskLevelCode = &v
+		}
+		if riskLabel.Valid {
+			v := riskLabel.String
+			patient.RiskLevelLabel = &v
 		}
 		out = append(out, patient)
 	}
@@ -565,7 +578,9 @@ func (r *Repo) GetPatient(ctx context.Context, id string) (*models.Patient, erro
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
-		risk            sql.NullString
+		riskID          sql.NullString
+		riskCode        sql.NullString
+		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
 	err := r.pool.QueryRow(ctx, `
@@ -577,14 +592,17 @@ SELECT
 	p.birthdate,
 	sx.code::text,
 	sx.label::text,
-	p.risk_level::text,
+	p.risk_level_id::text,
+	rl.code::text,
+	rl.label::text,
 	p.profile_photo_url,
 	p.created_at
 FROM heartguard.patients p
 LEFT JOIN heartguard.organizations o ON o.id = p.org_id
 LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
+LEFT JOIN heartguard.risk_levels rl ON rl.id = p.risk_level_id
 WHERE p.id = $1::uuid
-`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt)
+`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -612,9 +630,17 @@ WHERE p.id = $1::uuid
 		v := sexLabel.String
 		patient.SexLabel = &v
 	}
-	if risk.Valid {
-		v := risk.String
-		patient.RiskLevel = &v
+	if riskID.Valid {
+		v := riskID.String
+		patient.RiskLevelID = &v
+	}
+	if riskCode.Valid {
+		v := riskCode.String
+		patient.RiskLevelCode = &v
+	}
+	if riskLabel.Valid {
+		v := riskLabel.String
+		patient.RiskLevelLabel = &v
 	}
 	return &patient, nil
 }
@@ -629,16 +655,18 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 	out := make([]models.Patient, 0, limit)
 	for rows.Next() {
 		var (
-			patient  models.Patient
-			orgID    sql.NullString
-			org      sql.NullString
-			birth    sql.NullTime
+			patient         models.Patient
+			orgID           sql.NullString
+			org             sql.NullString
+			birth           sql.NullTime
 			sexCode         sql.NullString
 			sexLabel        sql.NullString
-			risk            sql.NullString
+			riskID          sql.NullString
+			riskCode        sql.NullString
+			riskLabel       sql.NullString
 			profilePhotoURL sql.NullString
 		)
-		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt); err != nil {
+		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt); err != nil {
 			return nil, err
 		}
 		if profilePhotoURL.Valid {
@@ -665,9 +693,17 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 			v := sexLabel.String
 			patient.SexLabel = &v
 		}
-		if risk.Valid {
-			v := risk.String
-			patient.RiskLevel = &v
+		if riskID.Valid {
+			v := riskID.String
+			patient.RiskLevelID = &v
+		}
+		if riskCode.Valid {
+			v := riskCode.String
+			patient.RiskLevelCode = &v
+		}
+		if riskLabel.Valid {
+			v := riskLabel.String
+			patient.RiskLevelLabel = &v
 		}
 		out = append(out, patient)
 	}
@@ -682,11 +718,13 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
-		risk            sql.NullString
+		riskID          sql.NullString
+		riskCode        sql.NullString
+		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6)`, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true), stringParam(input.ProfilePhotoURL, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6)`, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevelID, true), stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -714,9 +752,17 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 		v := sexLabel.String
 		patient.SexLabel = &v
 	}
-	if risk.Valid {
-		v := risk.String
-		patient.RiskLevel = &v
+	if riskID.Valid {
+		v := riskID.String
+		patient.RiskLevelID = &v
+	}
+	if riskCode.Valid {
+		v := riskCode.String
+		patient.RiskLevelCode = &v
+	}
+	if riskLabel.Valid {
+		v := riskLabel.String
+		patient.RiskLevelLabel = &v
 	}
 	return &patient, nil
 }
@@ -729,11 +775,13 @@ func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.Patien
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
-		risk            sql.NullString
+		riskID          sql.NullString
+		riskCode        sql.NullString
+		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7)`, id, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevel, true), stringParam(input.ProfilePhotoURL, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &risk, &profilePhotoURL, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7)`, id, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevelID, true), stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -761,9 +809,17 @@ func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.Patien
 		v := sexLabel.String
 		patient.SexLabel = &v
 	}
-	if risk.Valid {
-		v := risk.String
-		patient.RiskLevel = &v
+	if riskID.Valid {
+		v := riskID.String
+		patient.RiskLevelID = &v
+	}
+	if riskCode.Valid {
+		v := riskCode.String
+		patient.RiskLevelCode = &v
+	}
+	if riskLabel.Valid {
+		v := riskLabel.String
+		patient.RiskLevelLabel = &v
 	}
 	return &patient, nil
 }
@@ -1049,7 +1105,7 @@ func (r *Repo) DeleteCareTeam(ctx context.Context, id string) error {
 
 func scanCareTeamMember(row scanTarget) (*models.CareTeamMember, error) {
 	var member models.CareTeamMember
-	if err := row.Scan(&member.CareTeamID, &member.CareTeamName, &member.UserID, &member.UserName, &member.UserEmail, &member.RoleInTeam, &member.JoinedAt); err != nil {
+	if err := row.Scan(&member.CareTeamID, &member.CareTeamName, &member.UserID, &member.UserName, &member.UserEmail, &member.RoleID, &member.RoleCode, &member.RoleLabel, &member.JoinedAt); err != nil {
 		return nil, err
 	}
 	return &member, nil
@@ -1057,10 +1113,11 @@ func scanCareTeamMember(row scanTarget) (*models.CareTeamMember, error) {
 
 func (r *Repo) ListCareTeamMembers(ctx context.Context, careTeamID string) ([]models.CareTeamMember, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT ctm.care_team_id::text, ct.name, u.id::text, u.name, u.email, ctm.role_in_team, ctm.joined_at
+SELECT ctm.care_team_id::text, ct.name, u.id::text, u.name, u.email, ctm.role_id::text, r.code, r.label, ctm.joined_at
 FROM care_team_member ctm
 JOIN users u ON u.id = ctm.user_id
 JOIN care_teams ct ON ct.id = ctm.care_team_id
+JOIN team_member_roles r ON r.id = ctm.role_id
 WHERE ctm.care_team_id = $1
 ORDER BY u.name
 `, careTeamID)
@@ -1083,31 +1140,33 @@ ORDER BY u.name
 func (r *Repo) AddCareTeamMember(ctx context.Context, careTeamID string, input models.CareTeamMemberInput) (*models.CareTeamMember, error) {
 	row := r.pool.QueryRow(ctx, `
 WITH inserted AS (
-        INSERT INTO care_team_member (care_team_id, user_id, role_in_team)
-        VALUES ($1, $2, $3)
-        RETURNING care_team_id, user_id, role_in_team, joined_at
+        INSERT INTO care_team_member (care_team_id, user_id, role_id)
+        VALUES ($1, $2, $3::uuid)
+        RETURNING care_team_id, user_id, role_id, joined_at
 )
-SELECT i.care_team_id::text, ct.name, i.user_id::text, u.name, u.email, i.role_in_team, i.joined_at
+SELECT i.care_team_id::text, ct.name, i.user_id::text, u.name, u.email, i.role_id::text, r.code, r.label, i.joined_at
 FROM inserted i
 JOIN care_teams ct ON ct.id = i.care_team_id
 JOIN users u ON u.id = i.user_id
-`, careTeamID, input.UserID, strings.TrimSpace(input.RoleInTeam))
+JOIN team_member_roles r ON r.id = i.role_id
+`, careTeamID, input.UserID, input.RoleID)
 	return scanCareTeamMember(row)
 }
 
 func (r *Repo) UpdateCareTeamMember(ctx context.Context, careTeamID, userID string, input models.CareTeamMemberUpdateInput) (*models.CareTeamMember, error) {
-	roleParam := stringParam(input.RoleInTeam, true)
+	roleParam := stringParam(input.RoleID, true)
 	row := r.pool.QueryRow(ctx, `
 WITH updated AS (
         UPDATE care_team_member SET
-                role_in_team = COALESCE(NULLIF($3, ''), role_in_team)
+                role_id = COALESCE(NULLIF($3, ''), role_id::text)::uuid
         WHERE care_team_id = $1 AND user_id = $2
-        RETURNING care_team_id, user_id, role_in_team, joined_at
+        RETURNING care_team_id, user_id, role_id, joined_at
 )
-SELECT u.care_team_id::text, ct.name, u.user_id::text, usr.name, usr.email, u.role_in_team, u.joined_at
+SELECT u.care_team_id::text, ct.name, u.user_id::text, usr.name, usr.email, u.role_id::text, r.code, r.label, u.joined_at
 FROM updated u
 JOIN care_teams ct ON ct.id = u.care_team_id
 JOIN users usr ON usr.id = u.user_id
+JOIN team_member_roles r ON r.id = u.role_id
 `, careTeamID, userID, roleParam)
 	return scanCareTeamMember(row)
 }
@@ -4414,6 +4473,49 @@ WHERE token_hash = $1 AND revoked_at IS NULL
 		}
 	}
 	return nil
+}
+
+func (r *Repo) ListRiskLevels(ctx context.Context) ([]models.RiskLevel, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, code, label, weight FROM risk_levels ORDER BY weight, label`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.RiskLevel
+	for rows.Next() {
+		var (
+			item   models.RiskLevel
+			weight sql.NullInt32
+		)
+		if err := rows.Scan(&item.ID, &item.Code, &item.Label, &weight); err != nil {
+			return nil, err
+		}
+		if weight.Valid {
+			w := int(weight.Int32)
+			item.Weight = &w
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (r *Repo) ListTeamMemberRoles(ctx context.Context) ([]models.TeamMemberRole, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id::text, code, label FROM team_member_roles ORDER BY label`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []models.TeamMemberRole
+	for rows.Next() {
+		var item models.TeamMemberRole
+		if err := rows.Scan(&item.ID, &item.Code, &item.Label); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
 }
 
 // ------------------------------

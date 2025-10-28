@@ -74,14 +74,19 @@
                                                 <div>
                                                         <strong>{{.UserName}}</strong>
                                                         <div class="hg-muted">{{.UserEmail}}</div>
-                                                        <div class="hg-muted">Rol en equipo: {{.RoleInTeam}}</div>
+                                                        <div class="hg-muted">Rol en equipo: {{.RoleLabel}}</div>
                                                 </div>
                                                 <div class="hg-list-actions">
                                                         <details>
                                                                 <summary>Editar rol</summary>
                                                                 <form method="post" action="/superadmin/care-teams/{{$team.ID}}/members/{{.UserID}}/update" class="hg-form-inline">
                                                                         <input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-                                                                        <input name="role_in_team" type="text" value="{{.RoleInTeam}}" required />
+                                                                        {{$currentRoleID := .RoleID}}
+                                                                        <select name="role_id" required>
+                                                                                {{range $.Data.Roles}}
+                                                                                <option value="{{.ID}}" {{if eq .ID $currentRoleID}}selected{{end}}>{{.Label}}</option>
+                                                                                {{end}}
+                                                                        </select>
                                                                         <button type="submit">Actualizar</button>
                                                                 </form>
                                                         </details>
@@ -109,7 +114,12 @@
                                         </div>
                                         <div class="hg-form-field">
                                                 <label>Rol en el equipo</label>
-                                                <input name="role_in_team" type="text" placeholder="Coordinador, Especialista..." required />
+                                                <select name="role_id" required>
+                                                        <option value="">Selecciona rol</option>
+                                                        {{range $.Data.Roles}}
+                                                        <option value="{{.ID}}">{{.Label}}</option>
+                                                        {{end}}
+                                                </select>
                                         </div>
                                         <div class="hg-form-actions">
                                                 <button type="submit">Agregar miembro</button>

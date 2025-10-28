@@ -35,7 +35,12 @@
 			</div>
 			<div class="hg-form-field">
 				<label for="patient-risk">Nivel de riesgo</label>
-				<input id="patient-risk" name="risk_level" type="text" placeholder="Por ejemplo: alto" />
+				<select id="patient-risk" name="risk_level_id">
+					<option value="">No asignado</option>
+					{{range .Data.RiskLevels}}
+					<option value="{{.ID}}">{{.Label}}</option>
+					{{end}}
+				</select>
 			</div>
 			<div class="hg-form-field">
 				<label for="patient-photo">URL de la foto</label>
@@ -76,7 +81,7 @@
 					<td><a href="/superadmin/patients/{{$patient.ID}}">{{$patient.Name}}</a></td>
 					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
 					<td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
-					<td>{{if ne (stringValue $patient.RiskLevel) ""}}{{stringValue $patient.RiskLevel}}{{else}}—{{end}}</td>
+					<td>{{if $patient.RiskLevelLabel}}{{stringValue $patient.RiskLevelLabel}}{{else}}—{{end}}</td>
 					<td>{{formatDatePtr $patient.Birthdate}}</td>
 					<td>{{formatTime $patient.CreatedAt}}</td>
 					<td class="hg-flex">
@@ -112,7 +117,12 @@
 								</div>
 								<div class="hg-form-field">
 									<label>Riesgo</label>
-									<input name="risk_level" type="text" value="{{stringValue $patient.RiskLevel}}" />
+									<select name="risk_level_id">
+										<option value="">No asignado</option>
+										{{range $.Data.RiskLevels}}
+										<option value="{{.ID}}" {{if eq .ID (stringValue $patient.RiskLevelID)}}selected{{end}}>{{.Label}}</option>
+										{{end}}
+									</select>
 								</div>
 								<div class="hg-form-field">
 									<label>URL de la foto</label>
