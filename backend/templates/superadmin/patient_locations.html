@@ -8,7 +8,6 @@
 			<div class="hg-form-field">
 				<label for="patient-filter">Paciente</label>
 				<select id="patient-filter" name="patient_id">
-					<option value="">Todos</option>
 					{{range .Data.Patients}}
 					<option value="{{.ID}}" {{if eq $.Data.SelectedPatientID .ID}}selected{{end}}>{{.Name}}</option>
 					{{end}}
@@ -26,6 +25,12 @@
 				<button type="submit">Filtrar</button>
 			</div>
 		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<div id="locations-map" style="height: 400px; width: 100%; margin-bottom: 2rem; border-radius: 8px;"></div>
 	</div>
 </section>
 
@@ -116,4 +121,53 @@
 		</table>
 	</div>
 </section>
+{{end}} {{define "scripts"}}
+<script>
+	document.addEventListener('DOMContentLoaded', function () {
+		new SlimSelect({
+			select: '#patient-filter',
+			settings: {
+				placeholderText: 'Seleccione un paciente',
+				allowDeselect: true,
+			},
+		});
+		new SlimSelect({
+			select: '#patient-select',
+			settings: {
+				placeholderText: 'Seleccione un paciente',
+			},
+		});
+
+		const locationsData = {{.Data.LocationsJSON}};
+		if (locationsData.length > 0) {
+			const map = L.map('locations-map').setView([locationsData[0].lat, locationsData[0].lng], 13);
+			L.tileLayer('https://tiles.stadiamaps.com/tiles/alidade_smooth/{z}/{x}/{y}{r}.png', {
+				maxZoom: 20,
+				attribution: '&copy; <a href="https://stadiamaps.com/">Stadia Maps</a>, &copy; <a href="https://openmaptiles.org/">OpenMapTiles</a> &copy; <a href="http://openstreetmap.org">OpenStreetMap</a> contributors',
+			}).addTo(map);
+
+			// Add a special marker for the most recent location
+			const latest = locationsData[0];
+			L.marker([latest.lat, latest.lng], {
+				icon: L.icon({
+					iconUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
+					iconSize: [25, 41],
+					iconAnchor: [12, 41],
+					popupAnchor: [1, -34],
+					shadowSize: [41, 41]
+				})
+			}).addTo(map).bindPopup(`<b>Reciente:</b> ${new Date(latest.ts).toLocaleString()}`);
+
+			// Add markers for past locations
+			for (let i = 1; i < locationsData.length; i++) {
+				const loc = locationsData[i];
+				L.marker([loc.lat, loc.lng]).addTo(map)
+					.bindPopup(new Date(loc.ts).toLocaleString());
+			}
+		} else {
+			// If there's no data, hide the map
+			document.getElementById('locations-map').style.display = 'none';
+		}
+	});
+</script>
 {{end}}
