@@ -1297,12 +1297,11 @@ type userDetailData struct {
 }
 
 type patientDetailData struct {
-	Patient       *models.Patient
-	RiskLevel     string
-	CareTeams     []models.PatientCareTeamLink
-	Caregivers    []models.CaregiverAssignment
-	Locations     []patientLocationRow
-	LocationsJSON string
+	Patient   *models.Patient
+	RiskLevel string
+	CareTeams []models.PatientCareTeamLink
+	Caregivers []models.CaregiverAssignment
+	Locations []patientLocationRow
 }
 
 type patientLocationRow struct {
@@ -1451,7 +1450,6 @@ type patientLocationsViewData struct {
 	SelectedPatientID string
 	From              string
 	To                string
-	LocationsJSON     string
 }
 
 type groundTruthViewData struct {
@@ -2419,30 +2417,12 @@ func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	locationsJSON := "[]"
-	if len(locations) > 0 {
-		type mapPin struct {
-			Lat       float64   `json:"lat"`
-			Lng       float64   `json:"lng"`
-			Timestamp time.Time `json:"ts"`
-		}
-		pins := make([]mapPin, len(locations))
-		for i, loc := range locations {
-			pins[i] = mapPin{Lat: loc.Latitude, Lng: loc.Longitude, Timestamp: loc.RecordedAt}
-		}
-		jsonBytes, err := json.Marshal(pins)
-		if err == nil {
-			locationsJSON = string(jsonBytes)
-		}
-	}
-
 	data := patientDetailData{
-		Patient:       patient,
-		RiskLevel:     riskLevel,
-		CareTeams:     careTeams,
-		Caregivers:    caregivers,
-		Locations:     locationRows,
-		LocationsJSON: locationsJSON,
+		Patient:    patient,
+		RiskLevel:  riskLevel,
+		CareTeams:  careTeams,
+		Caregivers: caregivers,
+		Locations: locationRows,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes", URL: "/superadmin/patients"}, {Label: patient.Name}}
 	h.render(w, r, "superadmin/patient_detail.html", patient.Name, data, crumbs)
@@ -2621,30 +2601,12 @@ func (h *Handlers) PatientLocationsIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	locationsJSON := "[]"
-	if len(locations) > 0 {
-		type mapPin struct {
-			Lat       float64   `json:"lat"`
-			Lng       float64   `json:"lng"`
-			Timestamp time.Time `json:"ts"`
-		}
-		pins := make([]mapPin, len(locations))
-		for i, loc := range locations {
-			pins[i] = mapPin{Lat: loc.Latitude, Lng: loc.Longitude, Timestamp: loc.RecordedAt}
-		}
-		jsonBytes, err := json.Marshal(pins)
-		if err == nil {
-			locationsJSON = string(jsonBytes)
-		}
-	}
-
 	data := patientLocationsViewData{
 		Items:             locations,
 		Patients:          patients,
 		SelectedPatientID: patientID,
 		From:              fromStr,
 		To:                toStr,
-		LocationsJSON:     locationsJSON,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Ubicaciones de pacientes"}}
 	h.render(w, r, "superadmin/patient_locations.html", "Ubicaciones de pacientes", data, crumbs)
