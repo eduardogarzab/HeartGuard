@@ -2388,6 +2388,9 @@ func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
 	filters := models.PatientLocationFilters{PatientID: &patientID}
 	locations, err := h.repo.ListPatientLocations(ctx, filters, 10, 0)
 	if err != nil {
+		if h.logger != nil {
+			h.logger.Error("patient locations load", zap.Error(err), zap.String("patient_id", id))
+		}
 		http.Error(w, "No se pudieron cargar las ubicaciones", http.StatusInternalServerError)
 		return
 	}
@@ -2415,7 +2418,7 @@ func (h *Handlers) PatientDetail(w http.ResponseWriter, r *http.Request) {
 		RiskLevel:  riskLevel,
 		CareTeams:  careTeams,
 		Caregivers: caregivers,
-		Locations: locationRows,
+		Locations:  locationRows,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Pacientes", URL: "/superadmin/patients"}, {Label: patient.Name}}
 	h.render(w, r, "superadmin/patient_detail.html", patient.Name, data, crumbs)
