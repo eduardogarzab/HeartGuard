@@ -1,8 +1,1 @@
-{
-  "data": {
-    "service": "auth_service",
-    "status": "healthy"
-  },
-  "meta": {},
-  "status": "ok"
-}
+{"data":{"service":"auth_service","status":"healthy"},"meta":{},"status":"ok"}

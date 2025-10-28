@@ -1,6 +1,1 @@
-{
-  "code": "invalid_credentials",
-  "details": {},
-  "message": "Credenciales inv\u00e1lidas",
-  "status": "error"
-}
+{"code":"invalid_credentials","details":{},"message":"Credenciales inv\u00e1lidas","status":"error"}

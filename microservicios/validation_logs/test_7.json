@@ -1,12 +1,1 @@
-{
-  "data": {
-    "identity": {
-      "email": "ana.ruiz@heartguard.com",
-      "global_role": "user",
-      "org_id": "",
-      "user_id": "fa78f490-3530-4778-9621-08f83e79032e"
-    }
-  },
-  "meta": {},
-  "status": "ok"
-}
+{"data":{"identity":{"email":"ana.ruiz@heartguard.com","global_role":"user","org_id":"be16ba92-b0fb-4825-98d6-5a4db9cf8579","user_id":"fa78f490-3530-4778-9621-08f83e79032e"}},"meta":{},"status":"ok"}

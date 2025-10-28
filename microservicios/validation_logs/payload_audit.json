@@ -1,1 +1,1 @@
-{"actor":"ana.ruiz@heartguard.com","details":{"message":"test entry"},"source":"validate_script","action":"validation_probe"}
+{"action":"validation_probe","source":"validate_script","actor":"ana.ruiz@heartguard.com","details":{"message":"test entry"}}

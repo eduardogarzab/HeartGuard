@@ -20,8 +20,88 @@ LAST_RESULT="UNKNOWN"
 EXIT_CODE=0
 ABORT_TESTS=0
 
-declare -A SERVICE_PIDS
+AUTH_PORT="${AUTH_PORT:-5001}"
+ORG_PORT="${ORG_PORT:-5002}"
+AUDIT_PORT="${AUDIT_PORT:-5006}"
+GATEWAY_PORT="${GATEWAY_PORT:-5000}"
+CHOSEN_GATEWAY_NOTE=""
+
 ORG_PID_KILLED=0
+
+set_service_pid() {
+  local tag="$1"
+  local pid="$2"
+  printf -v "SERVICE_PID_${tag}" '%s' "$pid"
+}
+
+get_service_pid() {
+  local tag="$1"
+  local var="SERVICE_PID_${tag}"
+  printf '%s' "${!var:-}"
+}
+
+clear_service_pid() {
+  local tag="$1"
+  unset "SERVICE_PID_${tag}"
+}
+
+ensure_port_free() {
+  local port="$1"
+  if ! command -v lsof >/dev/null 2>&1; then
+    log "Port $port" "lsof no disponible; omitiendo liberacion" "stderr"
+    return 0
+  fi
+  local pids
+  if pids="$(lsof -ti tcp:"$port" 2>/dev/null)" && [[ -n "$pids" ]]; then
+    log "Port $port" "Liberando procesos [$pids]" "stderr"
+    while IFS= read -r pid; do
+      if kill "$pid" >/dev/null 2>&1; then
+        log "Port $port" "Proceso $pid detenido" "stderr"
+      fi
+    done <<<"$pids"
+    sleep 1
+  fi
+}
+
+port_available() {
+  local port="$1"
+  if ! command -v lsof >/dev/null 2>&1; then
+    return 0
+  fi
+  if lsof -ti tcp:"$port" >/dev/null 2>&1; then
+    return 1
+  fi
+  return 0
+}
+
+choose_gateway_port() {
+  local desired="$1"
+  shift
+  local candidates=("$@")
+  CHOSEN_GATEWAY_NOTE=""
+
+  if port_available "$desired"; then
+    printf '%s' "$desired"
+    return 0
+  fi
+
+  ensure_port_free "$desired"
+  if port_available "$desired"; then
+    printf '%s' "$desired"
+    return 0
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    if port_available "$candidate"; then
+      CHOSEN_GATEWAY_NOTE="Puerto $desired en uso; se usara $candidate"
+      printf '%s' "$candidate"
+      return 0
+    fi
+  done
+
+  CHOSEN_GATEWAY_NOTE="No se encontro puerto alternativo libre; se intentara liberar $desired"
+  printf '%s' "$desired"
+}
 
 mkdir -p "$LOG_DIR"
 : > "$REPORT"
@@ -34,10 +114,16 @@ timestamp() {
 log() {
   local key="$1"
   local value="$2"
+  local stream="${3:-stdout}"
   local ts
   ts="$(timestamp)"
-  echo "[$ts] [INFO] $key: $value"
-  echo "[$ts] [INFO] $key: $value" >>"$REPORT"
+  local line="[$ts] [INFO] $key: $value"
+  if [[ "$stream" == "stderr" ]]; then
+    printf '%s\n' "$line" >&2
+  else
+    printf '%s\n' "$line"
+  fi
+  printf '%s\n' "$line" >>"$REPORT"
 }
 
 record_pass() {
@@ -160,7 +246,7 @@ verify_postgres() {
     record_fail "Conexion Postgres" "Python del servicio auth no disponible"
     return 1
   fi
-  if "$auth_python" - <<'PY' >>"$LOG_DIR/postgres_check.log" 2>&1; then
+  if (cd "$MICRO_DIR/auth_service" && "$auth_python" - <<'PY' >>"$LOG_DIR/postgres_check.log" 2>&1); then
 from db import get_conn, put_conn
 conn = get_conn()
 cur = conn.cursor()
@@ -182,7 +268,7 @@ verify_redis() {
     record_fail "Conexion Redis" "Python del servicio auth no disponible"
     return 1
   fi
-  if "$auth_python" - <<'PY' >>"$LOG_DIR/redis_check.log" 2>&1; then
+  if (cd "$MICRO_DIR/auth_service" && "$auth_python" - <<'PY' >>"$LOG_DIR/redis_check.log" 2>&1); then
 from redis_client import get_redis
 client = get_redis()
 client.ping()
@@ -199,6 +285,7 @@ start_service() {
   local tag="$1"
   local service_dir="$2"
   local python_bin="$3"
+  local port="${4:-}"
   local stdout_file="$LOG_DIR/${tag}_stdout.log"
   local stderr_file="$LOG_DIR/${tag}_stderr.log"
 
@@ -208,6 +295,10 @@ start_service() {
   if [[ ! -x "$python_bin" ]]; then
     record_fail "Start $tag" "Interprete no encontrado"
     return 1
+  fi
+
+  if [[ -n "$port" ]]; then
+    ensure_port_free "$port"
   fi
 
   log "Start $tag" "Lanzando servicio"
@@ -224,7 +315,7 @@ start_service() {
     return 1
   fi
 
-  SERVICE_PIDS[$tag]="$pid"
+  set_service_pid "$tag" "$pid"
   log "Start $tag" "PID $pid"
   sleep 6
   if kill -0 "$pid" >/dev/null 2>&1; then
@@ -238,12 +329,13 @@ start_service() {
 
 stop_service() {
   local tag="$1"
-  local pid="${SERVICE_PIDS[$tag]:-}"
+  local pid
+  pid="$(get_service_pid "$tag")"
   if [[ -n "$pid" ]]; then
     if kill "$pid" >/dev/null 2>&1; then
       log "Stop $tag" "PID $pid detenido"
     fi
-    unset "SERVICE_PIDS[$tag]"
+    clear_service_pid "$tag"
   fi
 }
 
@@ -274,10 +366,10 @@ assert_status() {
 }
 
 run_tests() {
-  http_test "Health auth_service" "http://127.0.0.1:5001/health" "200"
-  http_test "Health org_service" "http://127.0.0.1:5002/health" "200"
-  http_test "Health audit_service" "http://127.0.0.1:5006/health" "200"
-  http_test "Health gateway" "http://127.0.0.1:5000/health" "200"
+  http_test "Health auth_service" "http://127.0.0.1:${AUTH_PORT}/health" "200"
+  http_test "Health org_service" "http://127.0.0.1:${ORG_PORT}/health" "200"
+  http_test "Health audit_service" "http://127.0.0.1:${AUDIT_PORT}/health" "200"
+  http_test "Health gateway" "http://127.0.0.1:${GATEWAY_PORT}/health" "200"
 
   local login_payload="$LOG_DIR/payload_login.json"
   "$PYTHON_BOOTSTRAP" - "$login_payload" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" <<'PY'
@@ -290,7 +382,7 @@ PY
   TEST_COUNTER=$((TEST_COUNTER + 1))
   local login_file="$LOG_DIR/test_${TEST_COUNTER}.json"
   local http_code
-  http_code="$(curl -s -o "$login_file" -w '%{http_code}' --connect-timeout 15 --max-time 30 -X POST "http://127.0.0.1:5001/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$login_payload" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$login_file" -w '%{http_code}' --connect-timeout 15 --max-time 30 -X POST "http://127.0.0.1:${AUTH_PORT}/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$login_payload" 2>>"$CURL_ERRORS")"
   assert_status "Auth login directo" "$http_code" "200" "$login_file"
 
   if [[ "$LAST_RESULT" == "PASS" ]]; then
@@ -323,20 +415,20 @@ PY
   else
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local refresh_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-    http_code="$(curl -s -o "$refresh_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:5001/v1/auth/refresh" -H "Authorization: Bearer ${AUTH_REFRESH_TOKEN:-}" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$refresh_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:${AUTH_PORT}/v1/auth/refresh" -H "Authorization: Bearer ${AUTH_REFRESH_TOKEN:-}" 2>>"$CURL_ERRORS")"
     assert_status "Auth refresh" "$http_code" "200" "$refresh_file"
   fi
 
   if [[ -n "${AUTH_ACCESS_TOKEN:-}" ]]; then
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local me_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-    http_code="$(curl -s -o "$me_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${AUTH_ACCESS_TOKEN:-}" "http://127.0.0.1:5001/v1/users/me" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$me_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${AUTH_ACCESS_TOKEN:-}" "http://127.0.0.1:${AUTH_PORT}/v1/users/me" 2>>"$CURL_ERRORS")"
     assert_status "Auth users/me" "$http_code" "200" "$me_file"
   fi
 
   TEST_COUNTER=$((TEST_COUNTER + 1))
   local gw_login_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-  http_code="$(curl -s -o "$gw_login_file" -w '%{http_code}' --connect-timeout 15 --max-time 30 -X POST "http://127.0.0.1:5000/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$login_payload" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$gw_login_file" -w '%{http_code}' --connect-timeout 15 --max-time 30 -X POST "http://127.0.0.1:${GATEWAY_PORT}/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$login_payload" 2>>"$CURL_ERRORS")"
   assert_status "Gateway login" "$http_code" "200" "$gw_login_file"
 
   if [[ "$LAST_RESULT" == "PASS" ]]; then
@@ -356,7 +448,7 @@ PY
   if [[ -n "${GW_ACCESS_TOKEN:-}" ]]; then
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local gw_org_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-    http_code="$(curl -s -o "$gw_org_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:5000/v1/orgs/me" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$gw_org_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:${GATEWAY_PORT}/v1/orgs/me" 2>>"$CURL_ERRORS")"
     assert_status "Gateway orgs/me" "$http_code" "200" "$gw_org_file"
     if [[ "$LAST_RESULT" == "PASS" ]]; then
       PRIMARY_ORG_ID="$("$PYTHON_BOOTSTRAP" - "$gw_org_file" <<'PY'
@@ -378,7 +470,7 @@ PY
   if [[ -n "${GW_ACCESS_TOKEN:-}" && -n "${PRIMARY_ORG_ID:-}" ]]; then
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local gw_org_detail="$LOG_DIR/test_${TEST_COUNTER}.json"
-    http_code="$(curl -s -o "$gw_org_detail" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:5000/v1/orgs/${PRIMARY_ORG_ID}" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$gw_org_detail" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:${GATEWAY_PORT}/v1/orgs/${PRIMARY_ORG_ID}" 2>>"$CURL_ERRORS")"
     assert_status "Gateway org detalle" "$http_code" "200" "$gw_org_detail"
   fi
 
@@ -397,14 +489,14 @@ with open(sys.argv[1], 'w', encoding='utf-8') as fh:
 PY
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local audit_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-    http_code="$(curl -s -o "$audit_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:5000/v1/audit" -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" -H "Content-Type: application/json" --data-binary "@$audit_payload" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$audit_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:${GATEWAY_PORT}/v1/audit" -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" -H "Content-Type: application/json" --data-binary "@$audit_payload" 2>>"$CURL_ERRORS")"
     assert_status "Gateway audit log" "$http_code" "201" "$audit_file"
   fi
 
   if [[ -n "${GW_ACCESS_TOKEN:-}" && -n "${PRIMARY_ORG_ID:-}" ]]; then
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local forbidden_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-    http_code="$(curl -s -o "$forbidden_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:5000/v1/orgs/00000000-0000-0000-0000-000000000000" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$forbidden_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:${GATEWAY_PORT}/v1/orgs/00000000-0000-0000-0000-000000000000" 2>>"$CURL_ERRORS")"
     assert_status "Gateway org inexistente" "$http_code" "403" "$forbidden_file"
   fi
 
@@ -417,22 +509,23 @@ with open(sys.argv[1], 'w', encoding='utf-8') as fh:
 PY
   TEST_COUNTER=$((TEST_COUNTER + 1))
   local invalid_file="$LOG_DIR/test_${TEST_COUNTER}.json"
-  http_code="$(curl -s -o "$invalid_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:5001/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$invalid_payload" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$invalid_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:${AUTH_PORT}/v1/auth/login" -H "Content-Type: application/json" --data-binary "@$invalid_payload" 2>>"$CURL_ERRORS")"
   assert_status "Auth login incompleto" "$http_code" "401" "$invalid_file"
 }
 
 degradation_test() {
-  local org_pid="${SERVICE_PIDS[ORG]:-}"
+  local org_pid
+  org_pid="$(get_service_pid ORG)"
   if [[ -n "$org_pid" && -n "${GW_ACCESS_TOKEN:-}" ]]; then
     log "Degradacion" "Deteniendo org_service (PID $org_pid)"
     if kill "$org_pid" >>"$LOG_DIR/stop_org_service.log" 2>&1; then
       ORG_PID_KILLED=1
-      unset "SERVICE_PIDS[ORG]"
+      clear_service_pid ORG
     fi
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local tmp_file="$LOG_DIR/test_${TEST_COUNTER}.json"
     local http_code
-    http_code="$(curl -s -o "$tmp_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:5000/v1/orgs/me" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$tmp_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 -H "Authorization: Bearer ${GW_ACCESS_TOKEN:-}" "http://127.0.0.1:${GATEWAY_PORT}/v1/orgs/me" 2>>"$CURL_ERRORS")"
     assert_status "Gateway routing with org_service offline" "$http_code" "503" "$tmp_file"
   else
     record_fail "Gateway routing with org_service offline" "No se pudo simular degradacion (PID o token ausente)"
@@ -444,7 +537,7 @@ degradation_test() {
     TEST_COUNTER=$((TEST_COUNTER + 1))
     local tmp_file="$LOG_DIR/test_${TEST_COUNTER}.json"
     local http_code
-    http_code="$(curl -s -o "$tmp_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 "http://127.0.0.1:5000/v1/orgs/me" 2>>"$CURL_ERRORS")"
+  http_code="$(curl -s -o "$tmp_file" -w '%{http_code}' --connect-timeout 10 --max-time 20 "http://127.0.0.1:${GATEWAY_PORT}/v1/orgs/me" 2>>"$CURL_ERRORS")"
     assert_status "Gateway without token" "$http_code" "401" "$tmp_file"
   fi
 }
@@ -510,10 +603,22 @@ main() {
     local audit_python="$MICRO_DIR/audit_service/.venv/bin/python"
     local gateway_python="$MICRO_DIR/gateway/.venv/bin/python"
 
-    start_service AUTH "$MICRO_DIR/auth_service" "$auth_python" || ABORT_TESTS=1
-    start_service ORG "$MICRO_DIR/org_service" "$org_python" || ABORT_TESTS=1
-    start_service AUDIT "$MICRO_DIR/audit_service" "$audit_python" || ABORT_TESTS=1
-    start_service GATEWAY "$MICRO_DIR/gateway" "$gateway_python" || ABORT_TESTS=1
+    GATEWAY_PORT="$(choose_gateway_port "$GATEWAY_PORT" 5050 5500 6000)"
+    if [[ -n "$CHOSEN_GATEWAY_NOTE" ]]; then
+      log "Gateway" "$CHOSEN_GATEWAY_NOTE"
+    fi
+  export AUTH_SERVICE_PORT="$AUTH_PORT"
+  export ORG_SERVICE_PORT="$ORG_PORT"
+  export AUDIT_SERVICE_PORT="$AUDIT_PORT"
+    export GATEWAY_SERVICE_PORT="$GATEWAY_PORT"
+  export AUTH_SERVICE_URL="http://127.0.0.1:${AUTH_PORT}"
+  export ORG_SERVICE_URL="http://127.0.0.1:${ORG_PORT}"
+  export AUDIT_SERVICE_URL="http://127.0.0.1:${AUDIT_PORT}"
+
+    start_service AUTH "$MICRO_DIR/auth_service" "$auth_python" "$AUTH_PORT" || ABORT_TESTS=1
+    start_service ORG "$MICRO_DIR/org_service" "$org_python" "$ORG_PORT" || ABORT_TESTS=1
+    start_service AUDIT "$MICRO_DIR/audit_service" "$audit_python" "$AUDIT_PORT" || ABORT_TESTS=1
+    start_service GATEWAY "$MICRO_DIR/gateway" "$gateway_python" "$GATEWAY_PORT" || ABORT_TESTS=1
   fi
 
   if (( ABORT_TESTS == 0 )); then

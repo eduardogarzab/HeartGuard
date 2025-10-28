@@ -5,7 +5,7 @@ Flask==3.0.3
 python-dotenv==1.0.1
 
 # Base de Datos
-psycopg2-binary==2.9.9
+psycopg2-binary==2.9.11
 
 # Servidor WSGI
 gunicorn==22.0.0
