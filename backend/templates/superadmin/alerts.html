@@ -1,9 +1,9 @@
 {{define "superadmin/alerts.html"}} {{template "layout" .}} {{end}} {{define "superadmin/alerts.html:content"}}
 <section class="hg-section">
-	<div class="hg-flex-between">
-		<h1>Alertas</h1>
-	</div>
-	<div class="hg-card">
+       <div class="hg-flex-between">
+               <h1>Alertas</h1>
+       </div>
+       <div class="hg-card">
 		<h3>Registrar alerta</h3>
 		<form method="post" action="/superadmin/alerts" class="hg-form-grid">
 			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
@@ -73,6 +73,26 @@
 				<button type="submit">Crear alerta</button>
 			</div>
 		</form>
+	</div>
+</section>
+
+<section class="hg-section">
+       <div class="hg-card">
+               <h3>Filtrar alertas</h3>
+               <form method="get" action="/superadmin/alerts" class="hg-audit-filters">
+                       <div class="hg-filter-field">
+                               <label for="alerts-from">Desde</label>
+                               <input id="alerts-from" name="from" type="date" value="{{.From}}" />
+                       </div>
+                       <div class="hg-filter-field">
+                               <label for="alerts-to">Hasta</label>
+                               <input id="alerts-to" name="to" type="date" value="{{.To}}" />
+                       </div>
+                       <div class="hg-filter-actions">
+                               <button type="submit">Filtrar</button>
+                               <a href="/superadmin/alerts" class="hg-link-button hg-button-muted" role="button">Limpiar</a>
+                       </div>
+               </form>
 	</div>
 </section>
 

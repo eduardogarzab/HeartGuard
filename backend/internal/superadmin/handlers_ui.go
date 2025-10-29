@@ -170,7 +170,7 @@ type Repository interface {
 	UpdateGroundTruthLabel(ctx context.Context, id string, input models.GroundTruthLabelUpdateInput) (*models.GroundTruthLabel, error)
 	DeleteGroundTruthLabel(ctx context.Context, id string) error
 
-	ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error)
+	ListAlerts(ctx context.Context, from, to *time.Time, limit, offset int) ([]models.Alert, error)
 	CreateAlert(ctx context.Context, patientID string, input models.AlertInput) (*models.Alert, error)
 	UpdateAlert(ctx context.Context, id string, input models.AlertInput) (*models.Alert, error)
 	DeleteAlert(ctx context.Context, id string) error
@@ -406,6 +406,15 @@ func (h *Handlers) render(w http.ResponseWriter, r *http.Request, templateName, 
 		Breadcrumbs:      breadcrumbs,
 		IsSuperadmin:     middleware.IsSuperadmin(r.Context()),
 		SessionExpiresAt: sessionExpiresAt,
+	}
+	// Handle special cases for view data with From/To fields
+	if alertsData, ok := data.(alertsViewData); ok {
+		view.From = alertsData.From
+		view.To = alertsData.To
+	}
+	if auditData, ok := data.(auditViewData); ok {
+		view.From = auditData.From
+		view.To = auditData.To
 	}
 	view.ContentTemplate = templateName + ":content"
 	if err := h.renderer.Render(w, templateName, view); err != nil {
@@ -1763,6 +1772,8 @@ type alertsViewData struct {
 	AlertChannels    []models.CatalogItem
 	DeliveryStatuses []models.CatalogItem
 	CurrentUserID    string
+	From             string
+	To               string
 }
 
 type systemSettingsViewData struct {
@@ -4736,7 +4747,23 @@ func (h *Handlers) AlertsIndex(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 
-	alerts, err := h.repo.ListAlerts(ctx, 200, 0)
+	fromStr := strings.TrimSpace(r.URL.Query().Get("from"))
+	toStr := strings.TrimSpace(r.URL.Query().Get("to"))
+	var from, to *time.Time
+	if fromStr != "" {
+		t, err := time.Parse("2006-01-02", fromStr)
+		if err == nil {
+			from = &t
+		}
+	}
+	if toStr != "" {
+		t, err := time.Parse("2006-01-02", toStr)
+		if err == nil {
+			t = t.Add(24 * time.Hour - time.Nanosecond)
+			to = &t
+		}
+	}
+	alerts, err := h.repo.ListAlerts(ctx, from, to, 200, 0)
 	if err != nil {
 		http.Error(w, "No se pudieron cargar las alertas", http.StatusInternalServerError)
 		return
@@ -4816,6 +4843,12 @@ func (h *Handlers) AlertsIndex(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if from != nil {
+		fromStr = from.Format("2006-01-02")
+	}
+	if to != nil {
+		toStr = to.Format("2006-01-02")
+	}
 	data := alertsViewData{
 		Items:            alerts,
 		Patients:         patients,
@@ -4832,6 +4865,8 @@ func (h *Handlers) AlertsIndex(w http.ResponseWriter, r *http.Request) {
 		AlertChannels:    channels,
 		DeliveryStatuses: deliveryStatuses,
 		CurrentUserID:    middleware.UserIDFromContext(r.Context()),
+		From:             fromStr,
+		To:               toStr,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Alertas"}}
 	h.render(w, r, "superadmin/alerts.html", "Alertas", data, crumbs)

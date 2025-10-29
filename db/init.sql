@@ -1813,7 +1813,9 @@ CREATE INDEX IF NOT EXISTS idx_alerts_duplicate ON alerts(duplicate_of_alert_id)
 
 CREATE OR REPLACE FUNCTION heartguard.sp_alerts_list(
   p_limit integer DEFAULT 100,
-  p_offset integer DEFAULT 0)
+  p_offset integer DEFAULT 0,
+  p_from timestamp DEFAULT NULL,
+  p_to timestamp DEFAULT NULL)
 RETURNS TABLE (
   id text,
   org_id text,
@@ -1855,6 +1857,8 @@ BEGIN
   JOIN heartguard.alert_types at ON at.id = a.type_id
   JOIN heartguard.alert_levels al ON al.id = a.alert_level_id
   JOIN heartguard.alert_status ast ON ast.id = a.status_id
+  WHERE (p_from IS NULL OR a.created_at >= p_from)
+    AND (p_to IS NULL OR a.created_at <= p_to)
   ORDER BY a.created_at DESC
   LIMIT safe_limit OFFSET safe_offset;
 END;

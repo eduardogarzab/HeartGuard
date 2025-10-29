@@ -36,6 +36,8 @@ type ViewData struct {
 	ContentTemplate string
 	ContentHTML     template.HTML
 	SessionExpiresAt *time.Time
+	From            string
+	To              string
 }
 
 func NewRenderer() (*Renderer, error) {

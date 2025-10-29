@@ -265,7 +265,7 @@ func (r *Repo) GetPatientRiskBreakdown(ctx context.Context) ([]models.StatusBrea
             rl.label AS label,
             COUNT(*) AS count
         FROM patients p
-        LEFT JOIN risk_levels rl ON rl.id = p.risk_level_id
+        JOIN risk_levels rl ON rl.id = p.risk_level_id
         GROUP BY rl.code, rl.label
         ORDER BY
             CASE
@@ -2957,8 +2957,8 @@ func (r *Repo) DeleteGroundTruthLabel(ctx context.Context, id string) error {
 // Alerts
 // ------------------------------
 
-func (r *Repo) ListAlerts(ctx context.Context, limit, offset int) ([]models.Alert, error) {
-	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_alerts_list($1, $2)`, limit, offset)
+func (r *Repo) ListAlerts(ctx context.Context, from, to *time.Time, limit, offset int) ([]models.Alert, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_alerts_list($1, $2, $3, $4)`, limit, offset, from, to)
 	if err != nil {
 		return nil, err
 	}
