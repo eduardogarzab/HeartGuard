@@ -4,7 +4,7 @@ This document describes the comprehensive validation strategy implemented for th
 
 ## Objectives
 - Guarantee that every Python microservice runs in an isolated virtual environment.
-- Verify outbound connectivity from the local workstation to the shared PostgreSQL and Redis services hosted at `35.184.124.76`.
+- Verify outbound connectivity from the local workstation to the shared PostgreSQL and Redis services hosted at `34.70.7.33`.
 - Launch all microservices in a deterministic order and capture their runtime logs.
 - Exercise critical business flows end-to-end via HTTP using `curl`, including success and error scenarios.
 - Demonstrate resilience by simulating a controlled outage and observing the gateway's behaviour.
@@ -13,7 +13,7 @@ This document describes the comprehensive validation strategy implemented for th
 ## Pre-requisites
 1. Windows 10/11 shell (PowerShell or Command Prompt).
 2. Python launcher (`py`) or `python` available on `PATH`.
-3. Internet access to reach the remote VM at `35.184.124.76` (ports 5432 and 6379).
+3. Internet access to reach the remote VM at `34.70.7.33` (ports 5432 and 6379).
 4. Seed data present in PostgreSQL for the super-admin account:
    - Email: `ana.ruiz@heartguard.com`
    - Password: `Demo#2025`
@@ -29,7 +29,7 @@ The batch script performs the following high-level stages:
    - Creates (or reuses) per-service virtual environments and installs dependencies from `requirements.txt`.
 
 2. **Connectivity verification**
-   - Uses `Test-NetConnection` to probe PostgreSQL (`35.184.124.76:5432`) and Redis (`35.184.124.76:6379`).
+   - Uses `Test-NetConnection` to probe PostgreSQL (`34.70.7.33:5432`) and Redis (`34.70.7.33:6379`).
    - Executes lightweight Python probes (`SELECT 1` and `Redis.ping()`) inside the `auth_service` virtual environment to ensure credentials and networking are correct.
 
 3. **Service orchestration**
