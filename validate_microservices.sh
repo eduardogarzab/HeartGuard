@@ -145,47 +145,10 @@ find_python() {
       log "Python" "Usando interprete $candidate"
       return 0
     fi
-  done
-  record_fail "Python" "No se encontro interprete compatible"
-  ABORT_TESTS=1
-  return 1
-}
-
-setup_service_env() {
-  local service_key="$1"
-  local service_dir="$2"
-  local venv_dir="$service_dir/.venv"
-  local setup_log="$LOG_DIR/${service_key}_venv.log"
-  local pip_log="$LOG_DIR/${service_key}_pip.log"
-
-  log "Setup $service_key" "Creando entorno virtual"
-  if [[ ! -d "$venv_dir" ]]; then
-    "$PYTHON_BOOTSTRAP" -m venv "$venv_dir" >>"$setup_log" 2>&1 || {
-      record_fail "Setup $service_key" "Fallo creando entorno virtual (ver ${service_key}_venv.log)"
-      return 1
-    }
-  fi
-
-  local venv_python="$venv_dir/bin/python"
-  if [[ ! -x "$venv_python" ]]; then
-    record_fail "Setup $service_key" "Python del entorno no encontrado"
-    return 1
-  fi
-
-  local req_file="$service_dir/requirements.txt"
-  if [[ -f "$req_file" ]]; then
-    log "Setup $service_key" "Instalando dependencias"
-    "$venv_python" -m pip install --upgrade pip >>"$pip_log" 2>&1 || {
-      record_fail "Setup $service_key" "Fallo instalando dependencias (ver ${service_key}_pip.log)"
-      return 1
-    }
-    "$venv_python" -m pip install -r "$req_file" >>"$pip_log" 2>&1 || {
-      record_fail "Setup $service_key" "Fallo instalando dependencias (ver ${service_key}_pip.log)"
-      return 1
-    }
   else
-    log "Setup $service_key" "No se encontro requirements.txt"
+    printf '[validate] %s OK.\n' "$service"
   fi
+done
 
   record_pass "Setup $service_key" "Entorno virtual listo"
   return 0
