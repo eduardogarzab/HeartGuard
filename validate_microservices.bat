@@ -15,6 +15,7 @@ set "ADMIN_PASSWORD=Demo#2025"
 set "POSTGRES_HOST=35.184.124.76"
 set "POSTGRES_PORT=5432"
 set "REDIS_PORT=6379"
+set "SIGNAL_PORT=5007"
 set "TIMESTAMP="
 set "PASS_TOTAL=0"
 set "FAIL_TOTAL=0"
@@ -38,6 +39,8 @@ call :setup_service_env "org" "%MICRO_DIR%\org_service"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :setup_service_env "audit" "%MICRO_DIR%\audit_service"
 if errorlevel 1 set "ABORT_TESTS=1"
+call :setup_service_env "signal" "%MICRO_DIR%\signal_service"
+if errorlevel 1 set "ABORT_TESTS=1"
 call :setup_service_env "gateway" "%MICRO_DIR%\gateway"
 if errorlevel 1 set "ABORT_TESTS=1"
 if defined ABORT_TESTS goto finalize
@@ -51,11 +54,30 @@ call :verify_redis
 if errorlevel 1 set "ABORT_TESTS=1"
 if defined ABORT_TESTS goto cleanup
 
+call :log "Database Setup" "Inicializando base de datos de signal_service"
+set "SIGNAL_PY=%MICRO_DIR%\signal_service\.venv\Scripts\python.exe"
+"!SIGNAL_PY!" "%MICRO_DIR%\signal_service\init_db.py" > "%LOG_DIR%\signal_init_db.log" 2>&1
+if errorlevel 1 (
+    call :record_fail "Signal DB Init" "Fallo inicializando la base de datos (ver signal_init_db.log)"
+    set "ABORT_TESTS=1"
+    goto cleanup
+)
+
+call :log "Database Setup" "Sembrando datos de prueba en signal_service"
+"!SIGNAL_PY!" "%MICRO_DIR%\signal_service\seed_test_data.py" > "%LOG_DIR%\signal_seed_data.log" 2>&1
+if errorlevel 1 (
+    call :record_fail "Signal DB Seed" "Fallo sembrando datos de prueba (ver signal_seed_data.log)"
+    set "ABORT_TESTS=1"
+    goto cleanup
+)
+
 call :start_service "AUTH" "%MICRO_DIR%\auth_service" "%MICRO_DIR%\auth_service\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :start_service "ORG" "%MICRO_DIR%\org_service" "%MICRO_DIR%\org_service\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :start_service "AUDIT" "%MICRO_DIR%\audit_service" "%MICRO_DIR%\audit_service\.venv\Scripts\python.exe"
+if errorlevel 1 set "ABORT_TESTS=1"
+call :start_service "SIGNAL" "%MICRO_DIR%\signal_service" "%MICRO_DIR%\signal_service\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :start_service "GATEWAY" "%MICRO_DIR%\gateway" "%MICRO_DIR%\gateway\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
@@ -93,6 +115,7 @@ call :log "Cleanup" "Deteniendo microservicios"
 call :stop_service "AUTH"
 call :stop_service "ORG"
 call :stop_service "AUDIT"
+call :stop_service "SIGNAL"
 call :stop_service "GATEWAY"
 
 :finalize
@@ -208,6 +231,21 @@ set "STDOUT_FILE=%LOG_DIR%\!SERVICE_TAG!_stdout.log"
 set "STDERR_FILE=%LOG_DIR%\!SERVICE_TAG!_stderr.log"
 if exist "%STDOUT_FILE%" del "%STDOUT_FILE%"
 if exist "%STDERR_FILE%" del "%STDERR_FILE%"
+
+set "SHARED_ENV_FILE=%MICRO_DIR%\.env"
+if exist "!SHARED_ENV_FILE!" (
+    for /f "usebackq delims=" %%i in ("!SHARED_ENV_FILE!") do (
+        set "%%i"
+    )
+)
+
+set "SERVICE_ENV_FILE=%SERVICE_DIR%\.env"
+if exist "!SERVICE_ENV_FILE!" (
+    for /f "usebackq delims=" %%i in ("!SERVICE_ENV_FILE!") do (
+        set "%%i"
+    )
+)
+
 powershell -NoProfile -Command "Try { $p = Start-Process -FilePath '%SERVICE_PY%' -ArgumentList 'app.py' -WorkingDirectory '%SERVICE_DIR%' -RedirectStandardOutput '%STDOUT_FILE%' -RedirectStandardError '%STDERR_FILE%' -PassThru -WindowStyle Hidden; Write-Output $p.Id } Catch { Write-Output 'ERROR:' + $_.Exception.Message; exit 1 }" > "%LOG_DIR%\start_%SERVICE_TAG%.log"
 set /p START_RESULT=<"%LOG_DIR%\start_%SERVICE_TAG%.log"
 if /I "!START_RESULT:~0,6!"=="ERROR:" (
@@ -240,7 +278,18 @@ exit /b 0
 call :http_test "Health auth_service" "http://127.0.0.1:5001/health" "200"
 call :http_test "Health org_service" "http://127.0.0.1:5002/health" "200"
 call :http_test "Health audit_service" "http://127.0.0.1:5006/health" "200"
+call :http_test "Health signal_service" "http://127.0.0.1:!SIGNAL_PORT!/health" "200"
 call :http_test "Health gateway" "http://127.0.0.1:5000/health" "200"
+
+set "SIGNAL_PAYLOAD_FILE=%LOG_DIR%\payload_signal_ingest.json"
+echo [{\"ts\": 1678886401, \"val\": 78}, {\"ts\": 1678886405, \"val\": 80}] > "!SIGNAL_PAYLOAD_FILE!"
+set "DEVICE_UUID=device-uuid-test-001"
+set "DEVICE_TOKEN=heartguard-test-token-abcdef123456"
+set "TEST_NAME=SignalService Ingest"
+set /a TEST_COUNTER+=1
+set "INGEST_FILE=%LOG_DIR%\test_!TEST_COUNTER!.json"
+for /f "delims=" %%s in ('curl -s -o "!INGEST_FILE!" -w "%%{http_code}" --connect-timeout 15 --max-time 30 -X POST "http://127.0.0.1:!SIGNAL_PORT!/api/v1/data/ingest?stream_type=heart_rate" -H "Content-Type: application/json" -H "X-Device-UUID: !DEVICE_UUID!" -H "X-Device-Token: !DEVICE_TOKEN!" --data-binary "@!SIGNAL_PAYLOAD_FILE!" 2^>"%LOG_DIR%\curl_errors.log"') do set "HTTP_CODE=%%s"
+call :assert_status "!TEST_NAME!" "!HTTP_CODE!" "202" "!INGEST_FILE!"
 
 set "LOGIN_PAYLOAD=%LOG_DIR%\payload_login.json"
 powershell -NoProfile -Command "$payload = @{ email = '%ADMIN_EMAIL%' ; password = '%ADMIN_PASSWORD%' } | ConvertTo-Json -Compress; Set-Content -Path '%LOGIN_PAYLOAD%' -Value $payload" >nul

@@ -23,6 +23,7 @@ ABORT_TESTS=0
 AUTH_PORT="${AUTH_PORT:-5001}"
 ORG_PORT="${ORG_PORT:-5002}"
 AUDIT_PORT="${AUDIT_PORT:-5006}"
+SIGNAL_PORT="${SIGNAL_PORT:-5007}"
 GATEWAY_PORT="${GATEWAY_PORT:-5000}"
 MEDIA_PORT="${MEDIA_PORT:-5007}"
 CHOSEN_GATEWAY_NOTE=""
@@ -302,6 +303,24 @@ start_service() {
     ensure_port_free "$port"
   fi
 
+  local shared_env_file="$MICRO_DIR/.env"
+  if [[ -f "$shared_env_file" ]]; then
+    while IFS= read -r line; do
+      if [[ ! "$line" =~ ^\s*# && -n "$line" ]]; then
+        export "$line"
+      fi
+    done < "$shared_env_file"
+  fi
+
+  local service_env_file="$service_dir/.env"
+  if [[ -f "$service_env_file" ]]; then
+    while IFS= read -r line; do
+      if [[ ! "$line" =~ ^\s*# && -n "$line" ]]; then
+        export "$line"
+      fi
+    done < "$service_env_file"
+  fi
+
   log "Start $tag" "Lanzando servicio"
   (
     cd "$service_dir" || exit 1
@@ -370,8 +389,29 @@ run_tests() {
   http_test "Health auth_service" "http://127.0.0.1:${AUTH_PORT}/health" "200"
   http_test "Health org_service" "http://127.0.0.1:${ORG_PORT}/health" "200"
   http_test "Health audit_service" "http://127.0.0.1:${AUDIT_PORT}/health" "200"
-  http_test "Health media_service" "http://127.0.0.1:${MEDIA_PORT}/health" "200"
+  http_test "Health signal_service" "http://127.0.0.1:${SIGNAL_PORT}/health" "200"
   http_test "Health gateway" "http://127.0.0.1:${GATEWAY_PORT}/health" "200"
+
+  # Test: signal_service data ingestion
+  local signal_payload_file="$LOG_DIR/payload_signal_ingest.json"
+  cat > "$signal_payload_file" <<EOF
+[
+  {"ts": 1678886401, "val": "78"},
+  {"ts": 1678886405, "val": "80"}
+]
+EOF
+  local device_uuid="device-uuid-test-001"
+  local device_token="heartguard-test-token-abcdef123456"
+  TEST_COUNTER=$((TEST_COUNTER + 1))
+  local ingest_file="$LOG_DIR/test_${TEST_COUNTER}.json"
+  local http_code
+  http_code="$(curl -s -o "$ingest_file" -w '%{http_code}' --connect-timeout 15 --max-time 30 \
+    -X POST "http://127.0.0.1:${SIGNAL_PORT}/api/v1/data/ingest?stream_type=heart_rate" \
+    -H "Content-Type: application/json" \
+    -H "X-Device-UUID: ${device_uuid}" \
+    -H "X-Device-Token: ${device_token}" \
+    --data-binary "@$signal_payload_file" 2>>"$CURL_ERRORS")"
+  assert_status "SignalService Ingest" "$http_code" "202" "$ingest_file"
 
   local login_payload="$LOG_DIR/payload_login.json"
   "$PYTHON_BOOTSTRAP" - "$login_payload" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" <<'PY'
@@ -549,6 +589,7 @@ cleanup() {
   stop_service AUTH
   stop_service ORG
   stop_service AUDIT
+  stop_service SIGNAL
   stop_service GATEWAY
   stop_service MEDIA
 }
@@ -590,6 +631,7 @@ main() {
   setup_service_env "auth" "$MICRO_DIR/auth_service" || ABORT_TESTS=1
   setup_service_env "org" "$MICRO_DIR/org_service" || ABORT_TESTS=1
   setup_service_env "audit" "$MICRO_DIR/audit_service" || ABORT_TESTS=1
+  setup_service_env "signal" "$MICRO_DIR/signal_service" || ABORT_TESTS=1
   setup_service_env "gateway" "$MICRO_DIR/gateway" || ABORT_TESTS=1
   setup_service_env "media" "$MICRO_DIR/media_service" || ABORT_TESTS=1
 
@@ -602,9 +644,34 @@ main() {
   fi
 
   if (( ABORT_TESTS == 0 )); then
+    log "Database Setup" "Inicializando base de datos de signal_service"
+    local signal_python="$MICRO_DIR/signal_service/.venv/bin/python"
+    if [[ ! -x "$signal_python" ]]; then
+      record_fail "Signal DB Init" "Python del servicio signal no disponible"
+      ABORT_TESTS=1
+    else
+      "$signal_python" "$MICRO_DIR/signal_service/init_db.py" > "$LOG_DIR/signal_init_db.log" 2>&1
+      if (( $? != 0 )); then
+        record_fail "Signal DB Init" "Fallo inicializando la base de datos (ver signal_init_db.log)"
+        ABORT_TESTS=1
+      fi
+    fi
+
+    if (( ABORT_TESTS == 0 )); then
+      log "Database Setup" "Sembrando datos de prueba en signal_service"
+      "$signal_python" "$MICRO_DIR/signal_service/seed_test_data.py" > "$LOG_DIR/signal_seed_data.log" 2>&1
+      if (( $? != 0 )); then
+        record_fail "Signal DB Seed" "Fallo sembrando datos de prueba (ver signal_seed_data.log)"
+        ABORT_TESTS=1
+      fi
+    fi
+  fi
+
+  if (( ABORT_TESTS == 0 )); then
     local auth_python="$MICRO_DIR/auth_service/.venv/bin/python"
     local org_python="$MICRO_DIR/org_service/.venv/bin/python"
     local audit_python="$MICRO_DIR/audit_service/.venv/bin/python"
+    local signal_python="$MICRO_DIR/signal_service/.venv/bin/python"
     local gateway_python="$MICRO_DIR/gateway/.venv/bin/python"
     local media_python="$MICRO_DIR/media_service/.venv/bin/python"
 
@@ -615,22 +682,17 @@ main() {
   export AUTH_SERVICE_PORT="$AUTH_PORT"
   export ORG_SERVICE_PORT="$ORG_PORT"
   export AUDIT_SERVICE_PORT="$AUDIT_PORT"
-  export MEDIA_SERVICE_PORT="$MEDIA_PORT"
+  export SIGNAL_SERVICE_PORT="$SIGNAL_PORT"
     export GATEWAY_SERVICE_PORT="$GATEWAY_PORT"
   export AUTH_SERVICE_URL="http://127.0.0.1:${AUTH_PORT}"
   export ORG_SERVICE_URL="http://127.0.0.1:${ORG_PORT}"
   export AUDIT_SERVICE_URL="http://127.0.0.1:${AUDIT_PORT}"
-  export MEDIA_SERVICE_URL="http://127.0.0.1:${MEDIA_PORT}"
-    if [[ -z "${STORAGE_EMULATOR_HOST:-}" ]]; then
-      export STORAGE_EMULATOR_HOST="http://127.0.0.1:9090"
-    fi
-    if [[ -z "${GOOGLE_CLOUD_PROJECT:-}" ]]; then
-      export GOOGLE_CLOUD_PROJECT="heartguard-local"
-    fi
+  export SIGNAL_SERVICE_URL="http://127.0.0.1:${SIGNAL_PORT}"
 
     start_service AUTH "$MICRO_DIR/auth_service" "$auth_python" "$AUTH_PORT" || ABORT_TESTS=1
     start_service ORG "$MICRO_DIR/org_service" "$org_python" "$ORG_PORT" || ABORT_TESTS=1
     start_service AUDIT "$MICRO_DIR/audit_service" "$audit_python" "$AUDIT_PORT" || ABORT_TESTS=1
+    start_service SIGNAL "$MICRO_DIR/signal_service" "$signal_python" "$SIGNAL_PORT" || ABORT_TESTS=1
     start_service GATEWAY "$MICRO_DIR/gateway" "$gateway_python" "$GATEWAY_PORT" || ABORT_TESTS=1
     start_service MEDIA "$MICRO_DIR/media_service" "$media_python" "$MEDIA_PORT" || ABORT_TESTS=1
   fi
