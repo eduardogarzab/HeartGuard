@@ -1,7 +1,1 @@
-{
-  "data": {
-    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTcwODE3MSwianRpIjoiYjBlYjUwOGUtMGE4Zi00NWU0LTk1MjQtYWMyM2M4YWIyNDAwIiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5Ijp7InVzZXJfaWQiOiJmYTc4ZjQ5MC0zNTMwLTQ3NzgtOTYyMS0wOGY4M2U3OTAzMmUiLCJlbWFpbCI6ImFuYS5ydWl6QGhlYXJ0Z3VhcmQuY29tIiwib3JnX2lkIjoiYmUxNmJhOTItYjBmYi00ODI1LTk4ZDYtNWE0ZGI5Y2Y4NTc5IiwiZ2xvYmFsX3JvbGUiOiJ1c2VyIn0sIm5iZiI6MTc2MTcwODE3MSwiY3NyZiI6IjQ2NGY5MmU3LTBhNDktNDNhNC1hMjJhLTEyNDBjZjRhNGI0YyIsImV4cCI6MTc2MTcwOTk3MX0.N4c6m0y-akwU0IFIk-TQHhqUNkkpZxuJrN-fHpFiejc"
-  },
-  "meta": {},
-  "status": "ok"
-}
+{"data":{"identity":{"email":"ana.ruiz@heartguard.com","global_role":"user","org_id":"be16ba92-b0fb-4825-98d6-5a4db9cf8579","user_id":"fa78f490-3530-4778-9621-08f83e79032e"}},"meta":{},"status":"ok"}

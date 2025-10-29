@@ -62,18 +62,23 @@ type InvitationBreakdown struct {
 	Count  int    `json:"count"`
 }
 
-type AlertResponseStats struct {
-	AvgAckDuration     time.Duration `json:"avg_ack_duration"`
-	AvgResolveDuration time.Duration `json:"avg_resolve_duration"`
+type MetricsOverview struct {
+	AvgResponseMs            float64         `json:"avg_response_ms"`
+	AvgAckDuration           time.Duration   `json:"avg_ack_duration"`
+	AvgResolveDuration       time.Duration   `json:"avg_resolve_duration"`
+	TotalUsers               int             `json:"total_users"`
+	TotalOrganizations       int             `json:"total_organizations"`
+	TotalMemberships         int             `json:"total_memberships"`
+	PendingInvitations       int             `json:"pending_invitations"`
+	RecentOperations         []OperationStat `json:"recent_operations"`
+	UnassignedAlertsCount    int             `json:"unassigned_alerts_count"`
+	ActivePatientsCount      int             `json:"active_patients_count"`
+	DisconnectedDevicesCount int             `json:"disconnected_devices_count"`
 }
 
-type MetricsOverview struct {
-	AvgResponseMs      float64         `json:"avg_response_ms"`
-	TotalUsers         int             `json:"total_users"`
-	TotalOrganizations int             `json:"total_organizations"`
-	TotalMemberships   int             `json:"total_memberships"`
-	PendingInvitations int             `json:"pending_invitations"`
-	RecentOperations   []OperationStat `json:"recent_operations"`
+type AlertResponseStats struct {
+	AvgAckDuration    time.Duration `json:"avg_ack_duration"`
+	AvgResolveDuration time.Duration `json:"avg_resolve_duration"`
 }
 
 type Patient struct {

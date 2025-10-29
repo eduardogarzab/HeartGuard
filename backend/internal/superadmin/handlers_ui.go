@@ -30,6 +30,17 @@ import (
 	"heartguard-superadmin/internal/ui"
 )
 
+func parseDateTimeLocal(s string) (*time.Time, error) {
+	if s == "" {
+		return nil, nil
+	}
+	t, err := time.Parse("2006-01-02T15:04", s)
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
 func min(a, b int) int {
 	if a < b {
 		return a
@@ -184,6 +195,8 @@ type Repository interface {
 	GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([]models.StatusBreakdown, error)
 	GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error)
 	GetDeviceStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	GetInferenceBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	CountAlertsCreated(ctx context.Context, since time.Time) (int, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)
@@ -458,6 +471,7 @@ type timeFilterOption struct {
 
 type dashboardViewData struct {
 	Overview           *models.MetricsOverview
+	AlertsCreatedCount int
 	Metrics            []dashboardMetric
 	StatusChart        []dashboardChartSlice
 	StatusTotal        int
@@ -467,8 +481,9 @@ type dashboardViewData struct {
 	RecentActivity     []dashboardActivityEntry
 	ActivitySeries     []dashboardActivitySeriesPoint
 	PatientRiskChart   []dashboardChartSlice
+	InferenceChart     []dashboardChartSlice
 	AlertOutcomeChart  []dashboardChartSlice
-	ResponseStats      *models.AlertResponseStats
+	// ResponseStats      *models.AlertResponseStats // Esta línea se elimina o comenta
 	DeviceStatusChart  []dashboardChartSlice
 	TimeFilterOptions  []timeFilterOption
 	SelectedTimeFilter string
@@ -478,6 +493,12 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	overview, err := h.repo.MetricsOverview(ctx)
 	if err != nil && h.logger != nil {
 		h.logger.Error("metrics overview", zap.Error(err))
+	}
+	// Ensure we always return a non-nil Overview to templates. Some DB
+	// environments may return errors or different column shapes; avoid
+	// letting that cascade into a nil-pointer panic in templates.
+	if overview == nil {
+		overview = &models.MetricsOverview{}
 	}
 	recent, err := h.repo.MetricsRecentActivity(ctx, 10)
 	if err != nil && h.logger != nil {
@@ -500,25 +521,39 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	if err != nil && h.logger != nil {
 		h.logger.Error("alert outcome breakdown", zap.Error(err))
 	}
-	responseStats, err := h.repo.GetAlertResponseStats(ctx, since)
+
+	inferenceBreakdown, err := h.repo.GetInferenceBreakdown(ctx)
 	if err != nil && h.logger != nil {
-		h.logger.Error("alert response stats", zap.Error(err))
+		h.logger.Error("inference breakdown", zap.Error(err))
 	}
+	// La llamada a GetAlertResponseStats se elimina de aquí
 	deviceStatus, err := h.repo.GetDeviceStatusBreakdown(ctx)
 	if err != nil && h.logger != nil {
 		h.logger.Error("device status breakdown", zap.Error(err))
+	}
+
+	// Count alerts created in the selected period
+	alertsCreated := 0
+	if cnt, err := h.repo.CountAlertsCreated(ctx, since); err != nil {
+		if h.logger != nil {
+			h.logger.Error("count alerts created", zap.Error(err))
+		}
+	} else {
+		alertsCreated = cnt
 	}
 
 	metrics := make([]dashboardMetric, 0, 4)
 	ops := make([]dashboardOperation, 0)
 	activity := make([]dashboardActivityEntry, 0)
 	activityBuckets := make(map[time.Time]int)
-	if overview != nil {
+	if overview != nil { // Usar los datos de overview
 		metrics = append(metrics,
 			dashboardMetric{Label: "Usuarios totales", Value: strconv.Itoa(overview.TotalUsers), Caption: "Usuarios registrados en el sistema"},
 			dashboardMetric{Label: "Organizaciones totales", Value: strconv.Itoa(overview.TotalOrganizations), Caption: "Con al menos un usuario"},
 			dashboardMetric{Label: "Membresías totales", Value: strconv.Itoa(overview.TotalMemberships), Caption: "Usuarios con rol asignado"},
 			dashboardMetric{Label: "Tiempo de respuesta", Value: fmt.Sprintf("%.0f ms", overview.AvgResponseMs), Caption: "Promedio en la última hora"},
+			// Añadir MTTR aquí si se quiere mostrar en las métricas principales
+			// dashboardMetric{Label: "Tiempo Medio Resolución (MTTR)", Value: overview.AvgResolveDuration.String(), Caption: "Promedio resolución alertas"},
 		)
 		ops = make([]dashboardOperation, 0, len(overview.RecentOperations))
 		for _, op := range overview.RecentOperations {
@@ -587,7 +622,7 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		}
 		width := int(math.Round(percent))
 		if width <= 0 && item.Count > 0 {
-			width = 4
+			width = 4 // Minimum width for visibility
 		}
 		if width > 100 {
 			width = 100
@@ -622,7 +657,7 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		}
 		width := int(math.Round(percent))
 		if width <= 0 && item.Count > 0 {
-			width = 4
+			width = 4 // Minimum width
 		}
 		if width > 100 {
 			width = 100
@@ -657,7 +692,7 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		}
 		width := int(math.Round(percent))
 		if width <= 0 && item.Count > 0 {
-			width = 4
+			width = 4 // Minimum width
 		}
 		if width > 100 {
 			width = 100
@@ -674,6 +709,14 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	alertOutcomeChart := make([]dashboardChartSlice, 0, len(alertOutcomes))
 	for _, item := range alertOutcomes {
 		alertOutcomeChart = append(alertOutcomeChart, dashboardChartSlice{
+			Label: item.Label,
+			Count: item.Count,
+		})
+	}
+
+	inferenceChart := make([]dashboardChartSlice, 0, len(inferenceBreakdown))
+	for _, item := range inferenceBreakdown {
+		inferenceChart = append(inferenceChart, dashboardChartSlice{
 			Label: item.Label,
 			Count: item.Count,
 		})
@@ -698,7 +741,7 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		}
 		width := int(math.Round(percent))
 		if width <= 0 && item.Count > 0 {
-			width = 4
+			width = 4 // Minimum width
 		}
 		if width > 100 {
 			width = 100
@@ -713,7 +756,8 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	}
 
 	return dashboardViewData{
-		Overview:          overview,
+		Overview:          overview, // Asegúrate de pasar el overview completo
+		AlertsCreatedCount: alertsCreated,
 		Metrics:           metrics,
 		StatusChart:       statusChart,
 		StatusTotal:       statusTotal,
@@ -723,8 +767,9 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		RecentActivity:    activity,
 		ActivitySeries:    activitySeries,
 		PatientRiskChart:  patientRiskChart,
+		InferenceChart:    inferenceChart,
 		AlertOutcomeChart: alertOutcomeChart,
-		ResponseStats:     responseStats,
+		// ResponseStats ya no existe aquí
 		DeviceStatusChart: deviceStatusChart,
 	}
 }
@@ -767,7 +812,7 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 
 	// Default to 30 days for export, similar to dashboard's default view.
 	since := time.Now().AddDate(0, 0, -30)
-	data := h.buildDashboardViewData(ctx, since)
+	data := h.buildDashboardViewData(ctx, since) // buildDashboardViewData ya no incluye ResponseStats
 	format := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("format")))
 	if format != "csv" {
 		format = "pdf"
@@ -777,7 +822,12 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 	filename := fmt.Sprintf("dashboard-%s", generatedAt.Format("20060102-150405"))
 
 	formatLocal := func(ts time.Time) string {
-		return ts.In(time.Local).Format("2006-01-02 15:04")
+		// Ensure time is in local timezone for formatting
+		loc, err := time.LoadLocation("America/Monterrey") // O la zona horaria correcta
+		if err != nil {
+			loc = time.Local // Fallback to system local time
+		}
+		return ts.In(loc).Format("2006-01-02 15:04")
 	}
 	formatPercent := func(val float64) string {
 		return fmt.Sprintf("%.2f%%", val)
@@ -787,12 +837,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 	case "csv":
 		w.Header().Set("Content-Type", "text/csv; charset=utf-8")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.csv\"", filename))
-		if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil {
+		if _, err := w.Write([]byte{0xEF, 0xBB, 0xBF}); err != nil { // BOM for UTF-8 in Excel
 			if h.logger != nil {
 				h.logger.Error("csv bom write error", zap.Error(err))
 			}
 		}
 		writer := csv.NewWriter(w)
+		defer writer.Flush() // Ensure buffer is flushed at the end
+
 		write := func(record []string) {
 			if err := writer.Write(record); err != nil && h.logger != nil {
 				h.logger.Error("csv write error", zap.Error(err))
@@ -800,89 +852,103 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		}
 		write([]string{"Reporte de métricas del panel superadmin"})
 		write([]string{"Generado", formatLocal(generatedAt)})
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Métrica", "Valor", "Detalle"})
 		sectionName := "Resumen"
 		for _, metric := range data.Metrics {
 			write([]string{sectionName, metric.Label, metric.Value, metric.Caption})
 		}
-		if data.ResponseStats != nil {
-			write([]string{"Eficiencia Operativa", "Tiempo Medio de Acuse (MTTA)", data.ResponseStats.AvgAckDuration.String(), "Tiempo promedio para acusar alertas"})
-			write([]string{"Eficiencia Operativa", "Tiempo Medio de Resolución (MTTR)", data.ResponseStats.AvgResolveDuration.String(), "Tiempo promedio para resolver alertas"})
-		}
-		if data.Overview != nil {
+		if data.Overview != nil { // Check if Overview exists
+			// Assuming MTTA is not directly in Overview, omit or calculate elsewhere if needed
+			// write([]string{"Eficiencia Operativa", "Tiempo Medio de Acuse (MTTA)", "N/A", "Tiempo promedio para acusar alertas"})
+			write([]string{"Eficiencia Operativa", "Tiempo Medio de Resolución (MTTR)", data.Overview.AvgResolveDuration.String(), "Tiempo promedio para resolver alertas"})
 			write([]string{sectionName, "Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
+			write([]string{sectionName, "Pacientes Activos", strconv.Itoa(data.Overview.ActivePatientsCount), "Pacientes con monitoreo activo"})
+			write([]string{sectionName, "Alertas Creadas (Periodo)", strconv.Itoa(data.AlertsCreatedCount), "Alertas generadas en el periodo seleccionado"})
+			write([]string{sectionName, "Dispositivos Desconectados", strconv.Itoa(data.Overview.DisconnectedDevicesCount), "Dispositivos que no han reportado recientemente"})
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Riesgo", "Total", "Participación"})
 		for _, item := range data.PatientRiskChart {
 			write([]string{"Salud de la Población", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
-		write([]string{})
-		write([]string{"Sección", "Resultado", "Total", "Participación"})
+		write([]string{}) // Empty line
+
+		write([]string{"Sección", "Resultado", "Total"}) // No participation % for outcomes generally
 		for _, item := range data.AlertOutcomeChart {
-			write([]string{"Calidad de Alertas", item.Label, strconv.Itoa(item.Count), ""})
+			write([]string{"Calidad de Alertas", item.Label, strconv.Itoa(item.Count)})
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Estado", "Total", "Participación"})
 		for _, item := range data.DeviceStatusChart {
 			write([]string{"Salud de Infraestructura", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Estatus", "Total", "Participación"})
 		for _, item := range data.StatusChart {
 			write([]string{"Usuarios", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
 		if data.StatusTotal > 0 {
-			write([]string{"Usuarios", "Total", strconv.Itoa(data.StatusTotal), ""})
+			write([]string{"Usuarios", "Total", strconv.Itoa(data.StatusTotal), ""}) // No percentage for total
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Estatus", "Total", "Participación"})
 		for _, item := range data.InvitationChart {
 			write([]string{"Invitaciones", item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
 		if data.InvitationTotal > 0 {
-			write([]string{"Invitaciones", "Total", strconv.Itoa(data.InvitationTotal), ""})
+			write([]string{"Invitaciones", "Total", strconv.Itoa(data.InvitationTotal), ""}) // No percentage for total
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Acción", "Código", "Eventos"})
 		for _, op := range data.RecentOperations {
 			write([]string{"Operaciones", op.Label, op.Code, strconv.Itoa(op.Count)})
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Fecha/Hora", "Eventos"})
 		for _, bucket := range data.ActivitySeries {
 			write([]string{"Actividad por hora", formatLocal(bucket.Bucket), strconv.Itoa(bucket.Count)})
 		}
-		write([]string{})
+		write([]string{}) // Empty line
+
 		write([]string{"Sección", "Fecha", "Evento", "Actor", "Entidad"})
 		for _, entry := range data.RecentActivity {
 			write([]string{"Actividad reciente", formatLocal(entry.Timestamp), entry.Label, entry.Actor, entry.Entity})
 		}
-		writer.Flush()
+
+		// Flush is handled by defer writer.Flush()
 		if err := writer.Error(); err != nil && h.logger != nil {
 			h.logger.Error("csv export error", zap.Error(err))
 		}
-		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "csv", "rows": len(data.RecentActivity)})
+
+		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "csv", "rows": len(data.RecentActivity)}) // Assuming rows count is relevant
 		return
+
 	case "pdf":
 		w.Header().Set("Content-Type", "application/pdf")
 		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=\"%s.pdf\"", filename))
-		pdf := gofpdf.New("L", "mm", "A4", "")
+		pdf := gofpdf.New("L", "mm", "A4", "") // Landscape
 		pdf.SetTitle("Reporte del panel superadmin", false)
 		pdf.SetAuthor("HeartGuard", true)
 		pdf.SetCreator("HeartGuard SuperAdmin System", true)
 		pdf.SetMargins(15, 20, 15)
-		pdf.SetAutoPageBreak(true, 25)
+		pdf.SetAutoPageBreak(true, 25) // Increased bottom margin for page break
 		translator := pdf.UnicodeTranslatorFromDescriptor("")
 
-		// Colores corporativos
-		primaryColor := struct{ R, G, B int }{26, 32, 44}      // Azul oscuro
-		accentColor := struct{ R, G, B int }{59, 130, 246}     // Azul
-		lightGrayColor := struct{ R, G, B int }{248, 250, 252} // Gris claro
-		darkGrayColor := struct{ R, G, B int }{71, 85, 105}    // Gris oscuro
+		// Define Colors (as before)
+		primaryColor := struct{ R, G, B int }{26, 32, 44}      // Dark Blue
+		accentColor := struct{ R, G, B int }{59, 130, 246}     // Blue
+		lightGrayColor := struct{ R, G, B int }{248, 250, 252} // Light Gray
+		darkGrayColor := struct{ R, G, B int }{71, 85, 105}    // Dark Gray
 
-		// Función para encabezado y pie de página
+		// Header and Footer function (as before)
 		headerFooter := func() {
 			pdf.SetHeaderFunc(func() {
 				pdf.SetY(8)
@@ -892,34 +958,39 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 				pdf.Ln(8)
 				pdf.SetDrawColor(accentColor.R, accentColor.G, accentColor.B)
 				pdf.SetLineWidth(0.5)
-				pdf.Line(15, 18, 282, 18) // Línea horizontal
-				pdf.SetTextColor(0, 0, 0)
+				pageWd, _ := pdf.GetPageSize()
+				lMargin, _, rMargin, _ := pdf.GetMargins()
+				pdf.Line(lMargin, 18, pageWd-rMargin, 18) // Line across page width corrected
+				pdf.SetTextColor(0, 0, 0)                  // Reset text color
 			})
 			pdf.SetFooterFunc(func() {
 				pdf.SetY(-15)
 				pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 				pdf.SetLineWidth(0.3)
-				pdf.Line(15, pdf.GetY()-2, 282, pdf.GetY()-2)
+				pageWd, _ := pdf.GetPageSize()
+				lMargin, _, rMargin, _ := pdf.GetMargins()
+				pdf.Line(lMargin, pdf.GetY()-2, pageWd-rMargin, pdf.GetY()-2) // Line across page width corrected
 				pdf.SetFont("Helvetica", "I", 8)
 				pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 				pdf.CellFormat(0, 5, translator(fmt.Sprintf("Generado: %s", formatLocal(generatedAt))), "", 0, "L", false, 0, "")
-				pdf.CellFormat(0, 5, translator(fmt.Sprintf("Página %d", pdf.PageNo())), "", 0, "R", false, 0, "")
-				pdf.SetTextColor(0, 0, 0)
+				pdf.CellFormat(0, 5, translator(fmt.Sprintf("Página %d de {nb}", pdf.PageNo())), "", 0, "R", false, 0, "")
+				pdf.SetTextColor(0, 0, 0) // Reset text color
 			})
 		}
+		pdf.AliasNbPages("{nb}") // Define alias for total page number
 		headerFooter()
 
-		// ============ PORTADA ============
+		// ============ TITLE PAGE ============ (as before)
 		pdf.AddPage()
 		pdf.SetY(60)
-
-		// Logo simulado / Marca
 		pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
-		pdf.Rect(125, 50, 15, 15, "F")
+		pageWd, _ := pdf.GetPageSize() // Get page width again for centering
+		logoX := (pageWd / 2) - 7.5     // Center the 15mm logo
+		pdf.Rect(logoX, 50, 15, 15, "F")
 		pdf.SetFont("Helvetica", "B", 14)
 		pdf.SetTextColor(255, 255, 255)
-		pdf.SetXY(125, 57)
-		pdf.Cell(15, 5, "HG")
+		pdf.SetXY(logoX, 57) // Centered text
+		pdf.CellFormat(15, 5, "HG", "", 0, "C", false, 0, "") // Center text within the box
 
 		pdf.SetY(75)
 		pdf.SetFont("Helvetica", "B", 24)
@@ -932,12 +1003,14 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.CellFormat(0, 8, translator("Panel de Administración SuperAdmin"), "", 0, "C", false, 0, "")
 		pdf.Ln(40)
 
-		// Cuadro de información
+		// Info Box (Adjust position for Landscape)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
 		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.SetLineWidth(0.3)
 		boxY := pdf.GetY()
-		pdf.Rect(80, boxY, 137, 35, "FD")
+		boxWidth := 137.0
+		boxX := (pageWd / 2) - (boxWidth / 2) // Center the box
+		pdf.Rect(boxX, boxY, boxWidth, 35, "FD")
 
 		pdf.SetY(boxY + 8)
 		pdf.SetFont("Helvetica", "B", 11)
@@ -955,12 +1028,12 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.CellFormat(0, 5, translator("Documento confidencial - Uso interno"), "", 0, "C", false, 0, "")
 
-		pdf.SetTextColor(0, 0, 0)
+		pdf.SetTextColor(0, 0, 0) // Reset text color
 
-		// ============ PÁGINA DE CONTENIDO ============
+		// ============ CONTENT PAGE ============
 		pdf.AddPage()
 
-		// Resumen ejecutivo
+		// Executive Summary
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
@@ -975,47 +1048,65 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.MultiCell(0, 6, translator(summaryText), "", "J", false)
 		pdf.Ln(8)
 
+		// Table rendering function (adjust for Landscape)
 		renderTable := func(title string, headers []string, widths []float64, aligns []string, rows [][]string) {
-			if len(headers) != len(widths) {
-				return
+			totalWidth := 0.0
+			for _, w := range widths {
+				totalWidth += w
+			}
+			// Use GetPageSize instead of GetPageSizeStr
+			pageWd, pageHt := pdf.GetPageSize()
+			leftMrg, topMrg, rightMrg, bottomMrg := pdf.GetMargins() // Get all margins
+			drawableWidth := pageWd - leftMrg - rightMrg
+
+			// Scale widths if they exceed drawable area
+			scaleFactor := 1.0
+			if totalWidth > drawableWidth {
+				scaleFactor = drawableWidth / totalWidth
+				for i := range widths {
+					widths[i] *= scaleFactor
+				}
 			}
 
-			// Calcular espacio necesario: título (24mm) + encabezado (7mm) + al menos 3 filas (18mm) = ~50mm
-			minSpaceNeeded := 50.0
-			_, _, _, bottomMargin := pdf.GetMargins()
-			pageHeight := 210.0 // A4 height
-			availableSpace := pageHeight - pdf.GetY() - bottomMargin
+			// Minimum space check (as before)
+			minSpaceNeeded := 50.0 // Title + Header + ~3 rows
+			availableSpace := pageHt - pdf.GetY() - bottomMrg // Use pageHt
 
-			// Si no hay suficiente espacio, crear nueva página
-			if availableSpace < minSpaceNeeded {
+			if availableSpace < minSpaceNeeded && pdf.PageNo() > 1 { // Avoid adding page right after title page if it fits
 				pdf.AddPage()
+				// Reset Y position after page break if needed, respecting top margin
+				pdf.SetY(topMrg)
+			} else if availableSpace < minSpaceNeeded && pdf.PageNo() == 1 {
+			    // If on the first page and not enough space, let it flow to next page naturally
 			}
 
-			// Separador de sección
+
+			// Section separator (as before)
 			pdf.Ln(4)
 			pdf.SetDrawColor(accentColor.R, accentColor.G, accentColor.B)
 			pdf.SetLineWidth(0.8)
 			currentY := pdf.GetY()
-			pdf.Line(15, currentY, 40, currentY)
+			pdf.Line(leftMrg, currentY, leftMrg+25, currentY) // Short line
 			pdf.Ln(2)
 
-			// Título de la tabla con estilo destacado
+			// Table Title (as before)
 			pdf.SetFont("Helvetica", "B", 13)
 			pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 			pdf.Cell(0, 8, translator(title))
 			pdf.Ln(10)
 
 			if len(rows) == 0 {
+				// Display "No data" message (as before)
 				pdf.SetFont("Helvetica", "I", 10)
 				pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 				pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-				pdf.CellFormat(0, 8, translator("   Sin datos disponibles"), "1", 0, "L", true, 0, "")
+				pdf.CellFormat(drawableWidth, 8, translator("   Sin datos disponibles"), "1", 0, "L", true, 0, "")
 				pdf.SetTextColor(0, 0, 0)
 				pdf.Ln(12)
 				return
 			}
 
-			// Encabezados de tabla mejorados
+			// Table Headers (as before)
 			pdf.SetFont("Helvetica", "B", 9)
 			pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
 			pdf.SetDrawColor(200, 208, 220)
@@ -1028,28 +1119,46 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 				}
 				pdf.CellFormat(widths[i], 7, translator(head), "1", 0, align, true, 0, "")
 			}
-			pdf.Ln(-1)
+			pdf.Ln(7) // Use Ln(headerHeight)
+
+			// Table Rows (with page break logic)
 			pdf.SetFont("Helvetica", "", 9)
-			pdf.SetTextColor(26, 32, 44)
+			pdf.SetTextColor(26, 32, 44) // Reset text color for rows
 			fill := false
-			leftMargin, _, _, _ := pdf.GetMargins()
 			lineHeight := 6.0
 
 			for rowIdx, row := range rows {
-				// Verificar si hay espacio para la fila actual (considerando altura máxima posible)
-				maxPossibleRowHeight := 30.0 // Altura máxima estimada para una fila con texto largo
-				availableSpace := pageHeight - pdf.GetY() - bottomMargin
+				// Estimate max height needed for this row
+				maxRowHeight := lineHeight
+				for i, cellText := range row {
+					if i < len(widths) {
+                        // Ensure widths[i] is positive before calling SplitLines
+                        currentWidth := widths[i]
+                        if currentWidth <= 0 {
+                            currentWidth = 10 // Assign a default minimum width if zero or negative
+                        }
+						lines := pdf.SplitLines([]byte(translator(cellText)), currentWidth)
+						h := float64(len(lines)) * lineHeight
+                        if h == 0 { h = lineHeight } // Ensure at least one line height
+						if h > maxRowHeight {
+							maxRowHeight = h
+						}
+					}
+				}
+				// Add a little buffer
+				maxRowHeight += 2
 
-				// Si no hay espacio suficiente para la fila, crear nueva página y redibujar encabezados
-				if availableSpace < maxPossibleRowHeight {
+				// Check if space is available
+				availableSpace = pageHt - pdf.GetY() - bottomMrg // Recalculate available space
+				if availableSpace < maxRowHeight {
 					pdf.AddPage()
-
-					// Redibujar encabezados de tabla en la nueva página
+                    pdf.SetY(topMrg) // Reset Y to top margin on new page
+					// Redraw headers on new page
 					pdf.SetFont("Helvetica", "B", 9)
 					pdf.SetFillColor(accentColor.R, accentColor.G, accentColor.B)
-					pdf.SetDrawColor(200, 208, 220)
-					pdf.SetLineWidth(0.2)
 					pdf.SetTextColor(255, 255, 255)
+                    pdf.SetDrawColor(200, 208, 220) // Reset draw color as well
+                    pdf.SetLineWidth(0.2)           // Reset line width
 					for i, head := range headers {
 						align := "L"
 						if i < len(aligns) && aligns[i] != "" {
@@ -1057,160 +1166,174 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 						}
 						pdf.CellFormat(widths[i], 7, translator(head), "1", 0, align, true, 0, "")
 					}
-					pdf.Ln(-1)
+					pdf.Ln(7)
 					pdf.SetFont("Helvetica", "", 9)
 					pdf.SetTextColor(26, 32, 44)
-
-					// Resetear el fill pattern para mantener consistencia
-					fill = (rowIdx % 2) == 1
+					fill = (rowIdx % 2) == 1 // Recalculate fill based on original index
 				}
 
+				// Draw the row (as before, but using calculated maxRowHeight)
 				fill = !fill
 				if fill {
 					pdf.SetFillColor(250, 251, 253)
 				} else {
 					pdf.SetFillColor(255, 255, 255)
 				}
-
-				y := pdf.GetY()
-				x := leftMargin
-				rowHeight := lineHeight
-				texts := make([]string, len(headers))
-				heights := make([]float64, len(headers))
-				for i := range headers {
-					text := ""
-					if i < len(row) {
-						text = translator(row[i])
-					}
-					texts[i] = text
-					lines := pdf.SplitLines([]byte(text), widths[i])
-					if len(lines) == 0 {
-						heights[i] = lineHeight
-					} else {
-						heights[i] = float64(len(lines)) * lineHeight
-					}
-					if heights[i] > rowHeight {
-						rowHeight = heights[i]
+				x := leftMrg
+				startY := pdf.GetY()
+				for i, cellText := range row {
+					if i < len(widths) {
+						pdf.SetXY(x, startY)
+						align := "L"
+						if i < len(aligns) && aligns[i] != "" {
+							align = aligns[i]
+						}
+                         // Draw the border before the text
+                        pdf.Rect(x, startY, widths[i], maxRowHeight-2, "FD") // Draw background and border first
+                        // Reset text color just before writing text
+                        pdf.SetTextColor(26, 32, 44)
+						pdf.MultiCell(widths[i], lineHeight, translator(cellText), "", align, false) // Use 'false' for fill, already handled by Rect
+						x += widths[i]
 					}
 				}
-				for i, text := range texts {
-					pdf.SetXY(x, y)
-					align := "L"
-					if i < len(aligns) && aligns[i] != "" {
-						align = aligns[i]
-					}
-					pdf.MultiCell(widths[i], lineHeight, text, "1", align, fill)
-					x += widths[i]
-				}
-				pdf.SetXY(leftMargin, y+rowHeight)
+				pdf.SetY(startY + maxRowHeight - 2) // Move Y position after drawing the row
+                pdf.SetDrawColor(200, 208, 220) // Reset draw color after cell drawing potentially changes it
+                pdf.SetLineWidth(0.2)           // Reset line width
 			}
+			pdf.Ln(8) // Add space after the table
 		}
 
+		// Prepare data for tables (as before)
 		metricsRows := make([][]string, 0, len(data.Metrics)+1)
 		for _, metric := range data.Metrics {
 			metricsRows = append(metricsRows, []string{metric.Label, metric.Value, metric.Caption})
 		}
 		if data.Overview != nil {
 			metricsRows = append(metricsRows, []string{"Invitaciones pendientes", strconv.Itoa(data.Overview.PendingInvitations), "Invitaciones abiertas sin usar"})
+			metricsRows = append(metricsRows, []string{"Tiempo Medio Resolución (MTTR)", data.Overview.AvgResolveDuration.String(), "Promedio resolución alertas"})
+			metricsRows = append(metricsRows, []string{"Pacientes Activos", strconv.Itoa(data.Overview.ActivePatientsCount), "Pacientes con monitoreo activo"})
+			metricsRows = append(metricsRows, []string{"Alertas Creadas (Periodo)", strconv.Itoa(data.AlertsCreatedCount), "Alertas generadas en el periodo seleccionado"})
+			metricsRows = append(metricsRows, []string{"Dispositivos Desconectados", strconv.Itoa(data.Overview.DisconnectedDevicesCount), "Dispositivos que no han reportado recientemente"})
 		}
-		if data.ResponseStats != nil {
-			metricsRows = append(metricsRows, []string{"Tiempo Medio de Acuse (MTTA)", data.ResponseStats.AvgAckDuration.String(), "Tiempo promedio para acusar alertas"})
-			metricsRows = append(metricsRows, []string{"Tiempo Medio de Resolución (MTTR)", data.ResponseStats.AvgResolveDuration.String(), "Tiempo promedio para resolver alertas"})
-		}
 
-		// Sección: Indicadores Clave
-		pdf.SetFont("Helvetica", "B", 14)
-		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
-		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-		pdf.CellFormat(0, 9, translator("1. INDICADORES CLAVE DE RENDIMIENTO"), "", 0, "L", true, 0, "")
-		pdf.Ln(8)
-
-		renderTable("Resumen general", []string{"Métrica", "Valor", "Detalle"}, []float64{80, 28, 140}, []string{"L", "R", "L"}, metricsRows)
-
-		statusRows := make([][]string, 0, len(data.StatusChart))
+		statusRows := make([][]string, 0, len(data.StatusChart)+1)
 		for _, item := range data.StatusChart {
 			statusRows = append(statusRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
 		if data.StatusTotal > 0 {
 			statusRows = append(statusRows, []string{"Total", strconv.Itoa(data.StatusTotal), ""})
 		}
-		renderTable("Usuarios por estatus", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, statusRows)
 
 		patientRiskRows := make([][]string, 0, len(data.PatientRiskChart))
-		for _, item := range data.PatientRiskChart {
+        patientRiskTotal := 0
+        for _, item := range data.PatientRiskChart {
 			patientRiskRows = append(patientRiskRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
+            patientRiskTotal += item.Count
 		}
-		renderTable("Salud de la Población por Riesgo", []string{"Nivel de Riesgo", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, patientRiskRows)
+        if patientRiskTotal > 0 {
+            patientRiskRows = append(patientRiskRows, []string{"Total", strconv.Itoa(patientRiskTotal), ""})
+        }
+
 
 		alertOutcomeRows := make([][]string, 0, len(data.AlertOutcomeChart))
-		for _, item := range data.AlertOutcomeChart {
-			alertOutcomeRows = append(alertOutcomeRows, []string{item.Label, strconv.Itoa(item.Count), ""})
+        alertOutcomeTotal := 0
+        for _, item := range data.AlertOutcomeChart {
+			alertOutcomeRows = append(alertOutcomeRows, []string{item.Label, strconv.Itoa(item.Count)})
+            alertOutcomeTotal += item.Count
 		}
-		renderTable("Calidad de Alertas por Resultado", []string{"Resultado", "Total", ""}, []float64{90, 28, 32}, []string{"L", "R", "R"}, alertOutcomeRows)
+         if alertOutcomeTotal > 0 {
+            alertOutcomeRows = append(alertOutcomeRows, []string{"Total", strconv.Itoa(alertOutcomeTotal)})
+        }
 
-		deviceStatusRows := make([][]string, 0, len(data.DeviceStatusChart))
+
+		deviceStatusRows := make([][]string, 0, len(data.DeviceStatusChart)+1)
 		for _, item := range data.DeviceStatusChart {
 			deviceStatusRows = append(deviceStatusRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
-		renderTable("Salud de Infraestructura por Dispositivo", []string{"Estado", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, deviceStatusRows)
+        deviceStatusTotal := 0
+        for _, r := range data.DeviceStatusChart { deviceStatusTotal += r.Count }
+		if deviceStatusTotal > 0 {
+			deviceStatusRows = append(deviceStatusRows, []string{"Total", strconv.Itoa(deviceStatusTotal), ""})
+		}
 
-		// Sección: Gestión de Invitaciones
-		pdf.Ln(6)
-		pdf.SetFont("Helvetica", "B", 14)
-		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
-		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-		pdf.CellFormat(0, 9, translator("2. GESTIÓN DE INVITACIONES"), "", 0, "L", true, 0, "")
-		pdf.Ln(8)
-
-		invRows := make([][]string, 0, len(data.InvitationChart))
+		invRows := make([][]string, 0, len(data.InvitationChart)+1)
 		for _, item := range data.InvitationChart {
 			invRows = append(invRows, []string{item.Label, strconv.Itoa(item.Count), formatPercent(item.Percent)})
 		}
 		if data.InvitationTotal > 0 {
 			invRows = append(invRows, []string{"Total", strconv.Itoa(data.InvitationTotal), ""})
 		}
-		renderTable("Invitaciones", []string{"Estatus", "Total", "Participación"}, []float64{90, 28, 32}, []string{"L", "R", "R"}, invRows)
-
-		// Sección: Actividad del Sistema
-		pdf.Ln(6)
-		pdf.SetFont("Helvetica", "B", 14)
-		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
-		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-		pdf.CellFormat(0, 9, translator("3. ACTIVIDAD DEL SISTEMA"), "", 0, "L", true, 0, "")
-		pdf.Ln(8)
 
 		opRows := make([][]string, 0, len(data.RecentOperations))
 		for _, op := range data.RecentOperations {
 			opRows = append(opRows, []string{op.Label, op.Code, strconv.Itoa(op.Count)})
 		}
-		renderTable("Operaciones recientes (30 días)", []string{"Acción", "Código", "Eventos"}, []float64{140, 40, 28}, []string{"L", "L", "R"}, opRows)
 
-		activityRows := make([][]string, 0, len(data.RecentActivity))
+		activityRows := make([][]string, 0, min(len(data.RecentActivity), 25))
 		for idx, entry := range data.RecentActivity {
-			if idx >= 25 {
-				break
-			}
+			if idx >= 25 { break } // Limit rows in PDF
 			activityRows = append(activityRows, []string{formatLocal(entry.Timestamp), entry.Label, entry.Actor, entry.Entity})
 		}
-		renderTable("Actividad más reciente", []string{"Fecha", "Evento", "Actor", "Entidad"}, []float64{40, 110, 60, 60}, []string{"L", "L", "L", "L"}, activityRows)
-
-		// Sección: Análisis Temporal
-		pdf.Ln(6)
-		pdf.SetFont("Helvetica", "B", 14)
-		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
-		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
-		pdf.CellFormat(0, 9, translator("4. ANÁLISIS TEMPORAL"), "", 0, "L", true, 0, "")
-		pdf.Ln(8)
 
 		timelineRows := make([][]string, 0, len(data.ActivitySeries))
 		for _, point := range data.ActivitySeries {
 			timelineRows = append(timelineRows, []string{formatLocal(point.Bucket), strconv.Itoa(point.Count)})
 		}
-		renderTable("Actividad por hora", []string{"Fecha/Hora", "Eventos"}, []float64{60, 28}, []string{"L", "R"}, timelineRows)
 
-		// Página final con conclusiones
-		pdf.AddPage()
-		pdf.SetY(40)
+
+		// Render sections with tables (adjust widths for landscape)
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("1. INDICADORES CLAVE DE RENDIMIENTO"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		renderTable("Resumen general", []string{"Métrica", "Valor", "Detalle"}, []float64{70, 40, 157}, []string{"L", "R", "L"}, metricsRows) // Adjusted widths for landscape
+		renderTable("Usuarios por estatus", []string{"Estatus", "Total", "Participación"}, []float64{120, 40, 50}, []string{"L", "R", "R"}, statusRows)
+		renderTable("Salud de la Población por Riesgo", []string{"Nivel de Riesgo", "Total", "Participación"}, []float64{120, 40, 50}, []string{"L", "R", "R"}, patientRiskRows)
+		renderTable("Calidad de Alertas por Resultado", []string{"Resultado", "Total"}, []float64{120, 40}, []string{"L", "R"}, alertOutcomeRows) // Removed participation column
+		renderTable("Salud de Infraestructura por Dispositivo", []string{"Estado", "Total", "Participación"}, []float64{120, 40, 50}, []string{"L", "R", "R"}, deviceStatusRows)
+
+
+		pdf.AddPage() // Start new page for next sections
+        _, top, _, _ := pdf.GetMargins()
+        pdf.SetY(top) // Reset Y position
+
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("2. GESTIÓN DE INVITACIONES"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		renderTable("Invitaciones", []string{"Estatus", "Total", "Participación"}, []float64{120, 40, 50}, []string{"L", "R", "R"}, invRows)
+
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("3. ACTIVIDAD DEL SISTEMA"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		renderTable("Operaciones recientes (30 días)", []string{"Acción", "Código", "Eventos"}, []float64{170, 50, 47}, []string{"L", "L", "R"}, opRows) // Adjusted widths
+		renderTable("Actividad más reciente", []string{"Fecha", "Evento", "Actor", "Entidad"}, []float64{45, 100, 60, 62}, []string{"L", "L", "L", "L"}, activityRows)
+
+		pdf.AddPage() // Start new page for next sections
+        _, top2, _, _ := pdf.GetMargins()
+        pdf.SetY(top2) // Reset Y position
+
+		pdf.SetFont("Helvetica", "B", 14)
+		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
+		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
+		pdf.CellFormat(0, 9, translator("4. ANÁLISIS TEMPORAL"), "", 0, "L", true, 0, "")
+		pdf.Ln(8)
+		renderTable("Actividad por hora", []string{"Fecha/Hora", "Eventos"}, []float64{70, 30}, []string{"L", "R"}, timelineRows)
+
+		// Final page with conclusions (as before, adjust Y position if needed)
+		// Check if there's enough space, otherwise add a new page
+		_, pageHt := pdf.GetPageSize()
+		_, _, _, bottomMrg := pdf.GetMargins()
+		if pageHt-pdf.GetY()-bottomMrg < 80 { // Need ~80mm for conclusion section
+			pdf.AddPage()
+            _, top3, _, _ := pdf.GetMargins()
+            pdf.SetY(top3) // Reset Y
+		}
+
 		pdf.SetFont("Helvetica", "B", 16)
 		pdf.SetTextColor(primaryColor.R, primaryColor.G, primaryColor.B)
 		pdf.SetFillColor(lightGrayColor.R, lightGrayColor.G, lightGrayColor.B)
@@ -1227,147 +1350,26 @@ func (h *Handlers) DashboardExport(w http.ResponseWriter, r *http.Request) {
 		pdf.MultiCell(0, 6, translator(conclusionText), "", "J", false)
 		pdf.Ln(15)
 
-		// Cuadro de firma o aprobación
+		// Signature line (adjust X positions if needed for landscape)
 		pdf.SetDrawColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
 		pdf.SetLineWidth(0.3)
-		pdf.Line(40, pdf.GetY(), 140, pdf.GetY())
+		left, _, _, _ := pdf.GetMargins()
+		sigX1 := left
+		sigX2 := sigX1 + 100.0 // Line length 100mm
+		pdf.Line(sigX1, pdf.GetY(), sigX2, pdf.GetY())
 		pdf.Ln(2)
+		pdf.SetX(sigX1) // Align text with line start
 		pdf.SetFont("Helvetica", "I", 9)
 		pdf.SetTextColor(darkGrayColor.R, darkGrayColor.G, darkGrayColor.B)
-		pdf.CellFormat(100, 5, translator("Sistema HeartGuard - Reporte Automatizado"), "", 0, "L", false, 0, "")
+		pdf.CellFormat(sigX2-sigX1, 5, translator("Sistema HeartGuard - Reporte Automatizado"), "", 0, "L", false, 0, "")
 
-		pdf.SetMargins(16, 18, 16)
-		pdf.SetAutoPageBreak(true, 20)
-		pdf.SetFont("Helvetica", "B", 15)
-		pdf.Cell(0, 9, translator("Resumen narrativo"))
-		pdf.Ln(11)
-		pdf.SetFont("Helvetica", "", 10)
 
-		writeParagraph := func(text string) {
-			if strings.TrimSpace(text) == "" {
-				return
-			}
-			pdf.SetFont("Helvetica", "", 10)
-			pdf.SetTextColor(68, 76, 96)
-			pdf.MultiCell(0, 5.2, translator(text), "", "L", false)
-			pdf.SetTextColor(0, 0, 0)
-			pdf.Ln(1.5)
-		}
-
-		writeSection := func(title, subtitle string, lines []string) {
-			pdf.Ln(2)
-			pdf.SetFont("Helvetica", "B", 12)
-			pdf.SetTextColor(26, 32, 44)
-			pdf.Cell(0, 6.5, translator(title))
-			pdf.Ln(6)
-			if strings.TrimSpace(subtitle) != "" {
-				pdf.SetFont("Helvetica", "", 9.3)
-				pdf.SetTextColor(90, 99, 120)
-				pdf.MultiCell(0, 5, translator(subtitle), "", "L", false)
-				pdf.Ln(1)
-			}
-			if len(lines) == 0 {
-				pdf.SetFont("Helvetica", "I", 9)
-				pdf.SetTextColor(120, 128, 148)
-				pdf.Cell(0, 4.8, translator("Sin datos disponibles"))
-				pdf.SetTextColor(0, 0, 0)
-				pdf.Ln(4)
-				return
-			}
-			pdf.SetFont("Helvetica", "", 9.3)
-			pdf.SetTextColor(33, 37, 41)
-			for _, line := range lines {
-				trimmed := strings.TrimSpace(line)
-				if trimmed == "" {
-					continue
-				}
-				pdf.MultiCell(0, 4.8, translator(fmt.Sprintf("• %s", trimmed)), "", "L", false)
-			}
-			pdf.SetTextColor(0, 0, 0)
-			pdf.Ln(1)
-		}
-
-		intro := "Este documento consolida las principales métricas operativas del panel de administración para brindar una visión ejecutiva del estado actual de usuarios, invitaciones, operaciones y contenido."
-		writeParagraph(intro)
-
-		metricsLines := make([]string, 0, len(data.Metrics)+1)
-		for _, metric := range data.Metrics {
-			caption := strings.TrimSpace(metric.Caption)
-			if caption != "" {
-				metricsLines = append(metricsLines, fmt.Sprintf("%s: %s (%s)", metric.Label, metric.Value, caption))
-			} else {
-				metricsLines = append(metricsLines, fmt.Sprintf("%s: %s", metric.Label, metric.Value))
-			}
-		}
-		if data.Overview != nil {
-			metricsLines = append(metricsLines, fmt.Sprintf("Invitaciones pendientes: %d (invitaciones abiertas sin usar)", data.Overview.PendingInvitations))
-		}
-		writeSection("Resumen ejecutivo", "Indicadores claves de actividad y capacidad operativa.", metricsLines)
-
-		statusLines := make([]string, 0, len(data.StatusChart)+1)
-		for _, item := range data.StatusChart {
-			statusLines = append(statusLines, fmt.Sprintf("%s: %d usuarios (%s del total)", item.Label, item.Count, formatPercent(item.Percent)))
-		}
-		if data.StatusTotal > 0 {
-			statusLines = append(statusLines, fmt.Sprintf("Total reportado: %d usuarios", data.StatusTotal))
-		}
-		writeSection("Distribución de usuarios", "Panorama por estatus de cuenta y participación relativa.", statusLines)
-
-		invLines := make([]string, 0, len(data.InvitationChart)+1)
-		for _, item := range data.InvitationChart {
-			invLines = append(invLines, fmt.Sprintf("%s: %d invitaciones (%s)", item.Label, item.Count, formatPercent(item.Percent)))
-		}
-		if data.InvitationTotal > 0 {
-			invLines = append(invLines, fmt.Sprintf("Total de invitaciones activas: %d", data.InvitationTotal))
-		}
-		writeSection("Estatus de invitaciones", "Seguimiento del ciclo de invitaciones emitidas a nivel global.", invLines)
-
-		opLines := make([]string, 0, len(data.RecentOperations))
-		for _, op := range data.RecentOperations {
-			opLines = append(opLines, fmt.Sprintf("%s (%s): %d eventos registrados", op.Label, strings.ToUpper(op.Code), op.Count))
-		}
-		writeSection("Operaciones destacadas (30 días)", "Actividades más frecuentes capturadas por el sistema de auditoría.", opLines)
-
-		recentLines := make([]string, 0, min(len(data.RecentActivity), 25))
-		for idx, entry := range data.RecentActivity {
-			if idx >= 25 {
-				break
-			}
-			actor := entry.Actor
-			if actor == "" {
-				actor = "Actor no identificado"
-			}
-			entity := entry.Entity
-			if entity == "" {
-				entity = "Sin referencia"
-			}
-			recentLines = append(recentLines, fmt.Sprintf("%s · %s · %s · %s", formatLocal(entry.Timestamp), entry.Label, actor, entity))
-		}
-		writeSection("Actividad reciente", "Detalle cronológico de los últimos eventos relevantes.", recentLines)
-
-		timelineLines := make([]string, 0, len(data.ActivitySeries))
-		for _, point := range data.ActivitySeries {
-			timelineLines = append(timelineLines, fmt.Sprintf("%s: %d eventos", formatLocal(point.Bucket), point.Count))
-		}
-		writeSection("Curva de actividad horaria", "Concentración de eventos a lo largo de las últimas jornadas.", timelineLines)
-
+		// Output the PDF
 		if err := pdf.Output(w); err != nil && h.logger != nil {
 			h.logger.Error("pdf export error", zap.Error(err))
 		}
-		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "pdf", "rows": len(data.RecentActivity)})
+		h.writeAudit(ctx, r, "DASHBOARD_EXPORT", "dashboard", nil, map[string]any{"format": "pdf", "rows": len(data.RecentActivity)}) // Assuming rows count is relevant
 	}
-}
-
-func parseDateTimeLocal(input string) (*time.Time, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return nil, nil
-	}
-	t, err := time.ParseInLocation("2006-01-02T15:04", trimmed, time.Local)
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
 }
 
 func optionalString(raw string) *string {

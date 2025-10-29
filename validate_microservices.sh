@@ -25,6 +25,7 @@ ORG_PORT="${ORG_PORT:-5002}"
 AUDIT_PORT="${AUDIT_PORT:-5006}"
 SIGNAL_PORT="${SIGNAL_PORT:-5007}"
 GATEWAY_PORT="${GATEWAY_PORT:-5000}"
+MEDIA_PORT="${MEDIA_PORT:-5007}"
 CHOSEN_GATEWAY_NOTE=""
 
 ORG_PID_KILLED=0
@@ -590,6 +591,7 @@ cleanup() {
   stop_service AUDIT
   stop_service SIGNAL
   stop_service GATEWAY
+  stop_service MEDIA
 }
 
 finalize() {
@@ -631,6 +633,7 @@ main() {
   setup_service_env "audit" "$MICRO_DIR/audit_service" || ABORT_TESTS=1
   setup_service_env "signal" "$MICRO_DIR/signal_service" || ABORT_TESTS=1
   setup_service_env "gateway" "$MICRO_DIR/gateway" || ABORT_TESTS=1
+  setup_service_env "media" "$MICRO_DIR/media_service" || ABORT_TESTS=1
 
   if (( ABORT_TESTS == 0 )); then
     check_dependency "PostgreSQL" "$POSTGRES_HOST" "$POSTGRES_PORT"
@@ -670,6 +673,7 @@ main() {
     local audit_python="$MICRO_DIR/audit_service/.venv/bin/python"
     local signal_python="$MICRO_DIR/signal_service/.venv/bin/python"
     local gateway_python="$MICRO_DIR/gateway/.venv/bin/python"
+    local media_python="$MICRO_DIR/media_service/.venv/bin/python"
 
     GATEWAY_PORT="$(choose_gateway_port "$GATEWAY_PORT" 5050 5500 6000)"
     if [[ -n "$CHOSEN_GATEWAY_NOTE" ]]; then
@@ -690,6 +694,7 @@ main() {
     start_service AUDIT "$MICRO_DIR/audit_service" "$audit_python" "$AUDIT_PORT" || ABORT_TESTS=1
     start_service SIGNAL "$MICRO_DIR/signal_service" "$signal_python" "$SIGNAL_PORT" || ABORT_TESTS=1
     start_service GATEWAY "$MICRO_DIR/gateway" "$gateway_python" "$GATEWAY_PORT" || ABORT_TESTS=1
+    start_service MEDIA "$MICRO_DIR/media_service" "$media_python" "$MEDIA_PORT" || ABORT_TESTS=1
   fi
 
   if (( ABORT_TESTS == 0 )); then

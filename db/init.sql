@@ -329,6 +329,27 @@ BEGIN
 END;
 $$;
 
+-- Breakdown of inferences by predicted event type (code, label, count)
+CREATE OR REPLACE FUNCTION heartguard.sp_metrics_inference_breakdown()
+RETURNS TABLE (
+  code text,
+  label text,
+  count integer)
+LANGUAGE plpgsql SECURITY DEFINER
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT
+    et.code::text,
+    COALESCE(et.description, et.code)::text,
+    COUNT(inf.*)::integer
+  FROM heartguard.inferences inf
+  JOIN heartguard.event_types et ON et.id = inf.predicted_event_id
+  GROUP BY et.code, et.description
+  ORDER BY COUNT(inf.*) DESC;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION heartguard.sp_patient_create(
   p_org_id uuid,
   p_person_name text,
@@ -2118,27 +2139,55 @@ CREATE INDEX IF NOT EXISTS idx_service_health_service_time ON service_health(ser
 CREATE INDEX IF NOT EXISTS idx_service_health_status ON service_health(service_status_id);
 
 -- Stored procedure para métricas del panel
+-- Stored procedure para métricas del panel
 CREATE OR REPLACE FUNCTION heartguard.sp_metrics_overview()
 RETURNS TABLE (
   avg_response_ms numeric,
+  avg_ack_duration interval,
+  avg_resolve_duration interval, -- Ajustado para usar pgtype.Interval
   total_users integer,
   total_orgs integer,
   total_memberships integer,
   pending_invitations integer,
-  operations jsonb)
+  operations jsonb,
+  unassigned_alerts_count integer,
+  active_patients_count integer,
+  disconnected_devices_count integer)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_avg numeric;
+  v_mtta interval;
+  v_mttr interval;
   v_users integer;
   v_orgs integer;
   v_memberships integer;
   v_pending integer;
   v_ops jsonb;
+  v_unassigned integer;
+  v_active_patients integer;
+  v_disconnected integer;
 BEGIN
   SELECT AVG(latency_ms) INTO v_avg
   FROM heartguard.service_health
   WHERE checked_at > NOW() - INTERVAL '7 days';
+
+  -- MTTA: promedio de tiempo de acuse de alertas
+  SELECT AVG(ack.ack_at - a.created_at) INTO v_mtta
+  FROM heartguard.alerts a
+  JOIN heartguard.alert_ack ack ON ack.alert_id = a.id
+    AND ack.ack_at IS NOT NULL
+    AND a.created_at IS NOT NULL;
+
+  -- MTTR: promedio de tiempo de resolución basado en alert_resolution
+  -- Calcula el tiempo promedio desde que se crea una alerta hasta que se resuelve
+  -- Solo considera alertas que tienen una entrada en alert_resolution con resolved_at posterior a created_at
+  SELECT AVG(ar.resolved_at - a.created_at) INTO v_mttr
+  FROM heartguard.alerts a
+  INNER JOIN heartguard.alert_resolution ar ON ar.alert_id = a.id
+  WHERE ar.resolved_at IS NOT NULL
+    AND a.created_at IS NOT NULL
+    AND ar.resolved_at > a.created_at;
 
   SELECT COUNT(*) INTO v_users FROM heartguard.users;
   SELECT COUNT(DISTINCT org_id) INTO v_orgs FROM heartguard.user_org_membership;
@@ -2156,12 +2205,37 @@ BEGIN
     LIMIT 10
   ) AS recent_ops;
 
+  -- Alerts without any assignment and still in 'created' status
+  SELECT COUNT(*) INTO v_unassigned
+  FROM heartguard.alerts a
+  WHERE NOT EXISTS (SELECT 1 FROM heartguard.alert_assignment aa WHERE aa.alert_id = a.id)
+    AND a.status_id = (SELECT id FROM heartguard.alert_status WHERE code = 'created');
+
+  -- Active patients: patients with signal streams started in the last 7 days
+  SELECT COUNT(DISTINCT ss.patient_id)::integer INTO v_active_patients
+  FROM heartguard.signal_streams ss
+  WHERE ss.started_at > NOW() - INTERVAL '7 days';
+
+  -- Disconnected devices: active devices with no recent streams in last 24 hours
+  SELECT COUNT(*)::integer INTO v_disconnected
+  FROM heartguard.devices d
+  WHERE d.active = TRUE
+    AND NOT EXISTS (
+      SELECT 1 FROM heartguard.signal_streams ss
+      WHERE ss.device_id = d.id AND ss.started_at > NOW() - INTERVAL '24 hours'
+    );
+
   avg_response_ms := COALESCE(v_avg, 0);
+  avg_ack_duration := COALESCE(v_mtta, interval '0');
+  avg_resolve_duration := COALESCE(v_mttr, interval '0'); -- Asignar v_mttr a la columna de salida
   total_users := COALESCE(v_users, 0);
   total_orgs := COALESCE(v_orgs, 0);
   total_memberships := COALESCE(v_memberships, 0);
   pending_invitations := COALESCE(v_pending, 0);
   operations := COALESCE(v_ops, '[]'::jsonb);
+  unassigned_alerts_count := COALESCE(v_unassigned, 0);
+  active_patients_count := COALESCE(v_active_patients, 0);
+  disconnected_devices_count := COALESCE(v_disconnected, 0);
   RETURN NEXT;
 END;
 $$;
@@ -2224,86 +2298,32 @@ BEGIN
   WITH status_map AS (
     SELECT
       CASE
-        WHEN inv.revoked_at IS NOT NULL THEN 'revoked'
-        WHEN inv.used_at IS NOT NULL THEN 'used'
-        WHEN inv.expires_at < NOW() THEN 'expired'
+        WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+        WHEN i.used_at IS NOT NULL THEN 'used'
+        WHEN i.expires_at <= NOW() THEN 'expired'
         ELSE 'pending'
-      END AS status
-    FROM heartguard.org_invitations inv
-  ), aggregated AS (
-    SELECT sm.status AS status_value, COUNT(*)::integer AS total
-    FROM status_map sm
-    GROUP BY sm.status
+      END::text AS status_value
+    FROM heartguard.org_invitations i
+  ),
+  aggregated AS (
+    SELECT
+      s.status_value,
+      COUNT(*)::integer AS total
+    FROM status_map s
+    GROUP BY s.status_value
   )
   SELECT
-    s.status_value AS status,
+    s.status_value::text,
     CASE s.status_value
       WHEN 'pending' THEN 'Pendientes'
       WHEN 'used' THEN 'Utilizadas'
       WHEN 'expired' THEN 'Expiradas'
       WHEN 'revoked' THEN 'Revocadas'
       ELSE INITCAP(s.status_value)
-    END AS label,
+    END::text AS label,
     s.total
   FROM aggregated s
   ORDER BY s.total DESC;
-END;
-$$;
-
-CREATE OR REPLACE FUNCTION heartguard.sp_metrics_operations_report(
-  p_from DATE DEFAULT NULL,
-  p_to DATE DEFAULT NULL,
-  p_action TEXT DEFAULT NULL,
-  p_limit INTEGER DEFAULT 100,
-  p_offset INTEGER DEFAULT 0)
-RETURNS TABLE (
-  action TEXT,
-  total_events INTEGER,
-  unique_users INTEGER,
-  unique_entities INTEGER,
-  first_event TIMESTAMP,
-  last_event TIMESTAMP,
-  total_count INTEGER)
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-  safe_limit integer := LEAST(GREATEST(p_limit, 1), 500);
-  safe_offset integer := GREATEST(p_offset, 0);
-  from_ts TIMESTAMP;
-  to_ts TIMESTAMP;
-  action_filter TEXT := NULLIF(p_action, '');
-BEGIN
-  IF p_from IS NOT NULL THEN
-    from_ts := date_trunc('day', p_from);
-  END IF;
-  IF p_to IS NOT NULL THEN
-    to_ts := date_trunc('day', p_to) + INTERVAL '1 day';
-  END IF;
-
-  RETURN QUERY
-  WITH filtered AS (
-    SELECT
-      a.action,
-      a.ts,
-      a.user_id,
-      a.entity_id
-    FROM heartguard.audit_logs a
-    WHERE (from_ts IS NULL OR a.ts >= from_ts)
-      AND (to_ts IS NULL OR a.ts < to_ts)
-      AND (action_filter IS NULL OR a.action = action_filter)
-  )
-  SELECT
-    f.action::text,
-    COUNT(*)::integer AS total_events,
-    COUNT(DISTINCT f.user_id)::integer AS unique_users,
-    COUNT(DISTINCT f.entity_id)::integer AS unique_entities,
-    MIN(f.ts) AS first_event,
-    MAX(f.ts) AS last_event,
-    COUNT(*) OVER()::integer AS total_count
-  FROM filtered f
-  GROUP BY f.action
-  ORDER BY total_events DESC, f.action
-  LIMIT safe_limit OFFSET safe_offset;
 END;
 $$;
 
@@ -2315,18 +2335,18 @@ CREATE OR REPLACE FUNCTION heartguard.sp_metrics_users_report(
   p_limit INTEGER DEFAULT 100,
   p_offset INTEGER DEFAULT 0)
 RETURNS TABLE (
-  user_id UUID,
-  name TEXT,
-  email TEXT,
-  status_code TEXT,
-  status_label TEXT,
-  created_at TIMESTAMP,
-  first_action TIMESTAMP,
-  last_action TIMESTAMP,
-  actions_count INTEGER,
-  distinct_actions INTEGER,
-  org_memberships INTEGER,
-  total_count INTEGER)
+  user_id uuid,
+  name text,
+  email text,
+  status_code text,
+  status_label text,
+  created_at timestamp,
+  first_action timestamp,
+  last_action timestamp,
+  actions_count integer,
+  distinct_actions integer,
+  org_memberships integer,
+  total_count integer)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE

@@ -215,23 +215,6 @@ func (r *Repo) GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([
 	return out, rows.Err()
 }
 
-func (r *Repo) GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error) {
-	var stats models.AlertResponseStats
-	err := r.pool.QueryRow(ctx, `
-SELECT
-    COALESCE(AVG(EXTRACT(EPOCH FROM ack.ack_at - a.created_at)), 0) * interval '1 second' AS avg_ack_duration,
-    COALESCE(AVG(EXTRACT(EPOCH FROM res.resolved_at - a.created_at)), 0) * interval '1 second' AS avg_resolve_duration
-FROM alerts a
-LEFT JOIN alert_ack ack ON ack.alert_id = a.id
-LEFT JOIN alert_resolution res ON res.alert_id = a.id
-WHERE a.created_at >= $1;
-`, since).Scan(&stats.AvgAckDuration, &stats.AvgResolveDuration)
-	if err != nil {
-		return nil, err
-	}
-	return &stats, nil
-}
-
 func (r *Repo) GetDeviceStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
 	rows, err := r.pool.Query(ctx, `
 SELECT
@@ -256,6 +239,23 @@ ORDER BY active DESC;
 		out = append(out, item)
 	}
 	return out, rows.Err()
+}
+
+func (r *Repo) GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error) {
+	var stats models.AlertResponseStats
+	err := r.pool.QueryRow(ctx, `
+SELECT
+    COALESCE(AVG(EXTRACT(EPOCH FROM ack.ack_at - a.created_at)), 0) * interval '1 second' AS avg_ack_duration,
+    COALESCE(AVG(EXTRACT(EPOCH FROM res.resolved_at - a.created_at)), 0) * interval '1 second' AS avg_resolve_duration
+FROM alerts a
+LEFT JOIN alert_ack ack ON ack.alert_id = a.id
+LEFT JOIN alert_resolution res ON res.alert_id = a.id
+WHERE a.created_at >= $1;
+`, since).Scan(&stats.AvgAckDuration, &stats.AvgResolveDuration)
+	if err != nil {
+		return nil, err
+	}
+	return &stats, nil
 }
 
 func (r *Repo) GetPatientRiskBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
@@ -3453,34 +3453,169 @@ RETURNING id::text,
 	return &delivery, nil
 }
 
-func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
-	var (
-		avg         sql.NullFloat64
-		totalUsers  int
-		totalOrgs   int
-		memberships int
-		pending     int
-		opsRaw      []byte
-	)
-	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_overview()`).
-		Scan(&avg, &totalUsers, &totalOrgs, &memberships, &pending, &opsRaw); err != nil {
+func (r *Repo) GetInferenceBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_inference_breakdown()`)
+	if err != nil {
 		return nil, err
 	}
-	var ops []models.OperationStat
-	if len(opsRaw) > 0 {
-		if err := json.Unmarshal(opsRaw, &ops); err != nil {
+	defer rows.Close()
+
+	var out []models.StatusBreakdown
+	for rows.Next() {
+		var item models.StatusBreakdown
+		if err := rows.Scan(&item.Code, &item.Label, &item.Count); err != nil {
 			return nil, err
 		}
+		out = append(out, item)
 	}
+	return out, rows.Err()
+}
+
+func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
+	// First attempt: try direct column scan (fast path).
+	var (
+		avg                      sql.NullFloat64
+		vMtta                    pgtype.Interval
+		vMttr                    pgtype.Interval
+		totalUsers               int
+		totalOrgs                int
+		memberships              int
+		pending                  int
+		opsRaw                   []byte
+		unassignedAlertsCount    int
+		activePatientsCount      int
+		disconnectedDevicesCount int
+	)
+	// Asegúrate que el orden del SELECT * coincida con los destinos del Scan
+	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_overview()`).
+		Scan(&avg, &vMtta, &vMttr, &totalUsers, &totalOrgs, &memberships, &pending, &opsRaw, &unassignedAlertsCount, &activePatientsCount, &disconnectedDevicesCount); err == nil {
+		var ops []models.OperationStat
+		if len(opsRaw) > 0 {
+			if err := json.Unmarshal(opsRaw, &ops); err != nil {
+				// Log error but continue if possible, maybe returning partial data
+				log.Printf("Error unmarshalling recent operations: %v", err)
+			}
+		}
+
+		res := &models.MetricsOverview{
+			AvgResponseMs:            avg.Float64,
+			AvgAckDuration:           intervalToDuration(vMtta),
+			AvgResolveDuration:       intervalToDuration(vMttr),
+			TotalUsers:               totalUsers,
+			TotalOrganizations:       totalOrgs,
+			TotalMemberships:         memberships,
+			PendingInvitations:       pending,
+			RecentOperations:         ops, // Use unmarshalled ops, potentially empty if error occurred
+			UnassignedAlertsCount:    unassignedAlertsCount,
+			ActivePatientsCount:      activePatientsCount,
+			DisconnectedDevicesCount: disconnectedDevicesCount,
+		}
+		return res, nil
+	} else {
+		// Log the direct scan error
+		log.Printf("Direct scan failed for sp_metrics_overview: %v. Falling back to JSON.", err)
+	}
+
+
+	// If direct scan failed (for example because the DB function returns a different
+	// set of columns), fall back to asking the DB for a JSON representation and
+	// unmarshal into the struct. This is more tolerant to schema changes in the
+	// stored function.
+	var raw json.RawMessage
+	// Select specific columns mapped to JSON keys matching the struct for robustness
+	if err := r.pool.QueryRow(ctx, `
+		SELECT jsonb_build_object(
+			'avg_response_ms', t.avg_response_ms,
+			'avg_ack_duration', EXTRACT(EPOCH FROM t.avg_ack_duration), -- Convert interval to seconds for JSON
+			'avg_resolve_duration', EXTRACT(EPOCH FROM t.avg_resolve_duration), -- Convert interval to seconds for JSON
+			'total_users', t.total_users,
+			'total_organizations', t.total_orgs,
+			'total_memberships', t.total_memberships,
+			'pending_invitations', t.pending_invitations,
+			'recent_operations', t.operations,
+			'unassigned_alerts_count', t.unassigned_alerts_count,
+			'active_patients_count', t.active_patients_count,
+			'disconnected_devices_count', t.disconnected_devices_count
+		)
+		FROM heartguard.sp_metrics_overview() t
+    `).Scan(&raw); err != nil {
+		log.Printf("Error fetching sp_metrics_overview as JSON: %v", err)
+		return nil, fmt.Errorf("failed to fetch metrics overview: %w", err)
+	}
+
+	// Custom unmarshalling logic to handle interval potentially coming as seconds
+	var temp struct {
+		AvgResponseMs            float64            `json:"avg_response_ms"`
+		AvgAckDurationSecs       *float64           `json:"avg_ack_duration"` // Read as float64 (seconds)
+		AvgResolveDurationSecs   *float64           `json:"avg_resolve_duration"` // Read as float64 (seconds)
+		TotalUsers               int                `json:"total_users"`
+		TotalOrganizations       int                `json:"total_organizations"`
+		TotalMemberships         int                `json:"total_memberships"`
+		PendingInvitations       int                `json:"pending_invitations"`
+		RecentOperations         []models.OperationStat `json:"recent_operations"`
+		UnassignedAlertsCount    int                `json:"unassigned_alerts_count"`
+		ActivePatientsCount      int                `json:"active_patients_count"`
+		DisconnectedDevicesCount int                `json:"disconnected_devices_count"`
+	}
+
+	if err := json.Unmarshal(raw, &temp); err != nil {
+		log.Printf("Error unmarshalling metrics overview JSON: %v", err)
+		return nil, fmt.Errorf("failed to parse metrics overview: %w", err)
+	}
+
+	// Convert seconds back to time.Duration
+	ackDuration := secondsToDuration(temp.AvgAckDurationSecs)
+	resolveDuration := secondsToDuration(temp.AvgResolveDurationSecs)
+
 	res := &models.MetricsOverview{
-		AvgResponseMs:      avg.Float64,
-		TotalUsers:         totalUsers,
-		TotalOrganizations: totalOrgs,
-		TotalMemberships:   memberships,
-		PendingInvitations: pending,
-		RecentOperations:   ops,
+		AvgResponseMs:            temp.AvgResponseMs,
+		AvgAckDuration:           ackDuration,
+		AvgResolveDuration:       resolveDuration,
+		TotalUsers:               temp.TotalUsers,
+		TotalOrganizations:       temp.TotalOrganizations,
+		TotalMemberships:         temp.TotalMemberships,
+		PendingInvitations:       temp.PendingInvitations,
+		RecentOperations:         temp.RecentOperations,
+		UnassignedAlertsCount:    temp.UnassignedAlertsCount,
+		ActivePatientsCount:      temp.ActivePatientsCount,
+		DisconnectedDevicesCount: temp.DisconnectedDevicesCount,
 	}
+
 	return res, nil
+}
+
+
+// intervalToDuration convierte pgtype.Interval a time.Duration.
+// pgtype.Interval tiene Microseconds, Days, Months.
+func intervalToDuration(interval pgtype.Interval) time.Duration {
+	if !interval.Valid {
+		return 0
+	}
+	// Convertir días a microsegundos y sumar; aproximar meses a 30 días para no perder magnitud.
+	totalMicroseconds := interval.Microseconds + int64(interval.Days)*24*60*60*1000000
+	if interval.Months != 0 {
+		totalMicroseconds += int64(interval.Months) * 30 * 24 * 60 * 60 * 1000000
+	}
+	return time.Duration(totalMicroseconds) * time.Microsecond
+}
+
+func secondsToDuration(seconds *float64) time.Duration {
+	if seconds == nil {
+		return 0
+	}
+	return time.Duration(*seconds * float64(time.Second))
+}
+
+// CountAlertsCreated returns the number of alerts created since the provided time.
+func (r *Repo) CountAlertsCreated(ctx context.Context, since time.Time) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `
+SELECT COALESCE(COUNT(*), 0) FROM heartguard.alerts WHERE created_at >= $1
+`, since).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (r *Repo) MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error) {
