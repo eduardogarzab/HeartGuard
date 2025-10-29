@@ -1,3 +1,1 @@
-{
-  "message": "Error de conexi\u00f3n con el servicio: http://127.0.0.1:5002"
-}
+{"code":"invalid_credentials","details":{},"message":"Credenciales inv\u00e1lidas","status":"error"}

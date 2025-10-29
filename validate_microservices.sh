@@ -24,6 +24,7 @@ AUTH_PORT="${AUTH_PORT:-5001}"
 ORG_PORT="${ORG_PORT:-5002}"
 AUDIT_PORT="${AUDIT_PORT:-5006}"
 GATEWAY_PORT="${GATEWAY_PORT:-5000}"
+MEDIA_PORT="${MEDIA_PORT:-5007}"
 CHOSEN_GATEWAY_NOTE=""
 
 ORG_PID_KILLED=0
@@ -369,6 +370,7 @@ run_tests() {
   http_test "Health auth_service" "http://127.0.0.1:${AUTH_PORT}/health" "200"
   http_test "Health org_service" "http://127.0.0.1:${ORG_PORT}/health" "200"
   http_test "Health audit_service" "http://127.0.0.1:${AUDIT_PORT}/health" "200"
+  http_test "Health media_service" "http://127.0.0.1:${MEDIA_PORT}/health" "200"
   http_test "Health gateway" "http://127.0.0.1:${GATEWAY_PORT}/health" "200"
 
   local login_payload="$LOG_DIR/payload_login.json"
@@ -548,6 +550,7 @@ cleanup() {
   stop_service ORG
   stop_service AUDIT
   stop_service GATEWAY
+  stop_service MEDIA
 }
 
 finalize() {
@@ -588,6 +591,7 @@ main() {
   setup_service_env "org" "$MICRO_DIR/org_service" || ABORT_TESTS=1
   setup_service_env "audit" "$MICRO_DIR/audit_service" || ABORT_TESTS=1
   setup_service_env "gateway" "$MICRO_DIR/gateway" || ABORT_TESTS=1
+  setup_service_env "media" "$MICRO_DIR/media_service" || ABORT_TESTS=1
 
   if (( ABORT_TESTS == 0 )); then
     check_dependency "PostgreSQL" "$POSTGRES_HOST" "$POSTGRES_PORT"
@@ -602,6 +606,7 @@ main() {
     local org_python="$MICRO_DIR/org_service/.venv/bin/python"
     local audit_python="$MICRO_DIR/audit_service/.venv/bin/python"
     local gateway_python="$MICRO_DIR/gateway/.venv/bin/python"
+    local media_python="$MICRO_DIR/media_service/.venv/bin/python"
 
     GATEWAY_PORT="$(choose_gateway_port "$GATEWAY_PORT" 5050 5500 6000)"
     if [[ -n "$CHOSEN_GATEWAY_NOTE" ]]; then
@@ -610,15 +615,24 @@ main() {
   export AUTH_SERVICE_PORT="$AUTH_PORT"
   export ORG_SERVICE_PORT="$ORG_PORT"
   export AUDIT_SERVICE_PORT="$AUDIT_PORT"
+  export MEDIA_SERVICE_PORT="$MEDIA_PORT"
     export GATEWAY_SERVICE_PORT="$GATEWAY_PORT"
   export AUTH_SERVICE_URL="http://127.0.0.1:${AUTH_PORT}"
   export ORG_SERVICE_URL="http://127.0.0.1:${ORG_PORT}"
   export AUDIT_SERVICE_URL="http://127.0.0.1:${AUDIT_PORT}"
+  export MEDIA_SERVICE_URL="http://127.0.0.1:${MEDIA_PORT}"
+    if [[ -z "${STORAGE_EMULATOR_HOST:-}" ]]; then
+      export STORAGE_EMULATOR_HOST="http://127.0.0.1:9090"
+    fi
+    if [[ -z "${GOOGLE_CLOUD_PROJECT:-}" ]]; then
+      export GOOGLE_CLOUD_PROJECT="heartguard-local"
+    fi
 
     start_service AUTH "$MICRO_DIR/auth_service" "$auth_python" "$AUTH_PORT" || ABORT_TESTS=1
     start_service ORG "$MICRO_DIR/org_service" "$org_python" "$ORG_PORT" || ABORT_TESTS=1
     start_service AUDIT "$MICRO_DIR/audit_service" "$audit_python" "$AUDIT_PORT" || ABORT_TESTS=1
     start_service GATEWAY "$MICRO_DIR/gateway" "$gateway_python" "$GATEWAY_PORT" || ABORT_TESTS=1
+    start_service MEDIA "$MICRO_DIR/media_service" "$media_python" "$MEDIA_PORT" || ABORT_TESTS=1
   fi
 
   if (( ABORT_TESTS == 0 )); then
