@@ -12,7 +12,7 @@ if exist "%REPORT%" del "%REPORT%"
 
 set "ADMIN_EMAIL=ana.ruiz@heartguard.com"
 set "ADMIN_PASSWORD=Demo#2025"
-set "POSTGRES_HOST=35.184.124.76"
+set "POSTGRES_HOST=34.70.7.33"
 set "POSTGRES_PORT=5432"
 set "REDIS_PORT=6379"
 set "TIMESTAMP="
