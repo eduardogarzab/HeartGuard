@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 from flask import Blueprint, request
 
-from repository import log_heartbeat
+from repository import RepositoryError, log_heartbeat
 from utils import create_response, require_internal_api_key
 
 bp = Blueprint("analytics_ingest", __name__, url_prefix="/v1/metrics")
@@ -40,6 +40,10 @@ def heartbeat():
     except ValueError as exc:
         return create_response(message=str(exc), status_code=400)
 
-    record = log_heartbeat(**data)
+    try:
+        record = log_heartbeat(**data)
+    except RepositoryError as exc:
+        return create_response(message=str(exc), status_code=500)
+
     return create_response(data=record, status_code=202)
 

@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Mapping, Optional
 
 from sqlalchemy import func, text
 from sqlalchemy.dialects.postgresql import insert
+from sqlalchemy.exc import SQLAlchemyError
 
 from config import get_audit_session, get_db_session
 from models import ServiceHealth
@@ -14,6 +16,42 @@ from models import ServiceHealth
 
 class RepositoryError(RuntimeError):
     """Raised when repository operations fail."""
+
+
+def _coerce_metadata(value: Any) -> Dict[str, Any]:
+    """Normalize metadata returned from the database into a dictionary."""
+
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        return dict(value)
+    if isinstance(value, memoryview):
+        value = value.tobytes()
+    if isinstance(value, (bytes, bytearray)):
+        try:
+            return json.loads(value.decode())
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return {}
+    if isinstance(value, str):
+        try:
+            return json.loads(value)
+        except json.JSONDecodeError:
+            return {}
+    return {}
+
+
+def _serialize_dt(value: Any) -> Optional[str]:
+    """Return a safe ISO formatted string for datetime-like values."""
+
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        else:
+            value = value.astimezone(timezone.utc)
+        return value.isoformat()
+    return str(value)
 
 
 def log_heartbeat(service_name: str, status: str, metadata: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
@@ -43,15 +81,17 @@ def log_heartbeat(service_name: str, status: str, metadata: Optional[Dict[str, A
             ServiceHealth.payload.label("metadata"),
         )
 
-        result = session.execute(stmt)
-        row = result.mappings().one()
-        last_seen = row["last_heartbeat"]
-        metadata = row.get("metadata") or {}
+        try:
+            result = session.execute(stmt)
+            row = result.mappings().one()
+        except SQLAlchemyError as exc:
+            raise RepositoryError("Failed to persist heartbeat") from exc
+
         return {
             "service_name": row["service_name"],
             "status": row["status"],
-            "last_heartbeat": last_seen.isoformat() if last_seen else None,
-            "metadata": metadata,
+            "last_heartbeat": _serialize_dt(row.get("last_heartbeat")),
+            "metadata": _coerce_metadata(row.get("metadata")),
         }
 
 
@@ -76,15 +116,17 @@ def get_overview_metrics(org_id: Optional[str], is_superadmin: bool) -> Dict[str
 
     sql = text("\n".join(query))
 
-    with get_audit_session() as session:
-        row = session.execute(sql, params).mappings().one()
+    try:
+        with get_audit_session() as session:
+            row = session.execute(sql, params).mappings().one()
+    except SQLAlchemyError as exc:
+        raise RepositoryError("Failed to load overview metrics") from exc
 
-    last_event_at = row["last_event_at"].isoformat() if row["last_event_at"] else None
     return {
-        "login_events": int(row["login_events"] or 0),
-        "data_exports": int(row["data_exports"] or 0),
-        "active_users": int(row["active_users"] or 0),
-        "last_event_at": last_event_at,
+        "login_events": int(row.get("login_events") or 0),
+        "data_exports": int(row.get("data_exports") or 0),
+        "active_users": int(row.get("active_users") or 0),
+        "last_event_at": _serialize_dt(row.get("last_event_at")),
         "scope": "all" if is_superadmin and not org_id else org_id,
     }
 
