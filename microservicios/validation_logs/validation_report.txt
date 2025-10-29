@@ -1,127 +1,52 @@
-[2025-10-29 03:22:09] [INFO] Repositorio: /app
-[2025-10-29 03:22:09] [INFO] Logs: /app/microservicios/validation_logs
-[2025-10-29 03:22:09] [INFO] Python: Usando interprete python3
-[2025-10-29 03:22:09] [INFO] Setup auth: Creando entorno virtual
-[2025-10-29 03:22:09] [INFO] Setup auth: Instalando dependencias
-[2025-10-29 03:22:12] [PASS] Setup auth - Entorno virtual listo
-[2025-10-29 03:22:12] [INFO] Setup org: Creando entorno virtual
-[2025-10-29 03:22:12] [INFO] Setup org: Instalando dependencias
-[2025-10-29 03:22:14] [PASS] Setup org - Entorno virtual listo
-[2025-10-29 03:22:14] [INFO] Setup audit: Creando entorno virtual
-[2025-10-29 03:22:14] [INFO] Setup audit: Instalando dependencias
-[2025-10-29 03:22:15] [PASS] Setup audit - Entorno virtual listo
-[2025-10-29 03:22:15] [INFO] Setup signal: Creando entorno virtual
-[2025-10-29 03:22:15] [INFO] Setup signal: Instalando dependencias
-[2025-10-29 03:22:17] [PASS] Setup signal - Entorno virtual listo
-[2025-10-29 03:22:17] [INFO] Setup gateway: Creando entorno virtual
-[2025-10-29 03:22:17] [INFO] Setup gateway: Instalando dependencias
-[2025-10-29 03:22:19] [PASS] Setup gateway - Entorno virtual listo
-[2025-10-29 03:22:19] [PASS] Conectividad PostgreSQL - Puerto 5432 accesible
-[2025-10-29 03:22:19] [PASS] Conectividad Redis - Puerto 6379 accesible
-[2025-10-29 03:22:19] [PASS] Conexion Postgres - Consulta SELECT 1 exitosa
-[2025-10-29 03:22:20] [PASS] Conexion Redis - Ping exitoso
-[2025-10-29 03:22:20] [INFO] Start AUTH: Lanzando servicio
-[2025-10-29 03:22:20] [INFO] Start AUTH: PID 40920
-[2025-10-29 03:22:26] [PASS] Start AUTH - Servicio activo
-[2025-10-29 03:22:26] [INFO] Start ORG: Lanzando servicio
-[2025-10-29 03:22:26] [INFO] Start ORG: PID 40932
-[2025-10-29 03:22:32] [PASS] Start ORG - Servicio activo
-[2025-10-29 03:22:32] [INFO] Start AUDIT: Lanzando servicio
-[2025-10-29 03:22:32] [INFO] Start AUDIT: PID 40944
-[2025-10-29 03:22:38] [PASS] Start AUDIT - Servicio activo
-[2025-10-29 03:22:38] [INFO] Start SIGNAL: Lanzando servicio
-[2025-10-29 03:22:38] [INFO] Start SIGNAL: PID 40956
-[2025-10-29 03:22:44] [PASS] Start SIGNAL - Servicio activo
-[2025-10-29 03:22:44] [INFO] Start GATEWAY: Lanzando servicio
-[2025-10-29 03:22:44] [INFO] Start GATEWAY: PID 40968
-[2025-10-29 03:22:50] [PASS] Start GATEWAY - Servicio activo
-[2025-10-29 03:22:50] [PASS] Health auth_service - HTTP 200
-[2025-10-29 03:22:50] [PASS] Health org_service - HTTP 200
-[2025-10-29 03:22:50] [PASS] Health audit_service - HTTP 200
-[2025-10-29 03:22:50] [PASS] Health signal_service - HTTP 200
-[2025-10-29 03:22:50] [PASS] Health gateway - HTTP 200
-[2025-10-29 03:22:50] [PASS] SignalService Ingest - HTTP 202
-[2025-10-29 03:22:51] [PASS] Auth login directo - HTTP 200
-[2025-10-29 03:22:51] [PASS] Auth refresh - HTTP 200
-[2025-10-29 03:22:51] [PASS] Auth users/me - HTTP 200
-[2025-10-29 03:22:52] [PASS] Gateway login - HTTP 200
-[2025-10-29 03:22:52] [PASS] Gateway orgs/me - HTTP 200
-[2025-10-29 03:22:52] [PASS] Gateway org detalle - HTTP 200
-[2025-10-29 03:22:52] [PASS] Gateway audit log - HTTP 201
-[2025-10-29 03:22:52] [PASS] Gateway org inexistente - HTTP 403
-[2025-10-29 03:22:53] [PASS] Auth login incompleto - HTTP 401
-[2025-10-29 03:22:53] [INFO] Degradacion: Deteniendo org_service (PID 40932)
-[2025-10-29 03:22:53] [PASS] Gateway routing with org_service offline - HTTP 503
-[2025-10-29 03:22:53] [PASS] Gateway without token - HTTP 401
-[2025-10-29 03:22:53] [INFO] Cleanup: Deteniendo microservicios
-[2025-10-29 03:22:53] [INFO] Stop AUTH: PID 40920 detenido
-[2025-10-29 03:22:53] [INFO] Stop AUDIT: PID 40944 detenido
-[2025-10-29 03:22:53] [INFO] Stop SIGNAL: PID 40956 detenido
-[2025-10-29 03:22:53] [INFO] Stop GATEWAY: PID 40968 detenido
-Validation run finished at 2025-10-29 03:22:53
-Totals: PASS=31 FAIL=0
-Validation run started at 2025-10-28 22:28:52
-[2025-10-28 22:28:52] [INFO] Repositorio: /Users/jesa/Projects/HeartGuard
-[2025-10-28 22:28:52] [INFO] Logs: /Users/jesa/Projects/HeartGuard/microservicios/validation_logs
-[2025-10-28 22:28:52] [INFO] Python: Usando interprete python3
-[2025-10-28 22:28:52] [INFO] Setup auth: Creando entorno virtual
-[2025-10-28 22:28:52] [INFO] Setup auth: Instalando dependencias
-[2025-10-28 22:29:52] [PASS] Setup auth - Entorno virtual listo
-[2025-10-28 22:29:52] [INFO] Setup org: Creando entorno virtual
-[2025-10-28 22:29:52] [INFO] Setup org: Instalando dependencias
-[2025-10-28 22:30:53] [PASS] Setup org - Entorno virtual listo
-[2025-10-28 22:30:53] [INFO] Setup audit: Creando entorno virtual
-[2025-10-28 22:30:53] [INFO] Setup audit: Instalando dependencias
-[2025-10-28 22:31:53] [PASS] Setup audit - Entorno virtual listo
-[2025-10-28 22:31:53] [INFO] Setup gateway: Creando entorno virtual
-[2025-10-28 22:31:53] [INFO] Setup gateway: Instalando dependencias
-[2025-10-28 22:32:54] [PASS] Setup gateway - Entorno virtual listo
-[2025-10-28 22:32:54] [INFO] Setup media: Creando entorno virtual
-[2025-10-28 22:32:54] [INFO] Setup media: Instalando dependencias
-[2025-10-28 22:33:55] [PASS] Setup media - Entorno virtual listo
-[2025-10-28 22:33:55] [PASS] Conectividad PostgreSQL - Puerto 5432 accesible
-[2025-10-28 22:33:55] [PASS] Conectividad Redis - Puerto 6379 accesible
-[2025-10-28 22:33:56] [PASS] Conexion Postgres - Consulta SELECT 1 exitosa
-[2025-10-28 22:33:56] [PASS] Conexion Redis - Ping exitoso
-[2025-10-28 22:33:56] [INFO] Port 5000: Liberando procesos [33028]
-[2025-10-28 22:33:56] [INFO] Port 5000: Proceso 33028 detenido
-[2025-10-28 22:33:57] [INFO] Start AUTH: Lanzando servicio
-[2025-10-28 22:33:57] [INFO] Start AUTH: PID 35276
-[2025-10-28 22:34:03] [PASS] Start AUTH - Servicio activo
-[2025-10-28 22:34:03] [INFO] Start ORG: Lanzando servicio
-[2025-10-28 22:34:03] [INFO] Start ORG: PID 35298
-[2025-10-28 22:34:09] [PASS] Start ORG - Servicio activo
-[2025-10-28 22:34:09] [INFO] Start AUDIT: Lanzando servicio
-[2025-10-28 22:34:09] [INFO] Start AUDIT: PID 35318
-[2025-10-28 22:34:15] [PASS] Start AUDIT - Servicio activo
-[2025-10-28 22:34:16] [INFO] Start GATEWAY: Lanzando servicio
-[2025-10-28 22:34:16] [INFO] Start GATEWAY: PID 35343
-[2025-10-28 22:34:22] [PASS] Start GATEWAY - Servicio activo
-[2025-10-28 22:34:22] [INFO] Start MEDIA: Lanzando servicio
-[2025-10-28 22:34:22] [INFO] Start MEDIA: PID 35370
-[2025-10-28 22:34:28] [PASS] Start MEDIA - Servicio activo
-[2025-10-28 22:34:28] [PASS] Health auth_service - HTTP 200
-[2025-10-28 22:34:28] [PASS] Health org_service - HTTP 200
-[2025-10-28 22:34:28] [PASS] Health audit_service - HTTP 200
-[2025-10-28 22:34:28] [PASS] Health media_service - HTTP 200
-[2025-10-28 22:34:28] [PASS] Health gateway - HTTP 200
-[2025-10-28 22:34:29] [PASS] Auth login directo - HTTP 200
-[2025-10-28 22:34:30] [PASS] Auth refresh - HTTP 200
-[2025-10-28 22:34:30] [PASS] Auth users/me - HTTP 200
-[2025-10-28 22:34:31] [PASS] Gateway login - HTTP 200
-[2025-10-28 22:34:31] [PASS] Gateway orgs/me - HTTP 200
-[2025-10-28 22:34:32] [PASS] Gateway org detalle - HTTP 200
-[2025-10-28 22:34:32] [PASS] Gateway audit log - HTTP 201
-[2025-10-28 22:34:33] [PASS] Gateway org inexistente - HTTP 403
-[2025-10-28 22:34:33] [PASS] Auth login incompleto - HTTP 401
-[2025-10-28 22:34:33] [INFO] Degradacion: Deteniendo org_service (PID 35298)
-[2025-10-28 22:34:33] [PASS] Gateway routing with org_service offline - HTTP 503
-[2025-10-28 22:34:33] [PASS] Gateway without token - HTTP 401
-[2025-10-28 22:34:33] [INFO] Cleanup: Deteniendo microservicios
-[2025-10-28 22:34:33] [INFO] Stop AUTH: PID 35276 detenido
-[2025-10-28 22:34:33] [INFO] Stop AUDIT: PID 35318 detenido
-[2025-10-28 22:34:33] [INFO] Stop GATEWAY: PID 35343 detenido
-[2025-10-28 22:34:33] [INFO] Stop MEDIA: PID 35370 detenido
-Validation run finished at 2025-10-28 22:34:33
-Totals: PASS=30 FAIL=0
+Validation run started at 2025-10-29 14:34:16 
 ==================================================
+[2025-10-29 14:34:17] [INFO] Repositorio: C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard
+[2025-10-29 14:34:17] [INFO] Logs: C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\microservicios\validation_logs
+[2025-10-29 14:34:18] [INFO] Python: Usando interprete py
+[2025-10-29 14:34:19] [INFO] Setup auth: Entorno virtual existente
+[2025-10-29 14:34:20] [INFO] Setup auth: Instalando dependencias
+[2025-10-29 14:34:23] [PASS] Setup auth - Entorno virtual listo
+[2025-10-29 14:34:23] [INFO] Setup org: Entorno virtual existente
+[2025-10-29 14:34:24] [INFO] Setup org: Instalando dependencias
+[2025-10-29 14:34:27] [PASS] Setup org - Entorno virtual listo
+[2025-10-29 14:34:28] [INFO] Setup audit: Entorno virtual existente
+[2025-10-29 14:34:29] [INFO] Setup audit: Instalando dependencias
+[2025-10-29 14:34:32] [PASS] Setup audit - Entorno virtual listo
+[2025-10-29 14:34:33] [INFO] Setup gateway: Entorno virtual existente
+[2025-10-29 14:34:33] [INFO] Setup gateway: Instalando dependencias
+[2025-10-29 14:34:36] [PASS] Setup gateway - Entorno virtual listo
+[2025-10-29 14:34:45] [PASS] Conectividad PostgreSQL - Puerto 5432 accesible
+[2025-10-29 14:34:57] [PASS] Conectividad Redis - Puerto 6379 accesible
+[2025-10-29 14:34:59] [PASS] Conexion Postgres - Consulta SELECT 1 exitosa
+[2025-10-29 14:35:00] [PASS] Conexion Redis - Ping exitoso
+[2025-10-29 14:35:02] [INFO] Start AUTH: PID 19740
+[2025-10-29 14:35:09] [PASS] Start AUTH - Servicio activo
+[2025-10-29 14:35:10] [INFO] Start ORG: PID 10340
+[2025-10-29 14:35:17] [PASS] Start ORG - Servicio activo
+[2025-10-29 14:35:18] [INFO] Start AUDIT: PID 19236
+[2025-10-29 14:35:25] [PASS] Start AUDIT - Servicio activo
+[2025-10-29 14:35:26] [INFO] Start GATEWAY: PID 12820
+[2025-10-29 14:35:32] [PASS] Start GATEWAY - Servicio activo
+[2025-10-29 14:35:33] [PASS] Health auth_service - HTTP 200
+[2025-10-29 14:35:34] [PASS] Health org_service - HTTP 200
+[2025-10-29 14:35:35] [PASS] Health audit_service - HTTP 200
+[2025-10-29 14:35:36] [PASS] Health gateway - HTTP 200
+[2025-10-29 14:35:38] [PASS] Auth login directo - HTTP 200
+[2025-10-29 14:35:41] [PASS] Auth refresh - HTTP 200
+[2025-10-29 14:35:42] [PASS] Auth users/me - HTTP 200
+[2025-10-29 14:35:43] [PASS] Gateway login - HTTP 200
+[2025-10-29 14:35:45] [PASS] Gateway orgs/me - HTTP 200
+[2025-10-29 14:35:47] [PASS] Gateway org detalle - HTTP 200
+[2025-10-29 14:35:49] [PASS] Gateway audit log - HTTP 201
+[2025-10-29 14:35:50] [PASS] Gateway org inexistente - HTTP 403
+[2025-10-29 14:35:52] [PASS] Auth login incompleto - HTTP 401
+[2025-10-29 14:35:53] [INFO] Degradacion: Deteniendo org_service (PID 10340)
+[2025-10-29 14:35:56] [PASS] Gateway routing with org_service offline - HTTP 503
+[2025-10-29 14:35:57] [PASS] Gateway without token - HTTP 401
+[2025-10-29 14:35:58] [INFO] Cleanup: Deteniendo microservicios
+[2025-10-29 14:35:59] [INFO] Stop AUTH: PID 19740 detenido
+[2025-10-29 14:36:01] [INFO] Stop ORG: PID 1 detenido
+[2025-10-29 14:36:02] [INFO] Stop AUDIT: PID 19236 detenido
+[2025-10-29 14:36:04] [INFO] Stop GATEWAY: PID 12820 detenido
+==================================================
+Validation run finished at 2025-10-29 14:36:04
