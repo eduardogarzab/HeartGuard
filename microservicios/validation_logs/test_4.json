@@ -1,4 +1,1 @@
-{
-  "service": "gateway",
-  "status": "ok"
-}
+{"data":{"service":"media_service","status":"healthy"},"meta":{},"status":"ok"}
