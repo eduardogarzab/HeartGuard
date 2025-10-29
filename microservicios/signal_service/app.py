@@ -1,10 +1,9 @@
 # signal_service/app.py
 import os
-from dotenv import load_dotenv
 from app import create_app
 
-# Cargar variables de entorno
-load_dotenv()
+# Importar y cargar la configuración primero
+from app import config
 
 # Crear la instancia de la aplicación usando la factory
 app = create_app()

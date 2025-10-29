@@ -1,8 +1,11 @@
 # signal_service/init_db.py
 import os
-from dotenv import load_dotenv
 from app.database import engine
 from app.models.models import Base
+
+# Importar y cargar la configuración primero
+# Esto es crucial para que el 'engine' tenga la DATABASE_URL correcta
+from app import config
 
 def initialize_database():
     """
@@ -10,9 +13,6 @@ def initialize_database():
     """
     print("Initializing database...")
     try:
-        # Load environment variables to ensure the database engine is configured
-        load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), '.env'))
-
         # Create all tables defined in the models
         Base.metadata.create_all(bind=engine)
         print("Tables created successfully.")

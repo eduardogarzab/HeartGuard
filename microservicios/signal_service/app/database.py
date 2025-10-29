@@ -2,10 +2,9 @@
 import os
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker, scoped_session
-from dotenv import load_dotenv
 
-# Cargar variables de entorno desde .env
-load_dotenv()
+# Importar y cargar la configuración primero
+from . import config
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 if not DATABASE_URL:

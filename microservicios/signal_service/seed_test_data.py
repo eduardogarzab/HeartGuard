@@ -1,10 +1,9 @@
 import os
 import psycopg2
 import bcrypt
-from dotenv import load_dotenv
 
-# Load environment variables from .env file
-load_dotenv()
+# Importar y cargar la configuración primero
+from app import config
 
 # --- Test Device Data ---
 # This data is based on the 'validate_microservices.sh' script

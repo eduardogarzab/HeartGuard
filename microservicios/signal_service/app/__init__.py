@@ -1,7 +1,9 @@
 # signal_service/app/__init__.py
 import os
 from flask import Flask
-from dotenv import load_dotenv
+
+# Importar y cargar la configuración primero
+from . import config
 
 def create_app():
     """
@@ -9,9 +11,6 @@ def create_app():
     Initializes the Flask app, registers blueprints, and sets up teardown contexts.
     """
     app = Flask(__name__)
-
-    # Cargar variables de entorno
-    load_dotenv()
 
     # Configuración de la aplicación
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'a_default_secret_key')
