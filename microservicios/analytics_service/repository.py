@@ -40,17 +40,18 @@ def log_heartbeat(service_name: str, status: str, metadata: Optional[Dict[str, A
             ServiceHealth.service_name,
             ServiceHealth.status,
             ServiceHealth.last_heartbeat,
-            ServiceHealth.payload,
+            ServiceHealth.payload.label("metadata"),
         )
 
         result = session.execute(stmt)
         row = result.mappings().one()
         last_seen = row["last_heartbeat"]
+        metadata = row.get("metadata") or {}
         return {
             "service_name": row["service_name"],
             "status": row["status"],
             "last_heartbeat": last_seen.isoformat() if last_seen else None,
-            "metadata": row["payload"],
+            "metadata": metadata,
         }
 
 
