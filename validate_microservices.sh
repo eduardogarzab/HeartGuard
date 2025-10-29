@@ -9,7 +9,7 @@ CURL_ERRORS="$LOG_DIR/curl_errors.log"
 
 ADMIN_EMAIL="ana.ruiz@heartguard.com"
 ADMIN_PASSWORD="Demo#2025"
-POSTGRES_HOST="35.184.124.76"
+POSTGRES_HOST="34.70.7.33"
 POSTGRES_PORT="5432"
 REDIS_PORT="6379"
 
@@ -25,6 +25,7 @@ ORG_PORT="${ORG_PORT:-5002}"
 AUDIT_PORT="${AUDIT_PORT:-5006}"
 GATEWAY_PORT="${GATEWAY_PORT:-5000}"
 MEDIA_PORT="${MEDIA_PORT:-5007}"
+SIGNAL_PORT="${SIGNAL_PORT:-5008}"
 CHOSEN_GATEWAY_NOTE=""
 
 ORG_PID_KILLED=0
@@ -356,8 +357,9 @@ run_tests() {
   http_test "Health org_service" "http://127.0.0.1:${ORG_PORT}/health" "200"
   http_test "Health audit_service" "http://127.0.0.1:${AUDIT_PORT}/health" "200"
   http_test "Health gateway" "http://127.0.0.1:${GATEWAY_PORT}/health" "200"
+  http_test "Health signal_service" "http://127.0.0.1:${SIGNAL_PORT}/health" "200"
 
-  # signal_service tests removed
+  # Señales adicionales pueden agregarse aquí para validar flujos del signal_service
 
   local login_payload="$LOG_DIR/payload_login.json"
   "$PYTHON_BOOTSTRAP" - "$login_payload" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" <<'PY'
@@ -579,6 +581,7 @@ main() {
   setup_service_env "audit" "$MICRO_DIR/audit_service" || ABORT_TESTS=1
   setup_service_env "gateway" "$MICRO_DIR/gateway" || ABORT_TESTS=1
   setup_service_env "media" "$MICRO_DIR/media_service" || ABORT_TESTS=1
+  setup_service_env "signal" "$MICRO_DIR/signal_service" || ABORT_TESTS=1
 
   if (( ABORT_TESTS == 0 )); then
     check_dependency "PostgreSQL" "$POSTGRES_HOST" "$POSTGRES_PORT"
@@ -598,6 +601,7 @@ main() {
     local audit_python="$MICRO_DIR/audit_service/.venv/bin/python"
     local gateway_python="$MICRO_DIR/gateway/.venv/bin/python"
     local media_python="$MICRO_DIR/media_service/.venv/bin/python"
+    local signal_python="$MICRO_DIR/signal_service/.venv/bin/python"
 
     GATEWAY_PORT="$(choose_gateway_port "$GATEWAY_PORT" 5050 5500 6000)"
     if [[ -n "$CHOSEN_GATEWAY_NOTE" ]]; then
@@ -607,15 +611,18 @@ main() {
   export ORG_SERVICE_PORT="$ORG_PORT"
   export AUDIT_SERVICE_PORT="$AUDIT_PORT"
     export GATEWAY_SERVICE_PORT="$GATEWAY_PORT"
-  export AUTH_SERVICE_URL="http://127.0.0.1:${AUTH_PORT}"
-  export ORG_SERVICE_URL="http://127.0.0.1:${ORG_PORT}"
-  export AUDIT_SERVICE_URL="http://127.0.0.1:${AUDIT_PORT}"
+    export SIGNAL_SERVICE_PORT="$SIGNAL_PORT"
+    export AUTH_SERVICE_URL="http://127.0.0.1:${AUTH_PORT}"
+    export ORG_SERVICE_URL="http://127.0.0.1:${ORG_PORT}"
+    export AUDIT_SERVICE_URL="http://127.0.0.1:${AUDIT_PORT}"
+    export SIGNAL_SERVICE_URL="http://127.0.0.1:${SIGNAL_PORT}"
 
     start_service AUTH "$MICRO_DIR/auth_service" "$auth_python" "$AUTH_PORT" || ABORT_TESTS=1
     start_service ORG "$MICRO_DIR/org_service" "$org_python" "$ORG_PORT" || ABORT_TESTS=1
     start_service AUDIT "$MICRO_DIR/audit_service" "$audit_python" "$AUDIT_PORT" || ABORT_TESTS=1
     start_service GATEWAY "$MICRO_DIR/gateway" "$gateway_python" "$GATEWAY_PORT" || ABORT_TESTS=1
     start_service MEDIA "$MICRO_DIR/media_service" "$media_python" "$MEDIA_PORT" || ABORT_TESTS=1
+    start_service SIGNAL "$MICRO_DIR/signal_service" "$signal_python" "$SIGNAL_PORT" || ABORT_TESTS=1
   fi
 
   if (( ABORT_TESTS == 0 )); then

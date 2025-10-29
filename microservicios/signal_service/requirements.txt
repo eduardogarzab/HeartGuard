@@ -1,0 +1,6 @@
+Flask>=2.3,<3.0
+python-dotenv>=1.0
+psycopg2-binary>=2.9
+PyJWT>=2.8
+dicttoxml>=1.7
+xmltodict>=0.13
