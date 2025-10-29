@@ -15,6 +15,11 @@ set "ADMIN_PASSWORD=Demo#2025"
 set "POSTGRES_HOST=35.184.124.76"
 set "POSTGRES_PORT=5432"
 set "REDIS_PORT=6379"
+set "ANALYTICS_SERVICE_PORT=5010"
+set "ANALYTICS_INTERNAL_API_KEY=analytics-validation-key"
+set "ANALYTICS_DATABASE_URL=postgresql://heartguard_app:dev_change_me@%POSTGRES_HOST%:%POSTGRES_PORT%/heartguard"
+set "ANALYTICS_AUDIT_DATABASE_URL=%ANALYTICS_DATABASE_URL%"
+set "ANALYTICS_ORG_DATABASE_URL=%ANALYTICS_DATABASE_URL%"
 set "TIMESTAMP="
 set "PASS_TOTAL=0"
 set "FAIL_TOTAL=0"
@@ -40,6 +45,8 @@ call :setup_service_env "audit" "%MICRO_DIR%\audit_service"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :setup_service_env "gateway" "%MICRO_DIR%\gateway"
 if errorlevel 1 set "ABORT_TESTS=1"
+call :setup_service_env "analytics" "%MICRO_DIR%\analytics_service"
+if errorlevel 1 set "ABORT_TESTS=1"
 if defined ABORT_TESTS goto finalize
 
 call :check_dependency "PostgreSQL" "%POSTGRES_HOST%" "%POSTGRES_PORT%"
@@ -59,6 +66,8 @@ if errorlevel 1 set "ABORT_TESTS=1"
 call :start_service "AUDIT" "%MICRO_DIR%\audit_service" "%MICRO_DIR%\audit_service\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :start_service "GATEWAY" "%MICRO_DIR%\gateway" "%MICRO_DIR%\gateway\.venv\Scripts\python.exe"
+if errorlevel 1 set "ABORT_TESTS=1"
+call :start_service "ANALYTICS" "%MICRO_DIR%\analytics_service" "%MICRO_DIR%\analytics_service\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
 if defined ABORT_TESTS goto cleanup
 
@@ -95,6 +104,7 @@ call :stop_service "AUTH"
 call :stop_service "ORG"
 call :stop_service "AUDIT"
 call :stop_service "GATEWAY"
+call :stop_service "ANALYTICS"
 
 :finalize
 call :timestamp
@@ -257,8 +267,26 @@ call :http_test "Health auth_service" "http://127.0.0.1:5001/health" "200"
 call :http_test "Health org_service" "http://127.0.0.1:5002/health" "200"
 call :http_test "Health audit_service" "http://127.0.0.1:5006/health" "200"
 call :http_test "Health gateway" "http://127.0.0.1:5000/health" "200"
+call :http_test "Health analytics_service" "http://127.0.0.1:%ANALYTICS_SERVICE_PORT%/health" "200"
 
 rem signal_service ingest test removed
+
+set "ANALYTICS_HEARTBEAT_PAYLOAD=%LOG_DIR%\payload_analytics_heartbeat.json"
+powershell -NoProfile -Command "$payload = @{ service_name = 'gateway'; status = 'ok'; metadata = @{ source = 'validator' } } | ConvertTo-Json -Compress; Set-Content -Path '%ANALYTICS_HEARTBEAT_PAYLOAD%' -Value $payload" >nul
+set /a TEST_COUNTER+=1
+set "ANALYTICS_HEARTBEAT_FILE=%LOG_DIR%\test_!TEST_COUNTER!.json"
+for /f "delims=" %%s in ('curl -s -o "!ANALYTICS_HEARTBEAT_FILE!" -w "%%{http_code}" --connect-timeout 10 --max-time 20 -X POST "http://127.0.0.1:%ANALYTICS_SERVICE_PORT%/v1/metrics/heartbeat" -H "Content-Type: application/json" -H "X-Internal-API-Key: !ANALYTICS_INTERNAL_API_KEY!" --data-binary "@!ANALYTICS_HEARTBEAT_PAYLOAD!" 2^>"%LOG_DIR%\curl_errors.log"') do set "HTTP_CODE=%%s"
+call :assert_status "Analytics heartbeat ingest" "!HTTP_CODE!" "202" "!ANALYTICS_HEARTBEAT_FILE!"
+
+set /a TEST_COUNTER+=1
+set "ANALYTICS_OVERVIEW_ADMIN_FILE=%LOG_DIR%\test_!TEST_COUNTER!.json"
+for /f "delims=" %%s in ('curl -s -o "!ANALYTICS_OVERVIEW_ADMIN_FILE!" -w "%%{http_code}" --connect-timeout 10 --max-time 20 -H "X-User-Id: !ADMIN_EMAIL!" -H "X-User-Role: admin" -H "X-Org-Id: validation-org" "http://127.0.0.1:%ANALYTICS_SERVICE_PORT%/v1/metrics/overview" 2^>"%LOG_DIR%\curl_errors.log"') do set "HTTP_CODE=%%s"
+call :assert_status "Analytics overview admin" "!HTTP_CODE!" "200" "!ANALYTICS_OVERVIEW_ADMIN_FILE!"
+
+set /a TEST_COUNTER+=1
+set "ANALYTICS_OVERVIEW_SUPERADMIN_FILE=%LOG_DIR%\test_!TEST_COUNTER!.json"
+for /f "delims=" %%s in ('curl -s -o "!ANALYTICS_OVERVIEW_SUPERADMIN_FILE!" -w "%%{http_code}" --connect-timeout 10 --max-time 20 -H "X-User-Id: superadmin@heartguard.com" -H "X-User-Role: superadmin" "http://127.0.0.1:%ANALYTICS_SERVICE_PORT%/v1/metrics/overview" 2^>"%LOG_DIR%\curl_errors.log"') do set "HTTP_CODE=%%s"
+call :assert_status "Analytics overview superadmin" "!HTTP_CODE!" "200" "!ANALYTICS_OVERVIEW_SUPERADMIN_FILE!"
 
 set "LOGIN_PAYLOAD=%LOG_DIR%\payload_login.json"
 powershell -NoProfile -Command "$payload = @{ email = '%ADMIN_EMAIL%' ; password = '%ADMIN_PASSWORD%' } | ConvertTo-Json -Compress; Set-Content -Path '%LOGIN_PAYLOAD%' -Value $payload" >nul
