@@ -19,9 +19,11 @@ def create_app():
     # Importar y registrar blueprints
     from .routes.ingest import ingest_bp
     from .routes.streams import streams_bp
+    from .routes.health import health_bp
 
     app.register_blueprint(ingest_bp, url_prefix='/api')
     app.register_blueprint(streams_bp, url_prefix='/api')
+    app.register_blueprint(health_bp)
 
     # Registrar el teardown de la base de datos
     # Esto asegura que la sesión de SQLAlchemy se cierre correctamente después de cada request.
