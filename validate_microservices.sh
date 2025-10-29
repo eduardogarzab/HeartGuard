@@ -323,7 +323,6 @@ start_service() {
   log "Start $tag" "Lanzando servicio"
   (
     cd "$service_dir" || exit 1
-    echo "DATABASE_URL for $tag is: $DATABASE_URL" >> "$stderr_file"
     nohup "$python_bin" app.py >>"$stdout_file" 2>>"$stderr_file" &
     echo $!
   ) >"$LOG_DIR/start_${tag}.log" 2>&1
@@ -639,6 +638,30 @@ main() {
 
     verify_postgres || ABORT_TESTS=1
     verify_redis || ABORT_TESTS=1
+  fi
+
+  if (( ABORT_TESTS == 0 )); then
+    log "Database Setup" "Inicializando base de datos de signal_service"
+    local signal_python="$MICRO_DIR/signal_service/.venv/bin/python"
+    if [[ ! -x "$signal_python" ]]; then
+      record_fail "Signal DB Init" "Python del servicio signal no disponible"
+      ABORT_TESTS=1
+    else
+      "$signal_python" "$MICRO_DIR/signal_service/init_db.py" > "$LOG_DIR/signal_init_db.log" 2>&1
+      if (( $? != 0 )); then
+        record_fail "Signal DB Init" "Fallo inicializando la base de datos (ver signal_init_db.log)"
+        ABORT_TESTS=1
+      fi
+    fi
+
+    if (( ABORT_TESTS == 0 )); then
+      log "Database Setup" "Sembrando datos de prueba en signal_service"
+      "$signal_python" "$MICRO_DIR/signal_service/seed_test_data.py" > "$LOG_DIR/signal_seed_data.log" 2>&1
+      if (( $? != 0 )); then
+        record_fail "Signal DB Seed" "Fallo sembrando datos de prueba (ver signal_seed_data.log)"
+        ABORT_TESTS=1
+      fi
+    fi
   fi
 
   if (( ABORT_TESTS == 0 )); then

@@ -54,6 +54,23 @@ call :verify_redis
 if errorlevel 1 set "ABORT_TESTS=1"
 if defined ABORT_TESTS goto cleanup
 
+call :log "Database Setup" "Inicializando base de datos de signal_service"
+set "SIGNAL_PY=%MICRO_DIR%\signal_service\.venv\Scripts\python.exe"
+"!SIGNAL_PY!" "%MICRO_DIR%\signal_service\init_db.py" > "%LOG_DIR%\signal_init_db.log" 2>&1
+if errorlevel 1 (
+    call :record_fail "Signal DB Init" "Fallo inicializando la base de datos (ver signal_init_db.log)"
+    set "ABORT_TESTS=1"
+    goto cleanup
+)
+
+call :log "Database Setup" "Sembrando datos de prueba en signal_service"
+"!SIGNAL_PY!" "%MICRO_DIR%\signal_service\seed_test_data.py" > "%LOG_DIR%\signal_seed_data.log" 2>&1
+if errorlevel 1 (
+    call :record_fail "Signal DB Seed" "Fallo sembrando datos de prueba (ver signal_seed_data.log)"
+    set "ABORT_TESTS=1"
+    goto cleanup
+)
+
 call :start_service "AUTH" "%MICRO_DIR%\auth_service" "%MICRO_DIR%\auth_service\.venv\Scripts\python.exe"
 if errorlevel 1 set "ABORT_TESTS=1"
 call :start_service "ORG" "%MICRO_DIR%\org_service" "%MICRO_DIR%\org_service\.venv\Scripts\python.exe"
