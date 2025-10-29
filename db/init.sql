@@ -2139,10 +2139,12 @@ CREATE INDEX IF NOT EXISTS idx_service_health_service_time ON service_health(ser
 CREATE INDEX IF NOT EXISTS idx_service_health_status ON service_health(service_status_id);
 
 -- Stored procedure para métricas del panel
+-- Stored procedure para métricas del panel
 CREATE OR REPLACE FUNCTION heartguard.sp_metrics_overview()
 RETURNS TABLE (
   avg_response_ms numeric,
-  avg_resolve_duration interval,
+  avg_ack_duration interval,
+  avg_resolve_duration interval, -- Ajustado para usar pgtype.Interval
   total_users integer,
   total_orgs integer,
   total_memberships integer,
@@ -2155,6 +2157,7 @@ LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_avg numeric;
+  v_mtta interval;
   v_mttr interval;
   v_users integer;
   v_orgs integer;
@@ -2169,13 +2172,22 @@ BEGIN
   FROM heartguard.service_health
   WHERE checked_at > NOW() - INTERVAL '7 days';
 
-  -- MTTR: promedio de tiempo de resolución de alertas resueltas
+  -- MTTA: promedio de tiempo de acuse de alertas
+  SELECT AVG(ack.ack_at - a.created_at) INTO v_mtta
+  FROM heartguard.alerts a
+  JOIN heartguard.alert_ack ack ON ack.alert_id = a.id
+    AND ack.ack_at IS NOT NULL
+    AND a.created_at IS NOT NULL;
+
+  -- MTTR: promedio de tiempo de resolución basado en alert_resolution
+  -- Calcula el tiempo promedio desde que se crea una alerta hasta que se resuelve
+  -- Solo considera alertas que tienen una entrada en alert_resolution con resolved_at posterior a created_at
   SELECT AVG(ar.resolved_at - a.created_at) INTO v_mttr
   FROM heartguard.alerts a
-  JOIN heartguard.alert_resolution ar ON ar.alert_id = a.id
-  WHERE a.status_id = (SELECT id FROM heartguard.alert_status WHERE code = 'resolved')
-    AND ar.resolved_at IS NOT NULL
-    AND a.created_at IS NOT NULL;
+  INNER JOIN heartguard.alert_resolution ar ON ar.alert_id = a.id
+  WHERE ar.resolved_at IS NOT NULL
+    AND a.created_at IS NOT NULL
+    AND ar.resolved_at > a.created_at;
 
   SELECT COUNT(*) INTO v_users FROM heartguard.users;
   SELECT COUNT(DISTINCT org_id) INTO v_orgs FROM heartguard.user_org_membership;
@@ -2214,7 +2226,8 @@ BEGIN
     );
 
   avg_response_ms := COALESCE(v_avg, 0);
-  avg_resolve_duration := COALESCE(v_mttr, interval '0');
+  avg_ack_duration := COALESCE(v_mtta, interval '0');
+  avg_resolve_duration := COALESCE(v_mttr, interval '0'); -- Asignar v_mttr a la columna de salida
   total_users := COALESCE(v_users, 0);
   total_orgs := COALESCE(v_orgs, 0);
   total_memberships := COALESCE(v_memberships, 0);

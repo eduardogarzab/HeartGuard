@@ -25,19 +25,18 @@
 		</form>
 	</header>
 	<div class="hg-dashboard-kpis">
-		{{if .Data.ResponseStats}}
-		<article class="hg-kpi-card">
+		{{if .Data.Overview}} <article class="hg-kpi-card">
 			<span class="hg-kpi-label">Tiempo Medio de Acuse (MTTA)</span>
-			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgAckDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgAckDuration}}{{else}}—{{end}}</span>
+			<span class="hg-kpi-value">{{if gt (.Data.Overview.AvgAckDuration.Seconds) 0.0}}{{formatDuration .Data.Overview.AvgAckDuration}}{{else}}—{{end}}</span>
 			<span class="hg-kpi-caption">Tiempo promedio para acusar alertas.</span>
 		</article>
 		<article class="hg-kpi-card">
 			<span class="hg-kpi-label">Tiempo Medio de Resolución (MTTR)</span>
-			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgResolveDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgResolveDuration}}{{else}}—{{end}}</span>
+			<span class="hg-kpi-value">{{if gt (.Data.Overview.AvgResolveDuration.Seconds) 0.0}}{{formatDuration .Data.Overview.AvgResolveDuration}}{{else}}—{{end}}</span>
 			<span class="hg-kpi-caption">Tiempo promedio para resolver alertas.</span>
 		</article>
 		{{else}}
-		<p class="hg-chart-empty">No hay datos de respuesta a alertas en este período.</p>
+		<p class="hg-chart-empty">No hay datos de overview disponibles.</p>
 		{{end}}
 	</div>
 	<div class="hg-dashboard-grid">
