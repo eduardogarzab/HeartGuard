@@ -1287,10 +1287,11 @@ func (r *Repo) RemoveCareTeamMember(ctx context.Context, careTeamID, userID stri
 
 func (r *Repo) ListUserCareTeams(ctx context.Context, userID string) ([]models.CareTeamMember, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT ctm.care_team_id::text, ct.name, ctm.user_id::text, u.name, u.email, ctm.role_in_team, ctm.joined_at
+SELECT ctm.care_team_id::text, ct.name, ctm.user_id::text, u.name, u.email, ctm.role_id::text, r.code, r.label, ctm.joined_at
 FROM care_team_member ctm
 JOIN users u ON u.id = ctm.user_id
 JOIN care_teams ct ON ct.id = ctm.care_team_id
+JOIN team_member_roles r ON r.id = ctm.role_id
 WHERE ctm.user_id = $1::uuid
 ORDER BY ct.name
 `, userID)

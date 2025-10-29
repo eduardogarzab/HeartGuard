@@ -109,7 +109,7 @@
 					{{range .Data.Patients}}
 					<tr>
 						<td><a href="/superadmin/patients/{{.ID}}" class="hg-link">{{.Name}}</a></td>
-						<td>{{if .RiskLevel}}{{.RiskLevel}}{{else}}—{{end}}</td>
+						<td>{{if .RiskLevelLabel}}{{.RiskLevelLabel}}{{else}}—{{end}}</td>
 						<td>{{formatTime .CreatedAt}}</td>
 					</tr>
 					{{else}}
