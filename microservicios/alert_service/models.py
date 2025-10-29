@@ -1,12 +1,25 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, Text
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String, Text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.ext.declarative import declared_attr
 from sqlalchemy.orm import relationship
+from sqlalchemy.types import TypeDecorator
 
 from .db import db
+
+
+class JSONBType(TypeDecorator):
+    """A database-agnostic JSONB type that uses JSONB on PostgreSQL and JSON on others."""
+
+    impl = JSON
+    cache_ok = True
+
+    def load_dialect_impl(self, dialect):
+        if dialect.name == "postgresql":
+            return dialect.type_descriptor(JSONB())
+        return dialect.type_descriptor(JSON())
 
 
 class BaseModel(db.Model):
@@ -64,7 +77,7 @@ class Alert(BaseModel):
         UUID(as_uuid=True), ForeignKey("alertstatus.id", ondelete="RESTRICT"), nullable=False
     )
     message = Column(Text, nullable=False)
-    payload = Column(JSONB, nullable=True)
+    payload = Column(JSONBType, nullable=True)
     is_active = Column(Boolean, default=True, nullable=False)
 
     alert_type = relationship("AlertType", back_populates="alerts")
@@ -88,7 +101,7 @@ class AlertDelivery(BaseModel):
     channel = Column(String(50), nullable=False)
     recipient = Column(String(255), nullable=False)
     delivered_at = Column(DateTime, nullable=True)
-    payload = Column(JSONB, nullable=True)
+    payload = Column(JSONBType, nullable=True)
 
     alert = relationship("Alert", back_populates="deliveries")
     delivery_status = relationship("DeliveryStatus", back_populates="deliveries")

@@ -36,7 +36,13 @@ if errorlevel 1 goto :fail
 "%PYTHON_EXE%" -m pip install pytest >nul
 if errorlevel 1 goto :fail
 
-set "PYTHONPATH=%SERVICE_DIR%;%PYTHONPATH%"
+for %%I in ("%SERVICE_DIR%\..") do set "MICROSERVICES_DIR=%%~fI"
+for %%I in ("%MICROSERVICES_DIR%\..") do set "REPO_DIR=%%~fI"
+if defined PYTHONPATH (
+    set "PYTHONPATH=%REPO_DIR%;%MICROSERVICES_DIR%;%SERVICE_DIR%;%PYTHONPATH%"
+) else (
+    set "PYTHONPATH=%REPO_DIR%;%MICROSERVICES_DIR%;%SERVICE_DIR%"
+)
 set "FLASK_ENV=testing"
 set "DATABASE_URL=sqlite+pysqlite:///:memory:"
 set "JWT_SECRET=test-secret"
@@ -50,7 +56,7 @@ echo [alert] Ejecutando pruebas unitarias...
 "%PYTHON_EXE%" -m pytest "%SERVICE_DIR%\tests" %PYTEST_ARGS%
 set "TEST_EXIT=%ERRORLEVEL%"
 
-if %TEST_EXIT% EQU 0 (
+if "%TEST_EXIT%"=="0" (
     echo [alert] Todas las pruebas pasaron correctamente.
     goto :success
 ) else (
