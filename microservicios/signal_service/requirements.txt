@@ -1,9 +1,0 @@
-flask
-sqlalchemy
-psycopg2-binary
-redis
-dicttoxml
-pydantic
-bcrypt
-gunicorn
-python-dotenv
