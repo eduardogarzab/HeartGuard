@@ -814,3 +814,292 @@ CROSS JOIN platforms p
 WHERE u.email='martin.ops@heartguard.com'
   AND p.code='android'
 ON CONFLICT (user_id, platform_id, push_token) DO NOTHING;
+
+-- =========================================================
+-- Adicional: poblar métricas/GRÁFICAS (más datos para KPIs)
+-- =========================================================
+
+-- Service health adicionales (últimas 7 días) para promediar latencia
+INSERT INTO service_health (id, service_id, checked_at, service_status_id, latency_ms, version)
+SELECT gen_random_uuid(), (SELECT id FROM services WHERE name='superadmin-api'), NOW() - INTERVAL '2 hours', (SELECT id FROM service_statuses WHERE code='up'), 190, '1.8.6'
+WHERE NOT EXISTS (SELECT 1 FROM service_health sh WHERE sh.service_id = (SELECT id FROM services WHERE name='superadmin-api') AND sh.checked_at > NOW() - INTERVAL '3 hours');
+
+INSERT INTO service_health (id, service_id, checked_at, service_status_id, latency_ms, version)
+SELECT gen_random_uuid(), (SELECT id FROM services WHERE name='streaming-hub'), NOW() - INTERVAL '30 minutes', (SELECT id FROM service_statuses WHERE code='up'), 160, '2.4.2'
+WHERE NOT EXISTS (SELECT 1 FROM service_health sh WHERE sh.service_id = (SELECT id FROM services WHERE name='streaming-hub') AND sh.checked_at > NOW() - INTERVAL '1 hour');
+
+-- Señales activas recientes (para ActivePatientsCount)
+INSERT INTO signal_streams (id, patient_id, device_id, signal_type_id, sample_rate_hz, started_at, ended_at)
+SELECT gen_random_uuid()::uuid, 'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid, '1ec46655-ba0c-4e2a-b315-dc6bbcbeda7d'::uuid, (SELECT id FROM signal_types WHERE code='HR'), 1, NOW() - INTERVAL '2 days', NULL
+WHERE NOT EXISTS (SELECT 1 FROM signal_streams ss WHERE ss.patient_id = 'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid AND ss.started_at > NOW() - INTERVAL '7 days');
+
+-- Añadir inferences para diversificar el breakdown de inferencias
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT gen_random_uuid()::uuid, '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid, (SELECT id FROM signal_streams LIMIT 1), NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours 58 minutes', (SELECT id FROM event_types WHERE code='AFIB'), 0.91, 0.8, '{}'::jsonb, NOW() - INTERVAL '3 hours 58 minutes', 'sim/1'
+WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.model_id = '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid AND i.created_at > NOW() - INTERVAL '5 hours');
+
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT gen_random_uuid()::uuid, 'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid, (SELECT id FROM signal_streams WHERE signal_type_id = (SELECT id FROM signal_types WHERE code='SpO2') LIMIT 1), NOW() - INTERVAL '26 hours', NOW() - INTERVAL '25 hours 58 minutes', (SELECT id FROM event_types WHERE code='DESAT'), 0.72, 0.6, '{}'::jsonb, NOW() - INTERVAL '25 hours 58 minutes', 'sim/2'
+WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.model_id = 'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid AND i.created_at > NOW() - INTERVAL '2 days');
+
+-- Auditoría adicional para operaciones recientes
+INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip, details)
+SELECT gen_random_uuid()::uuid, (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'), 'ALERT_ACK', 'alert', (SELECT id FROM alerts LIMIT 1), NOW() - INTERVAL '70 minutes', '10.0.0.15', jsonb_build_object('note','ACK desde UI')
+WHERE NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.action='ALERT_ACK' AND a.ts > NOW() - INTERVAL '2 hours');
+
+INSERT INTO audit_logs (id, user_id, action, entity, entity_id, ts, ip, details)
+SELECT gen_random_uuid()::uuid, (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), 'ALERT_RESOLVE', 'alert', (SELECT id FROM alerts WHERE status_id = (SELECT id FROM alert_status WHERE code='resolved') LIMIT 1), NOW() - INTERVAL '33 hours', '10.0.0.16', jsonb_build_object('outcome','Stabilized')
+WHERE NOT EXISTS (SELECT 1 FROM audit_logs a WHERE a.action='ALERT_RESOLVE' AND a.ts > NOW() - INTERVAL '48 hours');
+
+-- Alert resolutions/outcomes adicionales (para breakdown)
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT gen_random_uuid()::uuid, a.id, (SELECT id FROM users WHERE email='martin.ops@heartguard.com'), NOW() - INTERVAL '5 days', 'Escalated', 'Derivado a equipo de guardia'
+FROM alerts a
+WHERE a.status_id = (SELECT id FROM alert_status WHERE code='resolved')
+  AND NOT EXISTS (SELECT 1 FROM alert_resolution ar WHERE ar.alert_id = a.id AND ar.outcome = 'Escalated');
+
+-- Disconnected device demo: a device active but sin señales recientes (>24h)
+INSERT INTO devices (id, org_id, serial, brand, model, device_type_id, owner_patient_id, registered_at, active)
+SELECT gen_random_uuid()::uuid, (SELECT id FROM organizations WHERE code='OPS-001'), 'HG-ECG-OLD-01', 'Cardia', 'Wave Legacy', (SELECT id FROM device_types WHERE code='ECG_1LEAD'), NULL, NOW() - INTERVAL '720 days', TRUE
+WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.serial='HG-ECG-OLD-01');
+
+-- Ensure that this old device has no recent signal (simulate disconnected)
+DELETE FROM signal_streams ss WHERE ss.device_id = (SELECT id FROM devices WHERE serial='HG-ECG-OLD-01') AND ss.started_at > NOW() - INTERVAL '30 days';
+
+
+-- =========================================================
+-- Datos adicionales para MTTR, volumen de inferencias y alertas sin asignar
+-- =========================================================
+
+-- Inferencias recientes (varios tipos) para poblar el breakdown por tipo
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT gen_random_uuid()::uuid,
+       '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+       (SELECT id FROM signal_streams ORDER BY started_at DESC LIMIT 1),
+       NOW() - INTERVAL '55 minutes',
+       NOW() - INTERVAL '54 minutes',
+       (SELECT id FROM event_types WHERE code='AFIB'),
+       0.88,
+       0.8,
+       '{}'::jsonb,
+       NOW() - INTERVAL '54 minutes',
+       'sim/recent/afib'
+WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.series_ref = 'sim/recent/afib');
+
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT gen_random_uuid()::uuid,
+       '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+       (SELECT id FROM signal_streams ORDER BY started_at DESC LIMIT 1),
+       NOW() - INTERVAL '3 hours',
+       NOW() - INTERVAL '2 hours 58 minutes',
+       (SELECT id FROM event_types WHERE code='TACHY'),
+       0.75,
+       0.6,
+       '{}'::jsonb,
+       NOW() - INTERVAL '2 hours 58 minutes',
+       'sim/recent/tachy'
+WHERE EXISTS (SELECT 1 FROM event_types et WHERE et.code='TACHY')
+  AND NOT EXISTS (SELECT 1 FROM inferences i WHERE i.series_ref = 'sim/recent/tachy');
+
+INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
+SELECT gen_random_uuid()::uuid,
+       'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
+       (SELECT id FROM signal_streams WHERE signal_type_id = (SELECT id FROM signal_types WHERE code='SpO2') LIMIT 1),
+       NOW() - INTERVAL '6 hours',
+       NOW() - INTERVAL '5 hours 58 minutes',
+       (SELECT id FROM event_types WHERE code='DESAT'),
+       0.70,
+       0.6,
+       '{}'::jsonb,
+       NOW() - INTERVAL '5 hours 58 minutes',
+       'sim/recent/desat'
+WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.series_ref = 'sim/recent/desat');
+
+
+-- Alerta sin asignar (para mostrar "Alertas sin Asignar")
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT gen_random_uuid()::uuid,
+       p.id,
+       at.id,
+       '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+       (SELECT id FROM inferences ORDER BY created_at DESC LIMIT 1),
+       (SELECT id FROM alert_levels WHERE code='low'),
+       (SELECT id FROM alert_status WHERE code='created'),
+       NOW() - INTERVAL '30 minutes',
+       'Alerta sin asignar: revisión requerida',
+       ST_SetSRID(ST_MakePoint(-99.1405, 19.4310), 4326)
+FROM patients p, alert_types at
+WHERE p.id = 'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid
+  AND at.code = 'TACHY'
+  AND NOT EXISTS (
+    SELECT 1 FROM alerts a
+    WHERE a.description = 'Alerta sin asignar: revisión requerida'
+      AND a.created_at > NOW() - INTERVAL '1 day'
+  );
+
+
+-- Alerta resuelta reciente para MTTR (tiempo de resolución)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT gen_random_uuid()::uuid,
+       p.id,
+       at.id,
+       '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+       (SELECT id FROM inferences WHERE series_ref = 'sim/recent/afib' LIMIT 1),
+       (SELECT id FROM alert_levels WHERE code='high'),
+       (SELECT id FROM alert_status WHERE code='resolved'),
+       NOW() - INTERVAL '10 hours',
+       'Alerta resuelta demo para cálculo MTTR',
+       ST_SetSRID(ST_MakePoint(-99.1360, 19.4330), 4326)
+FROM patients p, alert_types at
+WHERE p.id = '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid
+  AND at.code = 'ARRHYTHMIA'
+  AND NOT EXISTS (
+    SELECT 1 FROM alerts a
+    WHERE a.description = 'Alerta resuelta demo para cálculo MTTR'
+      AND a.created_at > NOW() - INTERVAL '7 days'
+  );
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT gen_random_uuid()::uuid,
+       a.id,
+       (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+       NOW() - INTERVAL '2 hours',
+       'Stabilized',
+       'Cierre demo para MTTR'
+FROM alerts a
+WHERE a.description = 'Alerta resuelta demo para cálculo MTTR'
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_resolution ar WHERE ar.alert_id = a.id AND ar.resolved_at > NOW() - INTERVAL '24 hours'
+  );
+
+
+-- Alertas resueltas adicionales para poblar MTTR
+-- 1. Resolución rápida (30 minutos)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT gen_random_uuid()::uuid,
+       p.id,
+       at.id,
+       '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+       (SELECT id FROM inferences ORDER BY created_at DESC LIMIT 1),
+       (SELECT id FROM alert_levels WHERE code='medium'),
+       (SELECT id FROM alert_status WHERE code='resolved'),
+       NOW() - INTERVAL '3 hours',
+       'Alerta resuelta rápida para MTTR',
+       ST_SetSRID(ST_MakePoint(-99.1370, 19.4340), 4326)
+FROM patients p, alert_types at
+WHERE p.id = 'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid
+  AND at.code = 'DESAT'
+  AND NOT EXISTS (
+    SELECT 1 FROM alerts a WHERE a.description = 'Alerta resuelta rápida para MTTR'
+      AND a.created_at > NOW() - INTERVAL '7 days'
+  );
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT gen_random_uuid()::uuid,
+       a.id,
+       (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+       a.created_at + INTERVAL '30 minutes',
+       'Resolved',
+       'Resolución rápida para MTTR'
+FROM alerts a
+WHERE a.description = 'Alerta resuelta rápida para MTTR'
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_resolution ar WHERE ar.alert_id = a.id
+  );
+
+-- 2. Resolución media (3 horas)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT gen_random_uuid()::uuid,
+       p.id,
+       at.id,
+       'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
+       (SELECT id FROM inferences WHERE series_ref = 'sim/recent/desat' LIMIT 1),
+       (SELECT id FROM alert_levels WHERE code='high'),
+       (SELECT id FROM alert_status WHERE code='resolved'),
+       NOW() - INTERVAL '8 hours',
+       'Alerta resuelta media para MTTR',
+       ST_SetSRID(ST_MakePoint(-99.1380, 19.4350), 4326)
+FROM patients p, alert_types at
+WHERE p.id = 'fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21'::uuid
+  AND at.code = 'ARRHYTHMIA'
+  AND NOT EXISTS (
+    SELECT 1 FROM alerts a WHERE a.description = 'Alerta resuelta media para MTTR'
+      AND a.created_at > NOW() - INTERVAL '7 days'
+  );
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT gen_random_uuid()::uuid,
+       a.id,
+       (SELECT id FROM users WHERE email='sofia.care@heartguard.com'),
+       a.created_at + INTERVAL '3 hours',
+       'Resolved',
+       'Resolución media para MTTR'
+FROM alerts a
+WHERE a.description = 'Alerta resuelta media para MTTR'
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_resolution ar WHERE ar.alert_id = a.id
+  );
+
+-- 3. Resolución lenta (12 horas)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT gen_random_uuid()::uuid,
+       p.id,
+       at.id,
+       'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
+       (SELECT id FROM inferences WHERE series_ref = 'sim/recent/tachy' LIMIT 1),
+       (SELECT id FROM alert_levels WHERE code='critical'),
+       (SELECT id FROM alert_status WHERE code='resolved'),
+       NOW() - INTERVAL '24 hours',
+       'Alerta resuelta lenta para MTTR',
+       ST_SetSRID(ST_MakePoint(-99.1390, 19.4360), 4326)
+FROM patients p, alert_types at
+WHERE p.id = '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid
+  AND at.code = 'TACHY'
+  AND NOT EXISTS (
+    SELECT 1 FROM alerts a WHERE a.description = 'Alerta resuelta lenta para MTTR'
+      AND a.created_at > NOW() - INTERVAL '7 days'
+  );
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT gen_random_uuid()::uuid,
+       a.id,
+       (SELECT id FROM users WHERE email='carlos.vega@heartguard.com'),
+       a.created_at + INTERVAL '12 hours',
+       'Resolved',
+       'Resolución lenta para MTTR'
+FROM alerts a
+WHERE a.description = 'Alerta resuelta lenta para MTTR'
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_resolution ar WHERE ar.alert_id = a.id
+  );
+
+-- Alerta resuelta muy reciente para demo MTTR
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT gen_random_uuid()::uuid,
+       p.id,
+       at.id,
+       '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+       (SELECT id FROM inferences ORDER BY created_at DESC LIMIT 1),
+       (SELECT id FROM alert_levels WHERE code='medium'),
+       (SELECT id FROM alert_status WHERE code='resolved'),
+       NOW() - INTERVAL '2 hours',
+       'Alerta resuelta demo reciente ' || NOW()::text,
+       ST_SetSRID(ST_MakePoint(-99.1370, 19.4340), 4326)
+FROM patients p, alert_types at
+WHERE p.id = 'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid
+  AND at.code = 'DESAT';
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT gen_random_uuid()::uuid,
+       a.id,
+       (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+       a.created_at + INTERVAL '1 hour',
+       'Stabilized',
+       'Demo MTTR reciente'
+FROM alerts a
+WHERE a.description LIKE 'Alerta resuelta demo reciente%'
+  AND a.created_at > NOW() - INTERVAL '1 day'
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_resolution ar WHERE ar.alert_id = a.id
+  );
+

@@ -16,7 +16,7 @@
 	<header class="hg-dashboard-section-header">
 		<div>
 			<h2>Inteligencia Estratégica</h2>
-			<p>KPIs clave sobre la salud de la población, eficacia de las alertas y eficiencia operativa.</p>
+			<p>KPIs clave sobre la eficacia de las alertas y la eficiencia operativa del equipo clínico.</p>
 		</div>
 		<form method="get" class="hg-time-filter">
 			{{range .Data.TimeFilterOptions}}
@@ -29,20 +29,22 @@
 		<article class="hg-kpi-card">
 			<span class="hg-kpi-label">Tiempo Medio de Acuse (MTTA)</span>
 			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgAckDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgAckDuration}}{{else}}—{{end}}</span>
-			<span class="hg-kpi-caption">Tiempo promedio para acusar alertas</span>
+			<span class="hg-kpi-caption">Tiempo promedio para acusar alertas.</span>
 		</article>
 		<article class="hg-kpi-card">
 			<span class="hg-kpi-label">Tiempo Medio de Resolución (MTTR)</span>
 			<span class="hg-kpi-value">{{if gt (.Data.ResponseStats.AvgResolveDuration.Seconds) 0.0}}{{formatDuration .Data.ResponseStats.AvgResolveDuration}}{{else}}—{{end}}</span>
-			<span class="hg-kpi-caption">Tiempo promedio para resolver alertas</span>
+			<span class="hg-kpi-caption">Tiempo promedio para resolver alertas.</span>
 		</article>
+		{{else}}
+		<p class="hg-chart-empty">No hay datos de respuesta a alertas en este período.</p>
 		{{end}}
 	</div>
 	<div class="hg-dashboard-grid">
 		<article class="hg-chart-card">
 			<header>
 				<h3>Salud de la Población</h3>
-				<span class="hg-chart-meta">Distribución por Nivel de Riesgo</span>
+				<span class="hg-chart-meta">Distribución por Nivel de Riesgo ({{.Data.Overview.ActivePatientsCount}} Pacientes Activos)</span>
 			</header>
 			{{if .Data.PatientRiskChart}}
 			<div class="hg-chart-visual">
@@ -78,6 +80,102 @@
 		</article>
 		<article class="hg-chart-card">
 			<header>
+				<h3>Volumen de Inferencias por Tipo</h3>
+				<span class="hg-chart-meta">Distribución de eventos detectados</span>
+			</header>
+			{{if .Data.InferenceChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartInference" class="hg-chart-canvas" data-hg-type="bar" data-hg-index-axis="y" data-hg-series-label="Inferencias" data-hg-chart="{{toJSON .Data.InferenceChart}}"></canvas>
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">No hay datos de inferencias disponibles.</p>
+			{{end}}
+		</article>
+	</div>
+</section>
+
+<section class="hg-section">
+	<header class="hg-dashboard-section-header">
+		<div>
+			<h2>Métricas Operativas y de Adopción</h2>
+			<p>Salud del sistema, estado de cuentas e invitaciones.</p>
+		</div>
+	</header>
+	{{if .Data.Overview}}
+	<div class="hg-dashboard-kpis">
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">Pacientes Activos</span>
+			<span class="hg-kpi-value">{{.Data.Overview.ActivePatientsCount}}</span>
+			<span class="hg-kpi-caption">Pacientes con monitoreo activo.</span>
+		</article>
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">Alertas creadas</span>
+			<span class="hg-kpi-value">{{.Data.AlertsCreatedCount}}</span>
+			<span class="hg-kpi-caption">Alertas generadas en el periodo seleccionado.</span>
+		</article>
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">Dispositivos Desconectados</span>
+			<span class="hg-kpi-value">{{.Data.Overview.DisconnectedDevicesCount}}</span>
+			<span class="hg-kpi-caption">Dispositivos que no han reportado recientemente.</span>
+		</article>
+		<article class="hg-kpi-card">
+			<span class="hg-kpi-label">Tiempo de Respuesta API</span>
+			<span class="hg-kpi-value">{{printf "%.0f ms" .Data.Overview.AvgResponseMs}}</span>
+			<span class="hg-kpi-caption">Promedio en la última hora.</span>
+		</article>
+	</div>
+	{{end}}
+	<div class="hg-dashboard-grid">
+		<article class="hg-chart-card">
+			<header>
+				<h3>Estado de Usuarios</h3>
+				<span class="hg-chart-meta">Total: {{.Data.StatusTotal}}</span>
+			</header>
+			{{if .Data.StatusChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartStatus" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Usuarios" data-hg-chart="{{toJSON .Data.StatusChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range $idx, $entry := .Data.StatusChart}}
+				<div class="hg-chart-bar" data-hg-entry-index="{{$idx}}">
+					<span class="hg-chart-bar-label">{{$entry.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill is-{{$entry.State}}" style="--hg-bar-width: {{$entry.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{$entry.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">No hay datos de estado de usuarios.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
+				<h3>Estado de Invitaciones</h3>
+				<span class="hg-chart-meta">Total: {{.Data.InvitationTotal}}</span>
+			</header>
+			{{if .Data.InvitationChart}}
+			<div class="hg-chart-visual">
+				<canvas id="hgChartInvitations" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Invitaciones" data-hg-chart="{{toJSON .Data.InvitationChart}}"></canvas>
+			</div>
+			<div class="hg-chart-bars hg-chart-fallback">
+				{{range $idx, $entry := .Data.InvitationChart}}
+				<div class="hg-chart-bar" data-hg-entry-index="{{$idx}}">
+					<span class="hg-chart-bar-label">{{$entry.Label}}</span>
+					<div class="hg-chart-bar-track">
+						<div class="hg-chart-bar-fill is-{{$entry.State}}" style="--hg-bar-width: {{$entry.Width}}"></div>
+					</div>
+					<span class="hg-chart-bar-count">{{$entry.Count}}</span>
+				</div>
+				{{end}}
+			</div>
+			{{else}}
+			<p class="hg-chart-empty">No hay invitaciones registradas.</p>
+			{{end}}
+		</article>
+		<article class="hg-chart-card">
+			<header>
 				<h3>Salud de Infraestructura</h3>
 				<span class="hg-chart-meta">Estado de Adherencia de Dispositivos</span>
 			</header>
@@ -100,104 +198,9 @@
 			<p class="hg-chart-empty">Sin datos de estado de dispositivos.</p>
 			{{end}}
 		</article>
-	</div>
-</section>
-
-<section class="hg-section">
-	<header class="hg-dashboard-section-header">
-		<div>
-			<h2>Métricas Operativas</h2>
-			<p>Estado de cuentas, invitaciones y actividad auditada más reciente.</p>
-		</div>
-	</header>
-	<div class="hg-dashboard-kpis">
-		{{range .Data.Metrics}}
-		<article class="hg-kpi-card">
-			<span class="hg-kpi-label">{{.Label}}</span>
-			<span class="hg-kpi-value">{{.Value}}</span>
-			<span class="hg-kpi-caption">{{.Caption}}</span>
-		</article>
-		{{end}}
-	</div>
-	<div class="hg-dashboard-grid">
-		<article class="hg-chart-card">
-			<header>
-				<h3>Estado de usuarios</h3>
-				<span class="hg-chart-meta">Total: {{.Data.StatusTotal}}</span>
-			</header>
-			{{if .Data.StatusChart}}
-			<div class="hg-chart-visual">
-				<canvas id="hgChartStatus" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Usuarios" data-hg-chart="{{toJSON .Data.StatusChart}}"></canvas>
-			</div>
-			<div class="hg-chart-bars hg-chart-fallback">
-				{{range $idx, $entry := .Data.StatusChart}}
-				<div class="hg-chart-bar" data-hg-entry-index="{{$idx}}">
-					<span class="hg-chart-bar-label">{{$entry.Label}}</span>
-					<div class="hg-chart-bar-track">
-						{{if $entry.State}}
-						<div class="hg-chart-bar-fill is-{{$entry.State}}" style="--hg-bar-width: {{$entry.Width}}"></div>
-						{{else}}
-						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{$entry.Width}}"></div>
-						{{end}}
-					</div>
-					<span class="hg-chart-bar-count">{{$entry.Count}}</span>
-				</div>
-				{{end}}
-			</div>
-			{{else}}
-			<p class="hg-chart-empty">Sin datos suficientes para mostrar el estado.</p>
-			{{end}}
-		</article>
-		<article class="hg-chart-card">
-			<header>
-				<h3>Invitaciones</h3>
-				<span class="hg-chart-meta">Total: {{.Data.InvitationTotal}}</span>
-			</header>
-			{{if .Data.InvitationChart}}
-			<div class="hg-chart-visual">
-				<canvas id="hgChartInvitations" class="hg-chart-canvas" data-hg-type="doughnut" data-hg-series-label="Invitaciones" data-hg-chart="{{toJSON .Data.InvitationChart}}"></canvas>
-			</div>
-			<div class="hg-chart-bars hg-chart-fallback">
-				{{range $idx, $entry := .Data.InvitationChart}}
-				<div class="hg-chart-bar" data-hg-entry-index="{{$idx}}">
-					<span class="hg-chart-bar-label">{{$entry.Label}}</span>
-					<div class="hg-chart-bar-track">
-						{{if $entry.State}}
-						<div class="hg-chart-bar-fill is-{{$entry.State}}" style="--hg-bar-width: {{$entry.Width}}"></div>
-						{{else}}
-						<div class="hg-chart-bar-fill" style="--hg-bar-width: {{$entry.Width}}"></div>
-						{{end}}
-					</div>
-					<span class="hg-chart-bar-count">{{$entry.Count}}</span>
-				</div>
-				{{end}}
-			</div>
-			{{else}}
-			<p class="hg-chart-empty">Sin invitaciones registradas.</p>
-			{{end}}
-		</article>
-		<article class="hg-chart-card">
-			<header>
-				<h3>Operaciones destacadas</h3>
-				<span class="hg-chart-meta">Últimos eventos agregados</span>
-			</header>
-			{{if .Data.RecentOperations}}
-			<div class="hg-chart-visual">
-				<canvas
-					id="hgChartOperations"
-					class="hg-chart-canvas"
-					data-hg-type="bar"
-					data-hg-index-axis="y"
-					data-hg-series-label="Eventos"
-					data-hg-chart="{{toJSON .Data.RecentOperations}}"></canvas>
-			</div>
-			{{else}}
-			<p class="hg-chart-empty">Sin operaciones recientes.</p>
-			{{end}}
-		</article>
 		<article class="hg-chart-card is-wide is-full">
 			<header>
-				<h3>Actividad reciente</h3>
+				<h3>Actividad Reciente del Sistema</h3>
 				<span class="hg-chart-meta">Eventos auditados en la última jornada</span>
 			</header>
 			{{if .Data.ActivitySeries}}
@@ -214,10 +217,9 @@
 				{{end}}
 			</ul>
 			{{else}}
-			<p class="hg-chart-empty">Sin actividad reciente.</p>
+			<p class="hg-chart-empty">Sin actividad reciente en el sistema.</p>
 			{{end}}
 		</article>
 	</div>
 </section>
-
 {{end}}

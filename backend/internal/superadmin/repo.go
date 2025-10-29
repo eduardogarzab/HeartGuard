@@ -3453,34 +3453,84 @@ RETURNING id::text,
 	return &delivery, nil
 }
 
-func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
-	var (
-		avg         sql.NullFloat64
-		totalUsers  int
-		totalOrgs   int
-		memberships int
-		pending     int
-		opsRaw      []byte
-	)
-	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_overview()`).
-		Scan(&avg, &totalUsers, &totalOrgs, &memberships, &pending, &opsRaw); err != nil {
+func (r *Repo) GetInferenceBreakdown(ctx context.Context) ([]models.StatusBreakdown, error) {
+	rows, err := r.pool.Query(ctx, `SELECT * FROM heartguard.sp_metrics_inference_breakdown()`)
+	if err != nil {
 		return nil, err
 	}
-	var ops []models.OperationStat
-	if len(opsRaw) > 0 {
-		if err := json.Unmarshal(opsRaw, &ops); err != nil {
+	defer rows.Close()
+
+	var out []models.StatusBreakdown
+	for rows.Next() {
+		var item models.StatusBreakdown
+		if err := rows.Scan(&item.Code, &item.Label, &item.Count); err != nil {
 			return nil, err
 		}
+		out = append(out, item)
 	}
-	res := &models.MetricsOverview{
-		AvgResponseMs:      avg.Float64,
-		TotalUsers:         totalUsers,
-		TotalOrganizations: totalOrgs,
-		TotalMemberships:   memberships,
-		PendingInvitations: pending,
-		RecentOperations:   ops,
+	return out, rows.Err()
+}
+
+func (r *Repo) MetricsOverview(ctx context.Context) (*models.MetricsOverview, error) {
+	// First attempt: try direct column scan (fast path).
+	var (
+		avg                      sql.NullFloat64
+		totalUsers               int
+		totalOrgs                int
+		memberships              int
+		pending                  int
+		opsRaw                   []byte
+		unassignedAlertsCount    int
+		activePatientsCount      int
+		disconnectedDevicesCount int
+	)
+	if err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_metrics_overview()`).
+		Scan(&avg, &totalUsers, &totalOrgs, &memberships, &pending, &opsRaw, &unassignedAlertsCount, &activePatientsCount, &disconnectedDevicesCount); err == nil {
+		var ops []models.OperationStat
+		if len(opsRaw) > 0 {
+			if err := json.Unmarshal(opsRaw, &ops); err != nil {
+				return nil, err
+			}
+		}
+		res := &models.MetricsOverview{
+			AvgResponseMs:            avg.Float64,
+			TotalUsers:               totalUsers,
+			TotalOrganizations:       totalOrgs,
+			TotalMemberships:         memberships,
+			PendingInvitations:       pending,
+			RecentOperations:         ops,
+			UnassignedAlertsCount:    unassignedAlertsCount,
+			ActivePatientsCount:      activePatientsCount,
+			DisconnectedDevicesCount: disconnectedDevicesCount,
+		}
+		return res, nil
 	}
-	return res, nil
+
+	// If direct scan failed (for example because the DB function returns a different
+	// set of columns), fall back to asking the DB for a JSON representation and
+	// unmarshal into the struct. This is more tolerant to schema changes in the
+	// stored function.
+	var raw json.RawMessage
+	if err := r.pool.QueryRow(ctx, `SELECT to_jsonb(t) FROM heartguard.sp_metrics_overview() t`).Scan(&raw); err != nil {
+		return nil, err
+	}
+	var res models.MetricsOverview
+	if err := json.Unmarshal(raw, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// CountAlertsCreated returns the number of alerts created since the provided time.
+func (r *Repo) CountAlertsCreated(ctx context.Context, since time.Time) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `
+SELECT COALESCE(COUNT(*), 0) FROM heartguard.alerts WHERE created_at >= $1
+`, since).Scan(&count)
+	if err != nil {
+		return 0, err
+	}
+	return count, nil
 }
 
 func (r *Repo) MetricsRecentActivity(ctx context.Context, limit int) ([]models.ActivityEntry, error) {

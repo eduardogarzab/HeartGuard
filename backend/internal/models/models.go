@@ -74,6 +74,10 @@ type MetricsOverview struct {
 	TotalMemberships   int             `json:"total_memberships"`
 	PendingInvitations int             `json:"pending_invitations"`
 	RecentOperations   []OperationStat `json:"recent_operations"`
+	// Additional counts provided by the DB metrics function
+	UnassignedAlertsCount    int `json:"unassigned_alerts_count"`
+	ActivePatientsCount      int `json:"active_patients_count"`
+	DisconnectedDevicesCount int `json:"disconnected_devices_count"`
 }
 
 type Patient struct {

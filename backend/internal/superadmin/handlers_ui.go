@@ -184,6 +184,8 @@ type Repository interface {
 	GetAlertOutcomeBreakdown(ctx context.Context, since time.Time) ([]models.StatusBreakdown, error)
 	GetAlertResponseStats(ctx context.Context, since time.Time) (*models.AlertResponseStats, error)
 	GetDeviceStatusBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	GetInferenceBreakdown(ctx context.Context) ([]models.StatusBreakdown, error)
+	CountAlertsCreated(ctx context.Context, since time.Time) (int, error)
 
 	SearchUsers(ctx context.Context, q string, limit, offset int) ([]models.User, error)
 	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)
@@ -458,6 +460,7 @@ type timeFilterOption struct {
 
 type dashboardViewData struct {
 	Overview           *models.MetricsOverview
+	AlertsCreatedCount int
 	Metrics            []dashboardMetric
 	StatusChart        []dashboardChartSlice
 	StatusTotal        int
@@ -467,6 +470,7 @@ type dashboardViewData struct {
 	RecentActivity     []dashboardActivityEntry
 	ActivitySeries     []dashboardActivitySeriesPoint
 	PatientRiskChart   []dashboardChartSlice
+	InferenceChart     []dashboardChartSlice
 	AlertOutcomeChart  []dashboardChartSlice
 	ResponseStats      *models.AlertResponseStats
 	DeviceStatusChart  []dashboardChartSlice
@@ -478,6 +482,12 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	overview, err := h.repo.MetricsOverview(ctx)
 	if err != nil && h.logger != nil {
 		h.logger.Error("metrics overview", zap.Error(err))
+	}
+	// Ensure we always return a non-nil Overview to templates. Some DB
+	// environments may return errors or different column shapes; avoid
+	// letting that cascade into a nil-pointer panic in templates.
+	if overview == nil {
+		overview = &models.MetricsOverview{}
 	}
 	recent, err := h.repo.MetricsRecentActivity(ctx, 10)
 	if err != nil && h.logger != nil {
@@ -500,6 +510,11 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	if err != nil && h.logger != nil {
 		h.logger.Error("alert outcome breakdown", zap.Error(err))
 	}
+
+	inferenceBreakdown, err := h.repo.GetInferenceBreakdown(ctx)
+	if err != nil && h.logger != nil {
+		h.logger.Error("inference breakdown", zap.Error(err))
+	}
 	responseStats, err := h.repo.GetAlertResponseStats(ctx, since)
 	if err != nil && h.logger != nil {
 		h.logger.Error("alert response stats", zap.Error(err))
@@ -507,6 +522,16 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 	deviceStatus, err := h.repo.GetDeviceStatusBreakdown(ctx)
 	if err != nil && h.logger != nil {
 		h.logger.Error("device status breakdown", zap.Error(err))
+	}
+
+	// Count alerts created in the selected period
+	alertsCreated := 0
+	if cnt, err := h.repo.CountAlertsCreated(ctx, since); err != nil {
+		if h.logger != nil {
+			h.logger.Error("count alerts created", zap.Error(err))
+		}
+	} else {
+		alertsCreated = cnt
 	}
 
 	metrics := make([]dashboardMetric, 0, 4)
@@ -679,6 +704,14 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		})
 	}
 
+	inferenceChart := make([]dashboardChartSlice, 0, len(inferenceBreakdown))
+	for _, item := range inferenceBreakdown {
+		inferenceChart = append(inferenceChart, dashboardChartSlice{
+			Label: item.Label,
+			Count: item.Count,
+		})
+	}
+
 	deviceStatusChart := make([]dashboardChartSlice, 0, len(deviceStatus))
 	deviceStatusTotal := 0
 	for _, item := range deviceStatus {
@@ -714,6 +747,7 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 
 	return dashboardViewData{
 		Overview:          overview,
+		AlertsCreatedCount: alertsCreated,
 		Metrics:           metrics,
 		StatusChart:       statusChart,
 		StatusTotal:       statusTotal,
@@ -723,6 +757,7 @@ func (h *Handlers) buildDashboardViewData(ctx context.Context, since time.Time) 
 		RecentActivity:    activity,
 		ActivitySeries:    activitySeries,
 		PatientRiskChart:  patientRiskChart,
+		InferenceChart:    inferenceChart,
 		AlertOutcomeChart: alertOutcomeChart,
 		ResponseStats:     responseStats,
 		DeviceStatusChart: deviceStatusChart,
