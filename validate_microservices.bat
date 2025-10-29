@@ -214,6 +214,21 @@ set "STDOUT_FILE=%LOG_DIR%\!SERVICE_TAG!_stdout.log"
 set "STDERR_FILE=%LOG_DIR%\!SERVICE_TAG!_stderr.log"
 if exist "%STDOUT_FILE%" del "%STDOUT_FILE%"
 if exist "%STDERR_FILE%" del "%STDERR_FILE%"
+
+set "SHARED_ENV_FILE=%MICRO_DIR%\.env"
+if exist "!SHARED_ENV_FILE!" (
+    for /f "usebackq delims=" %%i in ("!SHARED_ENV_FILE!") do (
+        set "%%i"
+    )
+)
+
+set "SERVICE_ENV_FILE=%SERVICE_DIR%\.env"
+if exist "!SERVICE_ENV_FILE!" (
+    for /f "usebackq delims=" %%i in ("!SERVICE_ENV_FILE!") do (
+        set "%%i"
+    )
+)
+
 powershell -NoProfile -Command "Try { $p = Start-Process -FilePath '%SERVICE_PY%' -ArgumentList 'app.py' -WorkingDirectory '%SERVICE_DIR%' -RedirectStandardOutput '%STDOUT_FILE%' -RedirectStandardError '%STDERR_FILE%' -PassThru -WindowStyle Hidden; Write-Output $p.Id } Catch { Write-Output 'ERROR:' + $_.Exception.Message; exit 1 }" > "%LOG_DIR%\start_%SERVICE_TAG%.log"
 set /p START_RESULT=<"%LOG_DIR%\start_%SERVICE_TAG%.log"
 if /I "!START_RESULT:~0,6!"=="ERROR:" (

@@ -1,4 +1,15 @@
 {
-  "id": "0f0c4c15-ed86-457d-9cf4-ae23a7c5d2fe",
-  "ts": "Tue, 28 Oct 2025 23:13:13 GMT"
+  "data": {
+    "organizations": [
+      {
+        "code": "FAM-001",
+        "created_at": "2025-10-28T19:47:00.426850+00:00",
+        "id": "be16ba92-b0fb-4825-98d6-5a4db9cf8579",
+        "name": "Familia Garc\u00eda",
+        "role_code": "org_admin"
+      }
+    ]
+  },
+  "meta": {},
+  "status": "ok"
 }

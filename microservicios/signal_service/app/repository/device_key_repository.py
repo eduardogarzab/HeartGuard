@@ -1,11 +1,12 @@
 # signal_service/app/repository/device_key_repository.py
 import bcrypt
+from sqlalchemy.orm import joinedload
 from ..database import SessionLocal
 from ..models.models import DeviceKey
 
 def find_key_by_uuid(device_uuid: str):
     """
-    Finds a device key by its UUID.
+    Finds a device key by its UUID, eagerly loading associated signal streams.
 
     Args:
         device_uuid: The UUID of the device to find.
@@ -15,7 +16,12 @@ def find_key_by_uuid(device_uuid: str):
     """
     db = SessionLocal()
     try:
-        return db.query(DeviceKey).filter(DeviceKey.device_uuid == device_uuid).first()
+        return (
+            db.query(DeviceKey)
+            .options(joinedload(DeviceKey.signal_streams))
+            .filter(DeviceKey.device_uuid == device_uuid)
+            .first()
+        )
     finally:
         db.close()
 

@@ -1,3 +1,6 @@
 {
-  "message": "Token es requerido"
+  "code": "invalid_credentials",
+  "details": {},
+  "message": "Credenciales inv\u00e1lidas",
+  "status": "error"
 }

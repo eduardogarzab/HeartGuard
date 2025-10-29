@@ -6,3 +6,4 @@ dicttoxml
 pydantic
 bcrypt
 gunicorn
+python-dotenv

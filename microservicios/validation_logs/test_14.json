@@ -1,3 +1,6 @@
 {
-  "message": "Error de conexi\u00f3n con el servicio: http://127.0.0.1:5002"
+  "code": "forbidden",
+  "details": {},
+  "message": "No perteneces a esta organizaci\u00f3n",
+  "status": "error"
 }

@@ -1,1 +1,14 @@
-{"data":{"membership":{"joined_at":"2025-08-29T19:47:00.715892+00:00","org_code":"FAM-001","org_id":"be16ba92-b0fb-4825-98d6-5a4db9cf8579","org_name":"Familia Garc\u00eda","role_code":"org_admin"},"organization":{"code":"FAM-001","created_at":"2025-10-28T19:47:00.426850+00:00","id":"be16ba92-b0fb-4825-98d6-5a4db9cf8579","name":"Familia Garc\u00eda"}},"meta":{},"status":"ok"}
+{
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTcwODE3MSwianRpIjoiYzhmMDljNTktMzFhMS00MjdhLWJhNTAtMTFlZWUxOTAzNWI5IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5Ijp7InVzZXJfaWQiOiJmYTc4ZjQ5MC0zNTMwLTQ3NzgtOTYyMS0wOGY4M2U3OTAzMmUiLCJlbWFpbCI6ImFuYS5ydWl6QGhlYXJ0Z3VhcmQuY29tIiwib3JnX2lkIjoiYmUxNmJhOTItYjBmYi00ODI1LTk4ZDYtNWE0ZGI5Y2Y4NTc5IiwiZ2xvYmFsX3JvbGUiOiJ1c2VyIn0sIm5iZiI6MTc2MTcwODE3MSwiY3NyZiI6IjFhZmM3NTE2LTkwZWItNDU0Mi1iOTFlLTVkY2E2Zjg0YzhlNiIsImV4cCI6MTc2MTcwOTk3MX0.ENBFD_JQrbHBJPd07sfTTSdyiwEkPWzepEROl-hkZCI",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTcwODE3MSwianRpIjoiYmExZjFlZTMtMjU5YS00M2QzLWEzN2MtODFhYjI5MjVjOWUwIiwidHlwZSI6InJlZnJlc2giLCJpZGVudGl0eSI6eyJ1c2VyX2lkIjoiZmE3OGY0OTAtMzUzMC00Nzc4LTk2MjEtMDhmODNlNzkwMzJlIiwiZW1haWwiOiJhbmEucnVpekBoZWFydGd1YXJkLmNvbSIsIm9yZ19pZCI6ImJlMTZiYTkyLWIwZmItNDgyNS05OGQ2LTVhNGRiOWNmODU3OSIsImdsb2JhbF9yb2xlIjoidXNlciJ9LCJuYmYiOjE3NjE3MDgxNzEsImNzcmYiOiI1OTM5YTVlMy0zMGIwLTRmMDEtOWYwZS1mODViMTEwYjJhNjMiLCJleHAiOjE3NjIzMTI5NzF9.6wQGsUCgW50BSWZZ75gVHKNNKNs7eoKRNqA-r44dMak",
+    "user": {
+      "email": "ana.ruiz@heartguard.com",
+      "id": "fa78f490-3530-4778-9621-08f83e79032e",
+      "name": "Dra. Ana Ruiz",
+      "org_id": "be16ba92-b0fb-4825-98d6-5a4db9cf8579"
+    }
+  },
+  "meta": {},
+  "status": "ok"
+}

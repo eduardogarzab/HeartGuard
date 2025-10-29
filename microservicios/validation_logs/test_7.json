@@ -1,1 +1,14 @@
-{"data":{"identity":{"email":"ana.ruiz@heartguard.com","global_role":"user","org_id":"be16ba92-b0fb-4825-98d6-5a4db9cf8579","user_id":"fa78f490-3530-4778-9621-08f83e79032e"}},"meta":{},"status":"ok"}
+{
+  "data": {
+    "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTcwODE3MSwianRpIjoiN2Y1MGE3YzUtZjI4Ni00NDM5LWFkMTctNTdiNDg4ZGYwMTg2IiwidHlwZSI6ImFjY2VzcyIsImlkZW50aXR5Ijp7InVzZXJfaWQiOiJmYTc4ZjQ5MC0zNTMwLTQ3NzgtOTYyMS0wOGY4M2U3OTAzMmUiLCJlbWFpbCI6ImFuYS5ydWl6QGhlYXJ0Z3VhcmQuY29tIiwib3JnX2lkIjoiYmUxNmJhOTItYjBmYi00ODI1LTk4ZDYtNWE0ZGI5Y2Y4NTc5IiwiZ2xvYmFsX3JvbGUiOiJ1c2VyIn0sIm5iZiI6MTc2MTcwODE3MSwiY3NyZiI6ImUzNGQ1MDJiLWJlYjAtNDhkOC1iZjE5LTY0NzIxOGJkYTM0MyIsImV4cCI6MTc2MTcwOTk3MX0.b11oUgcY5KUz1ose93JHuh8hMDkIXBb2eaD9YNVEiI0",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJmcmVzaCI6ZmFsc2UsImlhdCI6MTc2MTcwODE3MSwianRpIjoiMDlmODNiOTgtN2UzMS00YzljLWI0ZTEtMjhlYTE4NTBkMjJjIiwidHlwZSI6InJlZnJlc2giLCJpZGVudGl0eSI6eyJ1c2VyX2lkIjoiZmE3OGY0OTAtMzUzMC00Nzc4LTk2MjEtMDhmODNlNzkwMzJlIiwiZW1haWwiOiJhbmEucnVpekBoZWFydGd1YXJkLmNvbSIsIm9yZ19pZCI6ImJlMTZiYTkyLWIwZmItNDgyNS05OGQ2LTVhNGRiOWNmODU3OSIsImdsb2JhbF9yb2xlIjoidXNlciJ9LCJuYmYiOjE3NjE3MDgxNzEsImNzcmYiOiIyZTZjNzZhMS1kM2Q2LTRlYTMtYmY1Zi0xYzFjMGMwYTkzNDAiLCJleHAiOjE3NjIzMTI5NzF9.gY-wRF_tpYC0HGMz_bwyNIMz8XUqrdourwTkLrLj86o",
+    "user": {
+      "email": "ana.ruiz@heartguard.com",
+      "id": "fa78f490-3530-4778-9621-08f83e79032e",
+      "name": "Dra. Ana Ruiz",
+      "org_id": "be16ba92-b0fb-4825-98d6-5a4db9cf8579"
+    }
+  },
+  "meta": {},
+  "status": "ok"
+}

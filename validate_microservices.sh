@@ -302,9 +302,28 @@ start_service() {
     ensure_port_free "$port"
   fi
 
+  local shared_env_file="$MICRO_DIR/.env"
+  if [[ -f "$shared_env_file" ]]; then
+    while IFS= read -r line; do
+      if [[ ! "$line" =~ ^\s*# && -n "$line" ]]; then
+        export "$line"
+      fi
+    done < "$shared_env_file"
+  fi
+
+  local service_env_file="$service_dir/.env"
+  if [[ -f "$service_env_file" ]]; then
+    while IFS= read -r line; do
+      if [[ ! "$line" =~ ^\s*# && -n "$line" ]]; then
+        export "$line"
+      fi
+    done < "$service_env_file"
+  fi
+
   log "Start $tag" "Lanzando servicio"
   (
     cd "$service_dir" || exit 1
+    echo "DATABASE_URL for $tag is: $DATABASE_URL" >> "$stderr_file"
     nohup "$python_bin" app.py >>"$stdout_file" 2>>"$stderr_file" &
     echo $!
   ) >"$LOG_DIR/start_${tag}.log" 2>&1
@@ -377,8 +396,8 @@ run_tests() {
   local signal_payload_file="$LOG_DIR/payload_signal_ingest.json"
   cat > "$signal_payload_file" <<EOF
 [
-  {"ts": 1678886401, "val": 78},
-  {"ts": 1678886405, "val": 80}
+  {"ts": 1678886401, "val": "78"},
+  {"ts": 1678886405, "val": "80"}
 ]
 EOF
   local device_uuid="device-uuid-test-001"

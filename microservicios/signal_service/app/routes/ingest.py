@@ -71,10 +71,10 @@ def ingest_data():
     if target_stream.status != 'active':
         return jsonify({"error": f"Forbidden: Stream '{stream_type}' is not active"}), 403
 
-    # Enriquecer el payload con el stream_id para el worker
+    # Enriquecer el payload con el stream_id para el worker, asegurando que datetime sea serializable
     message_for_worker = {
         "stream_id": target_stream.id,
-        "data": [item.dict() for item in validated_data]
+        "data": [{"ts": item.ts.isoformat(), "val": item.val} for item in validated_data]
     }
 
     # Publicar en la cola de Redis

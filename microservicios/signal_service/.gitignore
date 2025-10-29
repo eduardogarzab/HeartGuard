@@ -17,3 +17,4 @@ venv.bak
 # IDE / Editor specific
 .idea/
 .vscode/
+\n# Log files\n*.log\n*.json
