@@ -6,7 +6,8 @@ from typing import Any, Dict, Optional
 
 from flask import Blueprint, g
 
-from repository import RepositoryError, get_overview_metrics
+import repository
+from repository import RepositoryError
 
 try:  # pragma: no cover - dependencia compartida
     from shared_lib.flask.responses import create_response  # type: ignore
@@ -61,7 +62,7 @@ def overview_metrics():
         return create_response({"status": "error", "message": "Organización requerida"}, status_code=400)
 
     try:
-        metrics = get_overview_metrics(org_id=org_id, include_all=include_all)
+        metrics = repository.get_overview_metrics(org_id=org_id, include_all=include_all)
     except RepositoryError as exc:
         return create_response(
             {

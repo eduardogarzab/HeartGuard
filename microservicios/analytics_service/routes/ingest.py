@@ -7,7 +7,8 @@ from typing import Any, Dict, Optional
 from flask import Blueprint, current_app, request
 
 from config import settings
-from repository import RepositoryError, log_heartbeat
+import repository
+from repository import RepositoryError
 
 try:  # pragma: no cover - dependencia compartida
     from shared_lib.flask.responses import create_response  # type: ignore
@@ -70,7 +71,7 @@ def ingest_heartbeat():
         return create_response({"status": "error", "message": "details debe ser un objeto"}, status_code=400)
 
     try:
-        log_heartbeat(service_name, status, details=details)
+        repository.log_heartbeat(service_name, status, details=details)
     except RepositoryError as exc:
         return create_response(
             {

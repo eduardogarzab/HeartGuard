@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from sqlalchemy import text
@@ -27,7 +27,7 @@ def log_heartbeat(service_name: str, status: str, *, details: Optional[Dict[str,
     payload = {
         "service_name": service_name,
         "status": status,
-        "last_heartbeat": datetime.utcnow(),
+        "last_heartbeat": datetime.now(timezone.utc),
         "details": details or {},
     }
 
@@ -62,8 +62,8 @@ def get_overview_metrics(*, org_id: Optional[int], include_all: bool) -> Dict[st
         filter_clause = "WHERE filtered.org_id = :org_id"
         params["org_id"] = org_id
 
-    query = text(
-        """
+    # Usar f-string para evitar conflictos con {} de PostgreSQL
+    query_str = f"""
         WITH filtered AS (
             SELECT
                 l.ts,
@@ -97,11 +97,12 @@ def get_overview_metrics(*, org_id: Optional[int], include_all: bool) -> Dict[st
             COALESCE((SELECT total FROM user_totals), 0) AS active_users_30d,
             COALESCE(json_agg(json_build_object('day', day, 'action', action, 'total', total)
                               ORDER BY day DESC, action), '[]'::json) AS timeline,
-            COALESCE(json_object_agg(entity, total), '{}'::json) AS entity_counts
+            COALESCE(json_object_agg(entity, total), '{{}}'::json) AS entity_counts
         FROM entity_totals
         RIGHT JOIN (SELECT 1) AS singleton ON TRUE;
-        """.format(filter_clause=filter_clause)
-    )
+    """
+    
+    query = text(query_str)
 
     try:
         with audit_db_engine.connect() as conn:
