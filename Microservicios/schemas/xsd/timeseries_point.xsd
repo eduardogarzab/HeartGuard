@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="timeseries_point" type="TimeseriesPointType"/>
+
+  <xs:complexType name="TimeseriesPointType">
+    <xs:sequence>
+      <xs:element name="measurement" type="xs:string"/>
+      <xs:element name="timestamp" type="xs:dateTime"/>
+      <xs:element name="bucket" type="xs:string" minOccurs="0"/>
+      <xs:element name="org" type="xs:string" minOccurs="0"/>
+      <xs:element name="tags" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="tag" maxOccurs="unbounded">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="name" type="xs:string" use="required"/>
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="fields">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="field" maxOccurs="unbounded">
+              <xs:complexType>
+                <xs:simpleContent>
+                  <xs:extension base="xs:string">
+                    <xs:attribute name="name" type="xs:string" use="required"/>
+                    <xs:attribute name="type" type="FieldType" use="optional"/>
+                  </xs:extension>
+                </xs:simpleContent>
+              </xs:complexType>
+            </xs:element>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="FieldType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="string"/>
+      <xs:enumeration value="integer"/>
+      <xs:enumeration value="float"/>
+      <xs:enumeration value="boolean"/>
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>

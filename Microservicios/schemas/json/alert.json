@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heartguard.example/schemas/alert.json",
+  "title": "Alert",
+  "type": "object",
+  "required": ["id", "patient_id", "level", "status", "created_at"],
+  "properties": {
+    "id": {"type": "string", "format": "uuid"},
+    "patient_id": {"type": "string", "format": "uuid"},
+    "source": {"type": "string", "enum": ["inference", "manual", "device"]},
+    "event_type": {"type": "string", "maxLength": 120},
+    "level": {"type": "string", "enum": ["info", "low", "medium", "high", "critical"]},
+    "status": {"type": "string", "enum": ["open", "assigned", "acknowledged", "resolved", "cancelled"]},
+    "assigned_to": {"type": "string", "format": "uuid"},
+    "acknowledged_by": {"type": "string", "format": "uuid"},
+    "acknowledged_at": {"type": "string", "format": "date-time"},
+    "resolution": {
+      "type": "object",
+      "properties": {
+        "resolved_by": {"type": "string", "format": "uuid"},
+        "resolved_at": {"type": "string", "format": "date-time"},
+        "notes": {"type": "string", "maxLength": 2000}
+      },
+      "additionalProperties": false
+    },
+    "delivery": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["channel", "status"],
+        "properties": {
+          "channel": {"type": "string", "enum": ["push", "sms", "email"]},
+          "status": {"type": "string", "enum": ["pending", "sent", "failed"]},
+          "delivered_at": {"type": "string", "format": "date-time"}
+        },
+        "additionalProperties": false
+      }
+    },
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

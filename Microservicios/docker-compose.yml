@@ -1,0 +1,312 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASS}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/00-init.sql:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "${POSTGRES_SUPERUSER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - heartguard_net
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - heartguard_net
+
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: heartguard
+      RABBITMQ_DEFAULT_PASS: change_me
+      RABBITMQ_DEFAULT_VHOST: heartguard
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - heartguard_net
+
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: heartguard
+      DOCKER_INFLUXDB_INIT_PASSWORD: change_me
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    ports:
+      - "8086:8086"
+    volumes:
+      - influx_data:/var/lib/influxdb2
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - heartguard_net
+
+  gateway:
+    build: ./gateway
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: gateway
+      SERVICE_PORT: ${GATEWAY_PORT}
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  auth_service:
+    build: ./auth_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: auth
+      DATABASE_URL: ${POSTGRES_URL_AUTH}
+    ports:
+      - "5001:5001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - heartguard_net
+
+  organization_service:
+    build: ./organization_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: organization
+      DATABASE_URL: ${POSTGRES_URL_ORGANIZATION}
+    ports:
+      - "5002:5002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  user_service:
+    build: ./user_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: user
+      DATABASE_URL: ${POSTGRES_URL_USER}
+    ports:
+      - "5003:5003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  patient_service:
+    build: ./patient_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: patient
+      DATABASE_URL: ${POSTGRES_URL_PATIENT}
+    ports:
+      - "5004:5004"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  device_service:
+    build: ./device_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: device
+      DATABASE_URL: ${POSTGRES_URL_DEVICE}
+    ports:
+      - "5005:5005"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+      influx_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  influx_service:
+    build: ./influx_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: influx
+      INFLUX_URL: ${INFLUX_URL}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+      INFLUX_ORG: ${INFLUX_ORG}
+    ports:
+      - "5006:5006"
+    depends_on:
+      influxdb:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  inference_service:
+    build: ./inference_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: inference
+      DATABASE_URL: ${POSTGRES_URL_INFERENCE}
+    ports:
+      - "5007:5007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    volumes:
+      - inference_models:/models
+    networks:
+      - heartguard_net
+
+  alert_service:
+    build: ./alert_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: alert
+      DATABASE_URL: ${POSTGRES_URL_ALERT}
+    ports:
+      - "5008:5008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  notification_service:
+    build: ./notification_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: notification
+      DATABASE_URL: ${POSTGRES_URL_NOTIFICATION}
+    ports:
+      - "5009:5009"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+  media_service:
+    build: ./media_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: media
+      DATABASE_URL: ${POSTGRES_URL_MEDIA}
+    ports:
+      - "5010:5010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+      rabbitmq:
+        condition: service_healthy
+    secrets:
+      - gcp-sa
+    networks:
+      - heartguard_net
+
+  audit_service:
+    build: ./audit_service
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      SERVICE_NAME: audit
+      DATABASE_URL: ${POSTGRES_URL_AUDIT}
+    ports:
+      - "5011:5011"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_started
+    networks:
+      - heartguard_net
+
+networks:
+  heartguard_net:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  influx_data:
+  inference_models:
+
+secrets:
+  gcp-sa:
+    file: ./secrets/gcp-sa.json
