@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://heartguard.io/schemas/timeseries.json",
+  "title": "TimeSeriesPoint",
+  "type": "object",
+  "required": ["measurement", "tags", "fields", "timestamp"],
+  "properties": {
+    "measurement": { "type": "string" },
+    "tags": {
+      "type": "object",
+      "additionalProperties": { "type": "string" }
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "anyOf": [
+          { "type": "number" },
+          { "type": "string" },
+          { "type": "boolean" }
+        ]
+      }
+    },
+    "timestamp": { "type": "string", "format": "date-time" }
+  }
+}

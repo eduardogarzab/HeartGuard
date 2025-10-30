@@ -1,0 +1,13 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://heartguard.io/schemas/auth_token.json",
+  "title": "AuthToken",
+  "type": "object",
+  "required": ["access_token", "refresh_token", "expires_in", "token_type"],
+  "properties": {
+    "access_token": { "type": "string" },
+    "refresh_token": { "type": "string" },
+    "expires_in": { "type": "integer", "minimum": 1 },
+    "token_type": { "type": "string", "enum": ["Bearer"] }
+  }
+}

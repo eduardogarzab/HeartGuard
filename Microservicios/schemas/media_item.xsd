@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="MediaItem" type="MediaItemType"/>
+
+  <xs:complexType name="MediaItemType">
+    <xs:sequence>
+      <xs:element name="id" type="UUIDType"/>
+      <xs:element name="file_name" type="xs:string"/>
+      <xs:element name="content_type" type="xs:string"/>
+      <xs:element name="size_bytes" type="xs:nonNegativeInteger"/>
+      <xs:element name="gcs_path" type="xs:string"/>
+      <xs:element name="owner_id" type="UUIDType" minOccurs="0"/>
+      <xs:element name="organization_id" type="xs:positiveInteger"/>
+      <xs:element name="signed_url" type="xs:anyURI" minOccurs="0"/>
+      <xs:element name="created_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="UUIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>

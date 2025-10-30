@@ -1,0 +1,9 @@
+Flask==2.3.3
+SQLAlchemy==2.0.21
+PyJWT==2.8.0
+python-dotenv==1.0.0
+werkzeug==2.3.7
+passlib[bcrypt]==1.7.4
+redis==5.0.1
+xmltodict==0.13.0
+dicttoxml==1.7.5

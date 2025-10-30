@@ -1,0 +1,175 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:14
+    container_name: hg_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - hg_net
+
+  redis:
+    image: redis:7
+    container_name: hg_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    networks:
+      - hg_net
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: hg_influxdb
+    restart: unless-stopped
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${POSTGRES_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${POSTGRES_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    ports:
+      - "8086:8086"
+    volumes:
+      - influx_data:/var/lib/influxdb2
+    networks:
+      - hg_net
+
+  gateway:
+    build:
+      context: ./services/gateway
+    container_name: hg_gateway
+    restart: unless-stopped
+    depends_on:
+      - auth
+      - organization
+      - user
+      - media
+      - influx
+    ports:
+      - "5000:5000"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+
+  auth:
+    build:
+      context: ./services/auth
+    container_name: hg_auth
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - redis
+    ports:
+      - "5001:5001"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+
+  organization:
+    build:
+      context: ./services/organization
+    container_name: hg_organization
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - auth
+    ports:
+      - "5002:5002"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+
+  user:
+    build:
+      context: ./services/user
+    container_name: hg_user
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - auth
+    ports:
+      - "5003:5003"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+
+  media:
+    build:
+      context: ./services/media
+    container_name: hg_media
+    restart: unless-stopped
+    depends_on:
+      - postgres
+      - auth
+    ports:
+      - "5004:5004"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+    volumes:
+      - gcp_credentials:/gcp
+
+  influx:
+    build:
+      context: ./services/influx
+    container_name: hg_influx
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+    ports:
+      - "5005:5005"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+
+  audit:
+    build:
+      context: ./services/audit
+    container_name: hg_audit
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    ports:
+      - "5006:5006"
+    env_file:
+      - .env
+    environment:
+      FLASK_ENV: production
+    networks:
+      - hg_net
+
+volumes:
+  postgres_data:
+  influx_data:
+  gcp_credentials:
+
+networks:
+  hg_net:
+    driver: bridge

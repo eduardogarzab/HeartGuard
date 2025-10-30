@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://heartguard.io/schemas/media_item.json",
+  "title": "MediaItem",
+  "type": "object",
+  "required": ["id", "file_name", "content_type", "size_bytes", "gcs_path"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[a-f0-9\-]{36}$" },
+    "file_name": { "type": "string", "maxLength": 255 },
+    "content_type": { "type": "string" },
+    "size_bytes": { "type": "integer", "minimum": 0 },
+    "gcs_path": { "type": "string" },
+    "owner_id": { "type": "string", "pattern": "^[a-f0-9\-]{36}$" },
+    "organization_id": { "type": "integer", "minimum": 1 },
+    "signed_url": { "type": ["string", "null"], "format": "uri" },
+    "created_at": { "type": "string", "format": "date-time" }
+  }
+}
