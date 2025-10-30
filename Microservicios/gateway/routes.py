@@ -1,53 +1,77 @@
-"""Gateway service routes providing routing metadata."""
+"""Gateway service routes implementing a reverse proxy."""
 from __future__ import annotations
 
-from typing import List
+import os
 
-from flask import Blueprint, request
+import requests
+from flask import Blueprint, Response, g, request
 
-from common.auth import require_auth
 from common.errors import APIError
-from common.serialization import parse_request_data, render_response
 
 bp = Blueprint("gateway", __name__)
 
-# Static registry of service routes exposed by the gateway for documentation purposes.
-SERVICE_ROUTES = [
-    {"service": "auth", "path": "/auth/login", "methods": ["POST"]},
-    {"service": "organization", "path": "/organization", "methods": ["GET", "PUT"]},
-    {"service": "user", "path": "/users/me", "methods": ["GET", "PATCH"]},
-    {"service": "patient", "path": "/patients", "methods": ["GET", "POST"]},
-    {"service": "device", "path": "/devices", "methods": ["GET", "POST"]},
-    {"service": "media", "path": "/media/upload", "methods": ["POST"]},
-    {"service": "alerts", "path": "/alerts", "methods": ["GET", "POST"]},
-]
+SERVICE_MAP = {
+    "auth": f"http://auth_service:{os.getenv('AUTH_PORT', 5001)}",
+    "organization": f"http://organization_service:{os.getenv('ORGANIZATION_PORT', 5002)}",
+    "user": f"http://user_service:{os.getenv('USER_PORT', 5003)}",
+    "patient": f"http://patient_service:{os.getenv('PATIENT_PORT', 5004)}",
+    "device": f"http://device_service:{os.getenv('DEVICE_PORT', 5005)}",
+    "influx": f"http://influx_service:{os.getenv('INFLUX_SERVICE_PORT', 5006)}",
+    "inference": f"http://inference_service:{os.getenv('INFERENCE_PORT', 5007)}",
+    "alert": f"http://alert_service:{os.getenv('ALERT_PORT', 5008)}",
+    "notification": f"http://notification_service:{os.getenv('NOTIFICATION_PORT', 5009)}",
+    "media": f"http://media_service:{os.getenv('MEDIA_PORT', 5010)}",
+    "audit": f"http://audit_service:{os.getenv('AUDIT_PORT', 5011)}",
+}
 
 
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
-    return render_response({"service": "gateway", "status": "healthy"})
+    return {"service": "gateway", "status": "healthy"}
 
 
-@bp.route("/routes", methods=["GET"])
-def list_routes() -> "Response":
-    return render_response({"routes": SERVICE_ROUTES}, meta={"total": len(SERVICE_ROUTES)})
-
-
-@bp.route("/echo", methods=["POST"])
-def echo() -> "Response":
-    payload, content_type = parse_request_data(request)
-    meta = {"content_type": content_type}
-    return render_response({"echo": payload}, status_code=201, meta=meta)
-
-
-@bp.route("/forward/<service_name>", methods=["GET"])
-@require_auth(optional=True)
-def forward(service_name: str) -> "Response":
-    matching: List[dict] = [route for route in SERVICE_ROUTES if route["service"] == service_name]
-    if not matching:
+@bp.route('/<service_name>/<path:path>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+def proxy(service_name: str, path: str) -> Response:
+    """Generic reverse proxy to internal services."""
+    service_url = SERVICE_MAP.get(service_name)
+    if not service_url:
         raise APIError("Unknown service", status_code=404, error_id="HG-GW-UNKNOWN-SERVICE")
-    return render_response({"service": service_name, "registered_routes": matching})
+
+    req_id = request.headers.get("X-Request-ID") or g.request_id
+    proxied_headers = {
+        "Authorization": request.headers.get("Authorization"),
+        "X-Request-ID": req_id,
+        "Content-Type": request.headers.get("Content-Type", "application/json"),
+    }
+
+    try:
+        target_url = f"{service_url}/{path}"
+        if request.query_string:
+            target_url += f"?{request.query_string.decode('utf-8')}"
+
+        resp = requests.request(
+            method=request.method,
+            url=target_url,
+            headers={k: v for k, v in proxied_headers.items() if v is not None},
+            json=request.get_json(silent=True),
+            data=request.get_data() if not request.is_json else None,
+            timeout=10,
+        )
+
+        response = Response(resp.content, resp.status_code, resp.headers.items())
+
+        for header in ['Content-Encoding', 'Transfer-Encoding', 'Connection']:
+            if header in response.headers:
+                del response.headers[header]
+
+        return response
+
+    except requests.exceptions.ConnectionError as exc:
+        raise APIError("Service unavailable", status_code=503, error_id="HG-GW-SERVICE-UNAVAILABLE") from exc
+    except requests.exceptions.Timeout as exc:
+        raise APIError("Service timed out", status_code=504, error_id="HG-GW-SERVICE-TIMEOUT") from exc
 
 
 def register_blueprint(app):
-    app.register_blueprint(bp, url_prefix="/gateway")
+    """Register the gateway blueprint."""
+    app.register_blueprint(bp, url_prefix="/")

@@ -9,6 +9,7 @@ from typing import Callable
 from flask import Flask, Response, g, request
 from flask_cors import CORS
 
+from .database import db
 from .errors import register_error_handlers
 from .serialization import render_response
 
@@ -32,6 +33,11 @@ def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -
     app = Flask(service_name)
     logger = _configure_logging(service_name)
 
+    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+
+    db.init_app(app)
+
     allowed_origins = os.getenv("ALLOWED_ORIGINS")
     if allowed_origins:
         origins = [origin.strip() for origin in allowed_origins.split(",") if origin.strip()]
@@ -44,6 +50,7 @@ def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -
         g.start_time = time.time()
         g.request_id = request.headers.get("X-Request-ID") or os.urandom(8).hex()
         g.logger = logger
+        g.db = db
 
     @app.after_request
     def _after_request(response: Response):

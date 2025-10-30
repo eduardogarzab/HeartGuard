@@ -4,35 +4,13 @@ services:
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: heartguard
-      RABBITMQ_DEFAULT_PASS: change_me
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
       RABBITMQ_DEFAULT_VHOST: heartguard
     ports:
       - "5672:5672"
       - "15672:15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - heartguard_net
-
-  influxdb:
-    image: influxdb:2.7
-    restart: unless-stopped
-    environment:
-      DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: heartguard
-      DOCKER_INFLUXDB_INIT_PASSWORD: change_me
-      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
-      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
-    ports:
-      - "8086:8086"
-    volumes:
-      - influx_data:/var/lib/influxdb2
-    healthcheck:
-      test: ["CMD", "influx", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -56,7 +34,17 @@ services:
       - "5000:5000"
     depends_on:
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${GATEWAY_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${GATEWAY_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -74,8 +62,16 @@ services:
       DATABASE_URL: ${POSTGRES_URL_AUTH}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5001:5001"
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUTH_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUTH_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -93,11 +89,19 @@ services:
       DATABASE_URL: ${POSTGRES_URL_ORGANIZATION}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5002:5002"
     depends_on:
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ORGANIZATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ORGANIZATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -115,11 +119,19 @@ services:
       DATABASE_URL: ${POSTGRES_URL_USER}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5003:5003"
     depends_on:
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${USER_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${USER_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -137,11 +149,19 @@ services:
       DATABASE_URL: ${POSTGRES_URL_PATIENT}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5004:5004"
     depends_on:
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PATIENT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PATIENT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -159,13 +179,21 @@ services:
       DATABASE_URL: ${POSTGRES_URL_DEVICE}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5005:5005"
     depends_on:
       auth_service:
-        condition: service_started
+        condition: service_healthy
       influx_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${DEVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${DEVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -185,13 +213,19 @@ services:
       INFLUX_ORG: ${INFLUX_ORG}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5006:5006"
     depends_on:
-      influxdb:
-        condition: service_healthy
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFLUX_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFLUX_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -209,15 +243,23 @@ services:
       DATABASE_URL: ${POSTGRES_URL_INFERENCE}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5007:5007"
     depends_on:
       rabbitmq:
         condition: service_healthy
       auth_service:
-        condition: service_started
+        condition: service_healthy
     volumes:
       - inference_models:/models
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFERENCE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFERENCE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -235,13 +277,21 @@ services:
       DATABASE_URL: ${POSTGRES_URL_ALERT}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5008:5008"
     depends_on:
       rabbitmq:
         condition: service_healthy
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ALERT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ALERT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -259,13 +309,21 @@ services:
       DATABASE_URL: ${POSTGRES_URL_NOTIFICATION}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5009:5009"
     depends_on:
       rabbitmq:
         condition: service_healthy
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NOTIFICATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NOTIFICATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -283,15 +341,23 @@ services:
       DATABASE_URL: ${POSTGRES_URL_MEDIA}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5010:5010"
     depends_on:
       auth_service:
-        condition: service_started
+        condition: service_healthy
       rabbitmq:
         condition: service_healthy
     secrets:
       - gcp-sa
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MEDIA_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MEDIA_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -309,13 +375,21 @@ services:
       DATABASE_URL: ${POSTGRES_URL_AUDIT}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    ports:
-      - "5011:5011"
     depends_on:
       rabbitmq:
         condition: service_healthy
       auth_service:
-        condition: service_started
+        condition: service_healthy
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUDIT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUDIT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
     networks:
       - heartguard_net
 
@@ -324,7 +398,6 @@ networks:
     driver: bridge
 
 volumes:
-  influx_data:
   inference_models:
 
 secrets:

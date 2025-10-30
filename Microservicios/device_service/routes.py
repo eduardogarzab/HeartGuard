@@ -1,108 +1,77 @@
 """Device service managing hardware assets and stream bindings."""
 from __future__ import annotations
 
-import datetime as dt
-from typing import Dict, List
+import uuid
 
 from flask import Blueprint, request
 
 from common.auth import require_auth
+from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
+from .models import Device
 
 bp = Blueprint("devices", __name__)
-
-DEVICE_TYPES = {
-    "dev-type-1": {"id": "dev-type-1", "name": "HeartGuard Watch", "manufacturer": "HeartGuard"},
-}
-
-DEVICES: Dict[str, Dict] = {
-    "dev-1": {
-        "id": "dev-1",
-        "device_type_id": "dev-type-1",
-        "serial_number": "HGW-0001",
-        "assigned_patient_id": "pat-1",
-        "status": "active",
-    }
-}
-
-SIGNAL_STREAMS: Dict[str, Dict] = {
-    "stream-1": {
-        "id": "stream-1",
-        "device_id": "dev-1",
-        "signal_type": "heart_rate",
-        "sampling_rate": 1,
-    }
-}
-
-TIMESERIES_BINDINGS: List[Dict] = [
-    {
-        "id": "binding-1",
-        "stream_id": "stream-1",
-        "influx_measurement": "heart_rate",
-        "bucket": "heartguard-timeseries",
-        "org": "heartguard",
-        "created_at": dt.datetime.utcnow().isoformat() + "Z",
-    }
-]
 
 
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
-    return render_response({"service": "device", "status": "healthy", "devices": len(DEVICES)})
+    return render_response({"service": "device", "status": "healthy"})
 
 
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_devices() -> "Response":
-    return render_response({"devices": list(DEVICES.values())}, meta={"total": len(DEVICES)})
+    devices = [d.to_dict() for d in Device.query.all()]
+    return render_response({"devices": devices}, meta={"total": len(devices)})
 
 
 @bp.route("", methods=["POST"])
 @require_auth(required_roles=["admin", "clinician"])
 def register_device() -> "Response":
     payload, _ = parse_request_data(request)
-    serial = payload.get("serial_number")
-    if not serial:
-        raise APIError("serial_number is required", status_code=400, error_id="HG-DEVICE-VALIDATION")
-    device_id = f"dev-{len(DEVICES) + 1}"
-    device = {
-        "id": device_id,
-        "device_type_id": payload.get("device_type_id", "dev-type-1"),
-        "serial_number": serial,
-        "assigned_patient_id": payload.get("assigned_patient_id"),
-        "status": payload.get("status", "inventory"),
-    }
-    DEVICES[device_id] = device
-    return render_response({"device": device}, status_code=201)
+    serial = payload.get("serial")
+    device_type_id = payload.get("device_type_id")
+    if not serial or not device_type_id:
+        raise APIError("serial and device_type_id are required", status_code=400, error_id="HG-DEVICE-VALIDATION")
+
+    new_device = Device(serial=serial, device_type_id=device_type_id, org_id=payload.get("org_id"))
+
+    db.session.add(new_device)
+    db.session.commit()
+
+    return render_response({"device": new_device.to_dict()}, status_code=201)
+
+
+@bp.route("/<device_id>", methods=["GET"])
+@require_auth(optional=True)
+def get_device(device_id: str) -> "Response":
+    device = Device.query.get(device_id)
+    if not device:
+        raise APIError("Device not found", status_code=404, error_id="HG-DEVICE-NOT-FOUND")
+    return render_response({"device": device.to_dict()})
 
 
 @bp.route("/<device_id>/streams", methods=["GET"])
 @require_auth(optional=True)
 def list_streams(device_id: str) -> "Response":
-    streams = [stream for stream in SIGNAL_STREAMS.values() if stream["device_id"] == device_id]
-    bindings = [binding for binding in TIMESERIES_BINDINGS if binding["stream_id"] in {s["id"] for s in streams}]
-    return render_response({"streams": streams, "bindings": bindings}, meta={"streams": len(streams)})
+    # This would query the 'signal_streams' table in a real application.
+    return render_response({"streams": [], "bindings": []}, meta={"streams": 0})
 
 
 @bp.route("/streams/bind", methods=["POST"])
 @require_auth(required_roles=["admin", "clinician"])
 def create_binding() -> "Response":
+    # This would create a new entry in the 'timeseries_binding' table.
     payload, _ = parse_request_data(request)
     stream_id = payload.get("stream_id")
-    measurement = payload.get("influx_measurement")
-    if not stream_id or not measurement:
-        raise APIError("stream_id and influx_measurement are required", status_code=400, error_id="HG-DEVICE-BINDING")
-    binding = {
-        "id": f"binding-{len(TIMESERIES_BINDINGS) + 1}",
-        "stream_id": stream_id,
-        "influx_measurement": measurement,
-        "bucket": payload.get("bucket", "heartguard-timeseries"),
-        "org": payload.get("org", "heartguard"),
-        "created_at": dt.datetime.utcnow().isoformat() + "Z",
-    }
-    TIMESERIES_BINDINGS.append(binding)
-    return render_response({"binding": binding}, status_code=201)
+    if not stream_id:
+        raise APIError("stream_id is required", status_code=400, error_id="HG-DEVICE-BINDING")
+
+    # Placeholder for the new binding
+    new_binding = {"id": str(uuid.uuid4()), "stream_id": stream_id}
+
+    return render_response({"binding": new_binding}, status_code=201)
 
 
 def register_blueprint(app):
