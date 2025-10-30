@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1.6
+ARG PYTHON_VERSION=3.11-slim
+FROM python:${PYTHON_VERSION} AS runtime
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Install runtime dependencies per service
+ARG SERVICE_DIR
+COPY ${SERVICE_DIR}/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt
+
+# Copy shared common utilities and the specific service source
+COPY common /app/common
+COPY ${SERVICE_DIR} /app/service
+
+# Ensure the application can import the shared modules
+ENV PYTHONPATH=/app
+WORKDIR /app/service
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 5000
+
+CMD ["/entrypoint.sh"]
