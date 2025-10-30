@@ -1,0 +1,16 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MediaItem",
+  "type": "object",
+  "required": ["media_id", "gcs_path", "mime_type", "size_bytes", "owner_user_id", "created_at"],
+  "properties": {
+    "media_id": {"type": "string"},
+    "gcs_path": {"type": "string"},
+    "mime_type": {"type": "string"},
+    "size_bytes": {"type": "integer", "minimum": 0},
+    "owner_user_id": {"type": "string"},
+    "signed_url": {"type": "string"},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

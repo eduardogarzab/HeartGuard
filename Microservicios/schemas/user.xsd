@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="User">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="user_id" type="xs:string" />
+        <xs:element name="email" type="xs:string" />
+        <xs:element name="name" type="xs:string" />
+        <xs:element name="phone" type="xs:string" minOccurs="0" />
+        <xs:element name="preferences">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="language" type="xs:string" />
+              <xs:element name="units" type="xs:string" />
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+        <xs:element name="org_id" type="xs:string" />
+        <xs:element name="role" type="xs:string" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

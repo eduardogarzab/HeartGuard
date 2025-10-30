@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="AuthToken">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="access_token" type="xs:string" />
+        <xs:element name="expires_in" type="xs:int" />
+        <xs:element name="refresh_token" type="xs:string" />
+        <xs:element name="refresh_expires_in" type="xs:int" />
+        <xs:element name="token_type" type="xs:string" />
+        <xs:element name="role" type="xs:string" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

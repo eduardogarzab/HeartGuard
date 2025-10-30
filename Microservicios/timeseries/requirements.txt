@@ -1,0 +1,4 @@
+Flask==3.0.3
+influxdb-client==1.41.0
+xmltodict==0.13.0
+dicttoxml==1.7.16

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="MediaItem">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="media_id" type="xs:string" />
+        <xs:element name="gcs_path" type="xs:string" />
+        <xs:element name="mime_type" type="xs:string" />
+        <xs:element name="size_bytes" type="xs:int" />
+        <xs:element name="owner_user_id" type="xs:string" />
+        <xs:element name="signed_url" type="xs:string" minOccurs="0" />
+        <xs:element name="created_at" type="xs:dateTime" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

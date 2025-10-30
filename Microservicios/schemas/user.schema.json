@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "User",
+  "type": "object",
+  "required": ["user_id", "email", "name", "org_id", "role"],
+  "properties": {
+    "user_id": {"type": "string"},
+    "email": {"type": "string", "format": "email"},
+    "name": {"type": "string", "minLength": 1},
+    "phone": {"type": ["string", "null"]},
+    "preferences": {
+      "type": "object",
+      "properties": {
+        "language": {"type": "string"},
+        "units": {"type": "string"}
+      },
+      "required": ["language", "units"],
+      "additionalProperties": false
+    },
+    "org_id": {"type": "string"},
+    "role": {"type": "string"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,25 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "TimeSeriesWrite",
+  "type": "object",
+  "required": ["measurement", "tags", "fields", "timestamp"],
+  "properties": {
+    "measurement": {"type": "string"},
+    "tags": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "fields": {
+      "type": "object",
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "number"},
+          {"type": "boolean"},
+          {"type": "string"}
+        ]
+      }
+    },
+    "timestamp": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

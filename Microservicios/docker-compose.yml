@@ -1,0 +1,106 @@
+version: "3.9"
+
+networks:
+  heartguard_net:
+    driver: bridge
+
+volumes:
+  influxdb-data:
+
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - heartguard_net
+    ports:
+      - "6379:6379"
+
+  influxdb:
+    image: influxdb:2.7
+    restart: unless-stopped
+    networks:
+      - heartguard_net
+    ports:
+      - "8086:8086"
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+    environment:
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=admin123
+      - DOCKER_INFLUXDB_INIT_ORG=heartguard-org
+      - DOCKER_INFLUXDB_INIT_BUCKET=heartguard-metrics
+
+  gateway:
+    build: ./gateway
+    env_file: .env
+    depends_on:
+      - auth
+      - organization
+      - user
+      - media
+      - timeseries
+      - audit
+      - redis
+    ports:
+      - "5000:5000"
+    networks:
+      - heartguard_net
+
+  auth:
+    build: ./auth
+    env_file: .env
+    depends_on:
+      - redis
+    ports:
+      - "5001:5001"
+    networks:
+      - heartguard_net
+
+  organization:
+    build: ./organization
+    env_file: .env
+    ports:
+      - "5002:5002"
+    networks:
+      - heartguard_net
+
+  user:
+    build: ./user
+    env_file: .env
+    ports:
+      - "5003:5003"
+    networks:
+      - heartguard_net
+
+  media:
+    build: ./media
+    env_file: .env
+    depends_on:
+      - redis
+    ports:
+      - "5004:5004"
+    networks:
+      - heartguard_net
+    volumes:
+      - ./media/gcp-key.json:/app/gcp-key.json:ro
+
+  timeseries:
+    build: ./timeseries
+    env_file: .env
+    depends_on:
+      - influxdb
+    ports:
+      - "5005:5005"
+    networks:
+      - heartguard_net
+
+  audit:
+    build: ./audit
+    env_file: .env
+    ports:
+      - "5006:5006"
+    networks:
+      - heartguard_net
+

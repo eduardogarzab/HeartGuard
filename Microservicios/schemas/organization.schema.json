@@ -1,0 +1,21 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Organization",
+  "type": "object",
+  "required": ["name", "logo_url", "policies", "settings"],
+  "properties": {
+    "name": {"type": "string", "minLength": 1},
+    "logo_url": {"type": "string"},
+    "policies": {"type": "string"},
+    "settings": {
+      "type": "object",
+      "properties": {
+        "alert_threshold_bpm": {"type": "integer", "minimum": 30, "maximum": 250},
+        "timezone": {"type": "string"}
+      },
+      "required": ["alert_threshold_bpm", "timezone"],
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,15 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AuthToken",
+  "type": "object",
+  "required": ["access_token", "expires_in", "refresh_token", "refresh_expires_in", "token_type", "role"],
+  "properties": {
+    "access_token": {"type": "string"},
+    "expires_in": {"type": "integer", "minimum": 1},
+    "refresh_token": {"type": "string"},
+    "refresh_expires_in": {"type": "integer", "minimum": 1},
+    "token_type": {"type": "string"},
+    "role": {"type": "string"}
+  },
+  "additionalProperties": false
+}

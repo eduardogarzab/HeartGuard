@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="Organization">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="name" type="xs:string" />
+        <xs:element name="logo_url" type="xs:string" />
+        <xs:element name="policies" type="xs:string" />
+        <xs:element name="settings">
+          <xs:complexType>
+            <xs:sequence>
+              <xs:element name="alert_threshold_bpm" type="xs:int" />
+              <xs:element name="timezone" type="xs:string" />
+            </xs:sequence>
+          </xs:complexType>
+        </xs:element>
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>
