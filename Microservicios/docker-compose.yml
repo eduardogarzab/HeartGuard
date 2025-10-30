@@ -35,7 +35,12 @@ services:
     depends_on:
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${GATEWAY_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${GATEWAY_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -57,7 +62,12 @@ services:
       DATABASE_URL: ${POSTGRES_URL_AUTH}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUTH_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${AUTH_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -82,7 +92,12 @@ services:
     depends_on:
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ORGANIZATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${ORGANIZATION_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -107,7 +122,12 @@ services:
     depends_on:
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${USER_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${USER_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -132,7 +152,12 @@ services:
     depends_on:
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PATIENT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${PATIENT_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -159,7 +184,12 @@ services:
         condition: service_healthy
       influx_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${DEVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${DEVICE_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -186,7 +216,12 @@ services:
     depends_on:
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFLUX_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${INFLUX_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -215,7 +250,12 @@ services:
         condition: service_healthy
     volumes:
       - inference_models:/models
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFERENCE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${INFERENCE_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -242,7 +282,12 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ALERT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${ALERT_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -269,7 +314,12 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NOTIFICATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${NOTIFICATION_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -298,7 +348,12 @@ services:
         condition: service_healthy
     secrets:
       - gcp-sa
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MEDIA_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${MEDIA_PORT}/health"]
       interval: 10s
       timeout: 5s
@@ -325,7 +380,12 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-    healthcheck:
+        healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUDIT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+        healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${AUDIT_PORT}/health"]
       interval: 10s
       timeout: 5s
