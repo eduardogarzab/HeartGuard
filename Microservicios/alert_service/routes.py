@@ -1,4 +1,4 @@
-"""Alert service handling alert lifecycle operations."""
+"""models.Alert service handling alert lifecycle operations."""
 from __future__ import annotations
 
 import uuid
@@ -9,7 +9,8 @@ from common.auth import require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
-from .models import Alert
+import models
+# Models accessed via models. models.Alert
 
 bp = Blueprint("alerts", __name__)
 
@@ -22,7 +23,7 @@ def health() -> "Response":
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_alerts() -> "Response":
-    alerts = [a.to_dict() for a in Alert.query.all()]
+    alerts = [a.to_dict() for a in models.Alert.query.all()]
     return render_response({"alerts": alerts}, meta={"total": len(alerts)})
 
 
@@ -39,7 +40,7 @@ def create_alert() -> "Response":
         raise APIError("patient_id, type_id, alert_level_id, and status_id are required",
                          status_code=400, error_id="HG-ALERT-VALIDATION")
 
-    new_alert = Alert(patient_id=patient_id, type_id=type_id,
+    new_alert = models.Alert(patient_id=patient_id, type_id=type_id,
                       alert_level_id=alert_level_id, status_id=status_id,
                       description=payload.get("description"))
 
@@ -52,18 +53,18 @@ def create_alert() -> "Response":
 @bp.route("/<alert_id>", methods=["GET"])
 @require_auth(optional=True)
 def get_alert(alert_id: str) -> "Response":
-    alert = Alert.query.get(alert_id)
+    alert = models.Alert.query.get(alert_id)
     if not alert:
-        raise APIError("Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
+        raise APIError("models.Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
     return render_response({"alert": alert.to_dict()})
 
 
 @bp.route("/<alert_id>/assign", methods=["POST"])
 @require_auth(required_roles=["clinician", "admin"])
 def assign_alert(alert_id: str) -> "Response":
-    alert = Alert.query.get(alert_id)
+    alert = models.Alert.query.get(alert_id)
     if not alert:
-        raise APIError("Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
+        raise APIError("models.Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
 
     # This is a placeholder for the 'assigned' status_id
     alert.status_id = "f4e5a6b0-1e89-4c22-9b2a-1e6b9a7a8d8e"
@@ -74,9 +75,9 @@ def assign_alert(alert_id: str) -> "Response":
 @bp.route("/<alert_id>/ack", methods=["POST"])
 @require_auth(optional=True)
 def acknowledge_alert(alert_id: str) -> "Response":
-    alert = Alert.query.get(alert_id)
+    alert = models.Alert.query.get(alert_id)
     if not alert:
-        raise APIError("Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
+        raise APIError("models.Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
 
     # This is a placeholder for the 'acknowledged' status_id
     alert.status_id = "a2e5a6b0-1e89-4c22-9b2a-1e6b9a7a8d8e"
@@ -87,9 +88,9 @@ def acknowledge_alert(alert_id: str) -> "Response":
 @bp.route("/<alert_id>/resolve", methods=["POST"])
 @require_auth(optional=True)
 def resolve_alert(alert_id: str) -> "Response":
-    alert = Alert.query.get(alert_id)
+    alert = models.Alert.query.get(alert_id)
     if not alert:
-        raise APIError("Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
+        raise APIError("models.Alert not found", status_code=404, error_id="HG-ALERT-NOT-FOUND")
 
     # This is a placeholder for the 'resolved' status_id
     alert.status_id = "b8e5a6b0-1e89-4c22-9b2a-1e6b9a7a8d8e"

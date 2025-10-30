@@ -10,14 +10,16 @@ from common.database import db
 class Device(db.Model):
     """Represents a device, mapping to the 'devices' table."""
     __tablename__ = 'devices'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = db.Column(UUID(as_uuid=True), db.ForeignKey('organizations.id'))
+    # No ForeignKey for microservices - we just store the UUID reference
+    org_id = db.Column(UUID(as_uuid=True))
     serial = db.Column(db.String(80), unique=True, nullable=False)
     brand = db.Column(db.String(80))
     model = db.Column(db.String(80))
-    device_type_id = db.Column(UUID(as_uuid=True), db.ForeignKey('device_types.id'), nullable=False)
-    owner_patient_id = db.Column(UUID(as_uuid=True), db.ForeignKey('patients.id'))
+    device_type_id = db.Column(UUID(as_uuid=True), nullable=False)
+    owner_patient_id = db.Column(UUID(as_uuid=True))
     registered_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
     active = db.Column(db.Boolean, nullable=False, default=True)
 

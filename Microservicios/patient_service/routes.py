@@ -1,4 +1,4 @@
-"""Patient service managing clinical subject data."""
+"""models.Patient service managing clinical subject data."""
 from __future__ import annotations
 
 import uuid
@@ -9,7 +9,8 @@ from common.auth import require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
-from .models import Patient
+import models
+# Models accessed via models. models.Patient
 
 bp = Blueprint("patients", __name__)
 
@@ -22,7 +23,7 @@ def health() -> "Response":
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_patients() -> "Response":
-    patients = [p.to_dict() for p in Patient.query.all()]
+    patients = [p.to_dict() for p in models.Patient.query.all()]
     return render_response({"patients": patients}, meta={"total": len(patients)})
 
 
@@ -34,7 +35,7 @@ def create_patient() -> "Response":
     if not person_name:
         raise APIError("person_name is required", status_code=400, error_id="HG-PATIENT-VALIDATION")
 
-    new_patient = Patient(person_name=person_name, org_id=payload.get("org_id"))
+    new_patient = models.Patient(person_name=person_name, org_id=payload.get("org_id"))
 
     db.session.add(new_patient)
     db.session.commit()
@@ -45,9 +46,9 @@ def create_patient() -> "Response":
 @bp.route("/<patient_id>", methods=["GET"])
 @require_auth(optional=True)
 def get_patient(patient_id: str) -> "Response":
-    patient = Patient.query.get(patient_id)
+    patient = models.Patient.query.get(patient_id)
     if not patient:
-        raise APIError("Patient not found", status_code=404, error_id="HG-PATIENT-NOT-FOUND")
+        raise APIError("models.Patient not found", status_code=404, error_id="HG-PATIENT-NOT-FOUND")
     return render_response({"patient": patient.to_dict()})
 
 

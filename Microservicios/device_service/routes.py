@@ -1,4 +1,4 @@
-"""Device service managing hardware assets and stream bindings."""
+"""models.Device service managing hardware assets and stream bindings."""
 from __future__ import annotations
 
 import uuid
@@ -9,7 +9,8 @@ from common.auth import require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
-from .models import Device
+import models
+# Models accessed via models. models.Device
 
 bp = Blueprint("devices", __name__)
 
@@ -22,7 +23,7 @@ def health() -> "Response":
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_devices() -> "Response":
-    devices = [d.to_dict() for d in Device.query.all()]
+    devices = [d.to_dict() for d in models.Device.query.all()]
     return render_response({"devices": devices}, meta={"total": len(devices)})
 
 
@@ -35,7 +36,7 @@ def register_device() -> "Response":
     if not serial or not device_type_id:
         raise APIError("serial and device_type_id are required", status_code=400, error_id="HG-DEVICE-VALIDATION")
 
-    new_device = Device(serial=serial, device_type_id=device_type_id, org_id=payload.get("org_id"))
+    new_device = models.Device(serial=serial, device_type_id=device_type_id, org_id=payload.get("org_id"))
 
     db.session.add(new_device)
     db.session.commit()
@@ -46,9 +47,9 @@ def register_device() -> "Response":
 @bp.route("/<device_id>", methods=["GET"])
 @require_auth(optional=True)
 def get_device(device_id: str) -> "Response":
-    device = Device.query.get(device_id)
+    device = models.Device.query.get(device_id)
     if not device:
-        raise APIError("Device not found", status_code=404, error_id="HG-DEVICE-NOT-FOUND")
+        raise APIError("models.Device not found", status_code=404, error_id="HG-DEVICE-NOT-FOUND")
     return render_response({"device": device.to_dict()})
 
 

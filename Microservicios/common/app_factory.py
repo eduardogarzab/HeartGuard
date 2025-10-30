@@ -9,7 +9,7 @@ from typing import Callable
 from flask import Flask, Response, g, request
 from flask_cors import CORS
 
-from .database import db
+from .database import db, DB_AVAILABLE
 from .errors import register_error_handlers
 from .serialization import render_response
 
@@ -33,10 +33,18 @@ def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -
     app = Flask(service_name)
     logger = _configure_logging(service_name)
 
-    app.config["SQLALCHEMY_DATABASE_URI"] = os.getenv("DATABASE_URL")
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-
-    db.init_app(app)
+    # Only configure database if SQLAlchemy is available and DATABASE_URL is set
+    database_url = os.getenv("DATABASE_URL")
+    if DB_AVAILABLE and database_url:
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        db.init_app(app)
+        logger.info("Database initialized with SQLAlchemy for %s", service_name)
+    else:
+        if not DB_AVAILABLE:
+            logger.info("SQLAlchemy not available - service %s running without database", service_name)
+        elif not database_url:
+            logger.info("DATABASE_URL not set - service %s running without database", service_name)
 
     allowed_origins = os.getenv("ALLOWED_ORIGINS")
     if allowed_origins:
@@ -50,7 +58,7 @@ def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -
         g.start_time = time.time()
         g.request_id = request.headers.get("X-Request-ID") or os.urandom(8).hex()
         g.logger = logger
-        g.db = db
+        g.db = db if DB_AVAILABLE else None
 
     @app.after_request
     def _after_request(response: Response):

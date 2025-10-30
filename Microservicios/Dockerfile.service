@@ -13,6 +13,10 @@ ARG SERVICE_DIR
 COPY ${SERVICE_DIR}/requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
+# Install curl for healthchecks
+RUN apt-get update && apt-get install -y --no-install-recommends curl && \
+    rm -rf /var/lib/apt/lists/*
+
 # Copy shared common utilities and the specific service source
 COPY common /app/common
 COPY ${SERVICE_DIR} /app/service
@@ -24,8 +28,9 @@ WORKDIR /app/service
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
-# Create a non-root user and group
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+# Create a non-root user and group compatible with Debian slim images
+RUN groupadd --system appgroup \
+    && useradd --system --gid appgroup --no-create-home --shell /usr/sbin/nologin appuser
 
 # Ensure the app directory is owned by the new user
 RUN chown -R appuser:appgroup /app

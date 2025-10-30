@@ -11,12 +11,14 @@ from common.database import db
 class User(db.Model):
     """Represents a user in the system, mapping to the 'users' table."""
     __tablename__ = 'users'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(150), unique=True, nullable=False)
     password_hash = db.Column(db.Text, nullable=False)
-    user_status_id = db.Column(UUID(as_uuid=True), db.ForeignKey('user_statuses.id'), nullable=False)
+    # No ForeignKey for microservices - we just store the UUID reference
+    user_status_id = db.Column(UUID(as_uuid=True), nullable=False)
     two_factor_enabled = db.Column(db.Boolean, nullable=False, default=False)
     profile_photo_url = db.Column(db.Text)
     created_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())

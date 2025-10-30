@@ -9,14 +9,14 @@ if str(BASE_DIR) not in sys.path:
     sys.path.append(str(BASE_DIR))
 
 from common.app_factory import create_app
-from .routes import register_blueprint
+import routes
 
 
 SERVICE_NAME = "organization"
 DEFAULT_PORT = 5002
 
 
-app = create_app(SERVICE_NAME, register_blueprint)
+app = create_app(SERVICE_NAME, routes.register_blueprint)
 
 
 if __name__ == "__main__":

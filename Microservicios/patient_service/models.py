@@ -10,13 +10,15 @@ from common.database import db
 class Patient(db.Model):
     """Represents a patient, mapping to the 'patients' table."""
     __tablename__ = 'patients'
+    __table_args__ = {'extend_existing': True}
 
     id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    org_id = db.Column(UUID(as_uuid=True), db.ForeignKey('organizations.id'))
+    # No ForeignKey for microservices - we just store the UUID reference
+    org_id = db.Column(UUID(as_uuid=True))
     person_name = db.Column(db.String(120), nullable=False)
     birthdate = db.Column(db.Date)
-    sex_id = db.Column(UUID(as_uuid=True), db.ForeignKey('sexes.id'))
-    risk_level_id = db.Column(UUID(as_uuid=True), db.ForeignKey('risk_levels.id'))
+    sex_id = db.Column(UUID(as_uuid=True))
+    risk_level_id = db.Column(UUID(as_uuid=True))
     profile_photo_url = db.Column(db.Text)
     created_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
 

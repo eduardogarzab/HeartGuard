@@ -1,4 +1,4 @@
-"""Organization service exposing organization management endpoints."""
+"""models.Organization service exposing organization management endpoints."""
 from __future__ import annotations
 
 import uuid
@@ -9,7 +9,8 @@ from common.auth import require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
-from .models import Organization
+import models
+# Models accessed via models. models.Organization
 
 bp = Blueprint("organization", __name__)
 
@@ -22,7 +23,7 @@ def health() -> "Response":
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_organizations() -> "Response":
-    organizations = [o.to_dict() for o in Organization.query.all()]
+    organizations = [o.to_dict() for o in models.Organization.query.all()]
     return render_response({"organizations": organizations}, meta={"total": len(organizations)})
 
 
@@ -35,7 +36,7 @@ def create_organization() -> "Response":
     if not name or not code:
         raise APIError("name and code are required", status_code=400, error_id="HG-ORG-VALIDATION")
 
-    new_org = Organization(name=name, code=code)
+    new_org = models.Organization(name=name, code=code)
 
     db.session.add(new_org)
     db.session.commit()
@@ -46,9 +47,9 @@ def create_organization() -> "Response":
 @bp.route("/<org_id>", methods=["GET"])
 @require_auth(optional=True)
 def get_organization(org_id: str) -> "Response":
-    org = Organization.query.get(org_id)
+    org = models.Organization.query.get(org_id)
     if not org:
-        raise APIError("Organization not found", status_code=404, error_id="HG-ORG-NOT-FOUND")
+        raise APIError("models.Organization not found", status_code=404, error_id="HG-ORG-NOT-FOUND")
     return render_response({"organization": org.to_dict()})
 
 

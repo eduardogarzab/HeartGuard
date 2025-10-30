@@ -33,6 +33,10 @@ def health() -> "Response":
 @bp.route('/<service_name>/<path:path>', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 def proxy(service_name: str, path: str) -> Response:
     """Generic reverse proxy to internal services."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Proxy called: service_name={service_name}, path={path}")
+    
     service_url = SERVICE_MAP.get(service_name)
     if not service_url:
         raise APIError("Unknown service", status_code=404, error_id="HG-GW-UNKNOWN-SERVICE")
@@ -45,7 +49,7 @@ def proxy(service_name: str, path: str) -> Response:
     }
 
     try:
-        target_url = f"{service_url}/{path}"
+        target_url = f"{service_url}/{service_name}/{path}"
         if request.query_string:
             target_url += f"?{request.query_string.decode('utf-8')}"
 
@@ -74,4 +78,7 @@ def proxy(service_name: str, path: str) -> Response:
 
 def register_blueprint(app):
     """Register the gateway blueprint."""
+    import logging
+    logger = logging.getLogger(__name__)
+    logger.info(f"Registering gateway blueprint with url_prefix='/'")
     app.register_blueprint(bp, url_prefix="/")

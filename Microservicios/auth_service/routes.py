@@ -9,7 +9,9 @@ from common.auth import get_jwt_manager, issue_tokens, require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
-from .models import User
+
+# Use absolute import to avoid relative import issues
+import models
 
 bp = Blueprint("auth", __name__)
 
@@ -28,14 +30,14 @@ def register() -> "Response":
     if not email or not password or not name:
         raise APIError("Email, password, and name are required", status_code=400, error_id="HG-AUTH-VALIDATION")
 
-    if User.query.filter_by(email=email).first():
+    if models.User.query.filter_by(email=email).first():
         raise APIError("User already exists", status_code=409, error_id="HG-AUTH-CONFLICT")
 
     # This is a placeholder for the user_status_id. In a real application,
     # you would fetch this from a 'user_statuses' table.
-    user_status_id = "c6a0c2f0-1e89-4c22-9b2a-1e6b9a7a8d8e" # Assuming 'active' status
+    user_status_id = "405673b4-f543-4982-b0f9-52f375d85a12"  # 'active' status from user_statuses table
 
-    new_user = User(name=name, email=email, user_status_id=user_status_id)
+    new_user = models.User(name=name, email=email, user_status_id=user_status_id)
     new_user.set_password(password)
 
     db.session.add(new_user)
@@ -56,7 +58,7 @@ def login() -> "Response":
     if not email or not password:
         raise APIError("Email and password are required", status_code=400, error_id="HG-AUTH-VALIDATION")
 
-    user = User.query.filter_by(email=email).first()
+    user = models.User.query.filter_by(email=email).first()
     if not user or not user.check_password(password):
         raise APIError("Invalid credentials", status_code=401, error_id="HG-AUTH-CREDENTIALS")
 
@@ -82,7 +84,7 @@ def refresh() -> "Response":
     if decoded.get("type") != "refresh":
         raise APIError("Provided token is not a refresh token", status_code=401, error_id="HG-AUTH-REFRESH-TYPE")
 
-    user = User.query.get(decoded.get("sub"))
+    user = models.User.query.get(decoded.get("sub"))
     if not user:
         raise APIError("User not found for refresh token", status_code=401, error_id="HG-AUTH-USER-NOT-FOUND")
 
