@@ -45,4 +45,4 @@ Thumbs.db
 \n# Python bytecode\n__pycache__/
 
 # Ignorar archivos en secret en microservicios
-**/secret/*.json 
+**/secrets/*.json 
