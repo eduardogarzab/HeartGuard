@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heartguard.example/schemas/timeseries_point.json",
+  "title": "TimeseriesPoint",
+  "type": "object",
+  "required": ["measurement", "timestamp", "fields"],
+  "properties": {
+    "measurement": {"type": "string", "maxLength": 120},
+    "timestamp": {"type": "string", "format": "date-time"},
+    "bucket": {"type": "string", "maxLength": 120},
+    "org": {"type": "string", "maxLength": 120},
+    "tags": {
+      "type": "object",
+      "additionalProperties": {"type": "string"}
+    },
+    "fields": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "oneOf": [
+          {"type": "string"},
+          {"type": "number"},
+          {"type": "integer"},
+          {"type": "boolean"}
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="inference" type="InferenceType"/>
+
+  <xs:complexType name="InferenceType">
+    <xs:sequence>
+      <xs:element name="id" type="UUIDType"/>
+      <xs:element name="model_id" type="UUIDType"/>
+      <xs:element name="model_version" type="xs:string" minOccurs="0"/>
+      <xs:element name="event_type" type="xs:string"/>
+      <xs:element name="input_reference" type="xs:string"/>
+      <xs:element name="patient_id" type="UUIDType" minOccurs="0"/>
+      <xs:element name="device_id" type="UUIDType" minOccurs="0"/>
+      <xs:element name="score" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="threshold" type="xs:decimal" minOccurs="0"/>
+      <xs:element name="payload" minOccurs="0" type="xs:string"/>
+      <xs:element name="generated_alert_id" type="UUIDType" minOccurs="0"/>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="processed_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="UUIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>
