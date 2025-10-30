@@ -24,6 +24,14 @@ WORKDIR /app/service
 COPY entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 
+# Create and switch to a non-root user
+RUN addgroup -S appgroup \
+    && adduser -S appuser -G appgroup \
+    && chown -R appuser:appgroup /app \
+    && chown appuser:appgroup /entrypoint.sh
+
+USER appuser
+
 EXPOSE 5000
 
 CMD ["/entrypoint.sh"]

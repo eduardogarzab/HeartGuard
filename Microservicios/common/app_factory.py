@@ -9,6 +9,8 @@ from typing import Callable
 from flask import Flask, Response, g, request
 from flask_cors import CORS
 
+from .database import db
+
 from .errors import register_error_handlers
 from .serialization import render_response
 
@@ -31,6 +33,14 @@ def _configure_logging(service_name: str) -> logging.Logger:
 def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -> Flask:
     app = Flask(service_name)
     logger = _configure_logging(service_name)
+
+    database_url = os.getenv("DATABASE_URL")
+    if database_url:
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        db.init_app(app)
+        with app.app_context():
+            db.create_all()
 
     allowed_origins = os.getenv("ALLOWED_ORIGINS")
     if allowed_origins:

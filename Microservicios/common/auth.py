@@ -18,7 +18,10 @@ class JWTManager:
     """Simple JWT manager based on shared secrets."""
 
     def __init__(self, secret: str | None = None, algorithm: str = DEFAULT_ALGORITHM):
-        self.secret = secret or os.getenv("JWT_SECRET", "change-me")
+        secret_value = secret or os.getenv("JWT_SECRET")
+        if not secret_value:
+            raise ValueError("JWT_SECRET no está configurado")
+        self.secret = secret_value
         self.algorithm = algorithm
 
     def encode(self, payload: Dict[str, Any], expires_in: int = 900) -> str:
