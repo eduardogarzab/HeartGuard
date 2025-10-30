@@ -1,15 +1,13 @@
 services:
-
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
     restart: unless-stopped
     environment:
       RABBITMQ_DEFAULT_USER: heartguard
-      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_DEFAULT_PASS: change_me
       RABBITMQ_DEFAULT_VHOST: heartguard
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "15672"
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 10s
@@ -24,12 +22,10 @@ services:
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
       DOCKER_INFLUXDB_INIT_USERNAME: heartguard
-      DOCKER_INFLUXDB_INIT_PASSWORD: ${DOCKER_INFLUXDB_INIT_PASSWORD}
+      DOCKER_INFLUXDB_INIT_PASSWORD: change_me
       DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
       DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
       DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
-    ports:
-      - "8086:8086"
     volumes:
       - influx_data:/var/lib/influxdb2
     healthcheck:
@@ -54,10 +50,9 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     ports:
-      - "5000:5000"
+      - "5000"
     depends_on:
-      auth_service:
-        condition: service_healthy
+      - auth_service
     networks:
       - heartguard_net
 
@@ -73,15 +68,8 @@ services:
       SERVICE_NAME: auth
       SERVICE_PORT: ${AUTH_PORT}
       DATABASE_URL: ${POSTGRES_URL_AUTH}
-      JWT_SECRET: ${JWT_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    depends_on:
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - heartguard_net
 
@@ -97,17 +85,10 @@ services:
       SERVICE_NAME: organization
       SERVICE_PORT: ${ORGANIZATION_PORT}
       DATABASE_URL: ${POSTGRES_URL_ORGANIZATION}
-      JWT_SECRET: ${JWT_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5002/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - auth_service
     networks:
       - heartguard_net
 
@@ -123,17 +104,10 @@ services:
       SERVICE_NAME: user
       SERVICE_PORT: ${USER_PORT}
       DATABASE_URL: ${POSTGRES_URL_USER}
-      JWT_SECRET: ${JWT_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5003/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - auth_service
     networks:
       - heartguard_net
 
@@ -149,17 +123,10 @@ services:
       SERVICE_NAME: patient
       SERVICE_PORT: ${PATIENT_PORT}
       DATABASE_URL: ${POSTGRES_URL_PATIENT}
-      JWT_SECRET: ${JWT_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5004/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - auth_service
     networks:
       - heartguard_net
 
@@ -175,21 +142,11 @@ services:
       SERVICE_NAME: device
       SERVICE_PORT: ${DEVICE_PORT}
       DATABASE_URL: ${POSTGRES_URL_DEVICE}
-      JWT_SECRET: ${JWT_SECRET}
-      INFLUX_URL: ${INFLUX_URL}
-      INFLUX_TOKEN: ${INFLUX_TOKEN}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      auth_service:
-        condition: service_healthy
-      influx_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5005/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - auth_service
+      - influx_service
     networks:
       - heartguard_net
 
@@ -207,19 +164,11 @@ services:
       INFLUX_URL: ${INFLUX_URL}
       INFLUX_TOKEN: ${INFLUX_TOKEN}
       INFLUX_ORG: ${INFLUX_ORG}
-      JWT_SECRET: ${JWT_SECRET}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      influxdb:
-        condition: service_healthy
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5006/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - influxdb
+      - auth_service
     networks:
       - heartguard_net
 
@@ -235,22 +184,13 @@ services:
       SERVICE_NAME: inference
       SERVICE_PORT: ${INFERENCE_PORT}
       DATABASE_URL: ${POSTGRES_URL_INFERENCE}
-      JWT_SECRET: ${JWT_SECRET}
-      RABBITMQ_URL: ${RABBITMQ_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      auth_service:
-        condition: service_healthy
+      - rabbitmq
+      - auth_service
     volumes:
       - inference_models:/models
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5007/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - heartguard_net
 
@@ -266,20 +206,11 @@ services:
       SERVICE_NAME: alert
       SERVICE_PORT: ${ALERT_PORT}
       DATABASE_URL: ${POSTGRES_URL_ALERT}
-      JWT_SECRET: ${JWT_SECRET}
-      RABBITMQ_URL: ${RABBITMQ_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5008/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - rabbitmq
+      - auth_service
     networks:
       - heartguard_net
 
@@ -295,20 +226,11 @@ services:
       SERVICE_NAME: notification
       SERVICE_PORT: ${NOTIFICATION_PORT}
       DATABASE_URL: ${POSTGRES_URL_NOTIFICATION}
-      JWT_SECRET: ${JWT_SECRET}
-      RABBITMQ_URL: ${RABBITMQ_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5009/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - rabbitmq
+      - auth_service
     networks:
       - heartguard_net
 
@@ -324,22 +246,13 @@ services:
       SERVICE_NAME: media
       SERVICE_PORT: ${MEDIA_PORT}
       DATABASE_URL: ${POSTGRES_URL_MEDIA}
-      JWT_SECRET: ${JWT_SECRET}
-      RABBITMQ_URL: ${RABBITMQ_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      auth_service:
-        condition: service_healthy
-      rabbitmq:
-        condition: service_healthy
+      - auth_service
+      - rabbitmq
     secrets:
       - gcp-sa
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5010/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     networks:
       - heartguard_net
 
@@ -355,20 +268,11 @@ services:
       SERVICE_NAME: audit
       SERVICE_PORT: ${AUDIT_PORT}
       DATABASE_URL: ${POSTGRES_URL_AUDIT}
-      JWT_SECRET: ${JWT_SECRET}
-      RABBITMQ_URL: ${RABBITMQ_URL}
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      rabbitmq:
-        condition: service_healthy
-      auth_service:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5011/health')\""]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - rabbitmq
+      - auth_service
     networks:
       - heartguard_net
 

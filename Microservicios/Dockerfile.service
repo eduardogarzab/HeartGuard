@@ -22,11 +22,11 @@ ENV PYTHONPATH=/app
 WORKDIR /app/service
 
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 # Create and switch to a non-root user
-RUN addgroup -S appgroup \
-    && adduser -S appuser -G appgroup \
+RUN chmod +x /entrypoint.sh \
+    && addgroup --system appgroup \
+    && adduser --system --ingroup appgroup appuser \
     && chown -R appuser:appgroup /app \
     && chown appuser:appgroup /entrypoint.sh
 
