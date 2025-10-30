@@ -1,4 +1,4 @@
-"""Audit service ingesting audit log events."""
+"""Audit service exposing records stored in the shared audit_logs table."""
 from __future__ import annotations
 
 import datetime as dt
@@ -18,16 +18,22 @@ bp = Blueprint("audit", __name__)
 
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
-    return render_response({"service": "audit", "status": "healthy", "events": AuditLog.query.count()})
+    return render_response(
+        {
+            "service": "audit",
+            "status": "healthy",
+            "events": AuditLog.query.count(),
+        }
+    )
 
 
 @bp.route("/logs", methods=["GET"])
 @require_auth(optional=True)
 def list_logs() -> "Response":
-    limit = int(request.args.get("limit", 20))
+    limit = min(int(request.args.get("limit", 50)), 200)
     logs = [
         _serialize_log(log)
-        for log in AuditLog.query.order_by(AuditLog.created_at.desc()).limit(limit).all()
+        for log in AuditLog.query.order_by(AuditLog.ts.desc()).limit(limit).all()
     ]
     return render_response({"logs": logs}, meta={"returned": len(logs)})
 
@@ -36,17 +42,20 @@ def list_logs() -> "Response":
 @require_auth(optional=True)
 def create_log() -> "Response":
     payload, _ = parse_request_data(request)
-    actor = payload.get("actor_id")
+    user_id = payload.get("user_id")
     action = payload.get("action")
-    if not actor or not action:
-        raise APIError("actor_id and action are required", status_code=400, error_id="HG-AUDIT-VALIDATION")
+    if not action:
+        raise APIError("action es requerido", status_code=400, error_id="HG-AUDIT-ACTION")
+
     entry = AuditLog(
-        id=f"audit-{uuid.uuid4()}",
-        actor_id=actor,
+        id=str(uuid.uuid4()),
+        user_id=user_id,
         action=action,
-        resource=payload.get("resource"),
-        metadata=payload.get("metadata", {}),
-        created_at=dt.datetime.utcnow(),
+        entity=payload.get("entity"),
+        entity_id=payload.get("entity_id"),
+        ts=payload.get("timestamp") or dt.datetime.utcnow(),
+        ip=payload.get("ip"),
+        details=payload.get("details"),
     )
     db.session.add(entry)
     db.session.commit()
@@ -55,29 +64,16 @@ def create_log() -> "Response":
 
 def register_blueprint(app):
     app.register_blueprint(bp, url_prefix="/audit")
-    with app.app_context():
-        _seed_default_log()
 
 
 def _serialize_log(log: AuditLog) -> dict:
     return {
         "id": log.id,
-        "actor_id": log.actor_id,
+        "user_id": log.user_id,
         "action": log.action,
-        "resource": log.resource,
-        "metadata": log.metadata or {},
-        "created_at": (log.created_at or dt.datetime.utcnow()).isoformat() + "Z",
+        "entity": log.entity,
+        "entity_id": log.entity_id,
+        "timestamp": log.ts.isoformat() + "Z" if log.ts else None,
+        "ip": log.ip,
+        "details": log.details,
     }
-
-
-def _seed_default_log() -> None:
-    if AuditLog.query.count() == 0:
-        entry = AuditLog(
-            id="audit-1",
-            actor_id="system",
-            action="bootstrap",
-            resource="startup",
-            metadata={"status": "initialized"},
-        )
-        db.session.add(entry)
-        db.session.commit()

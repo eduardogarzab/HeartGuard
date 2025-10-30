@@ -42,7 +42,12 @@ def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
         db.init_app(app)
         with app.app_context():
-            db.create_all()
+            try:
+                from sqlalchemy import text
+
+                db.session.execute(text("SELECT 1"))
+            except Exception as exc:  # pragma: no cover - startup diagnostic
+                logger.error("Database connectivity check failed: %s", exc)
 
     allowed_origins = os.getenv("ALLOWED_ORIGINS")
     if allowed_origins:

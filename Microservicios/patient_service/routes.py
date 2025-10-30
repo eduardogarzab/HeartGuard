@@ -11,14 +11,28 @@ from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
 
-from .models import CareTeam, CareTeamMember, CaregiverLink, Patient
+from .models import (
+    CareTeam,
+    CareTeamMember,
+    CaregiverPatient,
+    CaregiverRelationshipType,
+    Patient,
+    RiskLevel,
+    Sex,
+)
 
 bp = Blueprint("patients", __name__)
 
 
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
-    return render_response({"service": "patient", "status": "healthy", "patients": Patient.query.count()})
+    return render_response(
+        {
+            "service": "patient",
+            "status": "healthy",
+            "patients": Patient.query.count(),
+        }
+    )
 
 
 @bp.route("", methods=["GET"])
@@ -26,27 +40,57 @@ def health() -> "Response":
 def list_patients() -> "Response":
     patients = [
         _serialize_patient(patient)
-        for patient in Patient.query.order_by(Patient.created_at.desc()).all()
+        for patient in Patient.query.order_by(Patient.created_at.desc()).limit(200).all()
     ]
     return render_response({"patients": patients}, meta={"total": len(patients)})
 
 
 @bp.route("", methods=["POST"])
-@require_auth(required_roles=["clinician", "admin"])
+@require_auth(required_roles=["clinician", "superadmin"])
 def create_patient() -> "Response":
     payload, _ = parse_request_data(request)
-    first_name = payload.get("first_name")
-    last_name = payload.get("last_name")
-    if not first_name or not last_name:
-        raise APIError("first_name and last_name are required", status_code=400, error_id="HG-PATIENT-VALIDATION")
+    person_name = payload.get("person_name")
+    if not person_name:
+        first_name = payload.get("first_name")
+        last_name = payload.get("last_name")
+        if not first_name or not last_name:
+            raise APIError(
+                "person_name or first_name/last_name are required",
+                status_code=400,
+                error_id="HG-PATIENT-VALIDATION",
+            )
+        person_name = f"{first_name} {last_name}".strip()
+
+    org_id = payload.get("org_id")
+    if not org_id:
+        raise APIError("org_id is required", status_code=400, error_id="HG-PATIENT-ORG")
+
+    birthdate = payload.get("birthdate")
+    birthdate_obj = None
+    if birthdate:
+        try:
+            birthdate_obj = dt.date.fromisoformat(birthdate)
+        except ValueError as exc:
+            raise APIError("birthdate must be ISO formatted (YYYY-MM-DD)", status_code=400, error_id="HG-PATIENT-DATE") from exc
+
+    sex_code = payload.get("sex_code") or payload.get("sex")
+    sex = Sex.query.filter_by(code=sex_code).first() if sex_code else None
+    if sex_code and not sex:
+        raise APIError("sex_code is invalid", status_code=400, error_id="HG-PATIENT-SEX")
+
+    risk_code = payload.get("risk_level_code")
+    risk_level = RiskLevel.query.filter_by(code=risk_code).first() if risk_code else None
+    if risk_code and not risk_level:
+        raise APIError("risk_level_code is invalid", status_code=400, error_id="HG-PATIENT-RISK")
+
     patient = Patient(
-        id=f"pat-{uuid.uuid4()}",
-        mrn=payload.get("mrn", f"MRN-{int(dt.datetime.utcnow().timestamp())}"),
-        first_name=first_name,
-        last_name=last_name,
-        birth_date=payload.get("birth_date"),
-        sex=payload.get("sex", "U"),
-        organization_id=payload.get("organization_id", "org-1"),
+        id=str(uuid.uuid4()),
+        org_id=org_id,
+        person_name=person_name,
+        birthdate=birthdate_obj,
+        sex_id=sex.id if sex else None,
+        risk_level_id=risk_level.id if risk_level else None,
+        profile_photo_url=payload.get("profile_photo_url"),
         created_at=dt.datetime.utcnow(),
     )
     db.session.add(patient)
@@ -66,14 +110,12 @@ def get_patient(patient_id: str) -> "Response":
 def get_care_team(patient_id: str) -> "Response":
     patient = _get_patient(patient_id)
     care_teams = [_serialize_team(team) for team in patient.care_teams]
-    caregivers = [_serialize_caregiver(link) for link in patient.caregiver_links]
+    caregivers = [_serialize_caregiver(link) for link in patient.caregivers]
     return render_response({"care_teams": care_teams, "caregivers": caregivers})
 
 
 def register_blueprint(app):
     app.register_blueprint(bp, url_prefix="/patients")
-    with app.app_context():
-        _seed_defaults()
 
 
 def _get_patient(patient_id: str) -> Patient:
@@ -84,55 +126,44 @@ def _get_patient(patient_id: str) -> Patient:
 
 
 def _serialize_patient(patient: Patient) -> dict:
+    sex = patient.sex.code if patient.sex else None
+    risk = patient.risk_level.code if patient.risk_level else None
     return {
         "id": patient.id,
-        "mrn": patient.mrn,
-        "first_name": patient.first_name,
-        "last_name": patient.last_name,
-        "birth_date": patient.birth_date,
-        "sex": patient.sex,
-        "organization_id": patient.organization_id,
+        "person_name": patient.person_name,
+        "org_id": patient.org_id,
+        "birthdate": patient.birthdate.isoformat() if patient.birthdate else None,
+        "sex_code": sex,
+        "risk_level_code": risk,
+        "profile_photo_url": patient.profile_photo_url,
         "created_at": (patient.created_at or dt.datetime.utcnow()).isoformat() + "Z",
-        "updated_at": (patient.updated_at or dt.datetime.utcnow()).isoformat() + "Z",
     }
 
 
 def _serialize_team(team: CareTeam) -> dict:
+    members = [
+        {
+            "user_id": member.user_id,
+            "role_id": member.role_id,
+            "joined_at": member.joined_at.isoformat() + "Z",
+        }
+        for member in team.members
+    ]
     return {
         "id": team.id,
         "name": team.name,
-        "members": [
-            {"user_id": member.user_id, "role": member.role}
-            for member in team.members
-        ],
+        "members": members,
     }
 
 
-def _serialize_caregiver(link: CaregiverLink) -> dict:
+def _serialize_caregiver(link: CaregiverPatient) -> dict:
+    rel = CaregiverRelationshipType.query.get(link.rel_type_id) if link.rel_type_id else None
     return {
-        "id": link.id,
-        "caregiver_id": link.caregiver_id,
         "patient_id": link.patient_id,
-        "relationship": link.relationship,
+        "caregiver_id": link.user_id,
+        "relationship": rel.code if rel else None,
+        "is_primary": link.is_primary,
+        "started_at": link.started_at.isoformat() + "Z",
+        "ended_at": link.ended_at.isoformat() + "Z" if link.ended_at else None,
+        "note": link.note,
     }
-
-
-def _seed_defaults() -> None:
-    if Patient.query.count() > 0:
-        return
-    patient = Patient(
-        id="pat-1",
-        mrn="MRN-1001",
-        first_name="Elena",
-        last_name="Heart",
-        birth_date="1985-05-20",
-        sex="F",
-        organization_id="org-1",
-    )
-    db.session.add(patient)
-    team = CareTeam(id="team-1", patient=patient, name="Primary Care")
-    db.session.add(team)
-    db.session.add(CareTeamMember(id=f"tm-{uuid.uuid4()}", team=team, user_id="usr-2", role="clinician"))
-    db.session.add(CareTeamMember(id=f"tm-{uuid.uuid4()}", team=team, user_id="usr-1", role="admin"))
-    db.session.add(CaregiverLink(id=f"cg-{uuid.uuid4()}", caregiver_id="usr-1", patient=patient, relationship="spouse"))
-    db.session.commit()

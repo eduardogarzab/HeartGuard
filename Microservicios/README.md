@@ -16,12 +16,11 @@ Este documento explica cómo preparar el entorno local, levantar la plataforma d
    ```
 2. Genera valores seguros para:
    - `JWT_SECRET`
-   - `POSTGRES_PASSWORD`
    - `RABBITMQ_DEFAULT_PASS`
    - `DOCKER_INFLUXDB_INIT_PASSWORD`
    - `INFLUX_TOKEN`
-3. Ajusta los puertos si es necesario. El Gateway se expone en `GATEWAY_PORT` (por defecto 5000).
-4. Revisa que cada servicio tenga su `DATABASE_URL` asignada. El archivo de ejemplo declara un esquema por servicio usando `POSTGRES_URL_*`.
+3. Reemplaza `BACKEND_DATABASE_URL` con la cadena de conexión de la base de datos del backend (por ejemplo `postgresql://hg_app:***@host.docker.internal:5432/heartguard`). Todos los servicios reutilizan la misma instancia, por lo que las variables `POSTGRES_URL_*` solo referencian ese valor.
+4. Ajusta los puertos si es necesario. El Gateway se expone en `GATEWAY_PORT` (por defecto 5000).
 
 ## 3. Levantar la plataforma completa
 
@@ -30,9 +29,7 @@ Dentro del directorio `Microservicios/` ejecuta:
 cd Microservicios
 docker compose up --build
 ```
-Esto iniciará Postgres, RabbitMQ, InfluxDB y los microservicios (que se comunican por la red interna). Solo el Gateway, RabbitMQ (puerto 15672) e InfluxDB (puerto 8086) quedan expuestos fuera del cluster Docker.
-
-> **Nota:** La primera vez que suba el stack, SQLAlchemy generará las tablas automáticamente. Si añades nuevos modelos recuerda aplicar las migraciones correspondientes.
+Esto iniciará RabbitMQ, InfluxDB y los microservicios (que se comunican por la red interna). Solo el Gateway, RabbitMQ (puerto 15672) e InfluxDB (puerto 8086) quedan expuestos fuera del cluster Docker. La base de datos Postgres debe estar corriendo previamente como parte del backend y accesible para los contenedores (usualmente vía `host.docker.internal`).
 
 ## 4. Flujos básicos de prueba
 
@@ -45,7 +42,8 @@ curl -X POST http://localhost:5000/auth/register \
   -d '{
         "email": "admin@example.com",
         "password": "ChangeMe123!",
-        "roles": ["admin"]
+        "roles": ["superadmin"],
+        "name": "Super Admin"
       }'
 ```
 La respuesta incluye los tokens `access_token` y `refresh_token`.
@@ -69,11 +67,11 @@ curl -X POST http://localhost:5000/patient/patients \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ${ACCESS_TOKEN}" \
   -d '{
-        "first_name": "Jane",
-        "last_name": "Doe",
-        "mrn": "MRN-001",
-        "birth_date": "1980-05-16",
-        "notes": "Paciente demo"
+        "person_name": "Jane Doe",
+        "org_id": "<uuid de la organización>",
+        "birthdate": "1980-05-16",
+        "sex_code": "F",
+        "risk_level_code": "medium"
       }'
 ```
 

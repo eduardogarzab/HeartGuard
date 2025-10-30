@@ -1,20 +1,4 @@
 services:
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    networks:
-      - heartguard_net
 
   rabbitmq:
     image: rabbitmq:3.12-management-alpine
@@ -93,8 +77,6 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5001/health')\""]
       interval: 10s
@@ -120,8 +102,6 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       auth_service:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5002/health')\""]
@@ -149,8 +129,6 @@ services:
     depends_on:
       auth_service:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5003/health')\""]
       interval: 10s
@@ -176,8 +154,6 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       auth_service:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5004/health')\""]
@@ -208,8 +184,6 @@ services:
       auth_service:
         condition: service_healthy
       influx_service:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5005/health')\""]
@@ -270,8 +244,6 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     volumes:
       - inference_models:/models
     healthcheck:
@@ -303,8 +275,6 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5008/health')\""]
       interval: 10s
@@ -334,8 +304,6 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5009/health')\""]
       interval: 10s
@@ -364,8 +332,6 @@ services:
       auth_service:
         condition: service_healthy
       rabbitmq:
-        condition: service_healthy
-      postgres:
         condition: service_healthy
     secrets:
       - gcp-sa
@@ -398,8 +364,6 @@ services:
         condition: service_healthy
       auth_service:
         condition: service_healthy
-      postgres:
-        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:5011/health')\""]
       interval: 10s
@@ -415,7 +379,6 @@ networks:
 volumes:
   influx_data:
   inference_models:
-  postgres_data:
 
 secrets:
   gcp-sa:

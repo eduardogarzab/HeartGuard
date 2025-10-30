@@ -1,4 +1,4 @@
-"""Device service managing hardware assets and stream bindings."""
+"""Device service aligned with the backend device schema."""
 from __future__ import annotations
 
 import datetime as dt
@@ -11,14 +11,20 @@ from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
 
-from .models import Device, DeviceType, SignalStream, TimeseriesBinding
+from .models import Device, DeviceType, SignalStream, SignalType, TimeseriesBinding
 
 bp = Blueprint("devices", __name__)
 
 
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
-    return render_response({"service": "device", "status": "healthy", "devices": Device.query.count()})
+    return render_response(
+        {
+            "service": "device",
+            "status": "healthy",
+            "devices": Device.query.count(),
+        }
+    )
 
 
 @bp.route("", methods=["GET"])
@@ -26,25 +32,36 @@ def health() -> "Response":
 def list_devices() -> "Response":
     devices = [
         _serialize_device(device)
-        for device in Device.query.order_by(Device.created_at.desc()).all()
+        for device in Device.query.order_by(Device.registered_at.desc()).limit(200).all()
     ]
     return render_response({"devices": devices}, meta={"total": len(devices)})
 
 
 @bp.route("", methods=["POST"])
-@require_auth(required_roles=["admin", "clinician"])
+@require_auth(required_roles=["clinician", "superadmin"])
 def register_device() -> "Response":
     payload, _ = parse_request_data(request)
-    serial = payload.get("serial_number")
-    if not serial:
-        raise APIError("serial_number is required", status_code=400, error_id="HG-DEVICE-VALIDATION")
-    device_type_id = payload.get("device_type_id") or _get_default_device_type().id
+    serial = payload.get("serial") or payload.get("serial_number")
+    device_type_code = payload.get("device_type_code")
+    if not serial or not device_type_code:
+        raise APIError("serial y device_type_code son requeridos", status_code=400, error_id="HG-DEVICE-VALIDATION")
+    if Device.query.filter_by(serial=serial).first():
+        raise APIError("serial ya existe", status_code=409, error_id="HG-DEVICE-DUPLICATE")
+
+    device_type = DeviceType.query.filter_by(code=device_type_code).first()
+    if not device_type:
+        raise APIError("device_type_code inválido", status_code=400, error_id="HG-DEVICE-TYPE")
+
     device = Device(
-        id=f"dev-{uuid.uuid4()}",
-        device_type_id=device_type_id,
-        serial_number=serial,
-        assigned_patient_id=payload.get("assigned_patient_id"),
-        status=payload.get("status", "inventory"),
+        id=str(uuid.uuid4()),
+        serial=serial,
+        device_type_id=device_type.id,
+        org_id=payload.get("org_id"),
+        owner_patient_id=payload.get("owner_patient_id"),
+        brand=payload.get("brand"),
+        model=payload.get("model"),
+        registered_at=dt.datetime.utcnow(),
+        active=payload.get("active", True),
     )
     db.session.add(device)
     db.session.commit()
@@ -58,27 +75,34 @@ def list_streams(device_id: str) -> "Response":
     if not device:
         raise APIError("Device not found", status_code=404, error_id="HG-DEVICE-NOT-FOUND")
     streams = [_serialize_stream(stream) for stream in device.streams]
-    bindings = [_serialize_binding(binding) for stream in device.streams for binding in stream.bindings]
+    bindings = [
+        _serialize_binding(binding)
+        for stream in device.streams
+        for binding in stream.bindings
+    ]
     return render_response({"streams": streams, "bindings": bindings}, meta={"streams": len(streams)})
 
 
 @bp.route("/streams/bind", methods=["POST"])
-@require_auth(required_roles=["admin", "clinician"])
+@require_auth(required_roles=["clinician", "superadmin"])
 def create_binding() -> "Response":
     payload, _ = parse_request_data(request)
     stream_id = payload.get("stream_id")
-    measurement = payload.get("influx_measurement")
-    if not stream_id or not measurement:
-        raise APIError("stream_id and influx_measurement are required", status_code=400, error_id="HG-DEVICE-BINDING")
+    measurement = payload.get("measurement") or payload.get("influx_measurement")
+    bucket = payload.get("bucket") or payload.get("influx_bucket")
+    if not stream_id or not measurement or not bucket:
+        raise APIError("stream_id, measurement y bucket son requeridos", status_code=400, error_id="HG-DEVICE-BINDING")
     stream = SignalStream.query.get(stream_id)
     if not stream:
         raise APIError("Stream not found", status_code=404, error_id="HG-DEVICE-STREAM-NOT-FOUND")
+
     binding = TimeseriesBinding(
-        id=f"binding-{uuid.uuid4()}",
-        stream=stream,
-        influx_measurement=measurement,
-        bucket=payload.get("bucket", "heartguard-timeseries"),
-        org=payload.get("org", "heartguard"),
+        id=str(uuid.uuid4()),
+        stream_id=stream.id,
+        influx_org=payload.get("org", "heartguard"),
+        influx_bucket=bucket,
+        measurement=measurement,
+        retention_hint=payload.get("retention_hint"),
         created_at=dt.datetime.utcnow(),
     )
     db.session.add(binding)
@@ -88,37 +112,33 @@ def create_binding() -> "Response":
 
 def register_blueprint(app):
     app.register_blueprint(bp, url_prefix="/devices")
-    with app.app_context():
-        _seed_defaults()
-
-
-def _get_default_device_type() -> DeviceType:
-    device_type = DeviceType.query.first()
-    if not device_type:
-        device_type = DeviceType(id="dev-type-1", name="HeartGuard Watch", manufacturer="HeartGuard")
-        db.session.add(device_type)
-        db.session.commit()
-    return device_type
 
 
 def _serialize_device(device: Device) -> dict:
+    device_type = DeviceType.query.get(device.device_type_id)
     return {
         "id": device.id,
-        "device_type_id": device.device_type_id,
-        "serial_number": device.serial_number,
-        "assigned_patient_id": device.assigned_patient_id,
-        "status": device.status,
-        "created_at": (device.created_at or dt.datetime.utcnow()).isoformat() + "Z",
-        "updated_at": (device.updated_at or dt.datetime.utcnow()).isoformat() + "Z",
+        "serial": device.serial,
+        "device_type_code": device_type.code if device_type else None,
+        "org_id": device.org_id,
+        "owner_patient_id": device.owner_patient_id,
+        "brand": device.brand,
+        "model": device.model,
+        "registered_at": device.registered_at.isoformat() + "Z" if device.registered_at else None,
+        "active": device.active,
     }
 
 
 def _serialize_stream(stream: SignalStream) -> dict:
+    signal_type = SignalType.query.get(stream.signal_type_id)
     return {
         "id": stream.id,
         "device_id": stream.device_id,
-        "signal_type": stream.signal_type,
-        "sampling_rate": stream.sampling_rate,
+        "patient_id": stream.patient_id,
+        "signal_type_code": signal_type.code if signal_type else None,
+        "sample_rate_hz": float(stream.sample_rate_hz) if stream.sample_rate_hz is not None else None,
+        "started_at": stream.started_at.isoformat() + "Z" if stream.started_at else None,
+        "ended_at": stream.ended_at.isoformat() + "Z" if stream.ended_at else None,
     }
 
 
@@ -126,35 +146,8 @@ def _serialize_binding(binding: TimeseriesBinding) -> dict:
     return {
         "id": binding.id,
         "stream_id": binding.stream_id,
-        "influx_measurement": binding.influx_measurement,
-        "bucket": binding.bucket,
-        "org": binding.org,
-        "created_at": (binding.created_at or dt.datetime.utcnow()).isoformat() + "Z",
+        "influx_org": binding.influx_org,
+        "influx_bucket": binding.influx_bucket,
+        "measurement": binding.measurement,
+        "created_at": binding.created_at.isoformat() + "Z" if binding.created_at else None,
     }
-
-
-def _seed_defaults() -> None:
-    if Device.query.count() > 0:
-        return
-    device_type = _get_default_device_type()
-    device = Device(
-        id="dev-1",
-        device_type=device_type,
-        serial_number="HGW-0001",
-        assigned_patient_id="pat-1",
-        status="active",
-    )
-    db.session.add(device)
-    stream = SignalStream(id="stream-1", device=device, signal_type="heart_rate", sampling_rate=1)
-    db.session.add(stream)
-    db.session.add(
-        TimeseriesBinding(
-            id="binding-1",
-            stream=stream,
-            influx_measurement="heart_rate",
-            bucket="heartguard-timeseries",
-            org="heartguard",
-            created_at=dt.datetime.utcnow(),
-        )
-    )
-    db.session.commit()
