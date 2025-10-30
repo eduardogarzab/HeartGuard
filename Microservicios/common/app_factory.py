@@ -35,7 +35,9 @@ def create_app(service_name: str, register_blueprint: Callable[[Flask], None]) -
     logger = _configure_logging(service_name)
 
     database_url = os.getenv("DATABASE_URL")
-    if database_url:
+    if not database_url:
+        logger.warning("DATABASE_URL no está configurada para este servicio.")
+    else:
         app.config["SQLALCHEMY_DATABASE_URI"] = database_url
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
         db.init_app(app)
