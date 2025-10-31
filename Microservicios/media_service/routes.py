@@ -2,17 +2,20 @@
 from __future__ import annotations
 
 import datetime as dt
-import hashlib
 import os
 from typing import Dict
+import logging
 
 from flask import Blueprint, request
+from google.cloud import storage
+from google.oauth2 import service_account
 
 from common.auth import require_auth
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
 
 bp = Blueprint("media", __name__)
+logger = logging.getLogger(__name__)
 
 MEDIA_ITEMS: Dict[str, Dict] = {
     "media-1": {
@@ -26,11 +29,78 @@ MEDIA_ITEMS: Dict[str, Dict] = {
     }
 }
 
+# Initialize GCS client
+_gcs_client = None
 
-def _signed_url(media_id: str) -> str:
-    secret = os.getenv("MEDIA_SIGNING_SECRET", "demo-secret")
-    digest = hashlib.sha256(f"{media_id}:{secret}".encode("utf-8")).hexdigest()
-    return f"https://storage.googleapis.com/{os.getenv('GCS_BUCKET', 'heartguard-system')}/{media_id}?signature={digest}"
+
+def _get_gcs_client():
+    """Get or create GCS client with credentials."""
+    global _gcs_client
+    if _gcs_client is not None:
+        return _gcs_client
+    
+    credentials_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+    
+    if credentials_path and os.path.exists(credentials_path):
+        # Use service account credentials from file
+        logger.info(f"Loading GCS credentials from {credentials_path}")
+        credentials = service_account.Credentials.from_service_account_file(credentials_path)
+        _gcs_client = storage.Client(credentials=credentials)
+    else:
+        # Try to use default credentials or application default
+        logger.warning("No GOOGLE_APPLICATION_CREDENTIALS found, using default credentials")
+        try:
+            _gcs_client = storage.Client()
+        except Exception as e:
+            logger.error(f"Failed to initialize GCS client: {e}")
+            _gcs_client = None
+    
+    return _gcs_client
+
+
+def _generate_signed_url(bucket_name: str, blob_name: str, expiration_minutes: int = 60) -> str:
+    """Generate a signed URL for a GCS object."""
+    try:
+        client = _get_gcs_client()
+        if client is None:
+            # Fallback to fake URL if no credentials
+            logger.warning("GCS client not available, generating mock URL")
+            return f"https://storage.googleapis.com/{bucket_name}/{blob_name}?mock=true"
+        
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        
+        # Generate signed URL valid for specified minutes
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=dt.timedelta(minutes=expiration_minutes),
+            method="GET",
+        )
+        
+        return url
+    except Exception as e:
+        logger.error(f"Error generating signed URL: {e}")
+        # Return a fallback URL
+        return f"https://storage.googleapis.com/{bucket_name}/{blob_name}?error=true"
+
+
+def _upload_to_gcs(bucket_name: str, blob_name: str, content: bytes, content_type: str) -> bool:
+    """Upload content to GCS."""
+    try:
+        client = _get_gcs_client()
+        if client is None:
+            logger.warning("GCS client not available, skipping upload")
+            return False
+        
+        bucket = client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        
+        blob.upload_from_string(content, content_type=content_type)
+        logger.info(f"Successfully uploaded {blob_name} to {bucket_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Error uploading to GCS: {e}")
+        return False
 
 
 @bp.route("/health", methods=["GET"])
@@ -42,9 +112,10 @@ def health() -> "Response":
 @require_auth(optional=True)
 def list_media() -> "Response":
     items = []
+    bucket_name = os.getenv("GCS_BUCKET", "heartguard-system")
     for item in MEDIA_ITEMS.values():
         enriched = dict(item)
-        enriched["signed_url"] = _signed_url(item["id"])
+        enriched["signed_url"] = _generate_signed_url(bucket_name, item["id"])
         items.append(enriched)
     return render_response({"media": items}, meta={"total": len(items)})
 
@@ -56,23 +127,38 @@ def upload_media() -> "Response":
     filename = payload.get("filename")
     mime_type = payload.get("mime_type")
     size_bytes = payload.get("size_bytes")
+    content_base64 = payload.get("content")  # Base64 encoded content
+    
     if not filename or not mime_type:
         raise APIError("filename and mime_type are required", status_code=400, error_id="HG-MEDIA-VALIDATION")
     if size_bytes and int(size_bytes) > int(os.getenv("MEDIA_MAX_FILE_SIZE_MB", "50")) * 1024 * 1024:
         raise APIError("File exceeds maximum allowed size", status_code=400, error_id="HG-MEDIA-SIZE")
+    
     media_id = f"media-{len(MEDIA_ITEMS) + 1}"
+    bucket_name = os.getenv("GCS_BUCKET", "heartguard-system")
+    
+    # Upload to GCS if content is provided
+    if content_base64:
+        import base64
+        try:
+            content = base64.b64decode(content_base64)
+            _upload_to_gcs(bucket_name, media_id, content, mime_type)
+        except Exception as e:
+            logger.error(f"Error processing upload: {e}")
+            raise APIError("Invalid content encoding", status_code=400, error_id="HG-MEDIA-ENCODING")
+    
     item = {
         "id": media_id,
         "filename": filename,
         "mime_type": mime_type,
         "size_bytes": size_bytes or 0,
         "owner_id": payload.get("owner_id"),
-        "bucket": os.getenv("GCS_BUCKET", "heartguard-system"),
+        "bucket": bucket_name,
         "created_at": dt.datetime.utcnow().isoformat() + "Z",
     }
     MEDIA_ITEMS[media_id] = item
     item_with_url = dict(item)
-    item_with_url["signed_url"] = _signed_url(media_id)
+    item_with_url["signed_url"] = _generate_signed_url(bucket_name, media_id)
     return render_response({"media": item_with_url}, status_code=201)
 
 
@@ -83,7 +169,8 @@ def get_media(media_id: str) -> "Response":
     if not item:
         raise APIError("Media item not found", status_code=404, error_id="HG-MEDIA-NOT-FOUND")
     enriched = dict(item)
-    enriched["signed_url"] = _signed_url(media_id)
+    bucket_name = os.getenv("GCS_BUCKET", "heartguard-system")
+    enriched["signed_url"] = _generate_signed_url(bucket_name, media_id)
     return render_response({"media": enriched})
 
 

@@ -291,6 +291,8 @@ services:
       SERVICE_NAME: media
       SERVICE_PORT: ${MEDIA_PORT}
       DATABASE_URL: *database-url
+      GCS_BUCKET: ${GCS_BUCKET:-heartguard-system}
+      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-sa
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:

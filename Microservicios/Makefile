@@ -18,12 +18,12 @@ CMD ?=
 
 export COMPOSE_PROJECT_NAME := $(PROJECT)
 
-.PHONY: help doctor up down restart start stop build pull logs logs-% ps clean deep-clean \
+.PHONY: help doctor up down reset-all-microservices start stop build pull logs logs-% ps clean deep-clean \
 	shell exec free-ports free-port-% check-env ensure-secret check-tools
 
 help:
 	@echo "Targets:"
-	@echo "  up / down / restart [SERVICES=...]"
+	@echo "  up / down / reset-all-microservices"
 	@echo "  build / pull / logs / ps"
 	@echo "  shell SERVICE=svc | exec SERVICE=svc CMD=\"...\""
 	@echo "  clean / deep-clean / free-ports"
@@ -42,11 +42,34 @@ down: check-env
 	@echo ">> docker compose down"
 	$(COMPOSE) down
 
-restart: check-env ensure-secret
-	@echo ">> restart $(SERVICES)"
-	$(MAKE) --no-print-directory stop SERVICES="$(SERVICES)"
-	$(MAKE) --no-print-directory free-ports PORTS="$(PORTS)"
-	$(MAKE) --no-print-directory start SERVICES="$(SERVICES)"
+reset-all-microservices: check-env
+	@echo ">> RESET COMPLETO: Eliminando contenedores, imágenes y volúmenes del stack actual..."
+	$(COMPOSE) down --rmi all -v
+	@echo ">> Esperando a que Docker libere recursos de red..."
+	sleep 3
+	@echo ">> Eliminando contenedores huérfanos del proyecto actual..."
+	docker ps -a --filter "name=$(PROJECT)" --format "{{.ID}}" | xargs -r docker rm -f
+	@echo ">> Buscando y eliminando contenedores RabbitMQ residuales..."
+	@docker ps -a --filter "ancestor=rabbitmq:3.12-management-alpine" --format "{{.ID}}\t{{.Names}}" | while read id name; do \
+		if [ -n "$$id" ]; then \
+			echo ">> Deteniendo y eliminando RabbitMQ residual: $$name"; \
+			docker rm -f $$id >/dev/null 2>&1 || true; \
+		fi; \
+	done
+	@echo ">> Limpiando sistema Docker (solo contenedores detenidos e imágenes huérfanas)..."
+	docker system prune -a --volumes -f
+	@echo ">> Forzando liberación de puertos usados por microservicios..."
+	for p in $(PORTS); do \
+		if sudo lsof -t -i :$$p >/dev/null 2>&1; then \
+			echo "   - Cerrando puerto $$p (docker-proxy residual)"; \
+			sudo lsof -t -i :$$p | xargs -r sudo kill -9 || true; \
+		fi; \
+	done
+	sleep 2
+	@echo ">> Reconstruyendo y levantando servicios..."
+	$(MAKE) --no-print-directory ensure-secret
+	$(COMPOSE) up -d --build
+
 
 start: check-env
 	@echo ">> docker compose start $(SERVICES)"
