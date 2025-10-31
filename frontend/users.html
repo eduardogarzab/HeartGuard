@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HeartGuard · Usuarios</title>
+    <link rel="stylesheet" href="css/main.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/responsive.css" />
+  </head>
+  <body>
+    <div class="wrapper">
+      <aside class="sidebar" aria-label="Navegación principal">
+        <button class="sidebar__toggle" type="button" aria-expanded="false" aria-controls="sidebar-nav">☰</button>
+        <div class="sidebar__header">
+          <div class="sidebar__logo">
+            <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
+          </div>
+          <span aria-hidden="true">HeartGuard</span>
+        </div>
+        <nav id="sidebar-nav">
+          <a href="index.html">Dashboard</a>
+          <a href="organization.html">Organización</a>
+          <a href="users.html" aria-current="page">Usuarios</a>
+          <a href="patients.html">Pacientes</a>
+          <a href="devices.html">Dispositivos</a>
+          <a href="alerts.html">Alertas</a>
+          <a href="invitations.html">Invitaciones</a>
+          <a href="profile.html">Perfil</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar__left">
+            <span class="topbar__title" data-org-name>Organización</span>
+            <span class="topbar__subtitle">Usuarios de la organización</span>
+          </div>
+          <div class="topbar__actions">
+            <div class="topbar__user">
+              <button class="user-menu__button" type="button" data-user-menu-button aria-expanded="false">
+                <span class="status-dot status-dot--success"></span>
+                Mi cuenta
+              </button>
+              <ul class="user-menu__list" data-user-menu aria-hidden="true">
+                <li><button type="button" onclick="window.location.href='profile.html'">Preferencias</button></li>
+                <li><button type="button" data-logout>Cerrar sesión</button></li>
+              </ul>
+            </div>
+          </div>
+        </header>
+        <section class="content" aria-labelledby="users-heading">
+          <h1 id="users-heading" class="section-title">Usuarios</h1>
+          <div id="users-feedback" class="alert" role="status" hidden></div>
+          <div class="filter-bar" role="search">
+            <div class="filter-bar__group">
+              <label for="search-users">Buscar</label>
+              <input id="search-users" type="search" placeholder="Nombre o correo" />
+            </div>
+            <div class="filter-bar__group">
+              <label for="filter-role">Rol</label>
+              <select id="filter-role">
+                <option value="all">Todos</option>
+                <option value="org_admin">Administrador</option>
+                <option value="clinician">Clínico</option>
+                <option value="support">Soporte</option>
+              </select>
+            </div>
+            <div class="filter-bar__group">
+              <label for="filter-status">Estado</label>
+              <select id="filter-status">
+                <option value="all">Todos</option>
+                <option value="active">Activo</option>
+                <option value="invited">Invitado</option>
+                <option value="suspended">Suspendido</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table id="users-table" class="data-table" aria-describedby="users-heading">
+              <thead>
+                <tr>
+                  <th scope="col">Nombre</th>
+                  <th scope="col">Correo</th>
+                  <th scope="col">Rol</th>
+                  <th scope="col">Estado</th>
+                  <th scope="col">Acciones</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="js/users.js"></script>
+  </body>
+</html>

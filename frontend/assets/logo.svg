@@ -1,0 +1,10 @@
+<svg width="160" height="48" viewBox="0 0 160 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="logoTitle logoDesc">
+  <title id="logoTitle">HeartGuard</title>
+  <desc id="logoDesc">Logo de HeartGuard con un corazón y un escudo</desc>
+  <rect width="160" height="48" rx="12" fill="#0F172A"/>
+  <g transform="translate(16 8)">
+    <path d="M24 30c8-6 12-10.4 12-16a9 9 0 0 0-17.1-3.7A9 9 0 0 0 12 14c0 5.6 4 10 12 16Z" fill="#EF4444"/>
+    <path d="M44 6 32 2v14c0 5.8-2.6 11-8 16 9.6-2.2 20-9.6 20-20V6Z" fill="#22D3EE"/>
+  </g>
+  <text x="72" y="30" fill="#F8FAFC" font-family="'Segoe UI', Arial, sans-serif" font-size="20" font-weight="600">HeartGuard</text>
+</svg>
