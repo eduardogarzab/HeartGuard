@@ -23,6 +23,11 @@
     justify-content: flex-start;
     flex-wrap: wrap;
   }
+
+  .page-header__insights {
+    width: 100%;
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 860px) {
@@ -90,6 +95,16 @@
 
   .filter-bar {
     grid-template-columns: 1fr;
+  }
+
+  .input-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .page-header__insights {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.65rem;
   }
 
   .topbar__alerts {

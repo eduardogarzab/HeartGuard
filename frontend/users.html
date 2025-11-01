@@ -94,28 +94,54 @@
           <div id="users-feedback" class="alert" role="status" hidden></div>
           <div class="page-section">
             <div class="card card--toolbar" role="search">
-              <div class="filter-bar">
-                <div class="filter-bar__group">
-                  <label for="search-users">Buscar</label>
-                  <input id="search-users" type="search" placeholder="Nombre o correo" />
+              <div class="filter-bar input-grid">
+                <div class="input-field input-field--search">
+                  <span class="input-field__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M15.5 14h-.79l-.28-.27a6.5 6.5 0 1 0-.71.71l.27.28v.79l5 4.99L20.49 19zm-9 0a4.5 4.5 0 1 1 4.5-4.5A4.5 4.5 0 0 1 6.5 14z" />
+                    </svg>
+                  </span>
+                  <input id="search-users" class="input-field__input" type="search" placeholder=" " autocomplete="off" aria-describedby="search-users-hint" />
+                  <label class="input-field__label" for="search-users">Buscar</label>
+                  <span id="search-users-hint" class="input-field__support">Nombre o correo</span>
                 </div>
-                <div class="filter-bar__group">
-                  <label for="filter-role">Rol</label>
-                  <select id="filter-role">
+                <div class="input-field input-field--select">
+                  <span class="input-field__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M12 12a5 5 0 1 0-5-5 5 5 0 0 0 5 5zm0 2c-3.33 0-10 1.67-10 5v1h20v-1c0-3.33-6.67-5-10-5z" />
+                    </svg>
+                  </span>
+                  <select id="filter-role" class="input-field__input">
                     <option value="all">Todos</option>
                     <option value="org_admin">Administrador</option>
                     <option value="clinician">Clínico</option>
                     <option value="support">Soporte</option>
                   </select>
+                  <label class="input-field__label" for="filter-role">Rol</label>
+                  <span class="input-field__chevron" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M7 10l5 5 5-5H7z" />
+                    </svg>
+                  </span>
                 </div>
-                <div class="filter-bar__group">
-                  <label for="filter-status">Estado</label>
-                  <select id="filter-status">
+                <div class="input-field input-field--select">
+                  <span class="input-field__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm1 15h-2v-2h2zm0-4h-2V7h2z" />
+                    </svg>
+                  </span>
+                  <select id="filter-status" class="input-field__input">
                     <option value="all">Todos</option>
                     <option value="active">Activo</option>
                     <option value="invited">Invitado</option>
                     <option value="suspended">Suspendido</option>
                   </select>
+                  <label class="input-field__label" for="filter-status">Estado</label>
+                  <span class="input-field__chevron" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M7 10l5 5 5-5H7z" />
+                    </svg>
+                  </span>
                 </div>
               </div>
             </div>
