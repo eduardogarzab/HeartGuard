@@ -19,6 +19,23 @@
 			<span class="hg-summary-value">{{if .Data.Patient.OrgName}}{{.Data.Patient.OrgName}}{{else}}—{{end}}</span>
 		</article>
 		<article class="hg-summary-card">
+			<span class="hg-summary-label">Email</span>
+			<span class="hg-summary-value">
+				{{if .Data.Patient.Email}}
+					{{.Data.Patient.Email}}
+					{{if .Data.Patient.EmailVerified}}
+						<span style="color: green; margin-left: 4px;" title="Email verificado">✓</span>
+					{{else}}
+						<span style="color: orange; margin-left: 4px;" title="Email no verificado">⚠</span>
+					{{end}}
+				{{else}}—{{end}}
+			</span>
+		</article>
+		<article class="hg-summary-card">
+			<span class="hg-summary-label">Último login</span>
+			<span class="hg-summary-value">{{if .Data.Patient.LastLoginAt}}{{formatTime .Data.Patient.LastLoginAt}}{{else}}Nunca{{end}}</span>
+		</article>
+		<article class="hg-summary-card">
 			<span class="hg-summary-label">Nivel de riesgo</span>
 			<span class="hg-summary-value">{{if .Data.Patient.RiskLevelLabel}}{{stringValue .Data.Patient.RiskLevelLabel}}{{else}}—{{end}}</span>
 		</article>
@@ -32,6 +49,41 @@
 		</article>
 	</div>
 </section>
+
+{{if .Data.Patient.Email}}
+<section class="hg-section">
+	<div class="hg-card">
+		<h3>Gestión de Autenticación</h3>
+		<div style="display: grid; gap: 1rem;">
+			<details>
+				<summary style="cursor: pointer; padding: 0.5rem; background: #f5f5f5; border-radius: 4px;">
+					Establecer nueva contraseña
+				</summary>
+				<form method="post" action="/superadmin/patients/{{.Data.Patient.ID}}/set-password" class="hg-form-grid" style="margin-top: 1rem;">
+					<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+					<div class="hg-form-field">
+						<label for="new-password">Nueva contraseña</label>
+						<input id="new-password" name="password" type="password" required minlength="8" placeholder="Mínimo 8 caracteres" />
+						<small style="color: #666;">La contraseña será hasheada automáticamente</small>
+					</div>
+					<div class="hg-form-actions">
+						<button type="submit">Establecer contraseña</button>
+					</div>
+				</form>
+			</details>
+			
+			{{if not .Data.Patient.EmailVerified}}
+			<form method="post" action="/superadmin/patients/{{.Data.Patient.ID}}/verify-email" style="display: inline;">
+				<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
+				<button type="submit" style="background: #28a745; color: white; border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;">
+					Marcar email como verificado
+				</button>
+			</form>
+			{{end}}
+		</div>
+	</div>
+</section>
+{{end}}
 
 <section class="hg-section">
 	<div class="hg-card">

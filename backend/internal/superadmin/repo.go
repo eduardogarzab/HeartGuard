@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type pgPool interface {
@@ -761,6 +762,7 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 			patient         models.Patient
 			orgID           sql.NullString
 			org             sql.NullString
+			email           sql.NullString
 			birth           sql.NullTime
 			sexCode         sql.NullString
 			sexLabel        sql.NullString
@@ -768,9 +770,14 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 			riskCode        sql.NullString
 			riskLabel       sql.NullString
 			profilePhotoURL sql.NullString
+			lastLogin       sql.NullTime
 		)
-		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt); err != nil {
+		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &email, &patient.EmailVerified, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt, &lastLogin); err != nil {
 			return nil, err
+		}
+		if email.Valid {
+			v := email.String
+			patient.Email = &v
 		}
 		if profilePhotoURL.Valid {
 			v := profilePhotoURL.String
@@ -787,6 +794,10 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 		if birth.Valid {
 			bt := birth.Time
 			patient.Birthdate = &bt
+		}
+		if lastLogin.Valid {
+			lt := lastLogin.Time
+			patient.LastLoginAt = &lt
 		}
 		if sexCode.Valid {
 			v := sexCode.String
@@ -818,6 +829,7 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 		patient         models.Patient
 		orgID           sql.NullString
 		org             sql.NullString
+		email           sql.NullString
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
@@ -826,10 +838,22 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6)`, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevelID, true), stringParam(input.ProfilePhotoURL, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6, $7, $8)`, 
+		stringParam(input.OrgID, true), 
+		input.Name, 
+		stringParam(input.Email, true), 
+		nil, // password_hash (nil por ahora)
+		timeParam(input.Birthdate), 
+		stringParam(input.SexCode, true), 
+		stringParam(input.RiskLevelID, true), 
+		stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &email, &patient.EmailVerified, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if email.Valid {
+		v := email.String
+		patient.Email = &v
 	}
 	if profilePhotoURL.Valid {
 		v := profilePhotoURL.String
@@ -875,6 +899,7 @@ func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.Patien
 		patient         models.Patient
 		orgID           sql.NullString
 		org             sql.NullString
+		email           sql.NullString
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
@@ -883,10 +908,22 @@ func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.Patien
 		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7)`, id, stringParam(input.OrgID, true), input.Name, timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevelID, true), stringParam(input.ProfilePhotoURL, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7, $8)`, 
+		id, 
+		stringParam(input.OrgID, true), 
+		input.Name, 
+		stringParam(input.Email, true), 
+		timeParam(input.Birthdate), 
+		stringParam(input.SexCode, true), 
+		stringParam(input.RiskLevelID, true), 
+		stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &email, &patient.EmailVerified, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
+	}
+	if email.Valid {
+		v := email.String
+		patient.Email = &v
 	}
 	if profilePhotoURL.Valid {
 		v := profilePhotoURL.String
@@ -932,6 +969,43 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_patient_delete($1)`, id).Scan(&ok); err != nil {
 		return err
 	}
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) SetPatientPassword(ctx context.Context, patientID, password string) error {
+	// Hash password with bcrypt
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return err
+	}
+
+	var ok bool
+	if err := r.pool.QueryRow(ctx, 
+		`SELECT heartguard.sp_patient_set_password($1, $2)`,
+		patientID,
+		string(hashedPassword),
+	).Scan(&ok); err != nil {
+		return err
+	}
+	
+	if !ok {
+		return pgx.ErrNoRows
+	}
+	return nil
+}
+
+func (r *Repo) VerifyPatientEmail(ctx context.Context, patientID string) error {
+	var ok bool
+	if err := r.pool.QueryRow(ctx, 
+		`SELECT heartguard.sp_patient_verify_email($1)`,
+		patientID,
+	).Scan(&ok); err != nil {
+		return err
+	}
+	
 	if !ok {
 		return pgx.ErrNoRows
 	}

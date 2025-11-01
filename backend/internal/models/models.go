@@ -86,6 +86,8 @@ type Patient struct {
 	OrgID           *string    `json:"org_id,omitempty"`
 	OrgName         *string    `json:"org_name,omitempty"`
 	Name            string     `json:"name"`
+	Email           *string    `json:"email,omitempty"`
+	EmailVerified   bool       `json:"email_verified"`
 	Birthdate       *time.Time `json:"birthdate,omitempty"`
 	SexCode         *string    `json:"sex_code,omitempty"`
 	SexLabel        *string    `json:"sex_label,omitempty"`
@@ -94,11 +96,13 @@ type Patient struct {
 	RiskLevelLabel  *string    `json:"risk_level_label,omitempty"`
 	ProfilePhotoURL *string    `json:"profile_photo_url,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
+	LastLoginAt     *time.Time `json:"last_login_at,omitempty"`
 }
 
 type PatientInput struct {
 	OrgID           *string    `json:"org_id,omitempty"`
 	Name            string     `json:"name"`
+	Email           *string    `json:"email,omitempty"`
 	Birthdate       *time.Time `json:"birthdate,omitempty"`
 	SexCode         *string    `json:"sex_code,omitempty"`
 	RiskLevelID     *string    `json:"risk_level_id,omitempty"`

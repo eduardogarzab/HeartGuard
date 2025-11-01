@@ -1,31 +1,48 @@
-version: "3.9"
-
 services:
     postgres:
         image: postgis/postgis:14-3.2
         container_name: heartguard-postgres
         environment:
-            POSTGRES_USER: postgres
-            POSTGRES_PASSWORD: postgres123
+            POSTGRES_USER: ${PGSUPER:-postgres}
+            POSTGRES_PASSWORD: ${PGSUPER_PASS:-postgres123}
         ports:
             - "5432:5432"
         shm_size: "1g"
         healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres -d postgres || exit 1"]
+            test: ["CMD-SHELL", "pg_isready -U ${PGSUPER:-postgres} -d postgres || exit 1"]
             interval: 5s
             timeout: 3s
             retries: 30
         volumes:
             - postgres_data:/var/lib/postgresql/data
+            - ./certs/postgres:/var/lib/postgresql/certs:ro
+        command: >
+            postgres
+            -c ssl=on
+            -c ssl_cert_file=/var/lib/postgresql/certs/server.crt
+            -c ssl_key_file=/var/lib/postgresql/certs/server.key
+            -c ssl_ca_file=/var/lib/postgresql/certs/ca.crt
 
     redis:
         image: redis:7-alpine
         container_name: heartguard-redis
+        environment:
+            REDIS_PASSWORD: ${REDIS_PASSWORD:-}
         ports:
-            - "6379:6379"
-        command: ["redis-server", "--appendonly", "no"]
+            - "6380:6380"
+        volumes:
+            - ./certs/redis:/etc/redis/certs:ro
+            - ./redis-entrypoint.sh:/usr/local/bin/redis-entrypoint.sh:ro
+        entrypoint: ["/usr/local/bin/redis-entrypoint.sh"]
         healthcheck:
-            test: ["CMD", "redis-cli", "PING"]
+            test: >
+              sh -c '
+              if [ -n "$$REDIS_PASSWORD" ]; then
+                redis-cli --tls --cacert /etc/redis/certs/ca.crt --insecure -p 6380 -a "$$REDIS_PASSWORD" PING;
+              else
+                redis-cli --tls --cacert /etc/redis/certs/ca.crt --insecure -p 6380 PING;
+              fi
+              '
             interval: 5s
             timeout: 2s
             retries: 10

@@ -63,6 +63,8 @@ type Repository interface {
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
+	SetPatientPassword(ctx context.Context, patientID, password string) error
+	VerifyPatientEmail(ctx context.Context, patientID string) error
 
 	ListPatientLocations(ctx context.Context, filters models.PatientLocationFilters, limit, offset int) ([]models.PatientLocation, error)
 	CreatePatientLocation(ctx context.Context, input models.PatientLocationInput) (*models.PatientLocation, error)

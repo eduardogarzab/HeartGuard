@@ -24,6 +24,13 @@
 .env
 .env.local
 .env.*.local
+.env.production
+
+# Credentials and secrets (NUNCA commitear)
+CREDENTIALS.md
+*.credentials
+*.secrets
+secrets/
 
 # DB artifacts
 db/*.dump
@@ -46,3 +53,22 @@ Thumbs.db
 
 # Ignorar archivos en secret en microservicios
 **/secrets/*.json 
+
+# Python bytecode
+__pycache__/
+
+# SSL/TLS Certificates (NUNCA commitear claves privadas)
+certs/*.key
+certs/**/*.key
+certs/ca.key
+certs/client.key
+
+# Nginx SSL (auto-firmados y Let's Encrypt)
+nginx/ssl/*.key
+nginx/ssl/*.pem
+nginx/ssl/nginx.key
+nginx/ssl/nginx.crt
+nginx/ssl/chain.pem
+
+# Permitir certificados públicos (.crt) solo para desarrollo
+# En producción usar Let's Encrypt o CA confiable

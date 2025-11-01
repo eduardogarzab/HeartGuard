@@ -1,0 +1,1 @@
+docs/scripts/generate_certs.sh

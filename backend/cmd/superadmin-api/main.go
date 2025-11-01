@@ -14,6 +14,7 @@ import (
 	"heartguard-superadmin/internal/db"
 	hhttp "heartguard-superadmin/internal/http"
 	"heartguard-superadmin/internal/middleware"
+	"heartguard-superadmin/internal/patientauth"
 	"heartguard-superadmin/internal/rediscli"
 	"heartguard-superadmin/internal/session"
 	"heartguard-superadmin/internal/superadmin"
@@ -51,9 +52,13 @@ func main() {
 	sessions := session.NewManager(cfg, rdb)
 	authHandlers := auth.NewHandlers(cfg, repo, renderer, sessions, logger)
 	superHandlers := superadmin.NewHandlers(repo, renderer, sessions, logger)
+	
+	// Patient auth
+	patientAuthRepo := patientauth.NewRepository(pool)
+	patientAuthHandlers := patientauth.NewHandlers(cfg, patientAuthRepo, sessions, logger)
 
 	// Router
-	router := hhttp.NewRouter(logger, cfg, repo, rdb, sessions, authHandlers, superHandlers)
+	router := hhttp.NewRouter(logger, cfg, repo, rdb, sessions, authHandlers, superHandlers, patientAuthHandlers)
 
 	// Servidor HTTP estándar (reemplaza hhttp.NewServer)
 	srv := &http.Server{
