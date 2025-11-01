@@ -8,6 +8,69 @@ import uuid
 from common.database import db
 
 
+class Role(db.Model):
+    """Global role assigned to a user via ``user_role``."""
+
+    __tablename__ = "roles"
+    __table_args__ = {"extend_existing": True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = db.Column(db.String(50), nullable=False, unique=True)
+    description = db.Column(db.Text)
+    created_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+
+
+class UserRole(db.Model):
+    """Association table between users and global roles."""
+
+    __tablename__ = "user_role"
+    __table_args__ = {"extend_existing": True}
+
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey("users.id"), primary_key=True)
+    role_id = db.Column(UUID(as_uuid=True), db.ForeignKey("roles.id"), primary_key=True)
+    assigned_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+
+    role = db.relationship("Role", lazy="joined")
+
+
+class Organization(db.Model):
+    """Top-level tenant entity."""
+
+    __tablename__ = "organizations"
+    __table_args__ = {"extend_existing": True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = db.Column(db.String(60), nullable=False, unique=True)
+    name = db.Column(db.String(160), nullable=False)
+    created_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+
+
+class OrgRole(db.Model):
+    """Roles specific to an organization."""
+
+    __tablename__ = "org_roles"
+    __table_args__ = {"extend_existing": True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = db.Column(db.String(40), nullable=False, unique=True)
+    label = db.Column(db.String(80), nullable=False)
+
+
+class UserOrgMembership(db.Model):
+    """Maps users to organizations and their respective org role."""
+
+    __tablename__ = "user_org_membership"
+    __table_args__ = {"extend_existing": True}
+
+    org_id = db.Column(UUID(as_uuid=True), db.ForeignKey("organizations.id"), primary_key=True)
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey("users.id"), primary_key=True)
+    org_role_id = db.Column(UUID(as_uuid=True), db.ForeignKey("org_roles.id"), nullable=False)
+    joined_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+
+    organization = db.relationship("Organization", lazy="joined")
+    org_role = db.relationship("OrgRole", lazy="joined")
+
+
 class User(db.Model):
     """Represents a user in the system, mapping to the 'users' table."""
     __tablename__ = 'users'
