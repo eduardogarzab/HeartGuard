@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="heartGradient" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" style="stop-color:#ff4757;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#ee5a6f;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  
+  <!-- Heart shape -->
+  <path d="M100,170 C20,120 10,80 10,60 C10,30 30,10 55,10 C70,10 85,20 100,40 C115,20 130,10 145,10 C170,10 190,30 190,60 C190,80 180,120 100,170 Z" 
+        fill="url(#heartGradient)" stroke="#c23616" stroke-width="2"/>
+  
+  <!-- ECG line -->
+  <path d="M30,100 L60,100 L70,80 L80,120 L90,100 L170,100" 
+        fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  
+  <!-- Shield outline -->
+  <path d="M100,50 L130,60 L130,95 C130,110 115,125 100,130 C85,125 70,110 70,95 L70,60 Z" 
+        fill="none" stroke="white" stroke-width="2" opacity="0.5"/>
+  
+  <!-- Text -->
+  <text x="100" y="195" font-family="Arial, sans-serif" font-size="16" font-weight="bold" 
+        fill="#2c3e50" text-anchor="middle">HeartGuard</text>
+</svg>
