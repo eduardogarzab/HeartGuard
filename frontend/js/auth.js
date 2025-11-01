@@ -1,76 +1,39 @@
-const LOGIN_PAGE = 'login.html';
-const SESSION_KEYS = ['access_token', 'refresh_token', 'user'];
+import { sendXMLRequest } from "./xmlClient.js";
 
-export function saveSession({ accessToken, refreshToken, user }) {
-  if (accessToken) localStorage.setItem('access_token', accessToken);
-  if (refreshToken) localStorage.setItem('refresh_token', refreshToken);
-  if (user) localStorage.setItem('user', JSON.stringify(user));
-}
+const form = document.getElementById("loginForm");
+const message = document.getElementById("loginMessage");
 
-export function getCurrentUser() {
-  const stored = localStorage.getItem('user');
-  if (!stored) return null;
+form.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  message.textContent = "Autenticando...";
+
+  const email = document.getElementById("email").value;
+  const password = document.getElementById("password").value;
+
+  const xmlBody = `
+    <login_request>
+      <email>${email}</email>
+      <password>${password}</password>
+    </login_request>
+  `;
+
   try {
-    return JSON.parse(stored);
-  } catch (error) {
-    console.error('Unable to parse stored user', error);
-    return null;
-  }
-}
+    const xmlResponse = await sendXMLRequest("http://136.115.53.140:5001/auth/login", "POST", xmlBody);
+    const parser = new DOMParser();
+    const xml = parser.parseFromString(xmlResponse, "application/xml");
 
-export function getOrgId() {
-  return getCurrentUser()?.org_id ?? null;
-}
+    const tokenNode = xml.querySelector("token");
+    const roleNode = xml.querySelector("role");
+    const orgNode = xml.querySelector("organization_id");
 
-export function hasRole(role) {
-  const roles = getCurrentUser()?.roles ?? [];
-  return roles.includes(role);
-}
-
-export function requireAuth() {
-  const accessToken = localStorage.getItem('access_token');
-  const refreshToken = localStorage.getItem('refresh_token');
-  const user = getCurrentUser();
-
-  if (!accessToken || !refreshToken || !user) {
-    redirectToLogin();
-    return;
-  }
-
-  attachUserMenu();
-}
-
-export function logout() {
-  SESSION_KEYS.forEach((key) => localStorage.removeItem(key));
-  redirectToLogin();
-}
-
-function redirectToLogin() {
-  if (!window.location.pathname.endsWith(LOGIN_PAGE)) {
-    window.location.href = LOGIN_PAGE;
-  }
-}
-
-function attachUserMenu() {
-  const menuButton = document.querySelector('[data-user-menu-button]');
-  const menu = document.querySelector('[data-user-menu]');
-  if (!menuButton || !menu) return;
-
-  menuButton.addEventListener('click', () => {
-    const expanded = menuButton.getAttribute('aria-expanded') === 'true';
-    menuButton.setAttribute('aria-expanded', String(!expanded));
-    menu.setAttribute('aria-hidden', String(expanded));
-  });
-
-  document.addEventListener('click', (event) => {
-    if (!menu.contains(event.target) && event.target !== menuButton) {
-      menuButton.setAttribute('aria-expanded', 'false');
-      menu.setAttribute('aria-hidden', 'true');
+    if (tokenNode && roleNode && roleNode.textContent === "org_admin") {
+      localStorage.setItem("jwt", tokenNode.textContent);
+      localStorage.setItem("organization_id", orgNode ? orgNode.textContent : "");
+      window.location.href = "dashboard.html";
+    } else {
+      message.textContent = "Acceso restringido. Solo administradores.";
     }
-  });
-
-  const logoutButton = menu.querySelector('[data-logout]');
-  if (logoutButton) {
-    logoutButton.addEventListener('click', () => logout());
+  } catch (err) {
+    message.textContent = "Error de autenticación: " + err.message;
   }
-}
+});
