@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import uuid
 
 import pytest
+from xml.etree import ElementTree as ET
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 SERVICE_DIR = Path(__file__).resolve().parents[1]
@@ -11,6 +13,35 @@ SERVICE_DIR = Path(__file__).resolve().parents[1]
 for path in (BASE_DIR, SERVICE_DIR):
     if str(path) not in sys.path:
         sys.path.append(str(path))
+
+if "flask_cors" not in sys.modules:
+    sys.modules["flask_cors"] = SimpleNamespace(CORS=lambda app, **_: app)
+
+if "xmltodict" not in sys.modules:
+    class _XmlToDictModule:
+        @staticmethod
+        def parse(xml_string):
+            root = ET.fromstring(xml_string)
+
+            def _convert(element):
+                children = list(element)
+                if not children:
+                    return element.text
+                result = {}
+                for child in children:
+                    value = _convert(child)
+                    existing = result.get(child.tag)
+                    if existing is None:
+                        result[child.tag] = value
+                    else:
+                        if not isinstance(existing, list):
+                            result[child.tag] = [existing]
+                        result[child.tag].append(value)
+                return result
+
+            return {root.tag: _convert(root)}
+
+    sys.modules["xmltodict"] = _XmlToDictModule()
 
 from common.app_factory import create_app
 from common import auth as common_auth
