@@ -1,4 +1,4 @@
-x-database-url: &database-url postgresql://heartguard_app:dev_change_me@34.70.7.33:5432/heartguard
+x-database-url: &database-url postgresql://heartguard_app:dev_change_me@136.115.53.140:5432/heartguard
 
 services:
   rabbitmq:
@@ -291,8 +291,6 @@ services:
       SERVICE_NAME: media
       SERVICE_PORT: ${MEDIA_PORT}
       DATABASE_URL: *database-url
-      GCS_BUCKET: ${GCS_BUCKET:-heartguard-system}
-      GOOGLE_APPLICATION_CREDENTIALS: /run/secrets/gcp-sa
     extra_hosts:
       - "host.docker.internal:host-gateway"
     depends_on:
@@ -300,8 +298,6 @@ services:
         condition: service_healthy
       rabbitmq:
         condition: service_healthy
-    secrets:
-      - gcp-sa
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:${MEDIA_PORT}/health"]
       interval: 10s
@@ -343,7 +339,3 @@ networks:
 
 volumes:
   inference_models:
-
-secrets:
-  gcp-sa:
-    file: ./secrets/gcp-sa.json

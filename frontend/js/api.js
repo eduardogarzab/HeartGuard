@@ -1,7 +1,7 @@
 import { parseXml } from './utils.js';
 import { logout } from './auth.js';
 
-const API_BASE_URL = 'http://34.70.7.33:5000';
+const API_BASE_URL = 'http://136.115.53.140:5000';
 
 class XMLApiClient {
   constructor(baseUrl = API_BASE_URL) {
