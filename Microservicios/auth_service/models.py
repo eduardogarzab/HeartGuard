@@ -1,9 +1,11 @@
 """Database models for the authentication service."""
 from __future__ import annotations
 
+import uuid
+
 import bcrypt
 from sqlalchemy.dialects.postgresql import UUID
-import uuid
+from sqlalchemy.exc import SQLAlchemyError
 
 from common.database import db
 
@@ -60,7 +62,8 @@ class User(db.Model):
             roles = [row[0] for row in result]
             # Default to 'user' if no roles found
             return roles if roles else ['user']
-        except Exception:
+        except SQLAlchemyError:
+            db.session.rollback()
             return ['user']
 
     def get_organizations(self) -> list[dict]:
@@ -73,7 +76,7 @@ class User(db.Model):
                         o.code,
                         o.name,
                         orgr.code as role_code,
-                        orgr.name as role_name
+                        orgr.label as role_name
                     FROM user_org_membership uom
                     JOIN organizations o ON uom.org_id = o.id
                     JOIN org_roles orgr ON uom.org_role_id = orgr.id
@@ -92,7 +95,8 @@ class User(db.Model):
                     'role_name': row[4]
                 })
             return orgs
-        except Exception:
+        except SQLAlchemyError:
+            db.session.rollback()
             return []
 
     def to_dict(self):
@@ -104,5 +108,4 @@ class User(db.Model):
             'user_status_id': str(self.user_status_id),
             'profile_photo_url': self.profile_photo_url,
             'created_at': self.created_at.isoformat(),
-            'organizations': self.get_organizations()
         }
