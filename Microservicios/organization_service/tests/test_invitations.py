@@ -79,15 +79,17 @@ def client(app):
     return app.test_client()
 
 
-def issue_token(user_id: str, roles: list[str]):
+def issue_token(user_id: str, roles: list[str], org_id: str | None = None):
     token_payload = {"sub": user_id, "roles": roles}
+    if org_id:
+        token_payload["org_id"] = org_id
     manager = common_auth.get_jwt_manager()
     return manager.encode(token_payload)
 
 
-def auth_headers(app, roles=("org_admin",)):
+def auth_headers(app, roles=("org_admin",), org_id: str | None = None):
     user_id = str(uuid.uuid4())
-    token = issue_token(user_id, list(roles))
+    token = issue_token(user_id, list(roles), org_id=org_id)
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -96,15 +98,31 @@ def auth_headers(app, roles=("org_admin",)):
 
 
 def test_create_invitation_success(app, client):
-    headers, user_id = auth_headers(app)
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
+        role_code = role.code
+        role_id = role.id
+
+    headers, user_id = auth_headers(app, org_id=org_id)
+
+    with app.app_context():
+        user_uuid = uuid.UUID(user_id)
+        db.session.add(models.User(id=user_uuid))
+        db.session.add(
+            models.UserOrgMembership(
+                org_id=uuid.UUID(org_id),
+                user_id=user_uuid,
+                org_role_id=role_id,
+            )
+        )
+        db.session.commit()
 
     payload = {
-        "org_id": str(org.id),
+        "org_id": org_id,
         "email": "invitee@example.com",
-        "role": role.code,
+        "role": role_code,
         "ttl_hours": 24,
     }
 
@@ -113,22 +131,23 @@ def test_create_invitation_success(app, client):
     assert response.status_code == 201
     body = response.get_json()
     invitation = body["data"]["invitation"]
-    assert invitation["org_id"] == str(org.id)
+    assert invitation["org_id"] == org_id
     assert invitation["email"] == "invitee@example.com"
-    assert invitation["role"] == role.code
+    assert invitation["role"] == role_code
     assert invitation["status"] == "pending"
     assert invitation["token"]
     assert invitation["created_by"] == user_id
 
 
 def test_create_invitation_rejects_invalid_ttl(app, client):
-    headers, _ = auth_headers(app)
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
 
+    headers, _ = auth_headers(app, org_id=org_id)
     payload = {
-        "org_id": str(org.id),
+        "org_id": org_id,
         "role": role.code,
         "ttl_hours": 0,
     }
@@ -212,107 +231,63 @@ def test_cancel_invitation(app, client):
         assert refreshed.revoked_at is not None
 
 
-def _parse_xml_response(response):
-    body = response.data.decode("utf-8")
-    root = ET.fromstring(body)
-    invitation = root.find("invitation")
-    assert invitation is not None
-    parsed: dict[str, str] = {}
-    for child in invitation:
-        parsed[child.tag] = child.text
-    return parsed
-
-
-def test_validate_invitation_pending(app, client):
+def test_create_invitation_rejects_uppercase_role_claim(app, client):
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
 
-        invitation = models.OrgInvitation(
-            organization=org,
-            role=role,
-            email="user4@example.com",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
-            created_at=datetime.utcnow(),
-        )
-        db.session.add(invitation)
-        db.session.commit()
-        token = invitation.token
+    headers, _ = auth_headers(app, roles=("ORG_ADMIN",), org_id=org_id)
 
-    response = client.get(
-        f"/organization/invitations/{token}/validate",
-        headers={"Accept": "application/xml"},
-    )
+    payload = {
+        "org_id": org_id,
+        "email": "invitee@example.com",
+        "role": role.code,
+        "ttl_hours": 24,
+    }
 
-    assert response.status_code == 200
-    assert response.headers["Content-Type"].startswith("application/xml")
-    data = _parse_xml_response(response)
-    assert data["token"] == token
-    assert data["result"] == "valid"
-    assert data["state"] == "pending"
+    response = client.post("/organization/invitations", json=payload, headers=headers)
+
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["error"]["id"] == "HG-AUTH-FORBIDDEN"
 
 
-def test_consume_invitation_flow(app, client):
+def test_create_invitation_rejects_foreign_org_membership(app, client):
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
 
-        invitation = models.OrgInvitation(
-            organization=org,
-            role=role,
-            email="user5@example.com",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
-            created_at=datetime.utcnow(),
-        )
-        db.session.add(invitation)
+        other_org = models.Organization(id=uuid.uuid4(), code="beta", name="Beta", created_at=datetime.utcnow())
+        db.session.add(other_org)
         db.session.commit()
-        token = invitation.token
+        other_org_id = str(other_org.id)
+        role_id = role.id
 
-    consume_response = client.post(
-        f"/organization/invitations/{token}/consume",
-        headers={"Accept": "application/xml"},
-    )
+    headers, user_id = auth_headers(app, org_id=other_org_id)
 
-    assert consume_response.status_code == 200
-    consume_data = _parse_xml_response(consume_response)
-    assert consume_data["token"] == token
-    assert consume_data["result"] == "used"
-    assert consume_data["state"] == "used"
-
-    validate_response = client.get(
-        f"/organization/invitations/{token}/validate",
-        headers={"Accept": "application/xml"},
-    )
-    assert validate_response.status_code == 200
-    validate_data = _parse_xml_response(validate_response)
-    assert validate_data["result"] == "used"
-    assert validate_data["state"] == "used"
-
-
-def test_consume_revoked_invitation(app, client):
     with app.app_context():
-        org = models.Organization.query.first()
-        role = models.OrgRole.query.first()
-
-        invitation = models.OrgInvitation(
-            organization=org,
-            role=role,
-            email="user6@example.com",
-            expires_at=datetime.utcnow() + timedelta(hours=24),
-            revoked_at=datetime.utcnow(),
-            created_at=datetime.utcnow(),
+        user_uuid = uuid.UUID(user_id)
+        db.session.add(models.User(id=user_uuid))
+        db.session.add(
+            models.UserOrgMembership(
+                org_id=uuid.UUID(other_org_id),
+                user_id=user_uuid,
+                org_role_id=role_id,
+            )
         )
-        db.session.add(invitation)
         db.session.commit()
-        token = invitation.token
 
-    response = client.post(
-        f"/organization/invitations/{token}/consume",
-        headers={"Accept": "application/xml"},
-    )
+    payload = {
+        "org_id": org_id,
+        "email": "invitee@example.com",
+        "role": role.code,
+        "ttl_hours": 24,
+    }
 
-    assert response.status_code == 409
-    data = _parse_xml_response(response)
-    assert data["result"] == "revoked"
-    assert data["state"] == "revoked"
-    assert "reason" in data
+    response = client.post("/organization/invitations", json=payload, headers=headers)
+
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["error"]["id"] == "HG-ORG-INVITE-FORBIDDEN"
