@@ -87,8 +87,19 @@
               <h1 id="invitations-heading" class="page-header__title">Invitaciones</h1>
               <p class="page-header__subtitle">Crea y administra tokens temporales para incorporar nuevos colaboradores.</p>
             </div>
-            <div class="page-header__actions">
-              <a class="button button--ghost" href="users.html">Volver a usuarios</a>
+            <div class="page-header__insights" role="status" aria-live="polite">
+              <div class="status-chip status-chip--pending">
+                <span class="status-chip__label">Pendientes</span>
+                <span class="status-chip__value" data-invitations-pending>0</span>
+              </div>
+              <div class="status-chip status-chip--active">
+                <span class="status-chip__label">Activas</span>
+                <span class="status-chip__value" data-invitations-active>0</span>
+              </div>
+              <div class="status-chip status-chip--expired">
+                <span class="status-chip__label">Expiradas</span>
+                <span class="status-chip__value" data-invitations-expired>0</span>
+              </div>
             </div>
           </div>
           <div id="invitation-feedback" class="alert" role="status" hidden></div>

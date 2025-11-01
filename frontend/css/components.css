@@ -125,6 +125,127 @@
   grid-column: 1 / -1;
 }
 
+.input-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.25rem;
+}
+
+.input-field {
+  position: relative;
+  border-radius: 1rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-panel-muted);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+  overflow: hidden;
+}
+
+.input-field:focus-within {
+  border-color: rgba(37, 99, 235, 0.45);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+  background: #ffffff;
+}
+
+.input-field__icon,
+.input-field__chevron {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  color: var(--color-text-muted);
+}
+
+.input-field__icon {
+  left: 1.1rem;
+}
+
+.input-field__chevron {
+  right: 1rem;
+}
+
+.input-field:focus-within .input-field__icon,
+.input-field:focus-within .input-field__chevron {
+  color: var(--color-primary);
+}
+
+.input-field__icon svg,
+.input-field__chevron svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  fill: currentColor;
+}
+
+.input-field__input {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--color-text);
+  font-family: inherit;
+  font-size: 1rem;
+  padding: 1.35rem 1.25rem 0.65rem 3.2rem;
+  border-radius: inherit;
+  appearance: none;
+}
+
+.input-field__input:focus {
+  outline: none;
+}
+
+.input-field__input::placeholder {
+  color: transparent;
+}
+
+.input-field__label {
+  position: absolute;
+  left: 3.2rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--color-text-muted);
+  font-size: 0.95rem;
+  pointer-events: none;
+  transition: top 0.2s ease, transform 0.2s ease, font-size 0.2s ease, color 0.2s ease;
+}
+
+.input-field__input:focus + .input-field__label,
+.input-field__input:not(:placeholder-shown) + .input-field__label {
+  top: 0.6rem;
+  transform: translateY(0);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-primary);
+}
+
+.input-field--select .input-field__label {
+  top: 0.6rem;
+  transform: translateY(0);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.input-field--select .input-field__input {
+  padding: 1.6rem 2.75rem 0.75rem 3.2rem;
+}
+
+.input-field--select:focus-within .input-field__label {
+  color: var(--color-primary);
+}
+
+.input-field__support {
+  display: block;
+  padding: 0 1.25rem 0.85rem 3.2rem;
+  font-size: 0.78rem;
+  color: var(--color-text-muted);
+}
+
+.input-field--search .input-field__support {
+  opacity: 0.85;
+}
+
 .data-table {
   width: 100%;
   border-collapse: separate;
