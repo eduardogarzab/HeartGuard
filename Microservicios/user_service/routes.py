@@ -29,32 +29,51 @@ def list_users() -> "Response":
     
     try:
         # Base query to get users with their roles and organization membership
-        query = """
-            SELECT DISTINCT
-                u.id,
-                u.name,
-                u.email,
-                u.created_at,
-                us.code as status,
-                r.name as global_role,
-                org.code as org_code,
-                org.name as org_name,
-                orgr.code as org_role
-            FROM users u
-            LEFT JOIN user_statuses us ON u.user_status_id = us.id
-            LEFT JOIN user_role ur ON u.id = ur.user_id
-            LEFT JOIN roles r ON ur.role_id = r.id
-            LEFT JOIN user_org_membership uom ON u.id = uom.user_id
-            LEFT JOIN organizations org ON uom.org_id = org.id
-            LEFT JOIN org_roles orgr ON uom.org_role_id = orgr.id
-        """
-        
-        params = {}
+        # When filtering by org_code, use INNER JOIN to only get users in that org
         if org_code:
-            query += " WHERE org.code = :org_code"
-            params['org_code'] = org_code
-        
-        query += " ORDER BY u.created_at DESC"
+            query = """
+                SELECT DISTINCT
+                    u.id,
+                    u.name,
+                    u.email,
+                    u.created_at,
+                    us.code as status,
+                    r.name as global_role,
+                    org.code as org_code,
+                    org.name as org_name,
+                    orgr.code as org_role
+                FROM users u
+                LEFT JOIN user_statuses us ON u.user_status_id = us.id
+                LEFT JOIN user_role ur ON u.id = ur.user_id
+                LEFT JOIN roles r ON ur.role_id = r.id
+                INNER JOIN user_org_membership uom ON u.id = uom.user_id
+                INNER JOIN organizations org ON uom.org_id = org.id AND org.code = :org_code
+                LEFT JOIN org_roles orgr ON uom.org_role_id = orgr.id
+                ORDER BY u.created_at DESC
+            """
+            params = {'org_code': org_code}
+        else:
+            query = """
+                SELECT DISTINCT
+                    u.id,
+                    u.name,
+                    u.email,
+                    u.created_at,
+                    us.code as status,
+                    r.name as global_role,
+                    org.code as org_code,
+                    org.name as org_name,
+                    orgr.code as org_role
+                FROM users u
+                LEFT JOIN user_statuses us ON u.user_status_id = us.id
+                LEFT JOIN user_role ur ON u.id = ur.user_id
+                LEFT JOIN roles r ON ur.role_id = r.id
+                LEFT JOIN user_org_membership uom ON u.id = uom.user_id
+                LEFT JOIN organizations org ON uom.org_id = org.id
+                LEFT JOIN org_roles orgr ON uom.org_role_id = orgr.id
+                ORDER BY u.created_at DESC
+            """
+            params = {}
         
         result = db.session.execute(db.text(query), params)
         rows = result.fetchall()

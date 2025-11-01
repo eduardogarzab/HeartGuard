@@ -93,16 +93,29 @@ async function loadCounts(xmlReq, token) {
     { id: "inferencesCount", url: API_CONFIG.ENDPOINTS.INFERENCES.COUNT, label: "inferencias" }
   ];
 
-  for (const e of endpoints) {
+  // Cargar todas las cuentas en paralelo para mejor rendimiento
+  const promises = endpoints.map(async (e) => {
     try {
       const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${e.url}`, "POST", xmlReq, token);
       const xml = new DOMParser().parseFromString(res, "application/xml");
-      document.getElementById(e.id).textContent = xml.querySelector("count")?.textContent || "-";
+      const count = xml.querySelector("count")?.textContent || "-";
+      return { id: e.id, count };
     } catch (err) {
       console.error(`Error al cargar ${e.label}:`, err);
-      document.getElementById(e.id).textContent = "Error";
+      return { id: e.id, count: "Error" };
     }
-  }
+  });
+
+  // Esperar a que todas las peticiones se completen
+  const results = await Promise.all(promises);
+  
+  // Actualizar el DOM con los resultados
+  results.forEach(result => {
+    const element = document.getElementById(result.id);
+    if (element) {
+      element.textContent = result.count;
+    }
+  });
 }
 
 // --- USERS ---
@@ -152,6 +165,9 @@ async function loadUsers() {
       return;
     }
     
+    // Usar un array y un solo innerHTML para mejor rendimiento
+    const rows = [];
+    
     users.forEach((user) => {
       const name = user.querySelector("name")?.textContent || "-";
       const email = user.querySelector("email")?.textContent || "-";
@@ -176,15 +192,28 @@ async function loadUsers() {
       
       const roleDisplay = orgRoles.length > 0 ? orgRoles.join(", ") : globalRoles.join(", ") || "-";
       
-      tbody.innerHTML += `
+      // Formatear fecha solo si es válida
+      let formattedDate = "-";
+      if (createdAt && createdAt !== "-") {
+        try {
+          formattedDate = new Date(createdAt).toLocaleDateString('es-MX');
+        } catch (e) {
+          formattedDate = createdAt;
+        }
+      }
+      
+      rows.push(`
         <tr>
           <td>${name}</td>
           <td>${email}</td>
           <td>${roleDisplay}</td>
           <td>${status}</td>
-          <td>${new Date(createdAt).toLocaleDateString('es-MX')}</td>
-        </tr>`;
+          <td>${formattedDate}</td>
+        </tr>`);
     });
+    
+    // Una sola asignación de innerHTML en lugar de concatenaciones múltiples
+    tbody.innerHTML = rows.join('');
     
   } catch (err) {
     console.error("Error al cargar usuarios:", err);
@@ -199,16 +228,24 @@ async function loadPatients() {
   const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PATIENTS.LIST}`, "GET", "", token);
   const xml = new DOMParser().parseFromString(res, "application/xml");
   const tbody = document.querySelector("#patientsTable tbody");
-  tbody.innerHTML = "";
-  xml.querySelectorAll("patient").forEach((p) => {
-    tbody.innerHTML += `
+  
+  const patients = xml.querySelectorAll("patient");
+  if (patients.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay pacientes</td></tr>';
+    return;
+  }
+  
+  const rows = [];
+  patients.forEach((p) => {
+    rows.push(`
       <tr>
         <td>${p.querySelector("first_name")?.textContent || ""} ${p.querySelector("last_name")?.textContent || ""}</td>
         <td>${p.querySelector("sex")?.textContent || "-"}</td>
         <td>${p.querySelector("risk_level")?.textContent || "-"}</td>
         <td>${p.querySelector("created_at")?.textContent || "-"}</td>
-      </tr>`;
+      </tr>`);
   });
+  tbody.innerHTML = rows.join('');
 }
 
 // --- DEVICES ---
@@ -217,16 +254,24 @@ async function loadDevices() {
   const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DEVICES.LIST}`, "GET", "", token);
   const xml = new DOMParser().parseFromString(res, "application/xml");
   const tbody = document.querySelector("#devicesTable tbody");
-  tbody.innerHTML = "";
-  xml.querySelectorAll("device").forEach((d) => {
-    tbody.innerHTML += `
+  
+  const devices = xml.querySelectorAll("device");
+  if (devices.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay dispositivos</td></tr>';
+    return;
+  }
+  
+  const rows = [];
+  devices.forEach((d) => {
+    rows.push(`
       <tr>
         <td>${d.querySelector("serial_number")?.textContent || "-"}</td>
         <td>${d.querySelector("device_type label")?.textContent || "-"}</td>
         <td>${d.querySelector("status")?.textContent || "-"}</td>
         <td>${d.querySelector("last_seen_at")?.textContent || "-"}</td>
-      </tr>`;
+      </tr>`);
   });
+  tbody.innerHTML = rows.join('');
 }
 
 // --- INFERENCES ---
@@ -235,17 +280,25 @@ async function loadInferences() {
   const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.INFERENCES.LIST}`, "GET", "", token);
   const xml = new DOMParser().parseFromString(res, "application/xml");
   const tbody = document.querySelector("#inferencesTable tbody");
-  tbody.innerHTML = "";
-  xml.querySelectorAll("inference").forEach((i) => {
-    tbody.innerHTML += `
+  
+  const inferences = xml.querySelectorAll("inference");
+  if (inferences.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay inferencias</td></tr>';
+    return;
+  }
+  
+  const rows = [];
+  inferences.forEach((i) => {
+    rows.push(`
       <tr>
         <td>${i.querySelector("id")?.textContent || "-"}</td>
         <td>${i.querySelector("model_id")?.textContent || "-"}</td>
         <td>${i.querySelector("event_type")?.textContent || "-"}</td>
         <td>${i.querySelector("score")?.textContent || "-"}</td>
         <td>${i.querySelector("created_at")?.textContent || "-"}</td>
-      </tr>`;
+      </tr>`);
   });
+  tbody.innerHTML = rows.join('');
 }
 
 // --- INFLUX METRICS ---
@@ -254,10 +307,18 @@ async function loadInfluxMetrics() {
   const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}/influx/metrics`, "GET", "", token);
   const xml = new DOMParser().parseFromString(res, "application/xml");
   const container = document.getElementById("influxMetrics");
-  container.innerHTML = "";
-  xml.querySelectorAll("metric").forEach((m) => {
-    container.innerHTML += `<div><strong>${m.querySelector("name")?.textContent}:</strong> ${m.querySelector("value")?.textContent}</div>`;
+  
+  const metrics = xml.querySelectorAll("metric");
+  if (metrics.length === 0) {
+    container.innerHTML = '<div style="text-align:center;">No hay métricas disponibles</div>';
+    return;
+  }
+  
+  const items = [];
+  metrics.forEach((m) => {
+    items.push(`<div><strong>${m.querySelector("name")?.textContent}:</strong> ${m.querySelector("value")?.textContent}</div>`);
   });
+  container.innerHTML = items.join('');
 }
 
 // ====================================================
