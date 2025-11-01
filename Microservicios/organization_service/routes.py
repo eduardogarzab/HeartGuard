@@ -100,6 +100,59 @@ def create_invitation() -> "Response":
     if not organization:
         raise APIError("Organization not found", status_code=404, error_id="HG-ORG-NOT-FOUND")
 
+    current_user_payload = getattr(g, "current_user", {}) or {}
+    if not isinstance(current_user_payload, dict):
+        current_user_payload = {}
+
+    token_roles = current_user_payload.get("roles", [])
+    if isinstance(token_roles, str):
+        token_roles = [token_roles]
+    user_roles = {str(role).lower() for role in token_roles if isinstance(role, str)}
+
+    preferred_org_id = current_user_payload.get("org_id")
+    user_uuid = None
+    user_id_claim = current_user_payload.get("sub")
+    if user_id_claim:
+        try:
+            user_uuid = uuid.UUID(str(user_id_claim))
+        except (TypeError, ValueError):
+            user_uuid = None
+
+    if "admin" not in user_roles:
+        if preferred_org_id and str(preferred_org_id) != str(org_uuid):
+            raise APIError(
+                "Insufficient permissions for organization",
+                status_code=403,
+                error_id="HG-ORG-INVITE-FORBIDDEN",
+            )
+        if not user_uuid:
+            raise APIError(
+                "Authenticated user is missing or invalid",
+                status_code=403,
+                error_id="HG-ORG-INVITE-FORBIDDEN",
+            )
+        membership = (
+            models.UserOrgMembership.query.join(
+                models.OrgRole,
+                models.UserOrgMembership.org_role_id == models.OrgRole.id,
+            )
+            .filter(
+                models.UserOrgMembership.org_id == org_uuid,
+                models.UserOrgMembership.user_id == user_uuid,
+            )
+            .first()
+        )
+        if (
+            not membership
+            or not membership.role
+            or (membership.role.code or "").lower() != "org_admin"
+        ):
+            raise APIError(
+                "Insufficient permissions for organization",
+                status_code=403,
+                error_id="HG-ORG-INVITE-FORBIDDEN",
+            )
+
     role = _resolve_org_role(role_identifier)
     if not role:
         raise APIError("Organization role not found", status_code=404, error_id="HG-ORG-ROLE-NOT-FOUND")
@@ -108,15 +161,7 @@ def create_invitation() -> "Response":
     expires_at = now + timedelta(hours=ttl_hours)
     token = uuid.uuid4().hex
 
-    created_by = None
-    current_user = getattr(g, "current_user", None)
-    if current_user:
-        created_by_val = current_user.get("sub")
-        if created_by_val:
-            try:
-                created_by = uuid.UUID(str(created_by_val))
-            except (TypeError, ValueError):
-                created_by = None
+    created_by = user_uuid
 
     invitation = models.OrgInvitation(
         organization=organization,

@@ -22,7 +22,7 @@ def _collect_user_roles(user: "models.User") -> tuple[list[str], str | None, str
         .join(models.UserRole, models.UserRole.role_id == models.Role.id)
         .filter(models.UserRole.user_id == user.id)
     )
-    global_roles = [role.name for role in global_roles_query]
+    global_roles = [role.name.lower() for role in global_roles_query if role.name]
 
     memberships: Sequence[models.UserOrgMembership] = (
         models.UserOrgMembership.query
@@ -33,9 +33,20 @@ def _collect_user_roles(user: "models.User") -> tuple[list[str], str | None, str
         .all()
     )
 
-    org_roles = [membership.org_role.code for membership in memberships if membership.org_role]
+    org_roles = [
+        membership.org_role.code.lower()
+        for membership in memberships
+        if membership.org_role and membership.org_role.code
+    ]
 
-    preferred_membership = next((m for m in memberships if m.org_role and m.org_role.code == "org_admin"), None)
+    preferred_membership = next(
+        (
+            m
+            for m in memberships
+            if m.org_role and m.org_role.code and m.org_role.code.lower() == "org_admin"
+        ),
+        None,
+    )
     if preferred_membership is None and memberships:
         preferred_membership = memberships[0]
 
@@ -114,7 +125,7 @@ def login() -> "Response":
         raise APIError("Invalid credentials", status_code=401, error_id="HG-AUTH-CREDENTIALS")
 
     roles, org_id, organization_name = _collect_user_roles(user)
-    tokens = issue_tokens(str(user.id), roles)
+    tokens = issue_tokens(str(user.id), roles, org_id=org_id)
     response_payload = _serialize_auth_response(tokens, str(user.id), roles, org_id, organization_name)
     return render_response(response_payload)
 
@@ -141,7 +152,7 @@ def refresh() -> "Response":
         raise APIError("User not found for refresh token", status_code=401, error_id="HG-AUTH-USER-NOT-FOUND")
 
     roles, org_id, organization_name = _collect_user_roles(user)
-    tokens = issue_tokens(str(user.id), roles)
+    tokens = issue_tokens(str(user.id), roles, org_id=org_id)
     response_payload = _serialize_auth_response(tokens, str(user.id), roles, org_id, organization_name)
     return render_response(response_payload)
 
