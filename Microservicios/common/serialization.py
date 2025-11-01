@@ -36,13 +36,21 @@ def _prepare_envelope(status: str, code: int, data: Any = None, meta: Dict[str, 
     return envelope
 
 
-def render_response(data: Any, status_code: int = 200, meta: Dict[str, Any] | None = None) -> Response:
+def render_response(
+    data: Any,
+    status_code: int = 200,
+    meta: Dict[str, Any] | None = None,
+    xml_item_name: str | None = None,
+) -> Response:
     """Render a Flask response honoring the Accept header for JSON or XML."""
     envelope = _prepare_envelope("success", status_code, data=data, meta=meta)
     content_type = negotiate_content_type(request)
 
     if content_type == "application/xml":
-        xml_body = dicttoxml.dicttoxml(envelope, custom_root="response", attr_type=False)
+        kwargs = {"custom_root": "response", "attr_type": False}
+        if xml_item_name:
+            kwargs["item_func"] = lambda _: xml_item_name
+        xml_body = dicttoxml.dicttoxml(envelope, **kwargs)
         response = make_response(xml_body, status_code)
         response.headers["Content-Type"] = "application/xml"
         return response

@@ -61,12 +61,17 @@ The batch script performs the following high-level stages:
 | Auth refresh       | `POST /v1/auth/refresh`                            | HTTP 200 |
 | Auth identity      | `GET /v1/users/me`                                 | HTTP 200 |
 | Org listing        | `GET /v1/orgs/me` via gateway                      | HTTP 200 + memberships |
+| Users listing      | `GET /v1/users?org_id={ORG_ID}` via gateway        | HTTP 200 + `<User>` nodes filtered by org |
 | Org detail         | `GET /v1/orgs/{id}` via gateway                    | HTTP 200 |
 | Audit log create   | `POST /v1/audit` via gateway                       | HTTP 201 |
 | Invalid login      | Missing password                                   | HTTP 401 |
 | Forbidden access   | Non-member org detail                              | HTTP 403 |
 | Missing token      | Gateway request without `Authorization` header     | HTTP 401 |
 | Degradation        | Gateway request while `org_service` is offline     | HTTP 503 |
+
+### `/v1/users` contract
+
+The users microservice now sources membership data directly from PostgreSQL. The gateway exposes it as `GET /v1/users`, which requires either an `org_id` query parameter or an access token that carries a single organization membership. Successful responses emit `<User>` nodes—each containing `id`, `name`, `email`, `role`, `status`, and `org_id`—so clients no longer have to post-filter memberships locally.
 
 ## Artefacts Generated
 - `microservicios/validation_logs/validation_report.txt` – master report with timestamps and verdicts.
