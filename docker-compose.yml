@@ -47,5 +47,26 @@ services:
             timeout: 2s
             retries: 10
 
+    influxdb:
+        image: influxdb:2.7
+        container_name: heartguard-influxdb
+        environment:
+            DOCKER_INFLUXDB_INIT_MODE: setup
+            DOCKER_INFLUXDB_INIT_USERNAME: heartguard
+            DOCKER_INFLUXDB_INIT_PASSWORD: change_me
+            DOCKER_INFLUXDB_INIT_ORG: heartguard
+            DOCKER_INFLUXDB_INIT_BUCKET: heartguard
+            DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: change_me
+        ports:
+            - "8086:8086"
+        volumes:
+            - influx_data:/var/lib/influxdb2
+        healthcheck:
+            test: ["CMD", "influx", "ping"]
+            interval: 10s
+            timeout: 5s
+            retries: 5
+
 volumes:
     postgres_data:
+    influx_data:

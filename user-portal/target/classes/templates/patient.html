@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${patient.personName} + ' - HeartGuard'">HeartGuard - Paciente</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script defer src="/js/patient.js"></script>
+</head>
+<body data-patient-id="" th:attr="data-patient-id=${patient.id}">
+<header class="top-nav">
+    <div class="logo">HeartGuard</div>
+    <nav>
+        <a href="/dashboard">Pacientes</a>
+        <a href="/alerts">Alertas</a>
+        <a href="/devices">Dispositivos</a>
+        <a th:href="@{'/patient/' + ${patient.id}}" class="active">Detalle Paciente</a>
+        <a href="/profile">Mi Perfil</a>
+        <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="link-button">Cerrar sesión</button>
+        </form>
+    </nav>
+</header>
+<main class="content">
+    <section class="panel patient-header">
+        <div class="patient-card large">
+            <div class="patient-photo" th:style="${patient.profilePhotoUrl} != null ? 'background-image: url(' + ${patient.profilePhotoUrl} + ')' : ''"></div>
+            <div class="patient-info">
+                <h1 th:text="${patient.personName}">Paciente</h1>
+                <p th:text="${patient.gender} != null ? ${patient.gender} : 'Sin información'"></p>
+                <p th:text="${patient.age} != null ? ${patient.age} + ' años' : ''"></p>
+                <span class="risk" th:text="${patient.riskLevelCode}">medium</span>
+            </div>
+        </div>
+        <div class="alert-summary">
+            <h2>Alertas Activas</h2>
+            <div th:if="${#lists.isEmpty(alerts)}" class="empty-state">Sin alertas activas</div>
+            <ul class="alert-list" th:if="${!#lists.isEmpty(alerts)}">
+                <li th:each="alert : ${alerts}" th:class="'alert-item ' + ${alert.severityLevel}">
+                    <div class="alert-content">
+                        <h3 th:text="${alert.type}">Tipo</h3>
+                        <p th:text="${alert.message}">Descripción</p>
+                        <span th:text="${#temporals.format(alert.createdAt, 'dd/MM/yyyy HH:mm')}"></span>
+                    </div>
+                    <form th:action="@{'/patient/' + ${patient.id} + '/alerts/' + ${alert.id} + '/ack'}" method="post">
+                        <input type="hidden" name="note" value="">
+                        <button type="submit" class="btn-secondary">Reconocer</button>
+                    </form>
+                </li>
+            </ul>
+        </div>
+    </section>
+    <section class="panel">
+        <div class="panel-header">
+            <h2>Gráficas de Vitals</h2>
+            <div class="tabs">
+                <button class="tab-button" data-signal="ecg">ECG</button>
+                <button class="tab-button" data-signal="spo2">SpO2</button>
+                <button class="tab-button" data-signal="hr">Ritmo Cardíaco</button>
+            </div>
+        </div>
+        <canvas id="signalChart" height="120"></canvas>
+    </section>
+</main>
+</body>
+</html>

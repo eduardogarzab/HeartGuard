@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified">
+  <xs:element name="alert" type="AlertType"/>
+
+  <xs:complexType name="AlertType">
+    <xs:sequence>
+      <xs:element name="id" type="UUIDType"/>
+      <xs:element name="patient_id" type="UUIDType"/>
+      <xs:element name="source" type="AlertSourceType" minOccurs="0"/>
+      <xs:element name="event_type" type="xs:string" minOccurs="0"/>
+      <xs:element name="level" type="AlertLevelType"/>
+      <xs:element name="status" type="AlertStatusType"/>
+      <xs:element name="assigned_to" type="UUIDType" minOccurs="0"/>
+      <xs:element name="acknowledged_by" type="UUIDType" minOccurs="0"/>
+      <xs:element name="acknowledged_at" type="xs:dateTime" minOccurs="0"/>
+      <xs:element name="resolution" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="resolved_by" type="UUIDType" minOccurs="0"/>
+            <xs:element name="resolved_at" type="xs:dateTime" minOccurs="0"/>
+            <xs:element name="notes" type="xs:string" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="delivery" minOccurs="0">
+        <xs:complexType>
+          <xs:sequence>
+            <xs:element name="channel" type="AlertChannelType"/>
+            <xs:element name="status" type="DeliveryStatusType"/>
+            <xs:element name="delivered_at" type="xs:dateTime" minOccurs="0"/>
+          </xs:sequence>
+        </xs:complexType>
+      </xs:element>
+      <xs:element name="created_at" type="xs:dateTime"/>
+      <xs:element name="updated_at" type="xs:dateTime" minOccurs="0"/>
+    </xs:sequence>
+  </xs:complexType>
+
+  <xs:simpleType name="UUIDType">
+    <xs:restriction base="xs:string">
+      <xs:pattern value="[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AlertSourceType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="inference"/>
+      <xs:enumeration value="manual"/>
+      <xs:enumeration value="device"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AlertLevelType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="info"/>
+      <xs:enumeration value="low"/>
+      <xs:enumeration value="medium"/>
+      <xs:enumeration value="high"/>
+      <xs:enumeration value="critical"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AlertStatusType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="open"/>
+      <xs:enumeration value="assigned"/>
+      <xs:enumeration value="acknowledged"/>
+      <xs:enumeration value="resolved"/>
+      <xs:enumeration value="cancelled"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="AlertChannelType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="push"/>
+      <xs:enumeration value="sms"/>
+      <xs:enumeration value="email"/>
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="DeliveryStatusType">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="pending"/>
+      <xs:enumeration value="sent"/>
+      <xs:enumeration value="failed"/>
+    </xs:restriction>
+  </xs:simpleType>
+</xs:schema>

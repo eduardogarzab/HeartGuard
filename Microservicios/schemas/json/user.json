@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://heartguard.example/schemas/user.json",
+  "title": "User",
+  "type": "object",
+  "required": ["id", "email", "status", "created_at"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "email": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 255
+    },
+    "status": {
+      "type": "string",
+      "enum": ["active", "invited", "disabled", "pending"]
+    },
+    "roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "preferences": {
+      "type": "object",
+      "properties": {
+        "language": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "timezone": {
+          "type": "string",
+          "maxLength": 50
+        },
+        "notifications": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "boolean"
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "organization_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "updated_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": false
+}
