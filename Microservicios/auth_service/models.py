@@ -63,6 +63,38 @@ class User(db.Model):
         except Exception:
             return ['user']
 
+    def get_organizations(self) -> list[dict]:
+        """Fetch user organizations and their roles."""
+        try:
+            result = db.session.execute(
+                db.text("""
+                    SELECT 
+                        o.id,
+                        o.code,
+                        o.name,
+                        orgr.code as role_code,
+                        orgr.name as role_name
+                    FROM user_org_membership uom
+                    JOIN organizations o ON uom.org_id = o.id
+                    JOIN org_roles orgr ON uom.org_role_id = orgr.id
+                    WHERE uom.user_id = :user_id
+                    ORDER BY o.name
+                """),
+                {'user_id': str(self.id)}
+            )
+            orgs = []
+            for row in result:
+                orgs.append({
+                    'id': str(row[0]),
+                    'code': row[1],
+                    'name': row[2],
+                    'role_code': row[3],
+                    'role_name': row[4]
+                })
+            return orgs
+        except Exception:
+            return []
+
     def to_dict(self):
         """Serializes the user object to a dictionary."""
         return {
@@ -72,4 +104,5 @@ class User(db.Model):
             'user_status_id': str(self.user_status_id),
             'profile_photo_url': self.profile_photo_url,
             'created_at': self.created_at.isoformat(),
+            'organizations': self.get_organizations()
         }

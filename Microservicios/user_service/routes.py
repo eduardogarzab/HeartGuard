@@ -5,97 +5,223 @@ import copy
 import datetime as dt
 from typing import Dict
 
-from flask import Blueprint, g, request
+from flask import Blueprint, Response, g, request
 
 from common.auth import require_auth
+from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
 
 bp = Blueprint("users", __name__)
 
-USER_STORE: Dict[str, Dict] = {
-    "usr-1": {
-        "id": "usr-1",
-        "email": "admin@example.com",
-        "first_name": "Alicia",
-        "last_name": "Admin",
-        "language": "es",
-        "timezone": "America/Mexico_City",
-        "organization_id": "org-1",
-        "preferences": {"notifications": True, "theme": "dark"},
-    },
-    "usr-2": {
-        "id": "usr-2",
-        "email": "clinician@example.com",
-        "first_name": "Carlos",
-        "last_name": "Clinician",
-        "language": "en",
-        "timezone": "America/New_York",
-        "organization_id": "org-1",
-        "preferences": {"notifications": True, "theme": "light"},
-    },
-}
-
 
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
-    return render_response({"service": "user", "status": "healthy", "users": len(USER_STORE)})
+    return render_response({"service": "user", "status": "healthy"})
 
 
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_users() -> "Response":
-    return render_response({"users": list(USER_STORE.values())}, meta={"total": len(USER_STORE)})
+    """List users from the database, optionally filtered by organization."""
+    # Get org_id from query params if provided
+    org_code = request.args.get("org_id") or request.args.get("org_code")
+    
+    try:
+        # Base query to get users with their roles and organization membership
+        query = """
+            SELECT DISTINCT
+                u.id,
+                u.name,
+                u.email,
+                u.created_at,
+                us.code as status,
+                r.name as global_role,
+                org.code as org_code,
+                org.name as org_name,
+                orgr.code as org_role
+            FROM users u
+            LEFT JOIN user_statuses us ON u.user_status_id = us.id
+            LEFT JOIN user_role ur ON u.id = ur.user_id
+            LEFT JOIN roles r ON ur.role_id = r.id
+            LEFT JOIN user_org_membership uom ON u.id = uom.user_id
+            LEFT JOIN organizations org ON uom.org_id = org.id
+            LEFT JOIN org_roles orgr ON uom.org_role_id = orgr.id
+        """
+        
+        params = {}
+        if org_code:
+            query += " WHERE org.code = :org_code"
+            params['org_code'] = org_code
+        
+        query += " ORDER BY u.created_at DESC"
+        
+        result = db.session.execute(db.text(query), params)
+        rows = result.fetchall()
+        
+        # Group by user to handle multiple roles
+        users_dict = {}
+        for row in rows:
+            user_id = str(row[0])
+            if user_id not in users_dict:
+                users_dict[user_id] = {
+                    'id': user_id,
+                    'name': row[1],
+                    'email': row[2],
+                    'created_at': row[3].isoformat() if row[3] else None,
+                    'status': row[4] or 'unknown',
+                    'roles': [],
+                    'organizations': []
+                }
+            
+            # Add global role if present
+            if row[5] and row[5] not in users_dict[user_id]['roles']:
+                users_dict[user_id]['roles'].append(row[5])
+            
+            # Add organization info if present
+            if row[6]:
+                org_info = {
+                    'code': row[6],
+                    'name': row[7],
+                    'role': row[8]
+                }
+                if org_info not in users_dict[user_id]['organizations']:
+                    users_dict[user_id]['organizations'].append(org_info)
+        
+        users_list = list(users_dict.values())
+        return render_response({"users": users_list}, meta={"total": len(users_list)})
+        
+    except Exception as e:
+        g.logger.error(f"Error listing users: {str(e)}")
+        raise APIError("Failed to retrieve users", status_code=500, error_id="HG-USER-LIST-ERROR")
 
 
 @bp.route("/<user_id>", methods=["GET"])
 @require_auth(optional=True)
 def get_user(user_id: str) -> "Response":
-    user = USER_STORE.get(user_id)
-    if not user:
-        raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
-    return render_response({"user": user})
+    """Get a specific user by ID."""
+    try:
+        query = """
+            SELECT 
+                u.id,
+                u.name,
+                u.email,
+                u.created_at,
+                us.code as status,
+                u.profile_photo_url
+            FROM users u
+            LEFT JOIN user_statuses us ON u.user_status_id = us.id
+            WHERE u.id = :user_id
+        """
+        
+        result = db.session.execute(db.text(query), {'user_id': user_id})
+        row = result.fetchone()
+        
+        if not row:
+            raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
+        
+        user = {
+            'id': str(row[0]),
+            'name': row[1],
+            'email': row[2],
+            'created_at': row[3].isoformat() if row[3] else None,
+            'status': row[4] or 'unknown',
+            'profile_photo_url': row[5]
+        }
+        
+        return render_response({"user": user})
+        
+    except APIError:
+        raise
+    except Exception as e:
+        g.logger.error(f"Error getting user {user_id}: {str(e)}")
+        raise APIError("Failed to retrieve user", status_code=500, error_id="HG-USER-GET-ERROR")
 
 
 @bp.route("/<user_id>", methods=["PATCH"])
 @require_auth(required_roles=["admin", "clinician", "org_admin"])
 def update_user(user_id: str) -> "Response":
+    """Update user information."""
     payload, _ = parse_request_data(request)
-    user = USER_STORE.get(user_id)
-    if not user:
-        raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
-    allowed = {"first_name", "last_name", "language", "timezone", "preferences"}
-    for key, value in payload.items():
-        if key in allowed:
-            user[key] = value
-    user["updated_at"] = dt.datetime.utcnow().isoformat() + "Z"
-    return render_response({"user": user})
+    
+    try:
+        # Check if user exists
+        check_query = "SELECT id FROM users WHERE id = :user_id"
+        result = db.session.execute(db.text(check_query), {'user_id': user_id})
+        if not result.fetchone():
+            raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
+        
+        # Build update query dynamically
+        allowed = {"name", "profile_photo_url"}
+        updates = []
+        params = {'user_id': user_id}
+        
+        for key, value in payload.items():
+            if key in allowed:
+                updates.append(f"{key} = :{key}")
+                params[key] = value
+        
+        if not updates:
+            raise APIError("No valid fields to update", status_code=400, error_id="HG-USER-NO-UPDATES")
+        
+        update_query = f"UPDATE users SET {', '.join(updates)}, updated_at = NOW() WHERE id = :user_id"
+        db.session.execute(db.text(update_query), params)
+        db.session.commit()
+        
+        # Return updated user
+        return get_user(user_id)
+        
+    except APIError:
+        raise
+    except Exception as e:
+        db.session.rollback()
+        g.logger.error(f"Error updating user {user_id}: {str(e)}")
+        raise APIError("Failed to update user", status_code=500, error_id="HG-USER-UPDATE-ERROR")
 
 
 @bp.route("/me", methods=["GET"])
 @require_auth()
 def get_me() -> "Response":
+    """Get current authenticated user."""
     user_id = g.current_user.get("sub")
-    user = USER_STORE.get(user_id)
-    if not user:
-        raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
-    return render_response({"user": user})
+    return get_user(user_id)
 
 
 @bp.route("/me", methods=["PATCH"])
 @require_auth()
 def update_me() -> "Response":
-    payload, _ = parse_request_data(request)
+    """Update current authenticated user."""
     user_id = g.current_user.get("sub")
-    user = USER_STORE.get(user_id)
-    if not user:
-        raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
-    allowed = {"language", "timezone", "preferences"}
-    for key, value in payload.items():
-        if key in allowed:
-            user[key] = value
-    user["updated_at"] = dt.datetime.utcnow().isoformat() + "Z"
-    return render_response({"user": user})
+    return update_user(user_id)
+
+
+@bp.route("/count", methods=["POST"])
+@require_auth(optional=True)
+def count_users() -> "Response":
+    """Count users, optionally filtered by organization."""
+    payload, _ = parse_request_data(request)
+    org_code = payload.get("org_id") or payload.get("org_code")
+    
+    try:
+        if org_code:
+            query = """
+                SELECT COUNT(DISTINCT u.id)
+                FROM users u
+                JOIN user_org_membership uom ON u.id = uom.user_id
+                JOIN organizations org ON uom.org_id = org.id
+                WHERE org.code = :org_code
+            """
+            result = db.session.execute(db.text(query), {'org_code': org_code})
+        else:
+            query = "SELECT COUNT(*) FROM users"
+            result = db.session.execute(db.text(query))
+        
+        count = result.scalar()
+        return render_response({"count": count})
+        
+    except Exception as e:
+        g.logger.error(f"Error counting users: {str(e)}")
+        raise APIError("Failed to count users", status_code=500, error_id="HG-USER-COUNT-ERROR")
 
 
 def register_blueprint(app):
