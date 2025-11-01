@@ -1,9 +1,9 @@
 """Auth service routes implementing JWT issuance and RBAC scaffolding."""
 from __future__ import annotations
 
-import uuid
+from typing import Iterable, Sequence
 
-from flask import Blueprint, Response, g, request
+from flask import Blueprint, Response, request
 
 from common.auth import get_jwt_manager, issue_tokens, require_auth
 from common.database import db
@@ -12,6 +12,57 @@ from common.serialization import parse_request_data, render_response
 
 # Use absolute import to avoid relative import issues
 import models
+
+
+def _collect_user_roles(user: "models.User") -> tuple[list[str], str | None, str | None]:
+    """Return combined global/org roles and preferred organization context."""
+
+    global_roles_query = (
+        models.Role.query
+        .join(models.UserRole, models.UserRole.role_id == models.Role.id)
+        .filter(models.UserRole.user_id == user.id)
+    )
+    global_roles = [role.name for role in global_roles_query]
+
+    memberships: Sequence[models.UserOrgMembership] = (
+        models.UserOrgMembership.query
+        .filter_by(user_id=user.id)
+        .join(models.Organization, models.UserOrgMembership.org_id == models.Organization.id)
+        .join(models.OrgRole, models.UserOrgMembership.org_role_id == models.OrgRole.id)
+        .order_by(models.UserOrgMembership.joined_at.asc())
+        .all()
+    )
+
+    org_roles = [membership.org_role.code for membership in memberships if membership.org_role]
+
+    preferred_membership = next((m for m in memberships if m.org_role and m.org_role.code == "org_admin"), None)
+    if preferred_membership is None and memberships:
+        preferred_membership = memberships[0]
+
+    org_id = str(preferred_membership.organization.id) if preferred_membership and preferred_membership.organization else None
+    organization_name = preferred_membership.organization.name if preferred_membership and preferred_membership.organization else None
+
+    roles = sorted({*global_roles, *org_roles})
+    if not roles:
+        roles = ["user"]
+    return roles, org_id, organization_name
+
+
+def _serialize_auth_response(tokens: dict, user_id: str, roles: Iterable[str], org_id: str | None, organization_name: str | None) -> dict:
+    """Create a response payload matching the expectations of the frontend."""
+
+    payload = {
+        "access_token": tokens["access_token"],
+        "refresh_token": tokens["refresh_token"],
+        "expires_in": tokens["expires_in"],
+        "token_type": tokens["token_type"],
+        "roles": ",".join(roles),
+        "user_id": user_id,
+    }
+
+    payload["org_id"] = org_id or ""
+    payload["organization_name"] = organization_name or ""
+    return payload
 
 bp = Blueprint("auth", __name__)
 
@@ -62,9 +113,10 @@ def login() -> "Response":
     if not user or not user.check_password(password):
         raise APIError("Invalid credentials", status_code=401, error_id="HG-AUTH-CREDENTIALS")
 
-    # In a real RBAC system, you would fetch roles from the database.
-    tokens = issue_tokens(str(user.id), [])
-    return render_response({"tokens": tokens, "user": user.to_dict()})
+    roles, org_id, organization_name = _collect_user_roles(user)
+    tokens = issue_tokens(str(user.id), roles)
+    response_payload = _serialize_auth_response(tokens, str(user.id), roles, org_id, organization_name)
+    return render_response(response_payload)
 
 
 @bp.route("/refresh", methods=["POST"])
@@ -88,8 +140,10 @@ def refresh() -> "Response":
     if not user:
         raise APIError("User not found for refresh token", status_code=401, error_id="HG-AUTH-USER-NOT-FOUND")
 
-    tokens = issue_tokens(str(user.id), [])
-    return render_response({"tokens": tokens})
+    roles, org_id, organization_name = _collect_user_roles(user)
+    tokens = issue_tokens(str(user.id), roles)
+    response_payload = _serialize_auth_response(tokens, str(user.id), roles, org_id, organization_name)
+    return render_response(response_payload)
 
 
 @bp.route("/logout", methods=["POST"])
