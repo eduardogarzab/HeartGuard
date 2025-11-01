@@ -1,1 +1,0 @@
-docs/scripts/setup_distributed_deployment.sh
