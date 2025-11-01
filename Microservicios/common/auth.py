@@ -80,12 +80,23 @@ def require_auth(optional: bool = False, required_roles: list[str] | None = None
     return decorator
 
 
-def issue_tokens(user_id: str, roles: list[str] | None = None, expires_in: int = 900) -> Dict[str, Any]:
+def issue_tokens(
+    user_id: str,
+    roles: list[str] | None = None,
+    expires_in: int = 900,
+    org_id: str | None = None,
+) -> Dict[str, Any]:
     roles = roles or ["user"]
     manager = get_jwt_manager()
-    access_token = manager.encode({"sub": user_id, "roles": roles}, expires_in=expires_in)
+    access_payload: Dict[str, Any] = {"sub": user_id, "roles": roles}
+    if org_id:
+        access_payload["org_id"] = str(org_id)
+    access_token = manager.encode(access_payload, expires_in=expires_in)
     refresh_ttl = int(os.getenv("REFRESH_TOKEN_TTL", "604800"))
-    refresh_token = manager.encode({"sub": user_id, "type": "refresh"}, expires_in=refresh_ttl)
+    refresh_payload: Dict[str, Any] = {"sub": user_id, "type": "refresh"}
+    if org_id:
+        refresh_payload["org_id"] = str(org_id)
+    refresh_token = manager.encode(refresh_payload, expires_in=refresh_ttl)
     return {
         "access_token": access_token,
         "refresh_token": refresh_token,

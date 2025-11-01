@@ -1,8 +1,7 @@
 """Organization service exposing organization management endpoints."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-import os
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from flask import Blueprint, Response, current_app, g, request
@@ -12,8 +11,10 @@ from common.auth import require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
+import dicttoxml
 import models
 # Models accessed via models. models.Organization
+from sqlalchemy import text
 
 bp = Blueprint("organization", __name__)
 
@@ -102,84 +103,77 @@ def create_invitation() -> "Response":
     if not organization:
         raise APIError("Organization not found", status_code=404, error_id="HG-ORG-NOT-FOUND")
 
+    current_user_payload = getattr(g, "current_user", {}) or {}
+    if not isinstance(current_user_payload, dict):
+        current_user_payload = {}
+
+    token_roles = current_user_payload.get("roles", [])
+    if isinstance(token_roles, str):
+        token_roles = [token_roles]
+    user_roles = {str(role).lower() for role in token_roles if isinstance(role, str)}
+
+    preferred_org_id = current_user_payload.get("org_id")
+    user_uuid = None
+    user_id_claim = current_user_payload.get("sub")
+    if user_id_claim:
+        try:
+            user_uuid = uuid.UUID(str(user_id_claim))
+        except (TypeError, ValueError):
+            user_uuid = None
+
+    if "admin" not in user_roles:
+        if preferred_org_id and str(preferred_org_id) != str(org_uuid):
+            raise APIError(
+                "Insufficient permissions for organization",
+                status_code=403,
+                error_id="HG-ORG-INVITE-FORBIDDEN",
+            )
+        if not user_uuid:
+            raise APIError(
+                "Authenticated user is missing or invalid",
+                status_code=403,
+                error_id="HG-ORG-INVITE-FORBIDDEN",
+            )
+        membership = (
+            models.UserOrgMembership.query.join(
+                models.OrgRole,
+                models.UserOrgMembership.org_role_id == models.OrgRole.id,
+            )
+            .filter(
+                models.UserOrgMembership.org_id == org_uuid,
+                models.UserOrgMembership.user_id == user_uuid,
+            )
+            .first()
+        )
+        if (
+            not membership
+            or not membership.role
+            or (membership.role.code or "").lower() != "org_admin"
+        ):
+            raise APIError(
+                "Insufficient permissions for organization",
+                status_code=403,
+                error_id="HG-ORG-INVITE-FORBIDDEN",
+            )
+
     role = _resolve_org_role(role_identifier)
     if not role:
         raise APIError("Organization role not found", status_code=404, error_id="HG-ORG-ROLE-NOT-FOUND")
 
     now = datetime.utcnow()
-    expires_at = now + timedelta(hours=ttl_hours)
-    token = uuid.uuid4().hex
 
-    created_by = None
-    current_user = getattr(g, "current_user", None)
-    if current_user:
-        created_by_val = current_user.get("sub")
-        if created_by_val:
-            try:
-                created_by = uuid.UUID(str(created_by_val))
-            except (TypeError, ValueError):
-                created_by = None
+    created_by = user_uuid
 
-    invitation = models.OrgInvitation(
+    invitation_payload = _create_invitation(
         organization=organization,
         role=role,
         email=email,
-        expires_at=expires_at,
-        token=token,
-        created_at=now,
+        ttl_hours=ttl_hours,
+        created_by=created_by,
+        now=now,
     )
-    if created_by:
-        invitation.created_by = created_by
 
-    db.session.add(invitation)
-    db.session.commit()
-
-    signed_token = _sign_invitation_token(token)
-    payload = _build_invitation_payload(invitation, signed_token)
-
-    return render_response(payload, status_code=201)
-
-
-@bp.route("/invitations/<signed_token>/validate", methods=["GET"])
-def validate_invitation(signed_token: str) -> "Response":
-    invitation = _get_invitation_from_signed_token(signed_token)
-    _ensure_invitation_active(invitation)
-
-    payload = _build_invitation_payload(invitation, signed_token)
-    return render_response(payload)
-
-
-@bp.route("/invitations/<signed_token>/consume", methods=["POST"])
-@require_auth(optional=True)
-def consume_invitation(signed_token: str) -> "Response":
-    invitation = _get_invitation_from_signed_token(signed_token)
-    payload, _ = parse_request_data(request)
-
-    action = str(payload.get("action") or "accept").lower()
-    now = datetime.utcnow()
-
-    if action == "accept":
-        _ensure_invitation_active(invitation)
-        if invitation.used_at:
-            raise APIError(
-                "Invitation already used",
-                status_code=409,
-                error_id="HG-ORG-INVITE-USED",
-            )
-        invitation.used_at = now
-    elif action == "revoke":
-        if invitation.revoked_at:
-            return render_response(_build_invitation_payload(invitation, signed_token))
-        invitation.revoked_at = now
-    else:
-        raise APIError(
-            "Unsupported invitation action",
-            status_code=400,
-            error_id="HG-ORG-INVITE-ACTION",
-        )
-
-    db.session.commit()
-    return render_response(_build_invitation_payload(invitation, signed_token))
+    return render_response({"invitation": invitation_payload}, status_code=201)
 
 
 @bp.route("/invitations/<invitation_id>/cancel", methods=["POST"])
@@ -204,6 +198,52 @@ def cancel_invitation(invitation_id: str) -> "Response":
     return Response(status=204)
 
 
+@bp.route("/invitations/<token>/validate", methods=["GET"])
+def validate_invitation(token: str) -> "Response":
+    invitation = models.OrgInvitation.query.filter_by(token=token).first()
+    if not invitation:
+        return _render_invitation_xml(
+            token,
+            result="invalid",
+            reason="not_found",
+            http_status=404,
+        )
+
+    state, reason = _determine_invitation_state(invitation)
+    payload = invitation.to_dict()
+    payload["state"] = state
+    if reason:
+        payload["reason"] = reason
+    return _render_invitation_xml(token, payload=payload, result="valid" if state == "pending" else state)
+
+
+@bp.route("/invitations/<token>/consume", methods=["POST"])
+def consume_invitation(token: str) -> "Response":
+    invitation = models.OrgInvitation.query.filter_by(token=token).first()
+    if not invitation:
+        return _render_invitation_xml(
+            token,
+            result="invalid",
+            reason="not_found",
+            http_status=404,
+        )
+
+    state, reason = _determine_invitation_state(invitation)
+    if state != "pending":
+        payload = invitation.to_dict()
+        payload["state"] = state
+        if reason:
+            payload["reason"] = reason
+        return _render_invitation_xml(token, payload=payload, result=state, http_status=409)
+
+    invitation.used_at = datetime.utcnow()
+    db.session.commit()
+
+    payload = invitation.to_dict()
+    payload["state"] = "used"
+    return _render_invitation_xml(token, payload=payload, result="used")
+
+
 def _resolve_org_role(identifier: str | None):
     if not identifier:
         return None
@@ -223,68 +263,105 @@ def _resolve_org_role(identifier: str | None):
     return candidate
 
 
-def _get_invitation_signer() -> URLSafeSerializer:
-    secret = current_app.config.get("INVITE_SIGNING_SECRET")
-    if not secret:
-        secret = os.getenv("INVITE_SIGNING_SECRET") or current_app.config.get("SECRET_KEY") or "heartguard-invites"
-        current_app.config["INVITE_SIGNING_SECRET"] = secret
-    return URLSafeSerializer(secret_key=secret, salt="organization-invite")
-
-
-def _sign_invitation_token(token: str) -> str:
-    signer = _get_invitation_signer()
-    return signer.dumps({"token": token})
-
-
-def _unsign_invitation_token(signed_token: str) -> str:
-    signer = _get_invitation_signer()
-    try:
-        data = signer.loads(signed_token)
-    except BadSignature as exc:
-        raise APIError("Invalid invitation token", status_code=404, error_id="HG-ORG-INVITE-SIGNATURE") from exc
-    token = data.get("token") if isinstance(data, dict) else None
-    if not token:
-        raise APIError("Invalid invitation token", status_code=404, error_id="HG-ORG-INVITE-SIGNATURE")
-    return token
-
-
-def _get_invitation_from_signed_token(signed_token: str) -> models.OrgInvitation:
-    token = _unsign_invitation_token(signed_token)
-    invitation = models.OrgInvitation.query.filter_by(token=token).first()
-    if not invitation:
-        raise APIError("Invitation not found", status_code=404, error_id="HG-ORG-INVITE-NOT-FOUND")
-    return invitation
-
-
-def _ensure_invitation_active(invitation: models.OrgInvitation) -> None:
-    if invitation.revoked_at:
-        raise APIError("Invitation revoked", status_code=410, error_id="HG-ORG-INVITE-REVOKED")
-    if invitation.used_at:
-        raise APIError("Invitation already used", status_code=409, error_id="HG-ORG-INVITE-USED")
-    expires = models.OrgInvitation._coerce_datetime(invitation.expires_at)
-    now = models.OrgInvitation._coerce_datetime(datetime.utcnow())
-    if expires and now and expires <= now:
-        invitation.revoked_at = invitation.revoked_at or datetime.utcnow()
+def _create_invitation(*, organization, role, email, ttl_hours: int, created_by, now: datetime) -> dict[str, object]:
+    engine = db.session.get_bind()
+    if engine and engine.dialect.name == "postgresql":
+        statement = text(
+            "SELECT * FROM heartguard.sp_org_invitation_create(:org_id, :org_role_id, :email, :ttl_hours, :created_by)"
+        )
+        params = {
+            "org_id": organization.id,
+            "org_role_id": role.id,
+            "email": email,
+            "ttl_hours": ttl_hours,
+            "created_by": created_by,
+        }
+        result = db.session.execute(statement, params)
+        row = result.mappings().first()
         db.session.commit()
-        raise APIError("Invitation expired", status_code=410, error_id="HG-ORG-INVITE-EXPIRED")
+        if not row:
+            raise APIError(
+                "Failed to create invitation",
+                status_code=500,
+                error_id="HG-ORG-INVITE-SP-FAILED",
+            )
+        return _serialize_invitation_row(row)
+
+    expires_at = now + timedelta(hours=ttl_hours)
+    invitation = models.OrgInvitation(
+        organization=organization,
+        role=role,
+        email=email,
+        expires_at=expires_at,
+        created_at=now,
+    )
+    if created_by:
+        invitation.created_by = created_by
+
+    db.session.add(invitation)
+    db.session.commit()
+    return invitation.to_dict()
 
 
-def _build_invitation_payload(invitation: models.OrgInvitation, signed_token: str) -> dict:
-    organization = invitation.organization
-    role = invitation.role
-    invitation_dict = invitation.to_dict()
-    return {
-        "invitation": invitation_dict,
-        "link": {
-            "href": f"/invite/{signed_token}",
-            "token": signed_token,
-        },
-        "metadata": {
-            "organization": organization.to_dict() if organization else None,
-            "suggested_role": role.to_dict() if role else None,
-            "expires_at": invitation_dict.get("expires_at"),
-        },
+def _serialize_invitation_row(row) -> dict[str, object]:
+    def _iso(value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, datetime) and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
+    row_dict = dict(row)
+    def _string(value):
+        if value is None:
+            return None
+        return str(value)
+
+    payload = {
+        "id": _string(row_dict.get("id")),
+        "org_id": _string(row_dict.get("org_id")),
+        "email": row_dict.get("email"),
+        "role": row_dict.get("org_role_code"),
+        "status": row_dict.get("status"),
+        "token": row_dict.get("token"),
+        "created_at": _iso(row_dict.get("created_at")),
+        "expires_at": _iso(row_dict.get("expires_at")),
+        "used_at": _iso(row_dict.get("used_at")),
+        "revoked_at": _iso(row_dict.get("revoked_at")),
+        "org_role_id": _string(row_dict.get("org_role_id")),
+        "created_by": _string(row_dict.get("created_by")),
     }
+    return payload
+
+
+def _determine_invitation_state(invitation: models.OrgInvitation) -> tuple[str, str | None]:
+    if invitation.revoked_at:
+        return "revoked", "Invitation has been revoked"
+    if invitation.used_at:
+        return "used", "Invitation has already been used"
+    expires_at = models.OrgInvitation._coerce_datetime(invitation.expires_at)
+    now_utc = datetime.now(timezone.utc)
+    if expires_at and expires_at <= now_utc:
+        return "expired", "Invitation has expired"
+    return "pending", None
+
+
+def _render_invitation_xml(token: str, *, result: str, payload: dict[str, object] | None = None, reason: str | None = None, http_status: int = 200) -> "Response":
+    if payload is None:
+        payload = {"token": token}
+    if "token" not in payload:
+        payload["token"] = token
+    payload["result"] = result
+    if reason and "reason" not in payload:
+        payload["reason"] = reason
+
+    xml_body = dicttoxml.dicttoxml({"invitation": payload}, custom_root="response", attr_type=False)
+    response = Response(xml_body, status=http_status, mimetype="application/xml")
+    return response
 
 
 def register_blueprint(app):

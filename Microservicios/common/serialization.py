@@ -1,12 +1,33 @@
 """Utilities for parsing requests and rendering responses in JSON/XML."""
 from __future__ import annotations
 
+import importlib
 import json
 from typing import Any, Callable, Dict, Tuple
 
 from flask import Request, Response, current_app, jsonify, make_response, request
-import dicttoxml
-import xmltodict
+
+_dicttoxml_spec = importlib.util.find_spec("dicttoxml")
+if _dicttoxml_spec is not None:
+    dicttoxml = importlib.import_module("dicttoxml")
+else:  # pragma: no cover - exercised implicitly when dependency missing
+    class _DictToXMLModule:
+        @staticmethod
+        def dicttoxml(*args, **kwargs):
+            raise RuntimeError("dicttoxml dependency is required for XML responses")
+
+    dicttoxml = _DictToXMLModule()
+
+_xmltodict_spec = importlib.util.find_spec("xmltodict")
+if _xmltodict_spec is not None:
+    xmltodict = importlib.import_module("xmltodict")
+else:  # pragma: no cover - exercised implicitly when dependency missing
+    class _XMLToDictModule:
+        @staticmethod
+        def parse(*args, **kwargs):
+            raise RuntimeError("xmltodict dependency is required for XML payloads")
+
+    xmltodict = _XMLToDictModule()
 
 from .errors import APIError
 

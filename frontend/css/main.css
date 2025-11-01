@@ -370,6 +370,55 @@ body.auth-layout {
   gap: 0.75rem;
 }
 
+.page-header__insights {
+  display: flex;
+  align-items: stretch;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.status-chip {
+  min-width: 130px;
+  border-radius: 0.95rem;
+  padding: 0.9rem 1.1rem;
+  background: var(--color-panel-muted);
+  border: 1px solid var(--color-border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.25);
+}
+
+.status-chip__label {
+  font-size: 0.72rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.status-chip__value {
+  font-size: 1.45rem;
+  font-weight: 600;
+  color: var(--color-text);
+  line-height: 1.1;
+}
+
+.status-chip--pending {
+  border-color: rgba(234, 179, 8, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(234, 179, 8, 0.35);
+}
+
+.status-chip--active {
+  border-color: rgba(34, 197, 94, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
+}
+
+.status-chip--expired {
+  border-color: rgba(248, 113, 113, 0.45);
+  box-shadow: inset 0 0 0 1px rgba(248, 113, 113, 0.35);
+}
+
 .page-section {
   display: flex;
   flex-direction: column;

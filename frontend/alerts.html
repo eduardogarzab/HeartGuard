@@ -94,10 +94,14 @@
           <div id="alerts-feedback" class="alert" role="status" hidden></div>
           <div class="page-section">
             <div class="card card--toolbar">
-              <div class="filter-bar">
-                <div class="filter-bar__group">
-                  <label for="filter-severity">Severidad</label>
-                  <select id="filter-severity">
+              <div class="filter-bar input-grid">
+                <div class="input-field input-field--select">
+                  <span class="input-field__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2zm0-4h-2v-4h2z" />
+                    </svg>
+                  </span>
+                  <select id="filter-severity" class="input-field__input">
                     <option value="all">Todas</option>
                     <option value="critical">Crítica</option>
                     <option value="high">Alta</option>
@@ -105,15 +109,31 @@
                     <option value="low">Baja</option>
                     <option value="info">Informativa</option>
                   </select>
+                  <label class="input-field__label" for="filter-severity">Severidad</label>
+                  <span class="input-field__chevron" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M7 10l5 5 5-5H7z" />
+                    </svg>
+                  </span>
                 </div>
-                <div class="filter-bar__group">
-                  <label for="filter-status">Estado</label>
-                  <select id="filter-status">
+                <div class="input-field input-field--select">
+                  <span class="input-field__icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 15a1.5 1.5 0 1 1 1.5-1.5A1.5 1.5 0 0 1 12 17zm1-4h-2V7h2z" />
+                    </svg>
+                  </span>
+                  <select id="filter-status" class="input-field__input">
                     <option value="all">Todos</option>
                     <option value="open">Abierta</option>
                     <option value="acknowledged">Reconocida</option>
                     <option value="resolved">Resuelta</option>
                   </select>
+                  <label class="input-field__label" for="filter-status">Estado</label>
+                  <span class="input-field__chevron" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" focusable="false">
+                      <path d="M7 10l5 5 5-5H7z" />
+                    </svg>
+                  </span>
                 </div>
               </div>
             </div>

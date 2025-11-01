@@ -88,11 +88,21 @@ def _serialize_membership_row(row) -> dict:
 
 def _serialize_user(user: models.User) -> dict:
     status_code = user.status.code if getattr(user, "status", None) else None
+    notification_flags = {
+        "email": bool(user.notifications_email),
+        "sms": bool(user.notifications_sms),
+        "push": bool(user.notifications_push),
+    }
     return {
         "id": str(user.id),
         "name": user.name,
         "email": user.email,
         "status": status_code,
+        "language": user.language,
+        "timezone": user.timezone,
+        "theme": user.theme,
+        "notifications": notification_flags,
+        "notifications_enabled": any(notification_flags.values()),
     }
 
 
@@ -168,6 +178,59 @@ def _update_user_from_payload(user: models.User, payload: dict) -> models.User:
     # Allow updates for basic attributes available in the schema.
     if "name" in payload and isinstance(payload["name"], str) and payload["name"].strip():
         user.name = payload["name"].strip()
+    if "language" in payload:
+        language = payload["language"]
+        if isinstance(language, str):
+            user.language = language.strip() or None
+    if "timezone" in payload:
+        timezone = payload["timezone"]
+        if isinstance(timezone, str):
+            user.timezone = timezone.strip() or None
+    if "theme" in payload:
+        theme = payload["theme"]
+        if isinstance(theme, str):
+            user.theme = theme.strip() or None
+
+    def _coerce_bool(value):
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, (int, float)):
+            return bool(value)
+        if isinstance(value, str):
+            normalized = value.strip().lower()
+            if normalized in {"1", "true", "yes", "on"}:
+                return True
+            if normalized in {"0", "false", "no", "off"}:
+                return False
+        return None
+
+    notification_payload = payload.get("notifications")
+    if isinstance(notification_payload, dict):
+        for key, attr in {
+            "email": "notifications_email",
+            "sms": "notifications_sms",
+            "push": "notifications_push",
+        }.items():
+            if key in notification_payload:
+                coerced = _coerce_bool(notification_payload[key])
+                if coerced is not None:
+                    setattr(user, attr, coerced)
+    elif notification_payload is not None:
+        coerced = _coerce_bool(notification_payload)
+        if coerced is not None:
+            user.notifications_email = coerced
+            user.notifications_sms = coerced
+            user.notifications_push = coerced
+
+    for key, attr in {
+        "notifications_email": "notifications_email",
+        "notifications_sms": "notifications_sms",
+        "notifications_push": "notifications_push",
+    }.items():
+        if key in payload:
+            coerced = _coerce_bool(payload[key])
+            if coerced is not None:
+                setattr(user, attr, coerced)
     if "status" in payload:
         status_code = payload["status"]
         status = models.UserStatus.query.filter_by(code=status_code).first()
@@ -358,10 +421,6 @@ def update_me() -> "Response":
     user_id = g.current_user.get("sub")
     if not user_id:
         raise APIError("User not found", status_code=404, error_id="HG-USER-NOT-FOUND")
-
-    # Delegate to shared logic; ignore preference-only fields gracefully.
-    if any(key in {"language", "timezone", "preferences"} for key in payload):
-        g.logger.info("Ignoring preference fields for user %s - not yet persisted", user_id)
 
     _ensure_database_available()
     user_uuid = _parse_user_id(user_id)

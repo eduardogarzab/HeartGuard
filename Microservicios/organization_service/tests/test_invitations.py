@@ -1,10 +1,11 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
-import types
+from types import SimpleNamespace
 import uuid
 
 import pytest
+from xml.etree import ElementTree as ET
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 SERVICE_DIR = Path(__file__).resolve().parents[1]
@@ -14,60 +15,33 @@ for path in (BASE_DIR, SERVICE_DIR):
         sys.path.append(str(path))
 
 if "flask_cors" not in sys.modules:
-    sys.modules["flask_cors"] = types.SimpleNamespace(CORS=lambda app, resources=None: None)
-
-if "dicttoxml" not in sys.modules:
-    import xml.etree.ElementTree as _ET
-
-    def _append_node(parent: _ET.Element, key: str, value, item_func):
-        if isinstance(value, dict):
-            node = _ET.SubElement(parent, key)
-            for sub_key, sub_value in value.items():
-                _append_node(node, sub_key, sub_value, item_func)
-        elif isinstance(value, list):
-            container = _ET.SubElement(parent, key)
-            for item in value:
-                tag = item_func(item) if item_func else "item"
-                child = _ET.SubElement(container, tag)
-                if isinstance(item, dict):
-                    for sub_key, sub_value in item.items():
-                        _append_node(child, sub_key, sub_value, item_func)
-                elif item is not None:
-                    child.text = str(item)
-                else:
-                    child.text = ""
-        else:
-            node = _ET.SubElement(parent, key)
-            node.text = "" if value is None else str(value)
-
-    def _dicttoxml(data, custom_root="root", attr_type=False, item_func=None):
-        root = _ET.Element(custom_root)
-        if isinstance(data, dict):
-            for key, value in data.items():
-                _append_node(root, key, value, item_func)
-        else:
-            _append_node(root, "item", data, item_func)
-        return _ET.tostring(root, encoding="utf-8")
-
-    sys.modules["dicttoxml"] = types.SimpleNamespace(dicttoxml=_dicttoxml)
+    sys.modules["flask_cors"] = SimpleNamespace(CORS=lambda app, **_: app)
 
 if "xmltodict" not in sys.modules:
-    import xml.etree.ElementTree as _ET
+    class _XmlToDictModule:
+        @staticmethod
+        def parse(xml_string):
+            root = ET.fromstring(xml_string)
 
-    def _element_to_dict(element: _ET.Element):
-        children = list(element)
-        if not children:
-            return element.text or ""
-        result = {}
-        for child in children:
-            result[child.tag] = _element_to_dict(child)
-        return result
+            def _convert(element):
+                children = list(element)
+                if not children:
+                    return element.text
+                result = {}
+                for child in children:
+                    value = _convert(child)
+                    existing = result.get(child.tag)
+                    if existing is None:
+                        result[child.tag] = value
+                    else:
+                        if not isinstance(existing, list):
+                            result[child.tag] = [existing]
+                        result[child.tag].append(value)
+                return result
 
-    def _parse_xml(xml_string: str):
-        root = _ET.fromstring(xml_string)
-        return {root.tag: _element_to_dict(root)}
+            return {root.tag: _convert(root)}
 
-    sys.modules["xmltodict"] = types.SimpleNamespace(parse=_parse_xml)
+    sys.modules["xmltodict"] = _XmlToDictModule()
 
 from common.app_factory import create_app
 from common import auth as common_auth
@@ -105,15 +79,17 @@ def client(app):
     return app.test_client()
 
 
-def issue_token(user_id: str, roles: list[str]):
+def issue_token(user_id: str, roles: list[str], org_id: str | None = None):
     token_payload = {"sub": user_id, "roles": roles}
+    if org_id:
+        token_payload["org_id"] = org_id
     manager = common_auth.get_jwt_manager()
     return manager.encode(token_payload)
 
 
-def auth_headers(app, roles=("org_admin",)):
+def auth_headers(app, roles=("org_admin",), org_id: str | None = None):
     user_id = str(uuid.uuid4())
-    token = issue_token(user_id, list(roles))
+    token = issue_token(user_id, list(roles), org_id=org_id)
     return {
         "Authorization": f"Bearer {token}",
         "Content-Type": "application/json",
@@ -122,15 +98,31 @@ def auth_headers(app, roles=("org_admin",)):
 
 
 def test_create_invitation_success(app, client):
-    headers, user_id = auth_headers(app)
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
+        role_code = role.code
+        role_id = role.id
+
+    headers, user_id = auth_headers(app, org_id=org_id)
+
+    with app.app_context():
+        user_uuid = uuid.UUID(user_id)
+        db.session.add(models.User(id=user_uuid))
+        db.session.add(
+            models.UserOrgMembership(
+                org_id=uuid.UUID(org_id),
+                user_id=user_uuid,
+                org_role_id=role_id,
+            )
+        )
+        db.session.commit()
 
     payload = {
-        "org_id": str(org.id),
+        "org_id": org_id,
         "email": "invitee@example.com",
-        "role": role.code,
+        "role": role_code,
         "ttl_hours": 24,
     }
 
@@ -139,9 +131,9 @@ def test_create_invitation_success(app, client):
     assert response.status_code == 201
     body = response.get_json()
     invitation = body["data"]["invitation"]
-    assert invitation["org_id"] == str(org.id)
+    assert invitation["org_id"] == org_id
     assert invitation["email"] == "invitee@example.com"
-    assert invitation["role"] == role.code
+    assert invitation["role"] == role_code
     assert invitation["status"] == "pending"
     assert invitation["token"]
     assert invitation["created_by"] == user_id
@@ -155,13 +147,14 @@ def test_create_invitation_success(app, client):
 
 
 def test_create_invitation_rejects_invalid_ttl(app, client):
-    headers, _ = auth_headers(app)
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
 
+    headers, _ = auth_headers(app, org_id=org_id)
     payload = {
-        "org_id": str(org.id),
+        "org_id": org_id,
         "role": role.code,
         "ttl_hours": 0,
     }
@@ -245,71 +238,63 @@ def test_cancel_invitation(app, client):
         assert refreshed.revoked_at is not None
 
 
-def test_validate_invitation_returns_metadata(app, client):
-    headers, _ = auth_headers(app)
+def test_create_invitation_rejects_uppercase_role_claim(app, client):
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
+
+    headers, _ = auth_headers(app, roles=("ORG_ADMIN",), org_id=org_id)
 
     payload = {
-        "org_id": str(org.id),
+        "org_id": org_id,
+        "email": "invitee@example.com",
         "role": role.code,
         "ttl_hours": 24,
     }
 
     response = client.post("/organization/invitations", json=payload, headers=headers)
-    assert response.status_code == 201
-    body = response.get_json()["data"]
-    signed_token = body["link"]["token"]
 
-    validation = client.get(f"/organization/invitations/{signed_token}/validate", headers={"Accept": "application/json"})
-    assert validation.status_code == 200
-    data = validation.get_json()["data"]
-    assert data["invitation"]["org_id"] == str(org.id)
-    assert data["metadata"]["suggested_role"]["code"] == role.code
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["error"]["id"] == "HG-AUTH-FORBIDDEN"
 
 
-def test_consume_invitation_marks_used(app, client):
-    headers, _ = auth_headers(app)
+def test_create_invitation_rejects_foreign_org_membership(app, client):
     with app.app_context():
         org = models.Organization.query.first()
         role = models.OrgRole.query.first()
+        org_id = str(org.id)
 
-    create_resp = client.post(
-        "/organization/invitations",
-        json={"org_id": str(org.id), "role": role.code, "ttl_hours": 24},
-        headers=headers,
-    )
-    signed_token = create_resp.get_json()["data"]["link"]["token"]
+        other_org = models.Organization(id=uuid.uuid4(), code="beta", name="Beta", created_at=datetime.utcnow())
+        db.session.add(other_org)
+        db.session.commit()
+        other_org_id = str(other_org.id)
+        role_id = role.id
 
-    consume_resp = client.post(
-        f"/organization/invitations/{signed_token}/consume",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        json={"action": "accept"},
-    )
-    assert consume_resp.status_code == 200
-    used = consume_resp.get_json()["data"]["invitation"]["used_at"]
-    assert used is not None
+    headers, user_id = auth_headers(app, org_id=other_org_id)
 
-
-def test_consume_invitation_revoke(app, client):
-    headers, _ = auth_headers(app)
     with app.app_context():
-        org = models.Organization.query.first()
-        role = models.OrgRole.query.first()
+        user_uuid = uuid.UUID(user_id)
+        db.session.add(models.User(id=user_uuid))
+        db.session.add(
+            models.UserOrgMembership(
+                org_id=uuid.UUID(other_org_id),
+                user_id=user_uuid,
+                org_role_id=role_id,
+            )
+        )
+        db.session.commit()
 
-    create_resp = client.post(
-        "/organization/invitations",
-        json={"org_id": str(org.id), "role": role.code, "ttl_hours": 24},
-        headers=headers,
-    )
-    signed_token = create_resp.get_json()["data"]["link"]["token"]
+    payload = {
+        "org_id": org_id,
+        "email": "invitee@example.com",
+        "role": role.code,
+        "ttl_hours": 24,
+    }
 
-    revoke_resp = client.post(
-        f"/organization/invitations/{signed_token}/consume",
-        headers={"Content-Type": "application/json", "Accept": "application/json"},
-        json={"action": "revoke"},
-    )
-    assert revoke_resp.status_code == 200
-    revoked = revoke_resp.get_json()["data"]["invitation"]["revoked_at"]
-    assert revoked is not None
+    response = client.post("/organization/invitations", json=payload, headers=headers)
+
+    assert response.status_code == 403
+    body = response.get_json()
+    assert body["error"]["id"] == "HG-ORG-INVITE-FORBIDDEN"

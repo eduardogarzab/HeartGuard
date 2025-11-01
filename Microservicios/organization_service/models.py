@@ -75,6 +75,19 @@ class OrgRole(db.Model):
         }
 
 
+class UserOrgMembership(db.Model):
+    """Association between users and organizations used for authorization."""
+
+    __tablename__ = 'user_org_membership'
+
+    org_id = db.Column(UUID(as_uuid=True), db.ForeignKey('organizations.id'), primary_key=True)
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id'), primary_key=True)
+    org_role_id = db.Column(UUID(as_uuid=True), db.ForeignKey('org_roles.id'), nullable=False)
+    joined_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+
+    role = db.relationship('OrgRole', lazy='joined')
+
+
 class OrgInvitationQuery:
     """Typed helper query for invitations."""
 

@@ -16,15 +16,48 @@ let invitations = [];
 let tableBody;
 let createForm;
 let feedback;
+let pendingIndicator;
+let activeIndicator;
+let expiredIndicator;
+
+function updateStatusIndicators() {
+  const counts = {
+    pending: 0,
+    active: 0,
+    expired: 0
+  };
+
+  invitations.forEach((invitation) => {
+    const normalized = (invitation.status || '').toLowerCase();
+    if (normalized === 'pending') {
+      counts.pending += 1;
+    } else if (normalized === 'expired' || normalized === 'cancelled') {
+      counts.expired += 1;
+    } else {
+      counts.active += 1;
+    }
+  });
+
+  if (pendingIndicator) {
+    pendingIndicator.textContent = counts.pending;
+  }
+  if (activeIndicator) {
+    activeIndicator.textContent = counts.active;
+  }
+  if (expiredIndicator) {
+    expiredIndicator.textContent = counts.expired;
+  }
+}
 
 function renderInvitations() {
   if (!tableBody) return;
   tableBody.innerHTML = '';
+  updateStatusIndicators();
 
   if (invitations.length === 0) {
     const row = document.createElement('tr');
     const cell = document.createElement('td');
-    cell.colSpan = 5;
+    cell.colSpan = 6;
     cell.className = 'table-empty';
     cell.textContent = t('noResults');
     row.appendChild(cell);
@@ -135,7 +168,9 @@ async function loadInvitations() {
   try {
     const xml = await apiClient.request('/organization/invitations');
     if (!xml) {
+      invitations = [];
       tableBody.innerHTML = '';
+      updateStatusIndicators();
       return;
     }
     invitations = xmlCollectionToArray(xml, 'Invitation')
@@ -170,6 +205,9 @@ function init() {
   tableBody = document.querySelector('#invitations-table tbody');
   createForm = document.getElementById('invitation-form');
   feedback = document.getElementById('invitation-feedback');
+  pendingIndicator = document.querySelector('[data-invitations-pending]');
+  activeIndicator = document.querySelector('[data-invitations-active]');
+  expiredIndicator = document.querySelector('[data-invitations-expired]');
   if (createForm) {
     createForm.addEventListener('submit', handleCreateInvitation);
     if (!hasRole('org_admin')) {
