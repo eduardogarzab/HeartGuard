@@ -1,7 +1,7 @@
 // Configuración centralizada del frontend
 export const API_CONFIG = {
   // URL base del API Gateway
-  BASE_URL: "http://136.115.53.140:5000",
+  BASE_URL: "http://134.199.133.131:5000",
   
   // Endpoints específicos
   ENDPOINTS: {

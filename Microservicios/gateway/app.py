@@ -10,7 +10,6 @@ if str(BASE_DIR) not in sys.path:
 
 from common.app_factory import create_app
 import routes
-from middleware import validate_api_key_middleware
 
 
 SERVICE_NAME = "gateway"
@@ -18,9 +17,6 @@ DEFAULT_PORT = 5000
 
 
 app = create_app(SERVICE_NAME, routes.register_blueprint)
-
-# Agregar middleware de validación de API Key
-validate_api_key_middleware(app)
 
 
 if __name__ == "__main__":
