@@ -1,6 +1,7 @@
 package com.heartguard.portal.controller;
 
 import com.heartguard.portal.model.api.AlertDto;
+import com.heartguard.portal.model.api.PatientSummaryDto;
 import com.heartguard.portal.service.HeartGuardApiClient;
 import com.heartguard.portal.session.SessionUserManager;
 import jakarta.servlet.http.HttpSession;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
 
 @Controller
 public class AlertsController {
@@ -26,17 +28,30 @@ public class AlertsController {
 
     @GetMapping("/alerts")
     public String listAlerts(HttpSession session, Model model) {
-        if (sessionUserManager.getCurrentUser(session) == null) {
+        var currentUser = sessionUserManager.getCurrentUser(session);
+        if (currentUser == null) {
             return "redirect:/login";
         }
         
-        try {
-            List<AlertDto> alerts = apiClient.getAllAlerts(session);
-            model.addAttribute("alerts", alerts);
-        } catch (Exception ex) {
-            model.addAttribute("alerts", Collections.emptyList());
-            model.addAttribute("error", "No se pudieron cargar las alertas: " + ex.getMessage());
-        }
+        // Obtener los pacientes del usuario (para caregivers) o el propio usuario (para pacientes)
+        List<PatientSummaryDto> userPatients = apiClient.getAssignedPatients(session);
+        Set<String> patientIds = userPatients.stream()
+            .map(PatientSummaryDto::id)
+            .collect(java.util.stream.Collectors.toSet());
+        
+        // Obtener todas las alertas y filtrar por los pacientes del usuario
+        List<AlertDto> allAlerts = apiClient.getAllAlerts(session);
+        List<AlertDto> filteredAlerts = allAlerts.stream()
+            .filter(alert -> alert.patientId() != null && patientIds.contains(alert.patientId()))
+            .toList();
+        
+        System.out.println("Usuario: " + currentUser.getName() + " | Pacientes: " + patientIds.size() + " | Alertas filtradas: " + filteredAlerts.size() + " de " + allAlerts.size());
+        
+        // Agregar información del usuario
+        model.addAttribute("userName", currentUser.getName());
+        model.addAttribute("userRole", currentUser.getRole());
+        model.addAttribute("alerts", filteredAlerts);
+        model.addAttribute("patientCount", userPatients.size());
         
         return "alerts";
     }

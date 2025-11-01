@@ -5,6 +5,16 @@
     <title>HeartGuard - Alertas</title>
     <link rel="stylesheet" href="/css/main.css">
     <style>
+        .user-badge {
+            display: inline-block;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
         .alerts-list {
             display: flex;
             flex-direction: column;
@@ -95,13 +105,27 @@
 </header>
 <main class="content">
     <section class="panel">
-        <h1>Alertas del Sistema</h1>
-        
-        <div th:if="${error}" class="error-message">
-            <p th:text="${error}">Error message</p>
+        <div>
+            <span class="user-badge" th:if="${userRole}">
+                <span th:text="${userName}">Usuario</span> · <span th:text="${userRole}">Rol</span>
+                <span th:if="${patientCount != null}"> · <span th:text="${patientCount}">0</span> paciente(s)</span>
+            </span>
         </div>
+        <h1 th:if="${userRole != null and #strings.toLowerCase(userRole).contains('caregiver')}">Alertas de Mis Pacientes</h1>
+        <h1 th:if="${userRole != null and #strings.toLowerCase(userRole).contains('patient')}">Mis Alertas</h1>
+        <h1 th:if="${userRole == null or (!#strings.toLowerCase(userRole).contains('caregiver') and !#strings.toLowerCase(userRole).contains('patient'))}">Alertas del Sistema</h1>
         
-        <p th:if="${#lists.isEmpty(alerts) and error == null}">No hay alertas en el sistema.</p>
+        <p th:if="${#lists.isEmpty(alerts)}" style="background: #f3f4f6; border-radius: 8px; padding: 1.5rem; text-align: center; color: #6b7280;">
+            <span th:if="${userRole != null and #strings.toLowerCase(userRole).contains('caregiver')}">
+                No hay alertas activas para tus pacientes.
+            </span>
+            <span th:if="${userRole != null and #strings.toLowerCase(userRole).contains('patient')}">
+                No tienes alertas activas en este momento.
+            </span>
+            <span th:if="${userRole == null or (!#strings.toLowerCase(userRole).contains('caregiver') and !#strings.toLowerCase(userRole).contains('patient'))}">
+                No hay alertas en el sistema actualmente.
+            </span>
+        </p>
         
         <div class="alerts-list" th:if="${!#lists.isEmpty(alerts)}">
             <div class="alert-card" th:each="alert : ${alerts}" 

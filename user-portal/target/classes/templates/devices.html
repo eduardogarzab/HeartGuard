@@ -5,6 +5,16 @@
     <title>HeartGuard - Dispositivos</title>
     <link rel="stylesheet" href="/css/main.css">
     <style>
+        .user-badge {
+            display: inline-block;
+            background: rgba(102, 126, 234, 0.1);
+            color: #667eea;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+        }
         .devices-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
@@ -99,13 +109,28 @@
 </header>
 <main class="content">
     <section class="panel">
-        <h1>Dispositivos Registrados</h1>
-        
-        <div th:if="${error}" class="error-message">
-            <p th:text="${error}">Error message</p>
+        <div>
+            <span class="user-badge" th:if="${userRole}">
+                <span th:text="${userName}">Usuario</span> · <span th:text="${userRole}">Rol</span>
+                <span th:if="${patientCount != null}"> · <span th:text="${patientCount}">0</span> paciente(s)</span>
+            </span>
         </div>
+        <h1 th:if="${userRole != null and #strings.toLowerCase(userRole).contains('caregiver')}">Dispositivos de Mis Pacientes</h1>
+        <h1 th:if="${userRole != null and #strings.toLowerCase(userRole).contains('patient')}">Mis Dispositivos</h1>
+        <h1 th:if="${userRole == null or (!#strings.toLowerCase(userRole).contains('caregiver') and !#strings.toLowerCase(userRole).contains('patient'))}">Dispositivos Registrados</h1>
         
-        <p th:if="${#lists.isEmpty(devices) and error == null}">No hay dispositivos registrados en el sistema.</p>
+        <p th:if="${#lists.isEmpty(devices)}" style="background: #f3f4f6; border-radius: 8px; padding: 1.5rem; text-align: center; color: #6b7280;">
+            <span th:if="${userRole != null and #strings.toLowerCase(userRole).contains('caregiver')}">
+                No hay dispositivos registrados para tus pacientes.
+            </span>
+            <span th:if="${userRole != null and #strings.toLowerCase(userRole).contains('patient')}">
+                No tienes dispositivos registrados.
+            </span>
+            <span th:if="${userRole == null or (!#strings.toLowerCase(userRole).contains('caregiver') and !#strings.toLowerCase(userRole).contains('patient'))}">
+                No hay dispositivos registrados en el sistema actualmente.
+            </span>
+        </p>
+        </p>
         
         <div class="devices-grid" th:if="${!#lists.isEmpty(devices)}">
             <div class="device-card" th:each="device : ${devices}" 

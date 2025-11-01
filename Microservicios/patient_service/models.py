@@ -34,3 +34,59 @@ class Patient(db.Model):
             'profile_photo_url': self.profile_photo_url,
             'created_at': self.created_at.isoformat(),
         }
+
+
+class CaregiverPatient(db.Model):
+    """Represents the caregiver-patient relationship."""
+    __tablename__ = 'caregiver_patient'
+    __table_args__ = {'extend_existing': True}
+
+    patient_id = db.Column(UUID(as_uuid=True), primary_key=True)
+    user_id = db.Column(UUID(as_uuid=True), primary_key=True)
+    rel_type_id = db.Column(UUID(as_uuid=True))
+    is_primary = db.Column(db.Boolean, default=False)
+    started_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+    ended_at = db.Column(db.TIMESTAMP)
+    note = db.Column(db.Text)
+
+
+class UserOrgMembership(db.Model):
+    """Represents user membership in an organization."""
+    __tablename__ = 'user_org_membership'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = db.Column(UUID(as_uuid=True), nullable=False)
+    user_id = db.Column(UUID(as_uuid=True), nullable=False)
+    org_role_id = db.Column(UUID(as_uuid=True))
+    joined_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+    left_at = db.Column(db.TIMESTAMP)
+
+
+class UserRole(db.Model):
+    """Represents user global roles."""
+    __tablename__ = 'user_role'
+    __table_args__ = {'extend_existing': True}
+
+    user_id = db.Column(UUID(as_uuid=True), primary_key=True)
+    role_id = db.Column(UUID(as_uuid=True), primary_key=True)
+
+
+class Role(db.Model):
+    """Represents global roles."""
+    __tablename__ = 'roles'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.Text)
+
+
+class OrgRole(db.Model):
+    """Represents organization-level roles."""
+    __tablename__ = 'org_roles'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    code = db.Column(db.String(50), unique=True, nullable=False)
+    label = db.Column(db.String(120))

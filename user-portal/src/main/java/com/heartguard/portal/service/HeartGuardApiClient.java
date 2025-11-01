@@ -106,78 +106,141 @@ public class HeartGuardApiClient {
     }
 
     public List<PatientSummaryDto> getAssignedPatients(HttpSession session) {
+        System.out.println("\n============================================");
+        System.out.println("    INICIANDO getAssignedPatients");
+        System.out.println("============================================");
         log.info("Iniciando getAssignedPatients...");
-        return executeWithRetry(session, token -> {
-            try {
-                URI uri = URI.create(properties.getBaseUrl() + "/patients");
-                log.info("URL del endpoint: {}", uri);
-                
-                HttpHeaders headers = authorizationHeaders(token);
-                log.info("Headers configurados: Authorization=Bearer ***");
-                
-                ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(
-                    uri, HttpMethod.GET, new HttpEntity<>(headers),
-                    new ParameterizedTypeReference<GatewayResponse<Map<String, Object>>>() {});
-                
-                log.info("Respuesta recibida: status={}", response.getStatusCode());
-                
-                GatewayResponse<Map<String, Object>> body = response.getBody();
-                if (body != null && body.data() != null) {
-                    log.info("Body data presente: {}", body.data().keySet());
-                    Object patientsData = body.data().get("patients");
-                    if (patientsData instanceof List<?> patientsList) {
-                        log.info("Lista de pacientes encontrada: {} elementos", patientsList.size());
-                        List<PatientSummaryDto> result = patientsList.stream()
-                            .filter(item -> item instanceof Map)
-                            .map(item -> {
-                                @SuppressWarnings("unchecked")
-                                Map<String, Object> patientMap = (Map<String, Object>) item;
-                                return new PatientSummaryDto(
-                                    (String) patientMap.get("id"),
-                                    (String) patientMap.get("person_name"),
-                                    (String) patientMap.get("sex_id"),
-                                    (String) patientMap.get("risk_level_id"),
-                                    (String) patientMap.get("profile_photo_url")
-                                );
-                            })
-                            .toList();
-                        log.info("Pacientes parseados exitosamente: {}", result.size());
-                        return result;
-                    } else {
-                        log.warn("patientsData no es una lista: {}", patientsData != null ? patientsData.getClass() : "null");
-                    }
+        
+        AuthenticatedUserSession userSession = sessionUserManager.getCurrentUser(session);
+        if (userSession == null) {
+            System.out.println("ERROR: No hay sesión de usuario");
+            return Collections.emptyList();
+        }
+        
+        String token = userSession.getAccessToken();
+        if (token == null || token.isEmpty()) {
+            System.out.println("ERROR: Token es null o vacío");
+            return Collections.emptyList();
+        }
+        
+        System.out.println("Token presente - Longitud: " + token.length());
+        System.out.println("Token (primeros 100): " + token.substring(0, Math.min(100, token.length())));
+        
+        try {
+            URI uri = URI.create(properties.getBaseUrl() + "/patients");
+            System.out.println("URL: " + uri);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(token);
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            
+            System.out.println("Enviando request...");
+            
+            ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(
+                uri, HttpMethod.GET, new HttpEntity<>(headers),
+                new ParameterizedTypeReference<GatewayResponse<Map<String, Object>>>() {});
+            
+            System.out.println("Respuesta recibida! Status: " + response.getStatusCode());
+            
+            GatewayResponse<Map<String, Object>> body = response.getBody();
+            if (body != null && body.data() != null) {
+                System.out.println("Body presente, keys: " + body.data().keySet());
+                Object patientsData = body.data().get("patients");
+                if (patientsData instanceof List<?> patientsList) {
+                    System.out.println("Lista de pacientes encontrada: " + patientsList.size() + " elementos");
+                    List<PatientSummaryDto> result = patientsList.stream()
+                        .filter(item -> item instanceof Map)
+                        .map(item -> {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> patientMap = (Map<String, Object>) item;
+                            return new PatientSummaryDto(
+                                (String) patientMap.get("id"),
+                                (String) patientMap.get("person_name"),
+                                (String) patientMap.get("sex_id"),
+                                (String) patientMap.get("risk_level_id"),
+                                (String) patientMap.get("profile_photo_url")
+                            );
+                        })
+                        .toList();
+                    System.out.println("Pacientes parseados exitosamente: " + result.size());
+                    System.out.println("============================================\n");
+                    return result;
                 } else {
-                    log.warn("Body o data es null: body={}, data={}", body, body != null ? body.data() : "n/a");
+                    System.out.println("WARN: patientsData no es una lista");
                 }
-                return Collections.emptyList();
-            } catch (HttpServerErrorException e) {
-                // Handle 5xx errors from gateway
-                log.error("Gateway returned 5xx error: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
-                
-                // Try to parse the error response
-                try {
-                    String errorBody = e.getResponseBodyAsString();
-                    log.error("Error details: {}", errorBody);
-                    
-                    // Check if it's a GatewayResponse error format
-                    if (errorBody.contains("\"error\"")) {
-                        log.error("Gateway error detected. This might be due to authentication or permission issues.");
-                        log.error("Please verify:");
-                        log.error("  1. User has correct roles assigned in database (user_role table)");
-                        log.error("  2. Auth service is loading roles from database");
-                        log.error("  3. JWT token contains required roles");
-                    }
-                } catch (Exception parseEx) {
-                    log.error("Could not parse error response", parseEx);
-                }
-                
-                // Return empty list instead of throwing exception
-                return Collections.emptyList();
-            } catch (Exception e) {
-                log.error("Error en getAssignedPatients", e);
-                return Collections.emptyList();
+            } else {
+                System.out.println("WARN: Body o data es null");
             }
-        });
+            
+            System.out.println("============================================\n");
+            return Collections.emptyList();
+            
+        } catch (HttpServerErrorException e) {
+            System.out.println("\n!!! ERROR 500 DEL GATEWAY !!!");
+            System.out.println("Status: " + e.getStatusCode());
+            System.out.println("Body: " + e.getResponseBodyAsString());
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+            log.error("Gateway returned 5xx error: status={}, body={}", e.getStatusCode(), e.getResponseBodyAsString());
+            return Collections.emptyList();
+            
+        } catch (HttpClientErrorException.Unauthorized e) {
+            System.out.println("\n!!! ERROR 401 - TOKEN INVALIDO !!!");
+            System.out.println("Intentando refresh del token...");
+            
+            // Try refresh
+            String newToken = refreshAccessToken(userSession);
+            if (newToken != null) {
+                System.out.println("Token refreshed exitosamente, reintentando...");
+                sessionUserManager.updateAccessToken(session, newToken);
+                // Retry with new token - simplified version
+                try {
+                    URI uri = URI.create(properties.getBaseUrl() + "/patients");
+                    HttpHeaders headers = new HttpHeaders();
+                    headers.setBearerAuth(newToken);
+                    headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+                    
+                    ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(
+                        uri, HttpMethod.GET, new HttpEntity<>(headers),
+                        new ParameterizedTypeReference<GatewayResponse<Map<String, Object>>>() {});
+                    
+                    GatewayResponse<Map<String, Object>> body = response.getBody();
+                    if (body != null && body.data() != null) {
+                        Object patientsData = body.data().get("patients");
+                        if (patientsData instanceof List<?> patientsList) {
+                            return patientsList.stream()
+                                .filter(item -> item instanceof Map)
+                                .map(item -> {
+                                    @SuppressWarnings("unchecked")
+                                    Map<String, Object> patientMap = (Map<String, Object>) item;
+                                    return new PatientSummaryDto(
+                                        (String) patientMap.get("id"),
+                                        (String) patientMap.get("person_name"),
+                                        (String) patientMap.get("sex_id"),
+                                        (String) patientMap.get("risk_level_id"),
+                                        (String) patientMap.get("profile_photo_url")
+                                    );
+                                })
+                                .toList();
+                        }
+                    }
+                } catch (Exception retryEx) {
+                    System.out.println("ERROR en retry: " + retryEx.getMessage());
+                }
+            }
+            
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+            return Collections.emptyList();
+            
+        } catch (Exception e) {
+            System.out.println("\n!!! ERROR GENERAL !!!");
+            System.out.println("Tipo: " + e.getClass().getName());
+            System.out.println("Mensaje: " + e.getMessage());
+            e.printStackTrace();
+            System.out.println("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!\n");
+            log.error("Error en getAssignedPatients", e);
+            return Collections.emptyList();
+        }
     }
 
     public PatientDetailDto getPatientDetails(HttpSession session, String patientId) {
@@ -255,16 +318,35 @@ public class HeartGuardApiClient {
     }
 
     public List<AlertDto> getAllAlerts(HttpSession session) {
-        return executeWithRetry(session, token -> {
+        System.out.println("\n============================================");
+        System.out.println("    INICIANDO getAllAlerts");
+        System.out.println("============================================");
+        
+        AuthenticatedUserSession userSession = sessionUserManager.getCurrentUser(session);
+        if (userSession == null || userSession.getAccessToken() == null) {
+            System.out.println("ERROR: No hay sesión o token");
+            return Collections.emptyList();
+        }
+        
+        try {
             URI uri = URI.create(properties.getBaseUrl() + "/alerts");
-            HttpHeaders headers = authorizationHeaders(token);
-            ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers),
+            System.out.println("URL: " + uri);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(userSession.getAccessToken());
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            
+            ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(
+                uri, HttpMethod.GET, new HttpEntity<>(headers),
                 new ParameterizedTypeReference<GatewayResponse<Map<String, Object>>>() {});
+            
+            System.out.println("Respuesta: " + response.getStatusCode());
             
             GatewayResponse<Map<String, Object>> body = response.getBody();
             if (body != null && body.data() != null) {
                 Object alertsData = body.data().get("alerts");
                 if (alertsData instanceof List<?> alertsList) {
+                    System.out.println("Alertas encontradas: " + alertsList.size());
                     List<AlertDto> result = alertsList.stream()
                         .filter(item -> item instanceof Map)
                         .map(item -> {
@@ -281,24 +363,52 @@ public class HeartGuardApiClient {
                             );
                         })
                         .toList();
+                    System.out.println("============================================\n");
                     return result;
                 }
             }
+            
+            System.out.println("No se encontraron alertas en la respuesta");
+            System.out.println("============================================\n");
             return Collections.emptyList();
-        });
+            
+        } catch (Exception e) {
+            System.out.println("ERROR en getAllAlerts: " + e.getMessage());
+            System.out.println("============================================\n");
+            return Collections.emptyList();
+        }
     }
 
     public List<DeviceDto> getAllDevices(HttpSession session) {
-        return executeWithRetry(session, token -> {
+        System.out.println("\n============================================");
+        System.out.println("    INICIANDO getAllDevices");
+        System.out.println("============================================");
+        
+        AuthenticatedUserSession userSession = sessionUserManager.getCurrentUser(session);
+        if (userSession == null || userSession.getAccessToken() == null) {
+            System.out.println("ERROR: No hay sesión o token");
+            return Collections.emptyList();
+        }
+        
+        try {
             URI uri = URI.create(properties.getBaseUrl() + "/devices");
-            HttpHeaders headers = authorizationHeaders(token);
-            ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(uri, HttpMethod.GET, new HttpEntity<>(headers),
+            System.out.println("URL: " + uri);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setBearerAuth(userSession.getAccessToken());
+            headers.setAccept(List.of(MediaType.APPLICATION_JSON));
+            
+            ResponseEntity<GatewayResponse<Map<String, Object>>> response = restTemplate.exchange(
+                uri, HttpMethod.GET, new HttpEntity<>(headers),
                 new ParameterizedTypeReference<GatewayResponse<Map<String, Object>>>() {});
+            
+            System.out.println("Respuesta: " + response.getStatusCode());
             
             GatewayResponse<Map<String, Object>> body = response.getBody();
             if (body != null && body.data() != null) {
                 Object devicesData = body.data().get("devices");
                 if (devicesData instanceof List<?> devicesList) {
+                    System.out.println("Dispositivos encontrados: " + devicesList.size());
                     List<DeviceDto> result = devicesList.stream()
                         .filter(item -> item instanceof Map)
                         .map(item -> {
@@ -317,11 +427,20 @@ public class HeartGuardApiClient {
                             );
                         })
                         .toList();
+                    System.out.println("============================================\n");
                     return result;
                 }
             }
+            
+            System.out.println("No se encontraron dispositivos en la respuesta");
+            System.out.println("============================================\n");
             return Collections.emptyList();
-        });
+            
+        } catch (Exception e) {
+            System.out.println("ERROR en getAllDevices: " + e.getMessage());
+            System.out.println("============================================\n");
+            return Collections.emptyList();
+        }
     }
 
     private HttpHeaders authorizationHeaders(String token) {
@@ -332,13 +451,33 @@ public class HeartGuardApiClient {
     }
 
     private <T> T executeWithRetry(HttpSession session, ApiCall<T> apiCall) {
+        System.out.println("\n--- executeWithRetry: INICIO ---");
         AuthenticatedUserSession userSession = sessionUserManager.getCurrentUser(session);
         if (userSession == null) {
+            System.out.println("ERROR CRITICO: No hay sesión de usuario!");
+            log.error("ERROR CRITICO: No hay sesión de usuario!");
             throw HttpClientErrorException.create(HttpStatus.UNAUTHORIZED, "Unauthorized", HttpHeaders.EMPTY, null, null);
         }
+        
+        String accessToken = userSession.getAccessToken();
+        if (accessToken == null || accessToken.isEmpty()) {
+            System.out.println("ERROR CRITICO: Access token es null o vacío!");
+            log.error("ERROR CRITICO: Access token es null o vacío!");
+            throw HttpClientErrorException.create(HttpStatus.UNAUTHORIZED, "No access token", HttpHeaders.EMPTY, null, null);
+        }
+        
+        System.out.println("Token presente - Longitud: " + accessToken.length());
+        System.out.println("Token primeros 80 chars: " + accessToken.substring(0, Math.min(80, accessToken.length())));
+        System.out.println("--- executeWithRetry: Llamando apiCall.execute() ---");
+        log.info("executeWithRetry: Token presente, longitud={}", accessToken.length());
+        log.info("executeWithRetry: Token primeros 50 chars={}", accessToken.substring(0, Math.min(50, accessToken.length())));
+        
         try {
-            return apiCall.execute(userSession.getAccessToken());
+            T result = apiCall.execute(accessToken);
+            System.out.println("--- executeWithRetry: EXITO ---\n");
+            return result;
         } catch (HttpClientErrorException.Unauthorized unauthorized) {
+            System.out.println("--- executeWithRetry: Token expirado, intentando refresh ---");
             log.debug("Access token expired, attempting refresh");
             String newToken = refreshAccessToken(userSession);
             if (newToken == null) {
@@ -346,6 +485,15 @@ public class HeartGuardApiClient {
             }
             sessionUserManager.updateAccessToken(session, newToken);
             return apiCall.execute(newToken);
+        } catch (HttpServerErrorException serverError) {
+            // Log server errors but let the ApiCall handle them
+            System.out.println("--- executeWithRetry: ERROR DEL SERVIDOR ---");
+            System.out.println("Status: " + serverError.getStatusCode());
+            System.out.println("Body: " + serverError.getResponseBodyAsString());
+            log.error("Server error in executeWithRetry: status={}, body={}", 
+                     serverError.getStatusCode(), serverError.getResponseBodyAsString());
+            // Re-throw to let the calling method handle it
+            throw serverError;
         }
     }
 

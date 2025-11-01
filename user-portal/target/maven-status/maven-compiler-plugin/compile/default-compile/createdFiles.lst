@@ -7,6 +7,7 @@ com\heartguard\portal\model\api\DeviceDto.class
 com\heartguard\portal\session\AuthenticatedUserSession.class
 com\heartguard\portal\controller\AlertsController.class
 com\heartguard\portal\model\api\AlertAckRequest.class
+com\heartguard\portal\service\HeartGuardApiClient$8.class
 com\heartguard\portal\controller\AuthController.class
 com\heartguard\portal\model\api\GatewayError.class
 com\heartguard\portal\model\api\LoginResponse.class
@@ -32,8 +33,10 @@ com\heartguard\portal\model\api\AlertDto.class
 com\heartguard\portal\config\GatewayProperties.class
 com\heartguard\portal\service\HeartGuardApiClient$3.class
 com\heartguard\portal\service\HeartGuardApiClient$6.class
+com\heartguard\portal\config\AppConfig$DetailedErrorHandler.class
 com\heartguard\portal\HeartGuardUserPortalApplication.class
 com\heartguard\portal\model\api\LoginData$UserData.class
 com\heartguard\portal\model\api\UserSummary.class
 com\heartguard\portal\session\SessionUserManager.class
+com\heartguard\portal\config\AppConfig$LoggingInterceptor.class
 com\heartguard\portal\model\api\PatientSummaryDto.class
