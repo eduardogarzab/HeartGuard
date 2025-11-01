@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HeartGuard · Perfil</title>
+    <link rel="stylesheet" href="css/main.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/responsive.css" />
+  </head>
+  <body>
+    <div class="wrapper">
+      <aside class="sidebar" aria-label="Navegación principal">
+        <button class="sidebar__toggle" type="button" aria-expanded="false" aria-controls="sidebar-nav">☰</button>
+        <div class="sidebar__header">
+          <div class="sidebar__logo">
+            <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
+          </div>
+          <span aria-hidden="true">HeartGuard</span>
+        </div>
+        <nav id="sidebar-nav">
+          <a href="index.html">Dashboard</a>
+          <a href="organization.html">Organización</a>
+          <a href="users.html">Usuarios</a>
+          <a href="patients.html">Pacientes</a>
+          <a href="devices.html">Dispositivos</a>
+          <a href="alerts.html">Alertas</a>
+          <a href="invitations.html">Invitaciones</a>
+          <a href="profile.html" aria-current="page">Perfil</a>
+        </nav>
+      </aside>
+      <main class="main">
+        <header class="topbar">
+          <div class="topbar__left">
+            <span class="topbar__title" data-org-name>Organización</span>
+            <span class="topbar__subtitle">Preferencias personales</span>
+          </div>
+          <div class="topbar__actions">
+            <div class="topbar__user">
+              <button class="user-menu__button" type="button" data-user-menu-button aria-expanded="false">
+                <span class="status-dot status-dot--success"></span>
+                Mi cuenta
+              </button>
+              <ul class="user-menu__list" data-user-menu aria-hidden="true">
+                <li><button type="button" data-logout>Cerrar sesión</button></li>
+              </ul>
+            </div>
+          </div>
+        </header>
+        <section class="content" aria-labelledby="profile-heading">
+          <h1 id="profile-heading" class="section-title">Perfil</h1>
+          <div id="profile-feedback" class="alert" role="status" hidden></div>
+          <form id="profile-form" class="card" aria-describedby="profile-feedback">
+            <div class="filter-bar">
+              <div class="filter-bar__group">
+                <label for="profile-email">Correo</label>
+                <input id="profile-email" name="email" type="email" disabled />
+              </div>
+              <div class="filter-bar__group">
+                <label for="profile-language">Idioma</label>
+                <select id="profile-language" name="language">
+                  <option value="es">Español</option>
+                  <option value="en">Inglés</option>
+                </select>
+              </div>
+              <div class="filter-bar__group">
+                <label for="profile-timezone">Zona horaria</label>
+                <input id="profile-timezone" name="timezone" type="text" required />
+              </div>
+            </div>
+            <div class="filter-bar">
+              <div class="filter-bar__group">
+                <label for="profile-theme">Tema</label>
+                <select id="profile-theme" name="theme">
+                  <option value="light">Claro</option>
+                  <option value="dark">Oscuro</option>
+                </select>
+              </div>
+              <div class="filter-bar__group">
+                <label for="profile-notifications">Notificaciones</label>
+                <input id="profile-notifications" name="notifications" type="checkbox" />
+              </div>
+            </div>
+            <button class="button" type="submit">Guardar preferencias</button>
+          </form>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="js/profile.js"></script>
+  </body>
+</html>

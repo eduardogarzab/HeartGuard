@@ -6,3 +6,4 @@ xmltodict>=0.13
 gunicorn>=21.2
 Flask-SQLAlchemy>=3.0
 psycopg2-binary>=2.9
+bcrypt>=4.0.1

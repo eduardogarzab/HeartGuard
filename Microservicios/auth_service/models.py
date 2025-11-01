@@ -1,7 +1,7 @@
 """Database models for the authentication service."""
 from __future__ import annotations
 
-from werkzeug.security import check_password_hash, generate_password_hash
+import bcrypt
 from sqlalchemy.dialects.postgresql import UUID
 import uuid
 
@@ -25,12 +25,24 @@ class User(db.Model):
     updated_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now(), onupdate=db.func.now())
 
     def set_password(self, password: str):
-        """Hashes and sets the user's password."""
-        self.password_hash = generate_password_hash(password)
+        """Hashes and sets the user's password using bcrypt."""
+        salt = bcrypt.gensalt(rounds=10)
+        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
 
     def check_password(self, password: str) -> bool:
-        """Checks if the provided password matches the stored hash."""
-        return check_password_hash(self.password_hash, password)
+        """Checks if the provided password matches the stored hash.
+        
+        Supports both:
+        - PostgreSQL crypt() format (starts with $2a$, $2b$, $2y$)
+        - Python bcrypt format
+        """
+        try:
+            # password_hash from DB might be str, ensure it's bytes for bcrypt
+            hash_bytes = self.password_hash.encode('utf-8') if isinstance(self.password_hash, str) else self.password_hash
+            password_bytes = password.encode('utf-8')
+            return bcrypt.checkpw(password_bytes, hash_bytes)
+        except Exception:
+            return False
 
     def to_dict(self):
         """Serializes the user object to a dictionary."""

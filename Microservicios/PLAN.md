@@ -1,7 +1,7 @@
 # HeartGuard Microservices Architecture Plan
 
 ## 1. Visión general
-El dominio médico descrito en `db/init.sql` se segmenta en contextos delimitados (bounded contexts) que alinean responsabilidades de negocio con servicios Flask independientes. Cada servicio expone APIs REST bilingües (JSON/XML) y participa en flujos síncronos vía HTTP y asíncronos mediante RabbitMQ, operando sobre su propia base de datos ("database per service") dentro de una instancia PostgreSQL multi‐schema. El despliegue está orientado a la VM pública `34.70.7.33`, con puertos consecutivos a partir del 5000.
+El dominio médico descrito en `db/init.sql` se segmenta en contextos delimitados (bounded contexts) que alinean responsabilidades de negocio con servicios Flask independientes. Cada servicio expone APIs REST bilingües (JSON/XML) y participa en flujos síncronos vía HTTP y asíncronos mediante RabbitMQ, operando sobre su propia base de datos ("database per service") dentro de una instancia PostgreSQL multi‐schema. El despliegue está orientado a la VM pública `136.115.53.140`, con puertos consecutivos a partir del 5000.
 
 ## 2. Diagrama de arquitectura
 ```
@@ -33,12 +33,12 @@ El dominio médico descrito en `db/init.sql` se segmenta en contextos delimitado
                       v
                  Audit :5011
 
-            +---------------------------+
-            | Media :5010 (GCS bucket)  |
-            +-------------+-------------+
-                          |
-                          v
-                 Google Cloud Storage
+      +---------------------------+
+      | Media :5010 (placeholder) |
+      +-------------+-------------+
+           |
+           v
+        Almacenamiento TBD
 
             +---------------------------+
             | Influx Service :5006      |
@@ -63,7 +63,7 @@ Otros componentes compartidos: Redis (rate limiting, tokens), Postgres (multisch
 | **Inference (5007)** | `models`, `model_versions`, `event_types`, `inferences` | Registro de modelos y resultados de inferencia; consumo de streams/eventos. |
 | **Alert (5008)** | `alerts`, `alert_status`, `alert_assignment`, `alert_ack`, `alert_resolution`, `alert_channels`, `alert_levels`, `risk_levels` | Orquestación completa del ciclo de vida de alertas clínicas. |
 | **Notification (5009)** | `push_devices`, `alert_delivery`, `delivery_statuses` | Entrega de notificaciones multicanal y seguimiento de estado. |
-| **Media (5010)** | `media_assets`, `media_tags` | Gestión de archivos en GCS, URLs firmadas, metadatos. |
+| **Media (5010)** | `media_assets`, `media_tags` | Placeholder reservado para almacenamiento de archivos (implementación pendiente). |
 | **Audit (5011)** | `audit_logs` | Recepción de eventos auditables desde cola, persistencia y consulta. |
 
 ## 4. Estructura de carpetas
@@ -133,7 +133,7 @@ Microservicios/
 3. **Perfil de usuario**: app móvil (JSON) → Gateway → User.
 4. **Gestión de pacientes y dispositivos**: clínico/admin → Gateway → Patient/Device Services.
 5. **Consultas de series temporales**: servicio Device / cliente → Gateway → Influx Service (`/write`, `/query`).
-6. **Descarga de media**: cliente → Gateway → Media (genera URL firmada, redirige).
+6. **Media (placeholder)**: cliente → Gateway → Media responde `501 Not Implemented` hasta que se integre almacenamiento real.
 
 ### 5.2 Flujos asíncronos (RabbitMQ)
 1. **Inferencia**: Device Service emite evento `signal_stream.bound` con metadata de `timeseries_binding`. Inference Service consume, ejecuta modelo y publica `inference.generated`.
@@ -177,17 +177,17 @@ XML equivalente mediante `dicttoxml`. Códigos HTTP alineados con RFC 7807 (a fu
 - `.env` carga variables específicas por servicio (puertos, secretos, URLs). Servicios leen mediante `python-dotenv` o inyección en contenedor.
 - Credenciales sensibles (p.ej. `GOOGLE_APPLICATION_CREDENTIALS`) montadas como `docker secret` o volumen de solo lectura.
 
-## 10. Pasos de despliegue en VM 34.70.7.33
+## 10. Pasos de despliegue en VM 136.115.53.140
 1. Instalar Docker Engine y Docker Compose v2.
 2. Clonar repositorio `HeartGuard` y copiar carpeta `Microservicios/` completa.
 3. Crear archivo `.env` desde `.env.example` con valores reales.
-4. Colocar credencial GCP (`service-account.json`) en `/etc/heartguard/gcp/sa.json` y ajustar permisos (600). El `docker-compose.yml` montará el archivo como secreto para `media_service`.
+4. Conservar la ruta `/etc/heartguard/gcp/sa.json` para credenciales futuras, pero **no** es necesario cargar el secreto todavía: el `media_service` se ejecuta como **placeholder** sin integración con GCS.
 5. Abrir puertos 5000-5011 en firewall GCP (restringir por IP cuando sea posible).
 6. Ejecutar `./start_services.sh` para construir e iniciar contenedores (`docker compose up -d --build`).
-7. Verificar estado con `docker compose ps` y health checks (`curl http://34.70.7.33:5000/gateway/health`).
+7. Verificar estado con `docker compose ps` y health checks (`curl http://136.115.53.140:5000/gateway/health`).
 8. Configurar supervisión (systemd unit opcional) para reiniciar servicios.
-9. Desde entorno local ejecutar `./validate_endpoints.sh --host 34.70.7.33` para validar disponibilidad JSON/XML.
-10. Configurar backups: snapshots de Postgres (`pg_dump` por esquema), exportaciones de InfluxDB, versionado GCS.
+9. Desde entorno local ejecutar `./validate_endpoints.sh --host 136.115.53.140` para validar disponibilidad JSON/XML.
+10. Configurar backups: snapshots de Postgres (`pg_dump` por esquema) y exportaciones de InfluxDB; la estrategia específica de almacenamiento de media se definirá cuando el servicio deje de ser placeholder.
 
 ## 11. Estrategia de datos y migraciones
 - Cada servicio tiene esquema PostgreSQL independiente (`auth`, `organization`, `user`, `patient`, `device`, `inference`, `alert`, `notification`, `media`, `audit`). Docker compose incluye scripts de inicialización para crear esquemas y aplicar migraciones usando Alembic por servicio.
