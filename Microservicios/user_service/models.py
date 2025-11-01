@@ -43,6 +43,12 @@ class User(db.Model):
     user_status_id = db.Column(UUID(as_uuid=True), db.ForeignKey("user_statuses.id"), nullable=False)
     two_factor_enabled = db.Column(db.Boolean, nullable=False, default=False)
     profile_photo_url = db.Column(db.Text)
+    language = db.Column(db.String(16))
+    timezone = db.Column(db.String(64))
+    theme = db.Column(db.String(32))
+    notifications_email = db.Column(db.Boolean, nullable=False, default=True)
+    notifications_sms = db.Column(db.Boolean, nullable=False, default=False)
+    notifications_push = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
     updated_at = db.Column(
         db.TIMESTAMP,
