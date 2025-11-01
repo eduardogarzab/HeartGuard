@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>HeartGuard - Mi Perfil</title>
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<header class="top-nav">
+    <div class="logo">HeartGuard</div>
+    <nav>
+        <a href="/dashboard">Pacientes</a>
+        <a href="/profile" class="active">Mi Perfil</a>
+        <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="link-button">Cerrar sesión</button>
+        </form>
+    </nav>
+</header>
+<main class="content">
+    <section class="panel profile-panel">
+        <h1>Mi Perfil</h1>
+        <div class="profile-field">
+            <span class="label">Nombre:</span>
+            <span th:text="${profile.name}">Nombre</span>
+        </div>
+        <div class="profile-field">
+            <span class="label">Correo:</span>
+            <span th:text="${profile.email}">correo@correo.com</span>
+        </div>
+        <div class="profile-field" th:if="${profile.phoneNumber} != null">
+            <span class="label">Teléfono:</span>
+            <span th:text="${profile.phoneNumber}">000</span>
+        </div>
+        <div class="profile-field">
+            <span class="label">Rol:</span>
+            <span th:text="${profile.role}">ROLE</span>
+        </div>
+    </section>
+</main>
+</body>
+</html>
