@@ -16,24 +16,57 @@
           <div class="sidebar__logo">
             <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
           </div>
-          <span aria-hidden="true">HeartGuard</span>
+          <div class="sidebar__identity">
+            <span class="sidebar__brand">HeartGuard</span>
+            <span class="sidebar__tagline">Monitoreo clínico</span>
+          </div>
         </div>
-        <nav id="sidebar-nav">
-          <a href="index.html">Dashboard</a>
-          <a href="organization.html">Organización</a>
-          <a href="users.html">Usuarios</a>
-          <a href="patients.html">Pacientes</a>
-          <a href="devices.html">Dispositivos</a>
-          <a href="alerts.html">Alertas</a>
-          <a href="invitations.html" aria-current="page">Invitaciones</a>
-          <a href="profile.html">Perfil</a>
+        <nav id="sidebar-nav" class="sidebar__nav">
+          <p class="sidebar__section-label">Panel</p>
+          <a href="index.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dashboard
+          </a>
+          <a href="organization.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Organización
+          </a>
+          <a href="users.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Usuarios
+          </a>
+          <a href="patients.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Pacientes
+          </a>
+          <a href="devices.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dispositivos
+          </a>
+          <a href="alerts.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Alertas
+          </a>
+          <a href="invitations.html" class="sidebar__link" aria-current="page">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Invitaciones
+          </a>
+          <a href="profile.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Perfil
+          </a>
         </nav>
+        <footer class="sidebar__footer">
+          <p>© 2024 HeartGuard</p>
+          <small>Confianza en cada latido.</small>
+        </footer>
       </aside>
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
+            <span class="topbar__eyebrow">Expansión</span>
             <span class="topbar__title" data-org-name>Organización</span>
-            <span class="topbar__subtitle">Gestión de invitaciones</span>
+            <span class="topbar__subtitle">Comparte accesos seguros mediante invitaciones controladas.</span>
           </div>
           <div class="topbar__actions">
             <div class="topbar__user">
@@ -49,44 +82,61 @@
           </div>
         </header>
         <section class="content" aria-labelledby="invitations-heading">
-          <h1 id="invitations-heading" class="section-title">Invitaciones</h1>
+          <div class="page-header">
+            <div>
+              <h1 id="invitations-heading" class="page-header__title">Invitaciones</h1>
+              <p class="page-header__subtitle">Crea y administra tokens temporales para incorporar nuevos colaboradores.</p>
+            </div>
+            <div class="page-header__actions">
+              <a class="button button--ghost" href="users.html">Volver a usuarios</a>
+            </div>
+          </div>
           <div id="invitation-feedback" class="alert" role="status" hidden></div>
-          <form id="invitation-form" class="card" aria-describedby="invitation-feedback">
-            <h2>Nueva invitación</h2>
-            <div class="filter-bar">
-              <div class="filter-bar__group">
-                <label for="invite-email">Correo electrónico</label>
-                <input id="invite-email" name="email" type="email" required />
+          <div class="page-section">
+            <form id="invitation-form" class="card card--form" aria-describedby="invitation-feedback">
+              <div class="card__header">
+                <h2 class="card__title">Nueva invitación</h2>
+                <p class="card__subtitle">Define las credenciales preliminares para el acceso controlado.</p>
               </div>
-              <div class="filter-bar__group">
-                <label for="invite-role">Rol</label>
-                <select id="invite-role" name="role">
-                  <option value="clinician">Clínico</option>
-                  <option value="support">Soporte</option>
-                  <option value="viewer">Visualizador</option>
-                </select>
+              <div class="filter-bar">
+                <div class="filter-bar__group">
+                  <label for="invite-email">Correo electrónico</label>
+                  <input id="invite-email" name="email" type="email" required />
+                </div>
+                <div class="filter-bar__group">
+                  <label for="invite-role">Rol</label>
+                  <select id="invite-role" name="role">
+                    <option value="clinician">Clínico</option>
+                    <option value="support">Soporte</option>
+                    <option value="viewer">Visualizador</option>
+                  </select>
+                </div>
+                <div class="filter-bar__group">
+                  <label for="invite-ttl">TTL (horas)</label>
+                  <input id="invite-ttl" name="ttl_hours" type="number" min="1" value="48" required />
+                </div>
               </div>
-              <div class="filter-bar__group">
-                <label for="invite-ttl">TTL (horas)</label>
-                <input id="invite-ttl" name="ttl_hours" type="number" min="1" value="48" required />
+              <button class="button" type="submit">Crear invitación</button>
+            </form>
+          </div>
+          <div class="page-section">
+            <div class="card card--table">
+              <div class="table-responsive">
+                <table id="invitations-table" class="data-table" aria-describedby="invitations-heading">
+                  <thead>
+                    <tr>
+                      <th scope="col">Correo</th>
+                      <th scope="col">Rol</th>
+                      <th scope="col">Estado</th>
+                      <th scope="col">Expiración</th>
+                      <th scope="col">Token</th>
+                      <th scope="col">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
               </div>
             </div>
-            <button class="button" type="submit">Crear invitación</button>
-          </form>
-          <div class="table-responsive" style="margin-top: 2rem;">
-            <table id="invitations-table" class="data-table" aria-describedby="invitations-heading">
-              <thead>
-                <tr>
-                  <th scope="col">Correo</th>
-                  <th scope="col">Rol</th>
-                  <th scope="col">Estado</th>
-                  <th scope="col">Expiración</th>
-                  <th scope="col">Token</th>
-                  <th scope="col">Acciones</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
           </div>
         </section>
       </main>

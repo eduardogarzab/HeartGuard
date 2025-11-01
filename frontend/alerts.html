@@ -16,24 +16,57 @@
           <div class="sidebar__logo">
             <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
           </div>
-          <span aria-hidden="true">HeartGuard</span>
+          <div class="sidebar__identity">
+            <span class="sidebar__brand">HeartGuard</span>
+            <span class="sidebar__tagline">Monitoreo clínico</span>
+          </div>
         </div>
-        <nav id="sidebar-nav">
-          <a href="index.html">Dashboard</a>
-          <a href="organization.html">Organización</a>
-          <a href="users.html">Usuarios</a>
-          <a href="patients.html">Pacientes</a>
-          <a href="devices.html">Dispositivos</a>
-          <a href="alerts.html" aria-current="page">Alertas</a>
-          <a href="invitations.html">Invitaciones</a>
-          <a href="profile.html">Perfil</a>
+        <nav id="sidebar-nav" class="sidebar__nav">
+          <p class="sidebar__section-label">Panel</p>
+          <a href="index.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dashboard
+          </a>
+          <a href="organization.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Organización
+          </a>
+          <a href="users.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Usuarios
+          </a>
+          <a href="patients.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Pacientes
+          </a>
+          <a href="devices.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dispositivos
+          </a>
+          <a href="alerts.html" class="sidebar__link" aria-current="page">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Alertas
+          </a>
+          <a href="invitations.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Invitaciones
+          </a>
+          <a href="profile.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Perfil
+          </a>
         </nav>
+        <footer class="sidebar__footer">
+          <p>© 2024 HeartGuard</p>
+          <small>Confianza en cada latido.</small>
+        </footer>
       </aside>
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
+            <span class="topbar__eyebrow">Seguridad clínica</span>
             <span class="topbar__title" data-org-name>Organización</span>
-            <span class="topbar__subtitle">Alertas activas por severidad</span>
+            <span class="topbar__subtitle">Monitorea alertas en tiempo real y coordina respuestas.</span>
           </div>
           <div class="topbar__actions">
             <div class="topbar__user">
@@ -49,45 +82,61 @@
           </div>
         </header>
         <section class="content" aria-labelledby="alerts-heading">
-          <h1 id="alerts-heading" class="section-title">Alertas</h1>
-          <div id="alerts-feedback" class="alert" role="status" hidden></div>
-          <div class="filter-bar" role="search">
-            <div class="filter-bar__group">
-              <label for="filter-severity">Severidad</label>
-              <select id="filter-severity">
-                <option value="all">Todas</option>
-                <option value="critical">Crítica</option>
-                <option value="high">Alta</option>
-                <option value="medium">Media</option>
-                <option value="low">Baja</option>
-                <option value="info">Informativa</option>
-              </select>
+          <div class="page-header">
+            <div>
+              <h1 id="alerts-heading" class="page-header__title">Alertas</h1>
+              <p class="page-header__subtitle">Centraliza la priorización, asignación y resolución de eventos críticos.</p>
             </div>
-            <div class="filter-bar__group">
-              <label for="filter-status">Estado</label>
-              <select id="filter-status">
-                <option value="all">Todos</option>
-                <option value="open">Abierta</option>
-                <option value="acknowledged">Reconocida</option>
-                <option value="resolved">Resuelta</option>
-              </select>
+            <div class="page-header__actions">
+              <a class="button button--ghost" href="devices.html">Dispositivos</a>
             </div>
           </div>
-          <div class="table-responsive">
-            <table id="alerts-table" class="data-table" aria-describedby="alerts-heading">
-              <thead>
-                <tr>
-                  <th scope="col">Paciente</th>
-                  <th scope="col">Fecha</th>
-                  <th scope="col">Severidad</th>
-                  <th scope="col">Estado</th>
-                  <th scope="col">Descripción</th>
-                  <th scope="col">Asignado</th>
-                  <th scope="col">Acciones</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <div id="alerts-feedback" class="alert" role="status" hidden></div>
+          <div class="page-section">
+            <div class="card card--toolbar">
+              <div class="filter-bar">
+                <div class="filter-bar__group">
+                  <label for="filter-severity">Severidad</label>
+                  <select id="filter-severity">
+                    <option value="all">Todas</option>
+                    <option value="critical">Crítica</option>
+                    <option value="high">Alta</option>
+                    <option value="medium">Media</option>
+                    <option value="low">Baja</option>
+                    <option value="info">Informativa</option>
+                  </select>
+                </div>
+                <div class="filter-bar__group">
+                  <label for="filter-status">Estado</label>
+                  <select id="filter-status">
+                    <option value="all">Todos</option>
+                    <option value="open">Abierta</option>
+                    <option value="acknowledged">Reconocida</option>
+                    <option value="resolved">Resuelta</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="page-section">
+            <div class="card card--table">
+              <div class="table-responsive">
+                <table id="alerts-table" class="data-table" aria-describedby="alerts-heading">
+                  <thead>
+                    <tr>
+                      <th scope="col">Paciente</th>
+                      <th scope="col">Fecha</th>
+                      <th scope="col">Severidad</th>
+                      <th scope="col">Estado</th>
+                      <th scope="col">Descripción</th>
+                      <th scope="col">Asignado</th>
+                      <th scope="col">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
       </main>
