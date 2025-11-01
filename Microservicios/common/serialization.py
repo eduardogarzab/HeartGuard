@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Tuple
+from typing import Any, Callable, Dict, Tuple
 
 from flask import Request, Response, current_app, jsonify, make_response, request
 import dicttoxml
@@ -40,7 +40,7 @@ def render_response(
     data: Any,
     status_code: int = 200,
     meta: Dict[str, Any] | None = None,
-    xml_item_name: str | None = None,
+    xml_item_name: str | Callable[[Any], str] | None = None,
 ) -> Response:
     """Render a Flask response honoring the Accept header for JSON or XML."""
     envelope = _prepare_envelope("success", status_code, data=data, meta=meta)
@@ -49,7 +49,10 @@ def render_response(
     if content_type == "application/xml":
         kwargs = {"custom_root": "response", "attr_type": False}
         if xml_item_name:
-            kwargs["item_func"] = lambda _: xml_item_name
+            if callable(xml_item_name):
+                kwargs["item_func"] = xml_item_name
+            else:
+                kwargs["item_func"] = lambda _: xml_item_name
         xml_body = dicttoxml.dicttoxml(envelope, **kwargs)
         response = make_response(xml_body, status_code)
         response.headers["Content-Type"] = "application/xml"
