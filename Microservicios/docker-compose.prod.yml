@@ -1,0 +1,153 @@
+# =========================================================
+# Docker Compose - Producción Microservicios
+# Configuración para despliegue en servidor separado
+# Backend en: 134.199.133.125
+# Microservicios en: servidor independiente
+# =========================================================
+
+x-database-url: &database-url postgresql://heartguard_app:Yj01Q8dJQ+Nif3pQ8+t5Sd52BzFG5TFp@134.199.133.125:5432/heartguard?sslmode=require
+
+services:
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_PASS: HG_RabbitMQ_2025_Secure!
+    networks:
+      - microservices_net
+    # Exponer puerto para monitoreo si es necesario
+    # ports:
+    #   - "15672:15672"
+
+  gateway:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: gateway
+      SERVICE_PORT: ${GATEWAY_PORT}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      REQUIRE_API_KEY: "true"
+      SSL_VERIFY: "false"  # false porque usamos IP externa sin certificado
+    ports:
+      - "5000:5000"  # Exponer para que el backend pueda conectarse
+    networks:
+      - microservices_net
+
+  auth_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: auth
+      SERVICE_PORT: ${AUTH_PORT}
+      DATABASE_URL: *database-url
+      REDIS_URL: ${REDIS_URL}
+      REDIS_TLS_ENABLED: "true"
+    networks:
+      - microservices_net
+
+  organization_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: organization
+      SERVICE_PORT: ${ORGANIZATION_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  user_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: user
+      SERVICE_PORT: ${USER_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  patient_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: patient
+      SERVICE_PORT: ${PATIENT_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  device_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: device
+      SERVICE_PORT: ${DEVICE_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  influx_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: influx_service
+      SERVICE_PORT: ${INFLUX_SERVICE_PORT}
+      INFLUX_URL: ${INFLUX_URL}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    networks:
+      - microservices_net
+
+  inference_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: inference
+      SERVICE_PORT: ${INFERENCE_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  alert_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: alert
+      SERVICE_PORT: ${ALERT_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  notification_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: notification
+      SERVICE_PORT: ${NOTIFICATION_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+  media_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: media
+      SERVICE_PORT: ${MEDIA_PORT}
+      DATABASE_URL: *database-url
+      GCS_BUCKET: ${GCS_BUCKET}
+    networks:
+      - microservices_net
+
+  audit_service:
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: audit
+      SERVICE_PORT: ${AUDIT_PORT}
+      DATABASE_URL: *database-url
+    networks:
+      - microservices_net
+
+networks:
+  microservices_net:
+    driver: bridge
+
+volumes:
+  inference_models:

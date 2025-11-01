@@ -25,6 +25,7 @@
 .env.local
 .env.*.local
 .env.production
+Microservicios/.env.production
 
 # Credentials and secrets (NUNCA commitear)
 CREDENTIALS.md
@@ -49,10 +50,6 @@ Thumbs.db
 # Ignorar cualquier carpeta __pycache__ en cualquier lugar del proyecto
 **/__pycache__/
 **/validation_logs/
-\n# Python bytecode\n__pycache__/
-
-# Ignorar archivos en secret en microservicios
-**/secrets/*.json 
 
 # Python bytecode
 __pycache__/
