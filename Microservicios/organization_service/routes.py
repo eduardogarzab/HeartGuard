@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+import os
 import uuid
 
-from flask import Blueprint, Response, g, request
+from flask import Blueprint, Response, current_app, g, request
+from itsdangerous import BadSignature, URLSafeSerializer
 
 from common.auth import require_auth
 from common.database import db
@@ -132,7 +134,52 @@ def create_invitation() -> "Response":
     db.session.add(invitation)
     db.session.commit()
 
-    return render_response({"invitation": invitation.to_dict()}, status_code=201)
+    signed_token = _sign_invitation_token(token)
+    payload = _build_invitation_payload(invitation, signed_token)
+
+    return render_response(payload, status_code=201)
+
+
+@bp.route("/invitations/<signed_token>/validate", methods=["GET"])
+def validate_invitation(signed_token: str) -> "Response":
+    invitation = _get_invitation_from_signed_token(signed_token)
+    _ensure_invitation_active(invitation)
+
+    payload = _build_invitation_payload(invitation, signed_token)
+    return render_response(payload)
+
+
+@bp.route("/invitations/<signed_token>/consume", methods=["POST"])
+@require_auth(optional=True)
+def consume_invitation(signed_token: str) -> "Response":
+    invitation = _get_invitation_from_signed_token(signed_token)
+    payload, _ = parse_request_data(request)
+
+    action = str(payload.get("action") or "accept").lower()
+    now = datetime.utcnow()
+
+    if action == "accept":
+        _ensure_invitation_active(invitation)
+        if invitation.used_at:
+            raise APIError(
+                "Invitation already used",
+                status_code=409,
+                error_id="HG-ORG-INVITE-USED",
+            )
+        invitation.used_at = now
+    elif action == "revoke":
+        if invitation.revoked_at:
+            return render_response(_build_invitation_payload(invitation, signed_token))
+        invitation.revoked_at = now
+    else:
+        raise APIError(
+            "Unsupported invitation action",
+            status_code=400,
+            error_id="HG-ORG-INVITE-ACTION",
+        )
+
+    db.session.commit()
+    return render_response(_build_invitation_payload(invitation, signed_token))
 
 
 @bp.route("/invitations/<invitation_id>/cancel", methods=["POST"])
@@ -174,6 +221,70 @@ def _resolve_org_role(identifier: str | None):
             db.func.lower(models.OrgRole.code) == str(identifier).lower()
         ).first()
     return candidate
+
+
+def _get_invitation_signer() -> URLSafeSerializer:
+    secret = current_app.config.get("INVITE_SIGNING_SECRET")
+    if not secret:
+        secret = os.getenv("INVITE_SIGNING_SECRET") or current_app.config.get("SECRET_KEY") or "heartguard-invites"
+        current_app.config["INVITE_SIGNING_SECRET"] = secret
+    return URLSafeSerializer(secret_key=secret, salt="organization-invite")
+
+
+def _sign_invitation_token(token: str) -> str:
+    signer = _get_invitation_signer()
+    return signer.dumps({"token": token})
+
+
+def _unsign_invitation_token(signed_token: str) -> str:
+    signer = _get_invitation_signer()
+    try:
+        data = signer.loads(signed_token)
+    except BadSignature as exc:
+        raise APIError("Invalid invitation token", status_code=404, error_id="HG-ORG-INVITE-SIGNATURE") from exc
+    token = data.get("token") if isinstance(data, dict) else None
+    if not token:
+        raise APIError("Invalid invitation token", status_code=404, error_id="HG-ORG-INVITE-SIGNATURE")
+    return token
+
+
+def _get_invitation_from_signed_token(signed_token: str) -> models.OrgInvitation:
+    token = _unsign_invitation_token(signed_token)
+    invitation = models.OrgInvitation.query.filter_by(token=token).first()
+    if not invitation:
+        raise APIError("Invitation not found", status_code=404, error_id="HG-ORG-INVITE-NOT-FOUND")
+    return invitation
+
+
+def _ensure_invitation_active(invitation: models.OrgInvitation) -> None:
+    if invitation.revoked_at:
+        raise APIError("Invitation revoked", status_code=410, error_id="HG-ORG-INVITE-REVOKED")
+    if invitation.used_at:
+        raise APIError("Invitation already used", status_code=409, error_id="HG-ORG-INVITE-USED")
+    expires = models.OrgInvitation._coerce_datetime(invitation.expires_at)
+    now = models.OrgInvitation._coerce_datetime(datetime.utcnow())
+    if expires and now and expires <= now:
+        invitation.revoked_at = invitation.revoked_at or datetime.utcnow()
+        db.session.commit()
+        raise APIError("Invitation expired", status_code=410, error_id="HG-ORG-INVITE-EXPIRED")
+
+
+def _build_invitation_payload(invitation: models.OrgInvitation, signed_token: str) -> dict:
+    organization = invitation.organization
+    role = invitation.role
+    invitation_dict = invitation.to_dict()
+    return {
+        "invitation": invitation_dict,
+        "link": {
+            "href": f"/invite/{signed_token}",
+            "token": signed_token,
+        },
+        "metadata": {
+            "organization": organization.to_dict() if organization else None,
+            "suggested_role": role.to_dict() if role else None,
+            "expires_at": invitation_dict.get("expires_at"),
+        },
+    }
 
 
 def register_blueprint(app):

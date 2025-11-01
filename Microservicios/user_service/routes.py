@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import datetime as dt
+import os
 import uuid
 
-from flask import Blueprint, g, request
+import requests
+from flask import Blueprint, current_app, g, request
 from sqlalchemy import func
 from sqlalchemy.orm import joinedload
 
@@ -13,6 +15,7 @@ from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
 import models
+from werkzeug.security import generate_password_hash
 
 bp = Blueprint("users", __name__)
 
@@ -93,6 +96,63 @@ def _serialize_user(user: models.User) -> dict:
     }
 
 
+def _organization_service_base_url() -> str:
+    base_url = current_app.config.get("ORGANIZATION_SERVICE_URL")
+    if base_url:
+        return base_url.rstrip("/")
+    env_url = os.getenv("ORGANIZATION_SERVICE_URL", "http://organization-service:5002/organization")
+    current_app.config["ORGANIZATION_SERVICE_URL"] = env_url
+    return env_url.rstrip("/")
+
+
+def _call_organization_service(method: str, path: str, **kwargs) -> requests.Response:
+    url = f"{_organization_service_base_url()}{path}"
+    timeout = current_app.config.get("ORGANIZATION_HTTP_TIMEOUT", 5)
+    try:
+        response = requests.request(method, url, timeout=timeout, **kwargs)
+    except requests.RequestException as exc:  # pragma: no cover - network failure
+        raise APIError(
+            "Failed to contact organization service",
+            status_code=502,
+            error_id="HG-USER-ORG-SERVICE",
+        ) from exc
+
+    if response.status_code >= 400:
+        message = "Organization service error"
+        try:
+            payload = response.json()
+            message = (
+                payload.get("error", {}).get("message")
+                or payload.get("message")
+                or message
+            )
+        except ValueError:
+            if response.text:
+                message = response.text
+        raise APIError(message, status_code=response.status_code, error_id="HG-USER-ORG-SERVICE")
+
+    return response
+
+
+def _fetch_invitation_details(signed_token: str) -> dict:
+    response = _call_organization_service(
+        "GET",
+        f"/invitations/{signed_token}/validate",
+        headers={"Accept": "application/json"},
+    )
+    data = response.json().get("data") or {}
+    return data
+
+
+def _consume_invitation_token(signed_token: str, payload: dict) -> None:
+    _call_organization_service(
+        "POST",
+        f"/invitations/{signed_token}/consume",
+        headers={"Accept": "application/json"},
+        json=payload,
+    )
+
+
 def _parse_user_id(user_id: str) -> uuid.UUID:
     try:
         return uuid.UUID(user_id)
@@ -122,6 +182,101 @@ def _update_user_from_payload(user: models.User, payload: dict) -> models.User:
     user.updated_at = dt.datetime.utcnow()
     db.session.commit()
     return _load_user(user.id)
+
+
+@bp.route("/register", methods=["POST"])
+def register_from_invitation() -> "Response":
+    _ensure_database_available()
+    payload, _ = parse_request_data(request)
+
+    signed_token = payload.get("invite_token") or payload.get("token")
+    name = (payload.get("name") or "").strip()
+    email = (payload.get("email") or "").strip().lower()
+    password = payload.get("password")
+
+    if not signed_token:
+        raise APIError("invite_token is required", status_code=400, error_id="HG-USER-INVITE-TOKEN")
+    if not name:
+        raise APIError("name is required", status_code=400, error_id="HG-USER-NAME")
+    if not email:
+        raise APIError("email is required", status_code=400, error_id="HG-USER-EMAIL")
+    if not password:
+        raise APIError("password is required", status_code=400, error_id="HG-USER-PASSWORD")
+
+    invitation = _fetch_invitation_details(str(signed_token))
+    invitation_data = invitation.get("invitation") or {}
+    metadata = invitation.get("metadata") or {}
+
+    org_id_value = invitation_data.get("org_id")
+    role_id_value = invitation_data.get("org_role_id")
+    invited_email = invitation_data.get("email")
+
+    try:
+        org_uuid = uuid.UUID(str(org_id_value))
+    except (TypeError, ValueError) as exc:
+        raise APIError("Invitation organization invalid", status_code=400, error_id="HG-USER-INVITE-ORG") from exc
+
+    try:
+        role_uuid = uuid.UUID(str(role_id_value))
+    except (TypeError, ValueError) as exc:
+        raise APIError("Invitation role invalid", status_code=400, error_id="HG-USER-INVITE-ROLE") from exc
+
+    if invited_email and invited_email.lower() != email:
+        raise APIError("Email does not match invitation", status_code=400, error_id="HG-USER-INVITE-EMAIL")
+
+    existing = models.User.query.filter(func.lower(models.User.email) == email).first()
+    if existing:
+        raise APIError("Email already registered", status_code=409, error_id="HG-USER-EMAIL-EXISTS")
+
+    status = models.UserStatus.query.filter_by(code="active").first()
+    if not status:
+        raise APIError("Active status not configured", status_code=500, error_id="HG-USER-NO-STATUS")
+
+    password_hash = generate_password_hash(password)
+    new_user_id = uuid.uuid4()
+    new_user = models.User(
+        id=new_user_id,
+        name=name,
+        email=email,
+        password_hash=password_hash,
+        user_status_id=status.id,
+    )
+
+    membership = models.UserOrgMembership(
+        org_id=org_uuid,
+        user_id=new_user_id,
+        org_role_id=role_uuid,
+    )
+
+    db.session.add(new_user)
+    db.session.add(membership)
+    db.session.flush()
+
+    try:
+        _consume_invitation_token(
+            signed_token,
+            {
+                "action": "accept",
+                "consumer_type": "user",
+                "consumer_id": str(new_user.id),
+            },
+        )
+    except APIError:
+        db.session.rollback()
+        raise
+
+    db.session.commit()
+
+    response_payload = {
+        "user": _serialize_user(new_user),
+        "membership": {
+            "org_id": str(org_uuid),
+            "org_role_id": str(role_uuid),
+            "organization": metadata.get("organization"),
+            "suggested_role": metadata.get("suggested_role"),
+        },
+    }
+    return render_response(response_payload, status_code=201, xml_item_name="User")
 
 
 @bp.route("/health", methods=["GET"])

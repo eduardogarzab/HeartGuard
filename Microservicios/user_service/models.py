@@ -61,7 +61,7 @@ class UserOrgMembership(db.Model):
     __table_args__ = {"extend_existing": True}
 
     org_id = db.Column(UUID(as_uuid=True), primary_key=True)
-    user_id = db.Column(UUID(as_uuid=True), primary_key=True)
+    user_id = db.Column(UUID(as_uuid=True), db.ForeignKey('users.id', ondelete='CASCADE'), primary_key=True)
     org_role_id = db.Column(UUID(as_uuid=True), db.ForeignKey("org_roles.id"), nullable=False)
     joined_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
 

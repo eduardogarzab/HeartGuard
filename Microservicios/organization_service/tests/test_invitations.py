@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+import types
 import uuid
 
 import pytest
@@ -11,6 +12,62 @@ SERVICE_DIR = Path(__file__).resolve().parents[1]
 for path in (BASE_DIR, SERVICE_DIR):
     if str(path) not in sys.path:
         sys.path.append(str(path))
+
+if "flask_cors" not in sys.modules:
+    sys.modules["flask_cors"] = types.SimpleNamespace(CORS=lambda app, resources=None: None)
+
+if "dicttoxml" not in sys.modules:
+    import xml.etree.ElementTree as _ET
+
+    def _append_node(parent: _ET.Element, key: str, value, item_func):
+        if isinstance(value, dict):
+            node = _ET.SubElement(parent, key)
+            for sub_key, sub_value in value.items():
+                _append_node(node, sub_key, sub_value, item_func)
+        elif isinstance(value, list):
+            container = _ET.SubElement(parent, key)
+            for item in value:
+                tag = item_func(item) if item_func else "item"
+                child = _ET.SubElement(container, tag)
+                if isinstance(item, dict):
+                    for sub_key, sub_value in item.items():
+                        _append_node(child, sub_key, sub_value, item_func)
+                elif item is not None:
+                    child.text = str(item)
+                else:
+                    child.text = ""
+        else:
+            node = _ET.SubElement(parent, key)
+            node.text = "" if value is None else str(value)
+
+    def _dicttoxml(data, custom_root="root", attr_type=False, item_func=None):
+        root = _ET.Element(custom_root)
+        if isinstance(data, dict):
+            for key, value in data.items():
+                _append_node(root, key, value, item_func)
+        else:
+            _append_node(root, "item", data, item_func)
+        return _ET.tostring(root, encoding="utf-8")
+
+    sys.modules["dicttoxml"] = types.SimpleNamespace(dicttoxml=_dicttoxml)
+
+if "xmltodict" not in sys.modules:
+    import xml.etree.ElementTree as _ET
+
+    def _element_to_dict(element: _ET.Element):
+        children = list(element)
+        if not children:
+            return element.text or ""
+        result = {}
+        for child in children:
+            result[child.tag] = _element_to_dict(child)
+        return result
+
+    def _parse_xml(xml_string: str):
+        root = _ET.fromstring(xml_string)
+        return {root.tag: _element_to_dict(root)}
+
+    sys.modules["xmltodict"] = types.SimpleNamespace(parse=_parse_xml)
 
 from common.app_factory import create_app
 from common import auth as common_auth
@@ -88,6 +145,13 @@ def test_create_invitation_success(app, client):
     assert invitation["status"] == "pending"
     assert invitation["token"]
     assert invitation["created_by"] == user_id
+    link = body["data"]["link"]
+    assert link["href"].startswith("/invite/")
+    assert link["token"]
+    metadata = body["data"]["metadata"]
+    assert metadata["organization"]["id"] == str(org.id)
+    assert metadata["suggested_role"]["id"] == str(role.id)
+    assert metadata["expires_at"] == invitation["expires_at"]
 
 
 def test_create_invitation_rejects_invalid_ttl(app, client):
@@ -179,3 +243,73 @@ def test_cancel_invitation(app, client):
     with app.app_context():
         refreshed = db.session.get(models.OrgInvitation, invitation_uuid)
         assert refreshed.revoked_at is not None
+
+
+def test_validate_invitation_returns_metadata(app, client):
+    headers, _ = auth_headers(app)
+    with app.app_context():
+        org = models.Organization.query.first()
+        role = models.OrgRole.query.first()
+
+    payload = {
+        "org_id": str(org.id),
+        "role": role.code,
+        "ttl_hours": 24,
+    }
+
+    response = client.post("/organization/invitations", json=payload, headers=headers)
+    assert response.status_code == 201
+    body = response.get_json()["data"]
+    signed_token = body["link"]["token"]
+
+    validation = client.get(f"/organization/invitations/{signed_token}/validate", headers={"Accept": "application/json"})
+    assert validation.status_code == 200
+    data = validation.get_json()["data"]
+    assert data["invitation"]["org_id"] == str(org.id)
+    assert data["metadata"]["suggested_role"]["code"] == role.code
+
+
+def test_consume_invitation_marks_used(app, client):
+    headers, _ = auth_headers(app)
+    with app.app_context():
+        org = models.Organization.query.first()
+        role = models.OrgRole.query.first()
+
+    create_resp = client.post(
+        "/organization/invitations",
+        json={"org_id": str(org.id), "role": role.code, "ttl_hours": 24},
+        headers=headers,
+    )
+    signed_token = create_resp.get_json()["data"]["link"]["token"]
+
+    consume_resp = client.post(
+        f"/organization/invitations/{signed_token}/consume",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        json={"action": "accept"},
+    )
+    assert consume_resp.status_code == 200
+    used = consume_resp.get_json()["data"]["invitation"]["used_at"]
+    assert used is not None
+
+
+def test_consume_invitation_revoke(app, client):
+    headers, _ = auth_headers(app)
+    with app.app_context():
+        org = models.Organization.query.first()
+        role = models.OrgRole.query.first()
+
+    create_resp = client.post(
+        "/organization/invitations",
+        json={"org_id": str(org.id), "role": role.code, "ttl_hours": 24},
+        headers=headers,
+    )
+    signed_token = create_resp.get_json()["data"]["link"]["token"]
+
+    revoke_resp = client.post(
+        f"/organization/invitations/{signed_token}/consume",
+        headers={"Content-Type": "application/json", "Accept": "application/json"},
+        json={"action": "revoke"},
+    )
+    assert revoke_resp.status_code == 200
+    revoked = revoke_resp.get_json()["data"]["invitation"]["revoked_at"]
+    assert revoked is not None
