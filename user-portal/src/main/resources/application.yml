@@ -1,0 +1,12 @@
+spring:
+  thymeleaf:
+    cache: false
+  mvc:
+    hiddenmethod:
+      filter:
+        enabled: true
+server:
+  port: 8081
+
+gateway:
+  base-url: http://localhost:8000

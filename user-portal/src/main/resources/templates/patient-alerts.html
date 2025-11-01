@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title th:text="${patient.personName} + ' - Historial de Alertas'">HeartGuard - Alertas</title>
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<header class="top-nav">
+    <div class="logo">HeartGuard</div>
+    <nav>
+        <a href="/dashboard">Pacientes</a>
+        <a th:href="@{'/patient/' + ${patient.id}}">Resumen</a>
+        <a th:href="@{'/patient/' + ${patient.id} + '/alerts'}" class="active">Historial de Alertas</a>
+        <a href="/profile">Mi Perfil</a>
+        <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="link-button">Cerrar sesión</button>
+        </form>
+    </nav>
+</header>
+<main class="content">
+    <section class="panel">
+        <h1 th:text="${patient.personName}">Paciente</h1>
+        <table class="table">
+            <thead>
+            <tr>
+                <th>Fecha</th>
+                <th>Tipo</th>
+                <th>Severidad</th>
+                <th>Estado</th>
+                <th>Descripción</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="alert : ${alerts}">
+                <td th:text="${#temporals.format(alert.createdAt, 'dd/MM/yyyy HH:mm')}"></td>
+                <td th:text="${alert.type}"></td>
+                <td th:text="${alert.severityLevel}"></td>
+                <td th:text="${alert.status}"></td>
+                <td th:text="${alert.message}"></td>
+            </tr>
+            <tr th:if="${#lists.isEmpty(alerts)}">
+                <td colspan="5">Sin alertas registradas.</td>
+            </tr>
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>

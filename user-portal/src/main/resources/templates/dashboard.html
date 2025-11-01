@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title>HeartGuard - Dashboard</title>
+    <link rel="stylesheet" href="/css/main.css">
+</head>
+<body>
+<header class="top-nav">
+    <div class="logo">HeartGuard</div>
+    <nav>
+        <a href="/dashboard" class="active">Pacientes</a>
+        <a href="/profile">Mi Perfil</a>
+        <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="link-button">Cerrar sesión</button>
+        </form>
+    </nav>
+    <div class="alert-badge" th:text="${alertsCount}" th:classappend="${alertsCount} > 0 ? ' has-alerts' : ''">0</div>
+</header>
+<main class="content">
+    <section class="panel">
+        <h1>Mis Pacientes</h1>
+        <p th:if="${#lists.isEmpty(patients)}">Aún no tienes pacientes asignados.</p>
+        <div class="patient-grid" th:if="${!#lists.isEmpty(patients)}">
+            <a class="patient-card" th:each="patient : ${patients}" th:href="@{'/patient/' + ${patient.id}}">
+                <div class="patient-photo" th:style="${patient.profilePhotoUrl} != null ? 'background-image: url(' + ${patient.profilePhotoUrl} + ')' : ''"></div>
+                <div class="patient-info">
+                    <h2 th:text="${patient.personName}">Nombre</h2>
+                    <span class="risk" th:text="${patient.riskLevelCode}">medium</span>
+                </div>
+            </a>
+        </div>
+    </section>
+</main>
+</body>
+</html>
