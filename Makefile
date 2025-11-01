@@ -4,33 +4,63 @@
 
 APP := superadmin-api
 
-# Cargar y exportar variables desde .env si existe
+# Cargar y exportar variables desde .env o .env.production si existen
+ENV_FILE :=
 ifneq (,$(wildcard .env))
-include .env
+ENV_FILE := .env
+else ifneq (,$(wildcard .env.production))
+ENV_FILE := .env.production
+endif
+
+ifneq ($(ENV_FILE),)
+include $(ENV_FILE)
 export
 endif
+
+COMPOSE_CMD := docker compose
+COMPOSE_PROD := $(COMPOSE_CMD) -f docker-compose.yml -f docker-compose.prod.yml
+
+PGSUPER ?= postgres
+PGSUPER_PASS ?= postgres123
+PGHOST ?= localhost
+PGPORT ?= 5432
+DBNAME ?= heartguard
+DBUSER ?= heartguard_app
+DBPASS ?= dev_change_me
+
+DEFAULT_DB_URL := postgres://$(DBUSER):$(DBPASS)@$(PGHOST):$(PGPORT)/$(DBNAME)?sslmode=disable
+DATABASE_URL ?= $(DEFAULT_DB_URL)
+REDIS_URL ?= redis://localhost:6379/0
 
 # Valores por defecto para desarrollo local
 ENV ?= dev
 HTTP_ADDR ?= :8080
+HTTP_PORT ?= 8080
 SECURE_COOKIES ?= false
 
 # Usado por psql (para init/seed con el superuser)
 export PGPASSWORD := $(PGSUPER_PASS)
 
 # DSN de app (para health/psql)
-DB_URL := postgres://$(DBUSER):$(DBPASS)@$(PGHOST):$(PGPORT)/$(DBNAME)?sslmode=disable
+DB_URL := $(DATABASE_URL)
 
 .PHONY: help up down logs compose-wait db-wait \
-        dev run build tidy lint test \
-        db-url db-init db-seed db-reset db-drop db-health db-psql \
-        reset-all
+	dev run build tidy lint test \
+	db-url db-init db-seed db-reset db-drop db-health db-psql \
+	prod-build prod-up prod-down prod-logs prod-proxy-up prod-proxy-down prod-proxy-logs \
+	prod-certbot prod-certbot-renew \
+	prod-db-init prod-db-seed prod-db-drop prod-db-reset \
+	reset-all
 
 help:
 	@echo "Targets:"
 	@echo "  up / down / logs"
 	@echo "  dev / run / build / tidy / lint / test (backend dentro de ./backend)"
 	@echo "  db-init / db-seed / db-health / db-reset / db-psql"
+	@echo "  prod-build / prod-up / prod-down / prod-logs"
+	@echo "  prod-proxy-up / prod-proxy-down / prod-proxy-logs"
+	@echo "  prod-certbot (obtiene/renueva certificado Let's Encrypt)"
+	@echo "  prod-db-init / prod-db-seed / prod-db-reset"
 	@echo "  reset-all (baja servicios, recrea volúmenes, espera y re-inicializa DB)"
 
 # =========================
@@ -145,6 +175,75 @@ lint:
 test:
 	@echo ">> go test"
 	cd backend && go test ./...
+
+# =========================
+# Backend (Docker producción)
+# =========================
+prod-build:
+	@echo ">> docker compose build backend"
+	$(COMPOSE_PROD) build backend
+
+prod-up:
+	@echo ">> docker compose up backend (prod)"
+	$(COMPOSE_PROD) up -d --build backend
+
+prod-down:
+	@echo ">> docker compose down (prod)"
+	$(COMPOSE_PROD) down --remove-orphans
+
+prod-logs:
+	@echo ">> docker compose logs backend (prod)"
+	$(COMPOSE_PROD) logs -f backend
+
+prod-proxy-up:
+	@echo ">> docker compose up nginx (prod)"
+	$(COMPOSE_PROD) up -d nginx
+
+prod-proxy-down:
+	@echo ">> docker compose stop nginx (prod)"
+	$(COMPOSE_PROD) stop nginx
+
+prod-proxy-logs:
+	@echo ">> docker compose logs nginx (prod)"
+	$(COMPOSE_PROD) logs -f nginx
+
+prod-certbot:
+	@echo ">> solicitando/renovando certificado para $(ADMIN_HOST)"
+	@if [ -z "$(TLS_EMAIL)" ] || [ "$(TLS_EMAIL)" = "you@example.com" ]; then \
+		echo "!! Configura TLS_EMAIL en .env.production antes de ejecutar prod-certbot"; \
+		exit 1; \
+	fi
+	@if [ -z "$(ADMIN_HOST)" ]; then \
+		echo "!! Configura ADMIN_HOST en .env.production"; \
+		exit 1; \
+	fi
+	docker run --rm -it \
+		-v heartguard_certbot-etc:/etc/letsencrypt \
+		-v heartguard_certbot-var:/var/lib/letsencrypt \
+		-v heartguard_certbot-www:/var/www/certbot \
+		-p 80:80 -p 443:443 \
+		certbot/certbot:latest \
+		certonly --standalone --preferred-challenges http \
+		--agree-tos --no-eff-email -m $(TLS_EMAIL) -d $(ADMIN_HOST)
+
+prod-certbot-renew:
+	@echo ">> renovando certificados Let's Encrypt"
+	$(COMPOSE_PROD) run --rm certbot renew
+
+prod-db-init:
+	@echo "== init.sql (docker) =="
+	$(COMPOSE_PROD) exec -T postgres env PGPASSWORD="$(PGSUPER_PASS)" psql -U "$(PGSUPER)" -d postgres -v dbname="$(DBNAME)" -v dbuser="$(DBUSER)" -v dbpass="$(DBPASS)" -f - < db/init.sql
+
+prod-db-seed:
+	@echo "== seed.sql (docker) =="
+	$(COMPOSE_PROD) exec -T postgres env PGPASSWORD="$(PGSUPER_PASS)" psql -U "$(PGSUPER)" -d "$(DBNAME)" -f - < db/seed.sql
+
+prod-db-drop:
+	@echo ">> dropdb (docker)"
+	-$(COMPOSE_PROD) exec -T postgres env PGPASSWORD="$(PGSUPER_PASS)" dropdb -U "$(PGSUPER)" "$(DBNAME)"
+
+prod-db-reset: prod-db-drop prod-db-init prod-db-seed
+	@echo ">> DB reset (docker) OK"
 
 # =========================
 # DB (init/seed/health)

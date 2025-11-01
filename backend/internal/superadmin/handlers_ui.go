@@ -98,6 +98,8 @@ type Repository interface {
 	CreatePatient(ctx context.Context, input models.PatientInput) (*models.Patient, error)
 	UpdatePatient(ctx context.Context, id string, input models.PatientInput) (*models.Patient, error)
 	DeletePatient(ctx context.Context, id string) error
+	SetPatientPassword(ctx context.Context, patientID, password string) error
+	VerifyPatientEmail(ctx context.Context, patientID string) error
 
 	ListPatientLocations(ctx context.Context, filters models.PatientLocationFilters, limit, offset int) ([]models.PatientLocation, error)
 	CreatePatientLocation(ctx context.Context, input models.PatientLocationInput) (*models.PatientLocation, error)
@@ -2631,6 +2633,14 @@ func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
 	if orgIDRaw != "" {
 		orgID = &orgIDRaw
 	}
+	
+	// Email (opcional)
+	emailRaw := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
+	var email *string
+	if emailRaw != "" {
+		email = &emailRaw
+	}
+	
 	birthRaw := strings.TrimSpace(r.FormValue("birthdate"))
 	var birth *time.Time
 	if birthRaw != "" {
@@ -2660,7 +2670,15 @@ func (h *Handlers) PatientsCreate(w http.ResponseWriter, r *http.Request) {
 		photoURL = &photoURLRaw
 	}
 
-	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevelID: risk, ProfilePhotoURL: photoURL}
+	input := models.PatientInput{
+		OrgID:           orgID,
+		Name:            name,
+		Email:           email,
+		Birthdate:       birth,
+		SexCode:         sexCode,
+		RiskLevelID:     risk,
+		ProfilePhotoURL: photoURL,
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	patient, err := h.repo.CreatePatient(ctx, input)
@@ -2691,6 +2709,14 @@ func (h *Handlers) PatientsUpdate(w http.ResponseWriter, r *http.Request) {
 	if orgIDRaw != "" {
 		orgID = &orgIDRaw
 	}
+	
+	// Email (opcional)
+	emailRaw := strings.TrimSpace(strings.ToLower(r.FormValue("email")))
+	var email *string
+	if emailRaw != "" {
+		email = &emailRaw
+	}
+	
 	birthRaw := strings.TrimSpace(r.FormValue("birthdate"))
 	var birth *time.Time
 	if birthRaw != "" {
@@ -2718,7 +2744,15 @@ func (h *Handlers) PatientsUpdate(w http.ResponseWriter, r *http.Request) {
 	if photoURLRaw != "" {
 		photoURL = &photoURLRaw
 	}
-	input := models.PatientInput{OrgID: orgID, Name: name, Birthdate: birth, SexCode: sexCode, RiskLevelID: risk, ProfilePhotoURL: photoURL}
+	input := models.PatientInput{
+		OrgID:           orgID,
+		Name:            name,
+		Email:           email,
+		Birthdate:       birth,
+		SexCode:         sexCode,
+		RiskLevelID:     risk,
+		ProfilePhotoURL: photoURL,
+	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
 	patient, err := h.repo.UpdatePatient(ctx, id, input)
@@ -2743,6 +2777,49 @@ func (h *Handlers) PatientsDelete(w http.ResponseWriter, r *http.Request) {
 	h.writeAudit(ctx, r, "PATIENT_DELETE", "patient", &id, nil)
 	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Paciente eliminado"})
 	http.Redirect(w, r, "/superadmin/patients", http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientsSetPassword(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	password := strings.TrimSpace(r.FormValue("password"))
+	if password == "" || len(password) < 8 {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "La contraseña debe tener al menos 8 caracteres"})
+		http.Redirect(w, r, "/superadmin/patients/"+id, http.StatusSeeOther)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	
+	if err := h.repo.SetPatientPassword(ctx, id, password); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo establecer la contraseña"})
+		http.Redirect(w, r, "/superadmin/patients/"+id, http.StatusSeeOther)
+		return
+	}
+	
+	h.writeAudit(ctx, r, "PATIENT_SET_PASSWORD", "patient", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Contraseña establecida exitosamente"})
+	http.Redirect(w, r, "/superadmin/patients/"+id, http.StatusSeeOther)
+}
+
+func (h *Handlers) PatientsVerifyEmail(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	
+	if err := h.repo.VerifyPatientEmail(ctx, id); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo verificar el email"})
+		http.Redirect(w, r, "/superadmin/patients/"+id, http.StatusSeeOther)
+		return
+	}
+	
+	h.writeAudit(ctx, r, "PATIENT_VERIFY_EMAIL", "patient", &id, nil)
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Email verificado exitosamente"})
+	http.Redirect(w, r, "/superadmin/patients/"+id, http.StatusSeeOther)
 }
 
 // Care teams

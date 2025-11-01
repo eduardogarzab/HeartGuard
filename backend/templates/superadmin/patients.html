@@ -12,6 +12,11 @@
 				<input id="patient-name" name="name" type="text" required placeholder="Nombre completo" />
 			</div>
 			<div class="hg-form-field">
+				<label for="patient-email">Email</label>
+				<input id="patient-email" name="email" type="email" placeholder="email@ejemplo.com" />
+				<small style="color: #666;">Opcional. Permite al paciente iniciar sesión en el futuro</small>
+			</div>
+			<div class="hg-form-field">
 				<label for="patient-org">Organización</label>
 				<select id="patient-org" name="org_id">
 					<option value="">Sin organización</option>
@@ -61,6 +66,7 @@
 				<tr>
 					<th></th>
 					<th>Nombre</th>
+					<th>Email</th>
 					<th>Organización</th>
 					<th>Sexo</th>
 					<th>Riesgo</th>
@@ -79,6 +85,12 @@
 						</a>
 					</td>
 					<td><a href="/superadmin/patients/{{$patient.ID}}">{{$patient.Name}}</a></td>
+					<td>
+						{{if $patient.Email}}
+							{{$patient.Email}}
+							{{if $patient.EmailVerified}}<span style="color: green; margin-left: 4px;" title="Email verificado">✓</span>{{else}}<span style="color: orange; margin-left: 4px;" title="Email no verificado">⚠</span>{{end}}
+						{{else}}—{{end}}
+					</td>
 					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
 					<td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
 					<td>{{if $patient.RiskLevelLabel}}{{stringValue $patient.RiskLevelLabel}}{{else}}—{{end}}</td>
@@ -92,6 +104,17 @@
 								<div class="hg-form-field">
 									<label>Nombre</label>
 									<input name="name" type="text" value="{{$patient.Name}}" required />
+								</div>
+								<div class="hg-form-field">
+									<label>Email</label>
+									<input name="email" type="email" value="{{stringValue $patient.Email}}" placeholder="email@ejemplo.com" />
+									<small style="color: #666;">
+										{{if $patient.Email}}
+											{{if $patient.EmailVerified}}✓ Email verificado{{else}}⚠ Email no verificado{{end}}
+										{{else}}
+											Opcional. Permite al paciente iniciar sesión
+										{{end}}
+									</small>
 								</div>
 								<div class="hg-form-field">
 									<label>Organización</label>
@@ -141,7 +164,7 @@
 				</tr>
 				{{else}}
 				<tr>
-					<td colspan="8" class="hg-empty-cell">Sin pacientes registrados.</td>
+					<td colspan="9" class="hg-empty-cell">Sin pacientes registrados.</td>
 				</tr>
 				{{end}}
 			</tbody>

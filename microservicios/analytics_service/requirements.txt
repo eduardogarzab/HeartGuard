@@ -1,7 +1,0 @@
-# Dependencias específicas del servicio de analytics
-flask
-sqlalchemy
-psycopg2-binary
-requests
-dicttoxml
-python-dotenv

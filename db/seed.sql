@@ -365,12 +365,15 @@ ON CONFLICT (id) DO NOTHING;
 -- Datos demo clínicos y operativos
 -- =========================================================
 
-INSERT INTO patients (id, org_id, person_name, birthdate, sex_id, risk_level_id, created_at)
+INSERT INTO patients (id, org_id, person_name, email, password_hash, email_verified, birthdate, sex_id, risk_level_id, created_at)
 VALUES
   (
     '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
     (SELECT id FROM organizations WHERE code='FAM-001'),
     'María Delgado',
+    'maria.delgado@example.com',
+    '$2a$10$rN8qJKMvDf8pXmKW9r2nEeFKc3WvXQH9qz5xKvP6L3mN2tR1sY7wC', -- password: Test123!
+    TRUE,
     '1978-03-22',
     (SELECT id FROM sexes WHERE code='F'),
     (SELECT id FROM risk_levels WHERE code='high'),
@@ -380,6 +383,9 @@ VALUES
     'fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21'::uuid,
     (SELECT id FROM organizations WHERE code='CLIN-001'),
     'José Hernández',
+    'jose.hernandez@example.com',
+    '$2a$10$rN8qJKMvDf8pXmKW9r2nEeFKc3WvXQH9qz5xKvP6L3mN2tR1sY7wC', -- password: Test123!
+    TRUE,
     '1965-11-04',
     (SELECT id FROM sexes WHERE code='M'),
     (SELECT id FROM risk_levels WHERE code='medium'),
@@ -389,6 +395,9 @@ VALUES
     'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid,
     (SELECT id FROM organizations WHERE code='FAM-001'),
     'Valeria Ortiz',
+    'valeria.ortiz@example.com',
+    '$2a$10$rN8qJKMvDf8pXmKW9r2nEeFKc3WvXQH9qz5xKvP6L3mN2tR1sY7wC', -- password: Test123!
+    FALSE,
     '1992-07-15',
     (SELECT id FROM sexes WHERE code='F'),
     (SELECT id FROM risk_levels WHERE code='low'),

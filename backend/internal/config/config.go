@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -21,6 +22,7 @@ type Config struct {
 	RateLimitRPS      int
 	RateLimitBurst    int
 	SecureCookies     bool
+	LoopbackAllowCIDRs []*net.IPNet
 }
 
 func Load() (*Config, error) {
@@ -61,6 +63,12 @@ func Load() (*Config, error) {
 	secureValue := strings.TrimSpace(strings.ToLower(getenv("SECURE_COOKIES", "true")))
 	c.SecureCookies = secureValue != "false"
 
+	cidrList, err := parseCIDRs(os.Getenv("LOOPBACK_ALLOW_CIDRS"))
+	if err != nil {
+		return nil, err
+	}
+	c.LoopbackAllowCIDRs = cidrList
+
 	return c, nil
 }
 
@@ -77,4 +85,25 @@ func atoi(s string) (int, error) {
 		return 0, err
 	}
 	return n, nil
+}
+
+func parseCIDRs(value string) ([]*net.IPNet, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return nil, nil
+	}
+	parts := strings.Split(value, ",")
+	cidrs := make([]*net.IPNet, 0, len(parts))
+	for _, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if trimmed == "" {
+			continue
+		}
+		_, network, err := net.ParseCIDR(trimmed)
+		if err != nil {
+			return nil, fmt.Errorf("bad LOOPBACK_ALLOW_CIDRS entry %q: %w", trimmed, err)
+		}
+		cidrs = append(cidrs, network)
+	}
+	return cidrs, nil
 }

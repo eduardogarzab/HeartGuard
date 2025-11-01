@@ -1,13 +1,15 @@
 # HeartGuard
 
-Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositorio combina infraestructura Docker para la base de datos, un backend Go SSR con panel de superadministración y assets web servidos desde el mismo proceso.
+Plataforma demo para monitoreo y alertas de riesgo cardiovascular con **autenticación de pacientes** integrada. El repositorio combina infraestructura Docker para la base de datos, un backend Go SSR con panel de superadministración, API REST para pacientes y assets web servidos desde el mismo proceso.
 
 ## Vista general
 
 -   **Repositorio monolítico:** servicios de datos (`db/`), backend SSR (`backend/`), templates (`backend/templates`) y assets compartidos (`backend/ui/assets`).
 -   **Base de datos:** PostgreSQL 14 + PostGIS, esquema y seeds listos para demos (`heartguard` schema).
--   **Backend:** Panel administrativo SSR (Go 1.22) con autenticación basada en cookies JWT y Redis para sesiones, revocaciones y rate limiting. Middleware `LoopbackOnly` bloquea el tráfico externo.
+-   **Backend dual:** 
+    - Panel administrativo SSR (Go 1.22) con autenticación basada en cookies JWT
 -   **Infra local:** `docker-compose` expone Postgres y Redis; el backend se ejecuta con `make dev` cargando variables desde `.env`.
+-   **Producción:** Desplegado en VPS con Docker Compose, Nginx reverse proxy, Let's Encrypt SSL y firewall IP-based.
 -   **Front-end SSR:** Formularios con protección CSRF y validaciones lado servidor para todos los flujos; no hay mapas embebidos, los listados geográficos se gestionan vía tablas y formularios manuales.
 
 ## Estructura
@@ -238,6 +240,24 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | Cookies               | `SECURE_COOKIES`                                      | `false` = HTTP (dev local), `true` = HTTPS requerido (producción).         |
 | Auth JWT              | `JWT_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | El secreto debe tener ≥32 bytes en producción.                             |
 | Redis & Rate limiting | `REDIS_URL`, `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`     | Redis es obligatorio: refresh tokens y rate limiting por IP/endpoint.      |
+| Production            | `LOOPBACK_ALLOW_CIDRS`                                | CIDRs permitidos para bypass del middleware (ej: `172.18.0.0/16` para Docker). |
+
+### Comandos útiles para producción
+
+```bash
+# Generar JWT secret fuerte (32+ bytes)
+openssl rand -base64 32
+
+# Configurar firewall (ejemplo Ubuntu)
+sudo ufw allow from <tu-ip> to any port 80,443
+sudo ufw enable
+
+# Deploy en producción
+make prod-deploy          # Build y deploy completo
+make prod-db-reset        # Reset de base de datos
+make prod-logs            # Ver logs del backend
+make prod-restart         # Reiniciar servicios
+```
 
 ## Puesta en marcha
 
@@ -296,8 +316,56 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 -   Base URL: `http://localhost:8080` (ajustable con `HTTP_ADDR`).
 -   Rutas públicas: `/`, `/login`, `/healthz` y assets en `/ui-assets/*`.
 -   Rutas protegidas: `/superadmin/**` (requieren sesión y rol `superadmin`).
+-   **API Pública de Pacientes:** `/api/patient-auth/**` (login, registro, verificación - sin autenticación previa).
 -   Rate limiting: ventana rolling de 1 s (`RATE_LIMIT_RPS` + `RATE_LIMIT_BURST`) con encabezados `X-RateLimit-*` y `Retry-After`.
 -   Middleware `LoopbackOnly` garantiza que las peticiones provengan de `127.0.0.1` o `::1`; `CSRFMiddleware` soporta formularios `application/x-www-form-urlencoded` y `multipart/form-data`.
+
+### API Pública - Autenticación de Pacientes
+
+| Endpoint                              | Método | Descripción                                      | Auth Requerida |
+| ------------------------------------- | ------ | ------------------------------------------------ | -------------- |
+| `/api/patient-auth/login`             | POST   | Login de paciente con email/password             | ❌ No          |
+| `/api/patient-auth/register`          | POST   | Registro de nuevo paciente                       | ❌ No          |
+| `/api/patient-auth/verify-email`      | POST   | Verificar email del paciente                     | ❌ No          |
+| `/api/patient-auth/reset-password`    | POST   | Solicitar reset de contraseña                    | ❌ No          |
+
+**Ejemplo de login:**
+```bash
+curl -X POST http://localhost:8080/api/patient-auth/login \
+  -H "Content-Type: application/json" \
+  -d '{
+    "email": "maria.delgado@example.com",
+    "password": "Test123!"
+  }'
+```
+
+**Respuesta exitosa:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIs...",
+  "patient": {
+    "id": "8c9436b4-f085-405f-a3d2-87cb1d1cf097",
+    "org_id": "uuid-de-org",
+    "person_name": "María Delgado",
+    "email": "maria.delgado@example.com",
+    "email_verified": true,
+    "created_at": "2025-11-01T10:30:00Z"
+  }
+}
+```
+
+### Pacientes de Prueba
+
+La base de datos incluye 3 pacientes con credenciales configuradas:
+
+| Email                          | Password  | Email Verificado | Organización |
+| ------------------------------ | --------- | ---------------- | ------------ |
+| maria.delgado@example.com      | Test123!  | ✅ Sí            | FAM-001      |
+| jose.hernandez@example.com     | Test123!  | ✅ Sí            | CLIN-001     |
+| valeria.ortiz@example.com      | Test123!  | ❌ No            | FAM-001      |
+
+**Documentación completa:** Ver `docs/patient_auth_api.md` para detalles de todos los endpoints.
 
 ### Rutas clave (`/superadmin`)
 
@@ -305,7 +373,8 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | -------------------------- | ------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `dashboard`                | `GET /`, `GET /export`                                                          | Panel principal, exportable a CSV.                                              |
 | `organizations`            | `GET /`, `POST /`, `GET /{id}`, `POST /{id}/delete`                             | Listado, alta rápida, detalle y baja lógica de organizaciones.                  |
-| `patients`                 | `GET /`, `POST /`, `POST /{id}/update`, `POST /{id}/delete`                     | CRUD de pacientes demo.                                                         |
+| `patients`                 | `GET /`, `POST /`, `GET /{id}`, `POST /{id}/update`, `POST /{id}/delete`       | CRUD de pacientes demo con gestión de email/password.                          |
+| `patients` (auth)          | `POST /{id}/set-password`, `POST /{id}/verify-email`                            | Establecer contraseña y verificar email de pacientes (superadmin).             |
 | `locations/patients`       | `GET /`, `POST /`, `POST /{id}/delete`                                          | Alta manual y administración de ubicaciones de pacientes (sin mapas embebidos). |
 | `locations/users`          | `GET /`, `POST /`, `POST /{id}/delete`                                          | Administrador de ubicaciones reportadas por usuarios finales.                   |
 | `care-teams`               | `GET /`, `POST /`, `POST /{id}/update`, `POST /{id}/delete`, miembros/pacientes | Gestión de equipos de cuidado, asignaciones y pacientes asociados.              |
@@ -330,8 +399,20 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 `db/` contiene todo lo necesario para reconstruir la BD:
 
 -   `init.sql` crea el esquema `heartguard`, catálogos (reemplazando ENUMs) y tablas de RBAC, pacientes, ubicaciones (pacientes/usuarios), invitaciones y auditoría.
--   `seed.sql` llena catálogos, inserta usuarios demo (incluye superadmin `admin@heartguard.com / Admin#2025`), organizaciones, invitaciones, servicios, ubicaciones de ejemplo y logs.
+-   **Autenticación de pacientes:** Incluye campos `email`, `password_hash`, `email_verified` y `last_login_at` en la tabla `patients`.
+-   **Stored procedures para auth:** 5 funciones SQL para registro, login, cambio de contraseña, verificación de email y actualización de último login.
+-   `seed.sql` llena catálogos, inserta usuarios demo (incluye superadmin `admin@heartguard.com / Admin#2025`), organizaciones, invitaciones, servicios, ubicaciones de ejemplo, logs y **3 pacientes con credenciales** (password: `Test123!`).
 -   `db/README.md` amplía sobre la estructura, roles, funciones SQL y comandos avanzados.
+
+### Stored Procedures de Autenticación
+
+| Función                            | Parámetros                                    | Descripción                                      |
+| ---------------------------------- | --------------------------------------------- | ------------------------------------------------ |
+| `sp_patient_register`              | org_id, name, email, password_hash, ...       | Registra nuevo paciente con email/password       |
+| `sp_patient_find_by_email`         | email                                         | Busca paciente por email (para login)            |
+| `sp_patient_set_password`          | patient_id, password_hash                     | Actualiza contraseña del paciente                |
+| `sp_patient_verify_email`          | patient_id                                    | Marca email como verificado                      |
+| `sp_patient_update_last_login`     | patient_id                                    | Registra fecha de último login                   |
 
 ## Testing y validaciones
 
@@ -437,3 +518,64 @@ docker exec -it heartguard-redis redis-cli KEYS "csrf:guest:*"
 
 -   Revisa `backend/README.md` para flujos de autenticación, arquitectura SSR y rutas del panel.
 -   Consulta `db/README.md` si necesitas extender el esquema o ajustar seeds para nuevos catálogos.
+-   **Autenticación de pacientes:** Ver `docs/patient_auth_api.md` para documentación completa de la API REST.
+-   **Implementación técnica:** Ver `docs/patient_auth_implementation.md` para detalles de la implementación completa.
+
+## Nuevas características implementadas
+
+### 🔐 Autenticación de Pacientes (Nov 2025)
+
+Sistema completo de autenticación para pacientes con:
+
+- ✅ **API REST pública** para login/registro sin autenticación previa
+- ✅ **Base de datos actualizada** con campos de email, password_hash, email_verified y last_login_at
+- ✅ **5 stored procedures** para gestión completa de autenticación
+- ✅ **Panel de administración mejorado** con:
+  - Columna de email en listado de pacientes con indicador de verificación (✓/⚠)
+  - Formularios de crear/editar con campo email opcional
+  - Vista detalle con sección "Gestión de Autenticación"
+  - Botones para establecer contraseña y verificar email
+- ✅ **Seguridad:** Passwords hasheados con bcrypt, email único, login requiere verificación
+- ✅ **3 pacientes de prueba** con credenciales configuradas (password: `Test123!`)
+- ✅ **Documentación completa** en `docs/patient_auth_api.md`
+
+**Testing rápido:**
+```bash
+# Login de paciente
+curl -X POST http://localhost:8080/api/patient-auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"maria.delgado@example.com","password":"Test123!"}'
+
+# Registro de paciente
+curl -X POST http://localhost:8080/api/patient-auth/register \
+  -H "Content-Type: application/json" \
+  -d '{
+    "org_id":"<uuid-de-org>",
+    "person_name":"Test User",
+    "email":"test@example.com",
+    "password":"Password123!"
+  }'
+```
+
+### 🚀 Deploy en Producción (Nov 2025)
+
+Infraestructura completa para producción implementada:
+
+- ✅ **Docker Compose** con configuración prod/dev separada
+- ✅ **Nginx reverse proxy** con SSL/TLS (Let's Encrypt)
+- ✅ **Firewall IP-based** con whitelist configurable
+- ✅ **Rate limiting** y seguridad headers
+- ✅ **Makefile** con comandos para producción (prod-deploy, prod-logs, etc.)
+- ✅ **Health checks** y monitoreo básico
+- ✅ **Logs centralizados** con docker compose logs
+
+**Comandos de producción:**
+```bash
+make prod-deploy       # Deploy completo
+make prod-db-reset     # Reset de BD
+make prod-logs         # Ver logs
+make prod-restart      # Reiniciar servicios
+make prod-backup       # Backup de BD (si configurado)
+```
+
+````

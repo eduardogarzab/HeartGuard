@@ -1,0 +1,48 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: heartguard/superadmin-api:latest
+    env_file:
+      - .env.production
+    expose:
+      - "8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  nginx:
+    image: nginx:1.25-alpine
+    depends_on:
+      backend:
+        condition: service_started
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - certbot-www:/var/www/certbot
+    restart: unless-stopped
+
+  certbot:
+    profiles: ["certbot"]
+    image: certbot/certbot:latest
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-var:/var/lib/letsencrypt
+      - certbot-www:/var/www/certbot
+    ports:
+      - "80:80"
+      - "443:443"
+    entrypoint: ["/bin/sh", "-c", "trap : TERM INT; sleep infinity & wait"]
+
+volumes:
+  certbot-etc:
+  certbot-var:
+  certbot-www:
