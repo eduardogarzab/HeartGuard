@@ -261,6 +261,25 @@ body.auth-layout {
 
 .topbar__user {
   position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.topbar__preferences {
+  color: var(--color-primary);
+  font-weight: 500;
+  text-decoration: none;
+  padding: 0.5rem 0.75rem;
+  border-radius: 999px;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.topbar__preferences:focus,
+.topbar__preferences:hover {
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--color-primary-dark, var(--color-primary));
+  outline: none;
 }
 
 .user-menu__button {
