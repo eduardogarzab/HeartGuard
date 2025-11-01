@@ -58,5 +58,13 @@ certs/*.key
 certs/**/*.key
 certs/ca.key
 certs/client.key
+
+# Nginx SSL (auto-firmados y Let's Encrypt)
+nginx/ssl/*.key
+nginx/ssl/*.pem
+nginx/ssl/nginx.key
+nginx/ssl/nginx.crt
+nginx/ssl/chain.pem
+
 # Permitir certificados públicos (.crt) solo para desarrollo
 # En producción usar Let's Encrypt o CA confiable
