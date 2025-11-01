@@ -1,13 +1,20 @@
 """Application factory utilities for microservices."""
 from __future__ import annotations
 
+import importlib
 import logging
 import os
 import time
 from typing import Callable
 
 from flask import Flask, Response, g, request
-from flask_cors import CORS
+
+_cors_spec = importlib.util.find_spec("flask_cors")
+if _cors_spec is not None:
+    CORS = importlib.import_module("flask_cors").CORS  # type: ignore[attr-defined]
+else:  # pragma: no cover - exercised implicitly when dependency missing
+    def CORS(app, *args, **kwargs):  # type: ignore[empty-body]
+        return app
 
 from .database import db, DB_AVAILABLE
 from .errors import register_error_handlers
