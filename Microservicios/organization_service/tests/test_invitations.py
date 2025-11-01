@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 import uuid
 
 import pytest
+from xml.etree import ElementTree as ET
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 SERVICE_DIR = Path(__file__).resolve().parents[1]
@@ -11,6 +13,35 @@ SERVICE_DIR = Path(__file__).resolve().parents[1]
 for path in (BASE_DIR, SERVICE_DIR):
     if str(path) not in sys.path:
         sys.path.append(str(path))
+
+if "flask_cors" not in sys.modules:
+    sys.modules["flask_cors"] = SimpleNamespace(CORS=lambda app, **_: app)
+
+if "xmltodict" not in sys.modules:
+    class _XmlToDictModule:
+        @staticmethod
+        def parse(xml_string):
+            root = ET.fromstring(xml_string)
+
+            def _convert(element):
+                children = list(element)
+                if not children:
+                    return element.text
+                result = {}
+                for child in children:
+                    value = _convert(child)
+                    existing = result.get(child.tag)
+                    if existing is None:
+                        result[child.tag] = value
+                    else:
+                        if not isinstance(existing, list):
+                            result[child.tag] = [existing]
+                        result[child.tag].append(value)
+                return result
+
+            return {root.tag: _convert(root)}
+
+    sys.modules["xmltodict"] = _XmlToDictModule()
 
 from common.app_factory import create_app
 from common import auth as common_auth
@@ -179,3 +210,109 @@ def test_cancel_invitation(app, client):
     with app.app_context():
         refreshed = db.session.get(models.OrgInvitation, invitation_uuid)
         assert refreshed.revoked_at is not None
+
+
+def _parse_xml_response(response):
+    body = response.data.decode("utf-8")
+    root = ET.fromstring(body)
+    invitation = root.find("invitation")
+    assert invitation is not None
+    parsed: dict[str, str] = {}
+    for child in invitation:
+        parsed[child.tag] = child.text
+    return parsed
+
+
+def test_validate_invitation_pending(app, client):
+    with app.app_context():
+        org = models.Organization.query.first()
+        role = models.OrgRole.query.first()
+
+        invitation = models.OrgInvitation(
+            organization=org,
+            role=role,
+            email="user4@example.com",
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(invitation)
+        db.session.commit()
+        token = invitation.token
+
+    response = client.get(
+        f"/organization/invitations/{token}/validate",
+        headers={"Accept": "application/xml"},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("application/xml")
+    data = _parse_xml_response(response)
+    assert data["token"] == token
+    assert data["result"] == "valid"
+    assert data["state"] == "pending"
+
+
+def test_consume_invitation_flow(app, client):
+    with app.app_context():
+        org = models.Organization.query.first()
+        role = models.OrgRole.query.first()
+
+        invitation = models.OrgInvitation(
+            organization=org,
+            role=role,
+            email="user5@example.com",
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(invitation)
+        db.session.commit()
+        token = invitation.token
+
+    consume_response = client.post(
+        f"/organization/invitations/{token}/consume",
+        headers={"Accept": "application/xml"},
+    )
+
+    assert consume_response.status_code == 200
+    consume_data = _parse_xml_response(consume_response)
+    assert consume_data["token"] == token
+    assert consume_data["result"] == "used"
+    assert consume_data["state"] == "used"
+
+    validate_response = client.get(
+        f"/organization/invitations/{token}/validate",
+        headers={"Accept": "application/xml"},
+    )
+    assert validate_response.status_code == 200
+    validate_data = _parse_xml_response(validate_response)
+    assert validate_data["result"] == "used"
+    assert validate_data["state"] == "used"
+
+
+def test_consume_revoked_invitation(app, client):
+    with app.app_context():
+        org = models.Organization.query.first()
+        role = models.OrgRole.query.first()
+
+        invitation = models.OrgInvitation(
+            organization=org,
+            role=role,
+            email="user6@example.com",
+            expires_at=datetime.utcnow() + timedelta(hours=24),
+            revoked_at=datetime.utcnow(),
+            created_at=datetime.utcnow(),
+        )
+        db.session.add(invitation)
+        db.session.commit()
+        token = invitation.token
+
+    response = client.post(
+        f"/organization/invitations/{token}/consume",
+        headers={"Accept": "application/xml"},
+    )
+
+    assert response.status_code == 409
+    data = _parse_xml_response(response)
+    assert data["result"] == "revoked"
+    assert data["state"] == "revoked"
+    assert "reason" in data

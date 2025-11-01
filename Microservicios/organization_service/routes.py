@@ -1,7 +1,7 @@
 """Organization service exposing organization management endpoints."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import uuid
 
 from flask import Blueprint, Response, g, request
@@ -10,8 +10,10 @@ from common.auth import require_auth
 from common.database import db
 from common.errors import APIError
 from common.serialization import parse_request_data, render_response
+import dicttoxml
 import models
 # Models accessed via models. models.Organization
+from sqlalchemy import text
 
 bp = Blueprint("organization", __name__)
 
@@ -105,8 +107,6 @@ def create_invitation() -> "Response":
         raise APIError("Organization role not found", status_code=404, error_id="HG-ORG-ROLE-NOT-FOUND")
 
     now = datetime.utcnow()
-    expires_at = now + timedelta(hours=ttl_hours)
-    token = uuid.uuid4().hex
 
     created_by = None
     current_user = getattr(g, "current_user", None)
@@ -118,21 +118,16 @@ def create_invitation() -> "Response":
             except (TypeError, ValueError):
                 created_by = None
 
-    invitation = models.OrgInvitation(
+    invitation_payload = _create_invitation(
         organization=organization,
         role=role,
         email=email,
-        expires_at=expires_at,
-        token=token,
-        created_at=now,
+        ttl_hours=ttl_hours,
+        created_by=created_by,
+        now=now,
     )
-    if created_by:
-        invitation.created_by = created_by
 
-    db.session.add(invitation)
-    db.session.commit()
-
-    return render_response({"invitation": invitation.to_dict()}, status_code=201)
+    return render_response({"invitation": invitation_payload}, status_code=201)
 
 
 @bp.route("/invitations/<invitation_id>/cancel", methods=["POST"])
@@ -157,6 +152,52 @@ def cancel_invitation(invitation_id: str) -> "Response":
     return Response(status=204)
 
 
+@bp.route("/invitations/<token>/validate", methods=["GET"])
+def validate_invitation(token: str) -> "Response":
+    invitation = models.OrgInvitation.query.filter_by(token=token).first()
+    if not invitation:
+        return _render_invitation_xml(
+            token,
+            result="invalid",
+            reason="not_found",
+            http_status=404,
+        )
+
+    state, reason = _determine_invitation_state(invitation)
+    payload = invitation.to_dict()
+    payload["state"] = state
+    if reason:
+        payload["reason"] = reason
+    return _render_invitation_xml(token, payload=payload, result="valid" if state == "pending" else state)
+
+
+@bp.route("/invitations/<token>/consume", methods=["POST"])
+def consume_invitation(token: str) -> "Response":
+    invitation = models.OrgInvitation.query.filter_by(token=token).first()
+    if not invitation:
+        return _render_invitation_xml(
+            token,
+            result="invalid",
+            reason="not_found",
+            http_status=404,
+        )
+
+    state, reason = _determine_invitation_state(invitation)
+    if state != "pending":
+        payload = invitation.to_dict()
+        payload["state"] = state
+        if reason:
+            payload["reason"] = reason
+        return _render_invitation_xml(token, payload=payload, result=state, http_status=409)
+
+    invitation.used_at = datetime.utcnow()
+    db.session.commit()
+
+    payload = invitation.to_dict()
+    payload["state"] = "used"
+    return _render_invitation_xml(token, payload=payload, result="used")
+
+
 def _resolve_org_role(identifier: str | None):
     if not identifier:
         return None
@@ -174,6 +215,107 @@ def _resolve_org_role(identifier: str | None):
             db.func.lower(models.OrgRole.code) == str(identifier).lower()
         ).first()
     return candidate
+
+
+def _create_invitation(*, organization, role, email, ttl_hours: int, created_by, now: datetime) -> dict[str, object]:
+    engine = db.session.get_bind()
+    if engine and engine.dialect.name == "postgresql":
+        statement = text(
+            "SELECT * FROM heartguard.sp_org_invitation_create(:org_id, :org_role_id, :email, :ttl_hours, :created_by)"
+        )
+        params = {
+            "org_id": organization.id,
+            "org_role_id": role.id,
+            "email": email,
+            "ttl_hours": ttl_hours,
+            "created_by": created_by,
+        }
+        result = db.session.execute(statement, params)
+        row = result.mappings().first()
+        db.session.commit()
+        if not row:
+            raise APIError(
+                "Failed to create invitation",
+                status_code=500,
+                error_id="HG-ORG-INVITE-SP-FAILED",
+            )
+        return _serialize_invitation_row(row)
+
+    expires_at = now + timedelta(hours=ttl_hours)
+    invitation = models.OrgInvitation(
+        organization=organization,
+        role=role,
+        email=email,
+        expires_at=expires_at,
+        created_at=now,
+    )
+    if created_by:
+        invitation.created_by = created_by
+
+    db.session.add(invitation)
+    db.session.commit()
+    return invitation.to_dict()
+
+
+def _serialize_invitation_row(row) -> dict[str, object]:
+    def _iso(value):
+        if not value:
+            return None
+        if isinstance(value, str):
+            return value
+        if isinstance(value, datetime) and value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        if isinstance(value, datetime):
+            return value.isoformat()
+        return str(value)
+
+    row_dict = dict(row)
+    def _string(value):
+        if value is None:
+            return None
+        return str(value)
+
+    payload = {
+        "id": _string(row_dict.get("id")),
+        "org_id": _string(row_dict.get("org_id")),
+        "email": row_dict.get("email"),
+        "role": row_dict.get("org_role_code"),
+        "status": row_dict.get("status"),
+        "token": row_dict.get("token"),
+        "created_at": _iso(row_dict.get("created_at")),
+        "expires_at": _iso(row_dict.get("expires_at")),
+        "used_at": _iso(row_dict.get("used_at")),
+        "revoked_at": _iso(row_dict.get("revoked_at")),
+        "org_role_id": _string(row_dict.get("org_role_id")),
+        "created_by": _string(row_dict.get("created_by")),
+    }
+    return payload
+
+
+def _determine_invitation_state(invitation: models.OrgInvitation) -> tuple[str, str | None]:
+    if invitation.revoked_at:
+        return "revoked", "Invitation has been revoked"
+    if invitation.used_at:
+        return "used", "Invitation has already been used"
+    expires_at = models.OrgInvitation._coerce_datetime(invitation.expires_at)
+    now_utc = datetime.now(timezone.utc)
+    if expires_at and expires_at <= now_utc:
+        return "expired", "Invitation has expired"
+    return "pending", None
+
+
+def _render_invitation_xml(token: str, *, result: str, payload: dict[str, object] | None = None, reason: str | None = None, http_status: int = 200) -> "Response":
+    if payload is None:
+        payload = {"token": token}
+    if "token" not in payload:
+        payload["token"] = token
+    payload["result"] = result
+    if reason and "reason" not in payload:
+        payload["reason"] = reason
+
+    xml_body = dicttoxml.dicttoxml({"invitation": payload}, custom_root="response", attr_type=False)
+    response = Response(xml_body, status=http_status, mimetype="application/xml")
+    return response
 
 
 def register_blueprint(app):
