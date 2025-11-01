@@ -16,24 +16,57 @@
           <div class="sidebar__logo">
             <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
           </div>
-          <span aria-hidden="true">HeartGuard</span>
+          <div class="sidebar__identity">
+            <span class="sidebar__brand">HeartGuard</span>
+            <span class="sidebar__tagline">Monitoreo clínico</span>
+          </div>
         </div>
-        <nav id="sidebar-nav">
-          <a href="index.html">Dashboard</a>
-          <a href="organization.html">Organización</a>
-          <a href="users.html">Usuarios</a>
-          <a href="patients.html" aria-current="page">Pacientes</a>
-          <a href="devices.html">Dispositivos</a>
-          <a href="alerts.html">Alertas</a>
-          <a href="invitations.html">Invitaciones</a>
-          <a href="profile.html">Perfil</a>
+        <nav id="sidebar-nav" class="sidebar__nav">
+          <p class="sidebar__section-label">Panel</p>
+          <a href="index.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dashboard
+          </a>
+          <a href="organization.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Organización
+          </a>
+          <a href="users.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Usuarios
+          </a>
+          <a href="patients.html" class="sidebar__link" aria-current="page">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Pacientes
+          </a>
+          <a href="devices.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dispositivos
+          </a>
+          <a href="alerts.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Alertas
+          </a>
+          <a href="invitations.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Invitaciones
+          </a>
+          <a href="profile.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Perfil
+          </a>
         </nav>
+        <footer class="sidebar__footer">
+          <p>© 2024 HeartGuard</p>
+          <small>Confianza en cada latido.</small>
+        </footer>
       </aside>
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
+            <span class="topbar__eyebrow">Clínica</span>
             <span class="topbar__title" data-org-name>Organización</span>
-            <span class="topbar__subtitle">Pacientes y niveles de riesgo</span>
+            <span class="topbar__subtitle">Seguimiento de pacientes críticos y su nivel de riesgo.</span>
           </div>
           <div class="topbar__actions">
             <div class="topbar__user">
@@ -49,39 +82,55 @@
           </div>
         </header>
         <section class="content" aria-labelledby="patients-heading">
-          <h1 id="patients-heading" class="section-title">Pacientes</h1>
-          <div class="filter-bar" role="search">
-            <div class="filter-bar__group">
-              <label for="search-patients">Buscar</label>
-              <input id="search-patients" type="search" placeholder="Nombre del paciente" />
+          <div class="page-header">
+            <div>
+              <h1 id="patients-heading" class="page-header__title">Pacientes</h1>
+              <p class="page-header__subtitle">Analiza su evolución, filtra por riesgo y accede a detalles clínicos.</p>
             </div>
-            <div class="filter-bar__group">
-              <label for="filter-risk">Nivel de riesgo</label>
-              <select id="filter-risk">
-                <option value="all">Todos</option>
-                <option value="critical">Crítico</option>
-                <option value="high">Alto</option>
-                <option value="medium">Medio</option>
-                <option value="low">Bajo</option>
-              </select>
+            <div class="page-header__actions">
+              <a class="button button--ghost" href="alerts.html">Alertas relacionadas</a>
             </div>
           </div>
-          <div class="table-responsive">
-            <table id="patients-table" class="data-table" aria-describedby="patients-heading">
-              <thead>
-                <tr>
-                  <th scope="col">Nombre</th>
-                  <th scope="col">Sexo</th>
-                  <th scope="col">Edad</th>
-                  <th scope="col">Riesgo</th>
-                  <th scope="col">Fecha de alta</th>
-                  <th scope="col">Detalles</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <div class="page-section">
+            <div class="card card--toolbar" role="search">
+              <div class="filter-bar">
+                <div class="filter-bar__group">
+                  <label for="search-patients">Buscar</label>
+                  <input id="search-patients" type="search" placeholder="Nombre del paciente" />
+                </div>
+                <div class="filter-bar__group">
+                  <label for="filter-risk">Nivel de riesgo</label>
+                  <select id="filter-risk">
+                    <option value="all">Todos</option>
+                    <option value="critical">Crítico</option>
+                    <option value="high">Alto</option>
+                    <option value="medium">Medio</option>
+                    <option value="low">Bajo</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="pagination" data-pagination></div>
+          <div class="page-section">
+            <div class="card card--table">
+              <div class="table-responsive">
+                <table id="patients-table" class="data-table" aria-describedby="patients-heading">
+                  <thead>
+                    <tr>
+                      <th scope="col">Nombre</th>
+                      <th scope="col">Sexo</th>
+                      <th scope="col">Edad</th>
+                      <th scope="col">Riesgo</th>
+                      <th scope="col">Fecha de alta</th>
+                      <th scope="col">Detalles</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="pagination" data-pagination></div>
+          </div>
         </section>
       </main>
     </div>

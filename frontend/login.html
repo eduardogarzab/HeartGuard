@@ -9,25 +9,44 @@
     <link rel="stylesheet" href="css/responsive.css" />
   </head>
   <body>
-    <main class="card" aria-labelledby="login-heading">
-      <header style="text-align: center; margin-bottom: 1.5rem;">
-        <img src="assets/logo.svg" alt="Logo de HeartGuard" width="160" height="48" loading="lazy" />
-        <h1 id="login-heading">Iniciar sesión</h1>
-        <p>Accede con tus credenciales de administrador de organización.</p>
-      </header>
-      <form id="login-form" novalidate>
-        <div class="filter-bar__group">
-          <label for="login-email">Correo electrónico</label>
-          <input id="login-email" name="email" type="email" autocomplete="username" required />
+    <div class="auth-wrapper">
+      <section class="auth-hero" aria-hidden="true">
+        <span class="auth-hero__badge">Heartbeat Intelligence</span>
+        <h1>HeartGuard Command Center</h1>
+        <p>
+          Orquesta todos los microservicios desde una vista unificada: autenticación, pacientes, dispositivos y
+          alertas sincronizados en tiempo real.
+        </p>
+        <ul class="auth-hero__list">
+          <li>✔️ Autenticación federada y refresco de tokens XML.</li>
+          <li>✔️ Métricas clínicas y auditorías centralizadas.</li>
+          <li>✔️ Gestión granular de usuarios y dispositivos.</li>
+        </ul>
+      </section>
+      <main class="auth-panel" aria-labelledby="login-heading">
+        <div class="auth-panel__header">
+          <img src="assets/logo.svg" alt="Logo de HeartGuard" width="160" height="48" loading="lazy" />
+          <h1 id="login-heading">Inicia sesión</h1>
+          <p>Ingresa tus credenciales de administrador para continuar.</p>
         </div>
-        <div class="filter-bar__group">
-          <label for="login-password">Contraseña</label>
-          <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="8" />
-        </div>
-        <div id="login-error" class="alert alert--danger" role="alert" hidden></div>
-        <button class="button" type="submit">Iniciar sesión</button>
-      </form>
-    </main>
+        <form id="login-form" novalidate>
+          <div class="filter-bar__group">
+            <label for="login-email">Correo electrónico</label>
+            <input id="login-email" name="email" type="email" autocomplete="username" required />
+          </div>
+          <div class="filter-bar__group">
+            <label for="login-password">Contraseña</label>
+            <input id="login-password" name="password" type="password" autocomplete="current-password" required minlength="8" />
+          </div>
+          <div id="login-error" class="alert alert--danger" role="alert" hidden></div>
+          <button class="button" type="submit">Iniciar sesión</button>
+        </form>
+        <p class="auth-panel__footer">
+          ¿Necesitas acceso? Solicítalo a tu administrador o envía un correo a
+          <a href="mailto:soporte@heartguard.io">soporte@heartguard.io</a>.
+        </p>
+      </main>
+    </div>
     <script type="module" src="js/login.js"></script>
   </body>
 </html>

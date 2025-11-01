@@ -27,7 +27,11 @@ async function loadOrganization() {
     form.insertAdjacentHTML(
       'beforeend',
       `
-        <div class="card">
+        <div class="card card--form">
+          <div class="card__header">
+            <h2 class="card__title">Identidad de la organización</h2>
+            <p class="card__subtitle">Sincroniza la información corporativa que consumen los microservicios.</p>
+          </div>
           <div class="filter-bar">
             <div class="filter-bar__group">
               <label for="org-name">Nombre</label>
@@ -48,9 +52,11 @@ async function loadOrganization() {
               <input id="org-contact-phone" name="contact_phone" type="text" value="${xmlNodeText(org, 'contact_phone')}" />
             </div>
           </div>
-          <div class="filter-bar__group">
-            <label for="org-address">Dirección</label>
-            <textarea id="org-address" name="address" rows="3">${xmlNodeText(org, 'address')}</textarea>
+          <div class="filter-bar">
+            <div class="filter-bar__group filter-bar__group--full">
+              <label for="org-address">Dirección</label>
+              <textarea id="org-address" name="address" rows="3">${xmlNodeText(org, 'address')}</textarea>
+            </div>
           </div>
           <button class="button" type="submit">Guardar cambios</button>
         </div>

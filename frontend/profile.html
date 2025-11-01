@@ -16,24 +16,57 @@
           <div class="sidebar__logo">
             <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
           </div>
-          <span aria-hidden="true">HeartGuard</span>
+          <div class="sidebar__identity">
+            <span class="sidebar__brand">HeartGuard</span>
+            <span class="sidebar__tagline">Monitoreo clínico</span>
+          </div>
         </div>
-        <nav id="sidebar-nav">
-          <a href="index.html">Dashboard</a>
-          <a href="organization.html">Organización</a>
-          <a href="users.html">Usuarios</a>
-          <a href="patients.html">Pacientes</a>
-          <a href="devices.html">Dispositivos</a>
-          <a href="alerts.html">Alertas</a>
-          <a href="invitations.html">Invitaciones</a>
-          <a href="profile.html" aria-current="page">Perfil</a>
+        <nav id="sidebar-nav" class="sidebar__nav">
+          <p class="sidebar__section-label">Panel</p>
+          <a href="index.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dashboard
+          </a>
+          <a href="organization.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Organización
+          </a>
+          <a href="users.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Usuarios
+          </a>
+          <a href="patients.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Pacientes
+          </a>
+          <a href="devices.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dispositivos
+          </a>
+          <a href="alerts.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Alertas
+          </a>
+          <a href="invitations.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Invitaciones
+          </a>
+          <a href="profile.html" class="sidebar__link" aria-current="page">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Perfil
+          </a>
         </nav>
+        <footer class="sidebar__footer">
+          <p>© 2024 HeartGuard</p>
+          <small>Confianza en cada latido.</small>
+        </footer>
       </aside>
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
+            <span class="topbar__eyebrow">Preferencias</span>
             <span class="topbar__title" data-org-name>Organización</span>
-            <span class="topbar__subtitle">Preferencias personales</span>
+            <span class="topbar__subtitle">Personaliza tu experiencia y sincroniza tus preferencias.</span>
           </div>
           <div class="topbar__actions">
             <div class="topbar__user">
@@ -48,41 +81,51 @@
           </div>
         </header>
         <section class="content" aria-labelledby="profile-heading">
-          <h1 id="profile-heading" class="section-title">Perfil</h1>
+          <div class="page-header">
+            <div>
+              <h1 id="profile-heading" class="page-header__title">Perfil</h1>
+              <p class="page-header__subtitle">Configura idioma, zona horaria y notificaciones para todos los microservicios.</p>
+            </div>
+          </div>
           <div id="profile-feedback" class="alert" role="status" hidden></div>
-          <form id="profile-form" class="card" aria-describedby="profile-feedback">
-            <div class="filter-bar">
-              <div class="filter-bar__group">
-                <label for="profile-email">Correo</label>
-                <input id="profile-email" name="email" type="email" disabled />
+          <div class="page-section">
+            <form id="profile-form" class="card card--form" aria-describedby="profile-feedback">
+              <div class="filter-bar">
+                <div class="filter-bar__group">
+                  <label for="profile-email">Correo</label>
+                  <input id="profile-email" name="email" type="email" disabled />
+                </div>
+                <div class="filter-bar__group">
+                  <label for="profile-language">Idioma</label>
+                  <select id="profile-language" name="language">
+                    <option value="es">Español</option>
+                    <option value="en">Inglés</option>
+                  </select>
+                </div>
+                <div class="filter-bar__group">
+                  <label for="profile-timezone">Zona horaria</label>
+                  <input id="profile-timezone" name="timezone" type="text" required />
+                </div>
               </div>
-              <div class="filter-bar__group">
-                <label for="profile-language">Idioma</label>
-                <select id="profile-language" name="language">
-                  <option value="es">Español</option>
-                  <option value="en">Inglés</option>
-                </select>
+              <div class="filter-bar">
+                <div class="filter-bar__group">
+                  <label for="profile-theme">Tema</label>
+                  <select id="profile-theme" name="theme">
+                    <option value="light">Claro</option>
+                    <option value="dark">Oscuro</option>
+                  </select>
+                </div>
+                <div class="filter-bar__group">
+                  <span class="input-label">Notificaciones</span>
+                  <label class="form-toggle">
+                    <input id="profile-notifications" name="notifications" type="checkbox" />
+                    <span>Activar recordatorios críticos</span>
+                  </label>
+                </div>
               </div>
-              <div class="filter-bar__group">
-                <label for="profile-timezone">Zona horaria</label>
-                <input id="profile-timezone" name="timezone" type="text" required />
-              </div>
-            </div>
-            <div class="filter-bar">
-              <div class="filter-bar__group">
-                <label for="profile-theme">Tema</label>
-                <select id="profile-theme" name="theme">
-                  <option value="light">Claro</option>
-                  <option value="dark">Oscuro</option>
-                </select>
-              </div>
-              <div class="filter-bar__group">
-                <label for="profile-notifications">Notificaciones</label>
-                <input id="profile-notifications" name="notifications" type="checkbox" />
-              </div>
-            </div>
-            <button class="button" type="submit">Guardar preferencias</button>
-          </form>
+              <button class="button" type="submit">Guardar preferencias</button>
+            </form>
+          </div>
         </section>
       </main>
     </div>

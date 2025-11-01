@@ -16,24 +16,57 @@
           <div class="sidebar__logo">
             <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
           </div>
-          <span aria-hidden="true">HeartGuard</span>
+          <div class="sidebar__identity">
+            <span class="sidebar__brand">HeartGuard</span>
+            <span class="sidebar__tagline">Monitoreo clínico</span>
+          </div>
         </div>
-        <nav id="sidebar-nav">
-          <a href="index.html" aria-current="page">Dashboard</a>
-          <a href="organization.html">Organización</a>
-          <a href="users.html">Usuarios</a>
-          <a href="patients.html">Pacientes</a>
-          <a href="devices.html">Dispositivos</a>
-          <a href="alerts.html">Alertas</a>
-          <a href="invitations.html">Invitaciones</a>
-          <a href="profile.html">Perfil</a>
+        <nav id="sidebar-nav" class="sidebar__nav">
+          <p class="sidebar__section-label">Panel</p>
+          <a href="index.html" class="sidebar__link" aria-current="page">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dashboard
+          </a>
+          <a href="organization.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Organización
+          </a>
+          <a href="users.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Usuarios
+          </a>
+          <a href="patients.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Pacientes
+          </a>
+          <a href="devices.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dispositivos
+          </a>
+          <a href="alerts.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Alertas
+          </a>
+          <a href="invitations.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Invitaciones
+          </a>
+          <a href="profile.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Perfil
+          </a>
         </nav>
+        <footer class="sidebar__footer">
+          <p>© 2024 HeartGuard</p>
+          <small>Confianza en cada latido.</small>
+        </footer>
       </aside>
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
+            <span class="topbar__eyebrow">Panel operativo</span>
             <span class="topbar__title" data-org-name>Organización</span>
-            <span class="topbar__subtitle">Panel de métricas y actividad reciente</span>
+            <span class="topbar__subtitle">Métricas y actividad en tiempo real.</span>
           </div>
           <div class="topbar__actions">
             <div class="topbar__alerts" aria-live="polite">
@@ -53,26 +86,40 @@
           </div>
         </header>
         <section class="content" aria-labelledby="dashboard-heading">
-          <h1 id="dashboard-heading" class="section-title">Dashboard</h1>
-          <div class="metric-grid" role="list">
-            <article class="metric-card" role="listitem">
-              <span class="metric-card__title">Usuarios totales</span>
-              <span id="metric-users" class="metric-card__value" aria-live="polite">0</span>
-            </article>
-            <article class="metric-card" role="listitem">
-              <span class="metric-card__title">Pacientes totales</span>
-              <span id="metric-patients" class="metric-card__value" aria-live="polite">0</span>
-            </article>
-            <article class="metric-card" role="listitem">
-              <span class="metric-card__title">Alertas abiertas</span>
-              <span id="metric-alerts" class="metric-card__value" aria-live="polite">0</span>
-            </article>
+          <div class="page-header">
+            <div>
+              <h1 id="dashboard-heading" class="page-header__title">Dashboard</h1>
+              <p class="page-header__subtitle">Indicadores clave para monitorear la salud operativa de la organización.</p>
+            </div>
+            <div class="page-header__actions">
+              <a class="button button--ghost" href="alerts.html">Ver alertas</a>
+            </div>
           </div>
-
-          <section aria-labelledby="audit-title" style="margin-top: 2rem;">
-            <h2 id="audit-title">Eventos recientes</h2>
-            <ul id="audit-events"></ul>
-          </section>
+          <div class="page-section">
+            <div class="metric-grid" role="list">
+              <article class="metric-card" role="listitem">
+                <span class="metric-card__title">Usuarios totales</span>
+                <span id="metric-users" class="metric-card__value" aria-live="polite">0</span>
+              </article>
+              <article class="metric-card" role="listitem">
+                <span class="metric-card__title">Pacientes totales</span>
+                <span id="metric-patients" class="metric-card__value" aria-live="polite">0</span>
+              </article>
+              <article class="metric-card" role="listitem">
+                <span class="metric-card__title">Alertas abiertas</span>
+                <span id="metric-alerts" class="metric-card__value" aria-live="polite">0</span>
+              </article>
+            </div>
+          </div>
+          <div class="page-section">
+            <div class="card card--panel">
+              <div class="card__header">
+                <h2 class="card__title">Eventos recientes</h2>
+                <p class="card__subtitle">Últimas actividades auditadas por el gateway central.</p>
+              </div>
+              <ul id="audit-events" class="card__list"></ul>
+            </div>
+          </div>
         </section>
       </main>
     </div>

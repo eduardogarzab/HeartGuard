@@ -16,24 +16,57 @@
           <div class="sidebar__logo">
             <img src="assets/logo.svg" alt="Logo HeartGuard" width="48" height="48" loading="lazy" />
           </div>
-          <span aria-hidden="true">HeartGuard</span>
+          <div class="sidebar__identity">
+            <span class="sidebar__brand">HeartGuard</span>
+            <span class="sidebar__tagline">Monitoreo clínico</span>
+          </div>
         </div>
-        <nav id="sidebar-nav">
-          <a href="index.html">Dashboard</a>
-          <a href="organization.html">Organización</a>
-          <a href="users.html">Usuarios</a>
-          <a href="patients.html">Pacientes</a>
-          <a href="devices.html" aria-current="page">Dispositivos</a>
-          <a href="alerts.html">Alertas</a>
-          <a href="invitations.html">Invitaciones</a>
-          <a href="profile.html">Perfil</a>
+        <nav id="sidebar-nav" class="sidebar__nav">
+          <p class="sidebar__section-label">Panel</p>
+          <a href="index.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dashboard
+          </a>
+          <a href="organization.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Organización
+          </a>
+          <a href="users.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Usuarios
+          </a>
+          <a href="patients.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Pacientes
+          </a>
+          <a href="devices.html" class="sidebar__link" aria-current="page">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Dispositivos
+          </a>
+          <a href="alerts.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Alertas
+          </a>
+          <a href="invitations.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Invitaciones
+          </a>
+          <a href="profile.html" class="sidebar__link">
+            <span class="sidebar__bullet" aria-hidden="true"></span>
+            Perfil
+          </a>
         </nav>
+        <footer class="sidebar__footer">
+          <p>© 2024 HeartGuard</p>
+          <small>Confianza en cada latido.</small>
+        </footer>
       </aside>
       <main class="main">
         <header class="topbar">
           <div class="topbar__left">
+            <span class="topbar__eyebrow">Infraestructura</span>
             <span class="topbar__title" data-org-name>Organización</span>
-            <span class="topbar__subtitle">Inventario de dispositivos</span>
+            <span class="topbar__subtitle">Supervisa los sensores conectados al ecosistema HeartGuard.</span>
           </div>
           <div class="topbar__actions">
             <div class="topbar__user">
@@ -49,45 +82,61 @@
           </div>
         </header>
         <section class="content" aria-labelledby="devices-heading">
-          <h1 id="devices-heading" class="section-title">Dispositivos</h1>
-          <div class="filter-bar" role="search">
-            <div class="filter-bar__group">
-              <label for="search-devices">Buscar</label>
-              <input id="search-devices" type="search" placeholder="Serial o paciente" />
+          <div class="page-header">
+            <div>
+              <h1 id="devices-heading" class="page-header__title">Dispositivos</h1>
+              <p class="page-header__subtitle">Controla el estado operativo, firmware y asignación de hardware clínico.</p>
             </div>
-            <div class="filter-bar__group">
-              <label for="filter-type">Tipo</label>
-              <select id="filter-type">
-                <option value="all">Todos</option>
-                <option value="monitor">Monitor</option>
-                <option value="wearable">Wearable</option>
-                <option value="implant">Implantable</option>
-              </select>
-            </div>
-            <div class="filter-bar__group">
-              <label for="filter-status">Estado</label>
-              <select id="filter-status">
-                <option value="all">Todos</option>
-                <option value="active">Activo</option>
-                <option value="maintenance">Mantenimiento</option>
-                <option value="offline">Offline</option>
-              </select>
+            <div class="page-header__actions">
+              <a class="button button--ghost" href="alerts.html">Ver alertas</a>
             </div>
           </div>
-          <div class="table-responsive">
-            <table id="devices-table" class="data-table" aria-describedby="devices-heading">
-              <thead>
-                <tr>
-                  <th scope="col">Serial</th>
-                  <th scope="col">Tipo</th>
-                  <th scope="col">Estado</th>
-                  <th scope="col">Paciente</th>
-                  <th scope="col">Último ping</th>
-                  <th scope="col">Detalles</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
+          <div class="page-section">
+            <div class="card card--toolbar" role="search">
+              <div class="filter-bar">
+                <div class="filter-bar__group">
+                  <label for="filter-status">Estado</label>
+                  <select id="filter-status">
+                    <option value="all">Todos</option>
+                    <option value="active">Activo</option>
+                    <option value="maintenance">Mantenimiento</option>
+                    <option value="offline">Fuera de línea</option>
+                  </select>
+                </div>
+                <div class="filter-bar__group">
+                  <label for="filter-type">Tipo</label>
+                  <select id="filter-type">
+                    <option value="all">Todos</option>
+                    <option value="implant">Implantable</option>
+                    <option value="wearable">Wearable</option>
+                    <option value="stationary">Estacionario</option>
+                  </select>
+                </div>
+                <div class="filter-bar__group">
+                  <label for="search-devices">Buscar</label>
+                  <input id="search-devices" type="search" placeholder="Serie o paciente" />
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="page-section">
+            <div class="card card--table">
+              <div class="table-responsive">
+                <table id="devices-table" class="data-table" aria-describedby="devices-heading">
+                  <thead>
+                    <tr>
+                      <th scope="col">Serie</th>
+                      <th scope="col">Tipo</th>
+                      <th scope="col">Estado</th>
+                      <th scope="col">Asignado a</th>
+                      <th scope="col">Último ping</th>
+                      <th scope="col">Acciones</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </section>
       </main>
