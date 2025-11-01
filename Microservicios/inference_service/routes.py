@@ -81,5 +81,19 @@ def record_inference() -> "Response":
     return render_response({"inference": inference}, status_code=201)
 
 
+@bp.route("/inferences", methods=["GET"])
+@require_auth(optional=True)
+def list_inferences() -> "Response":
+    """List all recorded inferences."""
+    return render_response({"inferences": INFERENCES}, meta={"total": len(INFERENCES)})
+
+
+@bp.route("/inferences/count", methods=["POST"])
+@require_auth(optional=True)
+def count_inferences() -> "Response":
+    """Count all inferences."""
+    return render_response({"count": len(INFERENCES)})
+
+
 def register_blueprint(app):
     app.register_blueprint(bp, url_prefix="/inference")

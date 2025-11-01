@@ -112,6 +112,51 @@ def list_patients() -> "Response":
     return render_response({"patients": patients}, meta={"total": len(patients)})
 
 
+@bp.route("/count", methods=["POST"])
+@require_auth(optional=True)
+def count_patients() -> "Response":
+    """Count patients with the same role-based filtering as list."""
+    user_id, roles = get_user_roles_from_jwt()
+    
+    query = models.Patient.query
+    
+    # Si no hay autenticación, contar todos
+    if not user_id:
+        count = query.count()
+        return render_response({"count": count})
+    
+    # SUPERADMIN: contar todos
+    if 'superadmin' in roles:
+        count = query.count()
+        return render_response({"count": count})
+    
+    # ADMIN/CLINICIAN: contar pacientes de su(s) organización(es)
+    if 'admin' in roles or 'clinician' in roles:
+        org_ids = get_user_organizations(user_id)
+        if org_ids:
+            org_uuid_list = [uuid.UUID(oid) for oid in org_ids]
+            query = query.filter(models.Patient.org_id.in_(org_uuid_list))
+            count = query.count()
+        else:
+            count = 0
+        return render_response({"count": count})
+    
+    # CAREGIVER: contar solo pacientes asignados
+    elif 'caregiver' in roles:
+        patient_ids = get_assigned_patient_ids(user_id)
+        if patient_ids:
+            patient_uuid_list = [uuid.UUID(pid) for pid in patient_ids]
+            query = query.filter(models.Patient.id.in_(patient_uuid_list))
+            count = query.count()
+        else:
+            count = 0
+        return render_response({"count": count})
+    
+    # Otros roles: sin acceso
+    else:
+        return render_response({"count": 0})
+
+
 @bp.route("", methods=["POST"])
 @require_auth(required_roles=["clinician", "admin"])
 def create_patient() -> "Response":

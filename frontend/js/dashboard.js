@@ -158,7 +158,18 @@ async function loadUsers() {
       return;
     }
     
-    const users = dataNode.querySelectorAll("users item") || dataNode.querySelectorAll("user");
+    // Buscar tanto estructuras <users><item>...</item></users> como <user>...</user>
+    const users = dataNode.querySelectorAll("users item, user");
+
+    // Helper para comprobar ancestros por tagName (ej: nodes dentro de <organizations>)
+    function hasAncestorTag(el, tags) {
+      let p = el.parentElement;
+      while (p) {
+        if (tags.includes(p.tagName.toLowerCase())) return true;
+        p = p.parentElement;
+      }
+      return false;
+    }
     
     if (users.length === 0) {
       tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;">No hay usuarios en esta organización</td></tr>`;
@@ -169,7 +180,23 @@ async function loadUsers() {
     const rows = [];
     
     users.forEach((user) => {
-      const name = user.querySelector("name")?.textContent || "-";
+      // Filtrar nodos que no representan usuarios (por ejemplo, entradas de organización).
+      // Reglas para considerar un nodo como usuario válido:
+      //  - No es un elemento <organization> ni está contenido dentro de un <organizations>
+      //  - Y además tiene al menos un <email> o algún <role>
+      const tagName = user.tagName?.toLowerCase();
+      if (tagName === 'organization' || hasAncestorTag(user, ['organizations', 'organization'])) {
+        return; // es una entrada de organización
+      }
+
+      const hasEmail = !!user.querySelector("email");
+      const hasRoleInOrgs = !!user.querySelector("organizations role, organizations item role, organization role");
+      const hasRole = !!user.querySelector("roles role, roles item, role");
+      if (!hasEmail && !hasRoleInOrgs && !hasRole) {
+        // Saltar registros que no contienen campos típicos de usuario
+        return;
+      }
+  const name = user.querySelector("name")?.textContent || "-";
       const email = user.querySelector("email")?.textContent || "-";
       const status = user.querySelector("status")?.textContent || "-";
       const createdAt = user.querySelector("created_at")?.textContent || "-";
@@ -225,80 +252,197 @@ async function loadUsers() {
 // --- PATIENTS ---
 async function loadPatients() {
   const token = localStorage.getItem("jwt");
-  const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PATIENTS.LIST}`, "GET", "", token);
-  const xml = new DOMParser().parseFromString(res, "application/xml");
-  const tbody = document.querySelector("#patientsTable tbody");
   
-  const patients = xml.querySelectorAll("patient");
-  if (patients.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay pacientes</td></tr>';
-    return;
+  try {
+    const res = await sendXMLRequest(
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.PATIENTS.LIST}`, 
+      "GET", 
+      null, 
+      token
+    );
+    
+    console.log("Patients Response:", res);
+    
+    const xml = new DOMParser().parseFromString(res, "application/xml");
+    const tbody = document.querySelector("#patientsTable tbody");
+    
+    // Verificar si hay error en la respuesta
+    const errorNode = xml.querySelector("error message");
+    if (errorNode) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">Error: ${errorNode.textContent}</td></tr>`;
+      return;
+    }
+    
+    // Buscar nodo data
+    const dataNode = xml.querySelector("data");
+    if (!dataNode) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No se encontraron pacientes</td></tr>';
+      return;
+    }
+    
+    // Buscar pacientes en la respuesta (puede venir como <patients><item> o <patient>)
+    const patients = dataNode.querySelectorAll("patients item, patient");
+    
+    if (patients.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay pacientes</td></tr>';
+      return;
+    }
+    
+    const rows = [];
+    patients.forEach((p) => {
+      const firstName = p.querySelector("first_name")?.textContent || "";
+      const lastName = p.querySelector("last_name")?.textContent || "";
+      const personName = p.querySelector("person_name")?.textContent || `${firstName} ${lastName}`.trim() || "-";
+      const sex = p.querySelector("sex")?.textContent || "-";
+      const riskLevel = p.querySelector("risk_level")?.textContent || "-";
+      const createdAt = p.querySelector("created_at")?.textContent || "-";
+      
+      rows.push(`
+        <tr>
+          <td>${personName}</td>
+          <td>${sex}</td>
+          <td>${riskLevel}</td>
+          <td>${createdAt}</td>
+        </tr>`);
+    });
+    
+    tbody.innerHTML = rows.join('');
+    
+  } catch (err) {
+    console.error("Error al cargar pacientes:", err);
+    const tbody = document.querySelector("#patientsTable tbody");
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">Error al cargar pacientes: ${err.message}</td></tr>`;
   }
-  
-  const rows = [];
-  patients.forEach((p) => {
-    rows.push(`
-      <tr>
-        <td>${p.querySelector("first_name")?.textContent || ""} ${p.querySelector("last_name")?.textContent || ""}</td>
-        <td>${p.querySelector("sex")?.textContent || "-"}</td>
-        <td>${p.querySelector("risk_level")?.textContent || "-"}</td>
-        <td>${p.querySelector("created_at")?.textContent || "-"}</td>
-      </tr>`);
-  });
-  tbody.innerHTML = rows.join('');
 }
 
 // --- DEVICES ---
 async function loadDevices() {
   const token = localStorage.getItem("jwt");
-  const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DEVICES.LIST}`, "GET", "", token);
-  const xml = new DOMParser().parseFromString(res, "application/xml");
-  const tbody = document.querySelector("#devicesTable tbody");
   
-  const devices = xml.querySelectorAll("device");
-  if (devices.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay dispositivos</td></tr>';
-    return;
+  try {
+    const res = await sendXMLRequest(
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.DEVICES.LIST}`, 
+      "GET", 
+      null, 
+      token
+    );
+    
+    console.log("Devices Response:", res);
+    
+    const xml = new DOMParser().parseFromString(res, "application/xml");
+    const tbody = document.querySelector("#devicesTable tbody");
+    
+    // Verificar si hay error en la respuesta
+    const errorNode = xml.querySelector("error message");
+    if (errorNode) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">Error: ${errorNode.textContent}</td></tr>`;
+      return;
+    }
+    
+    // Buscar nodo data
+    const dataNode = xml.querySelector("data");
+    if (!dataNode) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No se encontraron dispositivos</td></tr>';
+      return;
+    }
+    
+    // Buscar dispositivos en la respuesta (puede venir como <devices><item> o <device>)
+    const devices = dataNode.querySelectorAll("devices item, device");
+    
+    if (devices.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align:center;">No hay dispositivos</td></tr>';
+      return;
+    }
+    
+    const rows = [];
+    devices.forEach((d) => {
+      const serialNumber = d.querySelector("serial_number, serial")?.textContent || "-";
+      const deviceType = d.querySelector("device_type label, device_type, type")?.textContent || "-";
+      const status = d.querySelector("status")?.textContent || "-";
+      const lastSeen = d.querySelector("last_seen_at, last_seen")?.textContent || "-";
+      
+      rows.push(`
+        <tr>
+          <td>${serialNumber}</td>
+          <td>${deviceType}</td>
+          <td>${status}</td>
+          <td>${lastSeen}</td>
+        </tr>`);
+    });
+    
+    tbody.innerHTML = rows.join('');
+    
+  } catch (err) {
+    console.error("Error al cargar dispositivos:", err);
+    const tbody = document.querySelector("#devicesTable tbody");
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center; color:red;">Error al cargar dispositivos: ${err.message}</td></tr>`;
   }
-  
-  const rows = [];
-  devices.forEach((d) => {
-    rows.push(`
-      <tr>
-        <td>${d.querySelector("serial_number")?.textContent || "-"}</td>
-        <td>${d.querySelector("device_type label")?.textContent || "-"}</td>
-        <td>${d.querySelector("status")?.textContent || "-"}</td>
-        <td>${d.querySelector("last_seen_at")?.textContent || "-"}</td>
-      </tr>`);
-  });
-  tbody.innerHTML = rows.join('');
 }
 
 // --- INFERENCES ---
 async function loadInferences() {
   const token = localStorage.getItem("jwt");
-  const res = await sendXMLRequest(`${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.INFERENCES.LIST}`, "GET", "", token);
-  const xml = new DOMParser().parseFromString(res, "application/xml");
-  const tbody = document.querySelector("#inferencesTable tbody");
   
-  const inferences = xml.querySelectorAll("inference");
-  if (inferences.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay inferencias</td></tr>';
-    return;
+  try {
+    const res = await sendXMLRequest(
+      `${API_CONFIG.BASE_URL}${API_CONFIG.ENDPOINTS.INFERENCES.LIST}`, 
+      "GET", 
+      null, 
+      token
+    );
+    
+    console.log("Inferences Response:", res);
+    
+    const xml = new DOMParser().parseFromString(res, "application/xml");
+    const tbody = document.querySelector("#inferencesTable tbody");
+    
+    // Verificar si hay error en la respuesta
+    const errorNode = xml.querySelector("error message");
+    if (errorNode) {
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Error: ${errorNode.textContent}</td></tr>`;
+      return;
+    }
+    
+    // Buscar nodo data
+    const dataNode = xml.querySelector("data");
+    if (!dataNode) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No se encontraron inferencias</td></tr>';
+      return;
+    }
+    
+    // Buscar inferencias en la respuesta (puede venir como <inferences><item> o <inference>)
+    const inferences = dataNode.querySelectorAll("inferences item, inference");
+    
+    if (inferences.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;">No hay inferencias</td></tr>';
+      return;
+    }
+    
+    const rows = [];
+    inferences.forEach((i) => {
+      const id = i.querySelector("id")?.textContent || "-";
+      const modelId = i.querySelector("model_id")?.textContent || "-";
+      const eventType = i.querySelector("event_type")?.textContent || "-";
+      const score = i.querySelector("score")?.textContent || "-";
+      const createdAt = i.querySelector("created_at")?.textContent || "-";
+      
+      rows.push(`
+        <tr>
+          <td>${id}</td>
+          <td>${modelId}</td>
+          <td>${eventType}</td>
+          <td>${score}</td>
+          <td>${createdAt}</td>
+        </tr>`);
+    });
+    
+    tbody.innerHTML = rows.join('');
+    
+  } catch (err) {
+    console.error("Error al cargar inferencias:", err);
+    const tbody = document.querySelector("#inferencesTable tbody");
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color:red;">Error al cargar inferencias: ${err.message}</td></tr>`;
   }
-  
-  const rows = [];
-  inferences.forEach((i) => {
-    rows.push(`
-      <tr>
-        <td>${i.querySelector("id")?.textContent || "-"}</td>
-        <td>${i.querySelector("model_id")?.textContent || "-"}</td>
-        <td>${i.querySelector("event_type")?.textContent || "-"}</td>
-        <td>${i.querySelector("score")?.textContent || "-"}</td>
-        <td>${i.querySelector("created_at")?.textContent || "-"}</td>
-      </tr>`);
-  });
-  tbody.innerHTML = rows.join('');
 }
 
 // --- INFLUX METRICS ---

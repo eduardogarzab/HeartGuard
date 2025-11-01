@@ -25,8 +25,8 @@ export const API_CONFIG = {
       LIST: "/devices"
     },
     INFERENCES: {
-      COUNT: "/inferences/count",
-      LIST: "/inferences"
+      COUNT: "/inference/inferences/count",
+      LIST: "/inference/inferences"
     },
     ORGANIZATIONS: {
       LIST: "/organizations",

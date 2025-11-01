@@ -36,3 +36,16 @@ class Device(db.Model):
             'registered_at': self.registered_at.isoformat(),
             'active': self.active,
         }
+
+
+class UserOrgMembership(db.Model):
+    """Represents user membership in an organization."""
+    __tablename__ = 'user_org_membership'
+    __table_args__ = {'extend_existing': True}
+
+    id = db.Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    org_id = db.Column(UUID(as_uuid=True), nullable=False)
+    user_id = db.Column(UUID(as_uuid=True), nullable=False)
+    org_role_id = db.Column(UUID(as_uuid=True))
+    joined_at = db.Column(db.TIMESTAMP, nullable=False, server_default=db.func.now())
+    left_at = db.Column(db.TIMESTAMP)

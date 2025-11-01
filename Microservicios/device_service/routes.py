@@ -20,11 +20,106 @@ def health() -> "Response":
     return render_response({"service": "device", "status": "healthy"})
 
 
+def get_user_roles_from_jwt():
+    """Extract user_id and roles from JWT in request context."""
+    from flask import g
+    user_id = getattr(g, 'user_id', None)
+    roles = getattr(g, 'roles', [])
+    return user_id, roles
+
+
+def get_user_organizations(user_id):
+    """Get all organization IDs where user is a member."""
+    memberships = models.UserOrgMembership.query.filter_by(
+        user_id=user_id
+    ).filter(
+        models.UserOrgMembership.left_at.is_(None)
+    ).all()
+    return [str(m.org_id) for m in memberships]
+
+
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_devices() -> "Response":
-    devices = [d.to_dict() for d in models.Device.query.all()]
+    """
+    List devices based on user role:
+    - superadmin: all devices
+    - admin/clinician: devices in their organization(s)
+    """
+    user_id, roles = get_user_roles_from_jwt()
+    
+    # Log para debug
+    print(f"[DEVICE LIST] user_id={user_id}, roles={roles}")
+    
+    query = models.Device.query
+    
+    # Si no hay autenticación, devolver todos (para testing)
+    if not user_id:
+        print("[DEVICE LIST] No user_id - returning all devices")
+        devices = [d.to_dict() for d in query.all()]
+        return render_response({"devices": devices}, meta={"total": len(devices)})
+    
+    # SUPERADMIN: ver todos
+    if 'superadmin' in roles:
+        print("[DEVICE LIST] User is SUPERADMIN - returning all devices")
+        devices = [d.to_dict() for d in query.all()]
+        return render_response({"devices": devices}, meta={"total": len(devices)})
+    
+    # ADMIN/CLINICIAN/CAREGIVER: ver dispositivos de su(s) organización(es)
+    if 'admin' in roles or 'clinician' in roles or 'caregiver' in roles:
+        org_ids = get_user_organizations(user_id)
+        print(f"[DEVICE LIST] User has roles {roles} - org_ids={org_ids}")
+        if org_ids:
+            # Convertir strings a UUID objects
+            org_uuid_list = [uuid.UUID(oid) for oid in org_ids]
+            query = query.filter(models.Device.org_id.in_(org_uuid_list))
+        else:
+            # No pertenece a ninguna org - sin dispositivos
+            print("[DEVICE LIST] User has no organization memberships")
+            return render_response({"devices": []}, meta={"total": 0})
+    
+    # Otros roles: sin acceso a dispositivos
+    else:
+        print(f"[DEVICE LIST] User has no device access role: {roles}")
+        return render_response({"devices": []}, meta={"total": 0})
+    
+    devices = [d.to_dict() for d in query.all()]
+    print(f"[DEVICE LIST] Returning {len(devices)} devices")
     return render_response({"devices": devices}, meta={"total": len(devices)})
+
+
+@bp.route("/count", methods=["POST"])
+@require_auth(optional=True)
+def count_devices() -> "Response":
+    """Count devices with the same role-based filtering as list."""
+    user_id, roles = get_user_roles_from_jwt()
+    
+    query = models.Device.query
+    
+    # Si no hay autenticación, contar todos
+    if not user_id:
+        count = query.count()
+        return render_response({"count": count})
+    
+    # SUPERADMIN: contar todos
+    if 'superadmin' in roles:
+        count = query.count()
+        return render_response({"count": count})
+    
+    # ADMIN/CLINICIAN/CAREGIVER: contar dispositivos de su(s) organización(es)
+    if 'admin' in roles or 'clinician' in roles or 'caregiver' in roles:
+        org_ids = get_user_organizations(user_id)
+        if org_ids:
+            org_uuid_list = [uuid.UUID(oid) for oid in org_ids]
+            query = query.filter(models.Device.org_id.in_(org_uuid_list))
+            count = query.count()
+        else:
+            count = 0
+        return render_response({"count": count})
+    
+    # Otros roles: sin acceso
+    else:
+        return render_response({"count": 0})
 
 
 @bp.route("", methods=["POST"])
