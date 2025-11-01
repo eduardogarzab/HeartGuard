@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from flask import Blueprint, request
 
@@ -15,6 +16,16 @@ import models
 bp = Blueprint("patients", __name__)
 
 
+def _patient_item_name(item: Any) -> str:
+    """Return the XML tag name for list items in patient responses."""
+
+    if isinstance(item, dict):
+        keys = set(item.keys())
+        if {"severity", "status", "created_at"}.issubset(keys):
+            return "Alert"
+    return "Patient"
+
+
 @bp.route("/health", methods=["GET"])
 def health() -> "Response":
     return render_response({"service": "patient", "status": "healthy"})
@@ -23,8 +34,17 @@ def health() -> "Response":
 @bp.route("", methods=["GET"])
 @require_auth(optional=True)
 def list_patients() -> "Response":
-    patients = [p.to_dict() for p in models.Patient.query.all()]
-    return render_response({"patients": patients}, meta={"total": len(patients)})
+    org_id_param = request.args.get("org_id")
+    if not org_id_param:
+        raise APIError("org_id is required", status_code=400, error_id="HG-PATIENT-ORG-ID-REQUIRED")
+
+    try:
+        org_uuid = uuid.UUID(org_id_param)
+    except (ValueError, TypeError) as exc:
+        raise APIError("org_id must be a valid UUID", status_code=400, error_id="HG-PATIENT-ORG-ID-INVALID") from exc
+
+    patients = models.PatientQuery.list_with_details(org_uuid)
+    return render_response({"patients": patients}, meta={"total": len(patients)}, xml_item_name=_patient_item_name)
 
 
 @bp.route("", methods=["POST"])
