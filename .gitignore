@@ -24,6 +24,13 @@
 .env
 .env.local
 .env.*.local
+.env.production
+
+# Credentials and secrets (NUNCA commitear)
+CREDENTIALS.md
+*.credentials
+*.secrets
+secrets/
 
 # DB artifacts
 db/*.dump
@@ -42,4 +49,14 @@ Thumbs.db
 # Ignorar cualquier carpeta __pycache__ en cualquier lugar del proyecto
 **/__pycache__/
 **/validation_logs/
-\n# Python bytecode\n__pycache__/
+
+# Python bytecode
+__pycache__/
+
+# SSL/TLS Certificates (NUNCA commitear claves privadas)
+certs/*.key
+certs/**/*.key
+certs/ca.key
+certs/client.key
+# Permitir certificados públicos (.crt) solo para desarrollo
+# En producción usar Let's Encrypt o CA confiable

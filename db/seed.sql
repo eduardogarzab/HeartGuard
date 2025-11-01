@@ -151,15 +151,16 @@ INSERT INTO caregiver_relationship_types(code,label) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- =========================================================
--- Usuario superadmin demo (password fijo: Admin#2025)
+-- Usuario superadmin (password desde variable de entorno)
 -- - Usa bcrypt generado por pgcrypto (crypt + gen_salt('bf', 10))
+-- - La contraseña se pasa como variable :admin_password
 -- - ON CONFLICT actualiza password/status para mantener el acceso
 -- =========================================================
 INSERT INTO users (name, email, password_hash, user_status_id, two_factor_enabled, created_at)
 VALUES (
   'Super Admin',
   'admin@heartguard.com',
-  crypt('Admin#2025', gen_salt('bf', 10)),
+  crypt(:'admin_password', gen_salt('bf', 10)),
   (SELECT id FROM user_statuses WHERE code='active'),
   FALSE,
   NOW()

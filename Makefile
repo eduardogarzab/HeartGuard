@@ -48,8 +48,9 @@ DB_URL := $(DATABASE_URL)
 	dev run build tidy lint test \
 	db-url db-init db-seed db-reset db-drop db-health db-psql \
 	prod-build prod-up prod-down prod-logs prod-proxy-up prod-proxy-down prod-proxy-logs \
-	prod-certbot prod-certbot-renew \
+	prod-certbot prod-certbot-renew prod-certs \
 	prod-db-init prod-db-seed prod-db-drop prod-db-reset \
+	prod-deploy prod-restart \
 	reset-all
 
 help:
@@ -57,7 +58,10 @@ help:
 	@echo "  up / down / logs"
 	@echo "  dev / run / build / tidy / lint / test (backend dentro de ./backend)"
 	@echo "  db-init / db-seed / db-health / db-reset / db-psql"
+	@echo "  prod-certs (genera certificados SSL/TLS para PostgreSQL y Redis)"
 	@echo "  prod-build / prod-up / prod-down / prod-logs"
+	@echo "  prod-deploy (setup completo: certs + build + up)"
+	@echo "  prod-restart (reinicia servicios)"
 	@echo "  prod-proxy-up / prod-proxy-down / prod-proxy-logs"
 	@echo "  prod-certbot (obtiene/renueva certificado Let's Encrypt)"
 	@echo "  prod-db-init / prod-db-seed / prod-db-reset"
@@ -179,6 +183,14 @@ test:
 # =========================
 # Backend (Docker producción)
 # =========================
+prod-certs:
+	@echo ">> Generando certificados SSL/TLS para PostgreSQL y Redis"
+	@if [ ! -f certs/ca.crt ]; then \
+		./generate_certs.sh; \
+	else \
+		echo "   Certificados ya existen. Para regenerar, elimina certs/ y ejecuta nuevamente."; \
+	fi
+
 prod-build:
 	@echo ">> docker compose build backend"
 	$(COMPOSE_PROD) build backend
@@ -194,6 +206,20 @@ prod-down:
 prod-logs:
 	@echo ">> docker compose logs backend (prod)"
 	$(COMPOSE_PROD) logs -f backend
+
+prod-deploy: prod-certs prod-build prod-up prod-db-reset
+	@echo "✅ Deploy completo en producción con SSL/TLS habilitado"
+	@echo ""
+	@echo "Verifica los logs para confirmar SSL/TLS:"
+	@echo "  make prod-logs | grep -E 'SSL|TLS'"
+	@echo ""
+	@echo "Deberías ver:"
+	@echo "  ✅ PostgreSQL SSL/TLS habilitado con verificación de certificado"
+	@echo "  ✅ Redis TLS habilitado con verificación de certificado"
+
+prod-restart:
+	@echo ">> Reiniciando servicios de producción"
+	$(COMPOSE_PROD) restart
 
 prod-proxy-up:
 	@echo ">> docker compose up nginx (prod)"
@@ -235,8 +261,8 @@ prod-db-init:
 	$(COMPOSE_PROD) exec -T postgres env PGPASSWORD="$(PGSUPER_PASS)" psql -U "$(PGSUPER)" -d postgres -v dbname="$(DBNAME)" -v dbuser="$(DBUSER)" -v dbpass="$(DBPASS)" -f - < db/init.sql
 
 prod-db-seed:
-	@echo "== seed.sql (docker) =="
-	$(COMPOSE_PROD) exec -T postgres env PGPASSWORD="$(PGSUPER_PASS)" psql -U "$(PGSUPER)" -d "$(DBNAME)" -f - < db/seed.sql
+	@echo "== seed.sql (docker) con contraseña segura =="
+	@bash docs/scripts/run_seed.sh
 
 prod-db-drop:
 	@echo ">> dropdb (docker)"
@@ -259,10 +285,8 @@ db-init:
 	     -f - < db/init.sql
 
 db-seed:
-	@echo "== seed.sql =="
-	psql -v ON_ERROR_STOP=1 \
-	     -U $(PGSUPER) -h $(PGHOST) -p $(PGPORT) -d $(DBNAME) \
-	     -f - < db/seed.sql
+	@echo "== seed.sql con contraseña segura =="
+	@bash docs/scripts/run_seed.sh
 
 db-reset: db-drop db-init db-seed
 

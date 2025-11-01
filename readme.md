@@ -1,24 +1,63 @@
-# HeartGuard
+# 🫀 HeartGuard
 
-Plataforma demo para monitoreo y alertas de riesgo cardiovascular con **autenticación de pacientes** integrada. El repositorio combina infraestructura Docker para la base de datos, un backend Go SSR con panel de superadministración, API REST para pacientes y assets web servidos desde el mismo proceso.
+Plataforma de monitoreo y alertas cardiovasculares con arquitectura de microservicios, panel de superadministración SSR y autenticación completa de pacientes.
 
-## Vista general
+## 🎯 Vista General
 
--   **Repositorio monolítico:** servicios de datos (`db/`), backend SSR (`backend/`), templates (`backend/templates`) y assets compartidos (`backend/ui/assets`).
--   **Base de datos:** PostgreSQL 14 + PostGIS, esquema y seeds listos para demos (`heartguard` schema).
--   **Backend dual:** 
-    - Panel administrativo SSR (Go 1.22) con autenticación basada en cookies JWT
--   **Infra local:** `docker-compose` expone Postgres y Redis; el backend se ejecuta con `make dev` cargando variables desde `.env`.
--   **Producción:** Desplegado en VPS con Docker Compose, Nginx reverse proxy, Let's Encrypt SSL y firewall IP-based.
--   **Front-end SSR:** Formularios con protección CSRF y validaciones lado servidor para todos los flujos; no hay mapas embebidos, los listados geográficos se gestionan vía tablas y formularios manuales.
+-   **Repositorio monolítico:** Backend Go, microservicios Python, base de datos PostgreSQL + PostGIS, Redis, y gateway API.
+-   **Base de datos:** PostgreSQL 14 + PostGIS con SSL/TLS habilitado, esquema completo con seeds de demo.
+-   **Backend Superadmin:** Go 1.22 SSR con autenticación JWT, sesiones Redis y panel administrativo completo.
+-   **Microservicios:** Python FastAPI para autenticación, alertas, analíticas, auditoría, organizaciones y media.
+-   **Gateway API:** Python con rate limiting, circuit breaker y agregación de respuestas.
+-   **Infraestructura:**
+    - **Desarrollo:** Docker Compose con PostgreSQL, Redis y todos los servicios
+    - **Producción:** VPS Digital Ocean, Nginx reverse proxy, Let's Encrypt SSL, firewall UFW, certificados auto-firmados para servicios internos
+-   **Seguridad:** SSL/TLS en PostgreSQL y Redis, HTTPS en frontend, autenticación JWT, CSRF protection, rate limiting.
 
-## Estructura
+## 📊 Estado Actual
 
--   `db/` — scripts de inicialización (`init.sql`), seeds (`seed.sql`) y notas de operación.
--   `backend/` — Backend SSR de superadministración y servidor de archivos estáticos (`backend/ui/assets`).
--   `docker-compose.yml` — Postgres + Redis para desarrollo.
--   `Makefile` — wrappers para migraciones, seeds y tareas de Go.
--   `.env.example` — plantilla con todas las variables necesarias para clonar el entorno.
+✅ **Sistema en producción**: https://admin.heartguard.live  
+✅ **Certificado SSL**: Let's Encrypt válido hasta 2026-01-30  
+✅ **SSL/TLS interno**: PostgreSQL y Redis con certificados auto-firmados  
+✅ **Renovación automática**: Configurada vía systemd timer  
+
+Ver [estado completo de producción](docs/deployment/PRODUCTION_STATUS.md)
+
+## 📁 Estructura del Proyecto
+
+```
+HeartGuard/
+├── backend/              # Backend Go (Superadmin SSR)
+│   ├── cmd/             # Entrypoints de la aplicación
+│   ├── internal/        # Lógica de negocio (auth, db, models, etc.)
+│   ├── templates/       # Templates HTML
+│   └── ui/              # Assets estáticos (CSS, JS)
+├── microservicios/      # Microservicios Python FastAPI
+│   ├── auth_service/    # Autenticación de pacientes
+│   ├── alert_service/   # Gestión de alertas
+│   ├── analytics_service/
+│   ├── audit_service/
+│   ├── media_service/
+│   ├── org_service/
+│   └── gateway/         # API Gateway
+├── db/                  # Scripts de base de datos
+│   ├── init.sql        # Schema completo
+│   └── seed.sql        # Datos de demostración
+├── nginx/              # Configuración Nginx
+│   └── conf.d/         # Configuraciones de sitios
+├── certs/              # Certificados SSL/TLS (auto-firmados)
+│   ├── postgres/
+│   └── redis/
+├── docs/               # 📚 Documentación completa
+│   ├── README.md       # Índice de documentación
+│   ├── deployment/     # Guías de deployment
+│   ├── security/       # Documentación de seguridad
+│   └── scripts/        # Scripts de utilidad
+├── docker-compose.yml  # Servicios base
+├── docker-compose.prod.yml  # Overrides de producción
+├── Makefile           # Comandos de desarrollo
+└── .env.production    # Variables de entorno (NO en git)
+```
 
 ## Requisitos previos
 
@@ -241,6 +280,7 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 | Auth JWT              | `JWT_SECRET`, `ACCESS_TOKEN_TTL`, `REFRESH_TOKEN_TTL` | El secreto debe tener ≥32 bytes en producción.                             |
 | Redis & Rate limiting | `REDIS_URL`, `RATE_LIMIT_RPS`, `RATE_LIMIT_BURST`     | Redis es obligatorio: refresh tokens y rate limiting por IP/endpoint.      |
 | Production            | `LOOPBACK_ALLOW_CIDRS`                                | CIDRs permitidos para bypass del middleware (ej: `172.18.0.0/16` para Docker). |
+| SSL/TLS               | `DATABASE_URL` con `?sslmode=require`, `REDIS_URL` con `rediss://` | En producción usar SSL/TLS para cifrar conexiones a BD y Redis. |
 
 ### Comandos útiles para producción
 
@@ -248,15 +288,24 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 # Generar JWT secret fuerte (32+ bytes)
 openssl rand -base64 32
 
+# Generar certificados SSL/TLS para PostgreSQL y Redis
+make prod-certs          # O: ./generate_certs.sh
+
 # Configurar firewall (ejemplo Ubuntu)
 sudo ufw allow from <tu-ip> to any port 80,443
 sudo ufw enable
 
-# Deploy en producción
-make prod-deploy          # Build y deploy completo
-make prod-db-reset        # Reset de base de datos
-make prod-logs            # Ver logs del backend
-make prod-restart         # Reiniciar servicios
+# Deploy en producción (incluye certificados + build + db reset)
+make prod-deploy         # Setup completo con SSL/TLS habilitado
+make prod-db-reset       # Solo reset de base de datos
+make prod-logs           # Ver logs del backend
+make prod-restart        # Reiniciar servicios
+
+# Verificar SSL/TLS está habilitado
+make prod-logs | grep -E 'SSL|TLS'
+# Deberías ver:
+# ✅ PostgreSQL SSL/TLS habilitado con verificación de certificado
+# ✅ Redis TLS habilitado con verificación de certificado
 ```
 
 ## Puesta en marcha
@@ -514,68 +563,102 @@ docker exec -it heartguard-redis redis-cli KEYS "csrf:guest:*"
 
 **⚠️ IMPORTANTE:** En producción, siempre usa `SECURE_COOKIES=true` con un certificado SSL válido (Let's Encrypt, Cloudflare, etc.).
 
-## Próximos pasos sugeridos
+## 📚 Documentación
 
--   Revisa `backend/README.md` para flujos de autenticación, arquitectura SSR y rutas del panel.
--   Consulta `db/README.md` si necesitas extender el esquema o ajustar seeds para nuevos catálogos.
--   **Autenticación de pacientes:** Ver `docs/patient_auth_api.md` para documentación completa de la API REST.
--   **Implementación técnica:** Ver `docs/patient_auth_implementation.md` para detalles de la implementación completa.
+### Guías de Deployment y Producción
+- **[Estado de Producción](docs/deployment/PRODUCTION_STATUS.md)** - Estado actual del sistema ✅
+- **[Guía de Deployment](docs/deployment/production_deployment.md)** - Guía completa con comandos y troubleshooting
+- **[Deployment Legacy](docs/deployment/DEPLOYMENT.md)** - Documentación anterior
+- **[Setup Completo](docs/deployment/SETUP-COMPLETE.md)** - Setup inicial
 
-## Nuevas características implementadas
+### Seguridad y SSL/TLS
+- **[Credenciales](docs/security/CREDENTIALS.md)** - Todas las credenciales del sistema (NO en git) 🔐
+- **[Seguridad SSL/TLS](docs/security/SECURITY_SSL_TLS.md)** - Implementación completa de seguridad
+- **[Setup SSL/TLS](docs/security/ssl_tls_setup.md)** - Guía de configuración de certificados
 
-### 🔐 Autenticación de Pacientes (Nov 2025)
+### API y Desarrollo
+- **[Patient Auth API](docs/patient_auth_api.md)** - API de autenticación de pacientes
+- **[Patient Auth Implementation](docs/patient_auth_implementation.md)** - Detalles técnicos
+- **[Backend README](backend/README.md)** - Arquitectura del backend
+- **[Database README](db/README.md)** - Esquema y migraciones
 
-Sistema completo de autenticación para pacientes con:
+### Scripts de Utilidad
+- **[generate_certs.sh](docs/scripts/generate_certs.sh)** - Generar certificados SSL/TLS
+- **[verify_production.sh](docs/scripts/verify_production.sh)** - Verificar sistema en producción
+- **[reset_and_deploy_prod.sh](docs/scripts/reset_and_deploy_prod.sh)** - Reset y deploy completo
 
-- ✅ **API REST pública** para login/registro sin autenticación previa
-- ✅ **Base de datos actualizada** con campos de email, password_hash, email_verified y last_login_at
-- ✅ **5 stored procedures** para gestión completa de autenticación
-- ✅ **Panel de administración mejorado** con:
-  - Columna de email en listado de pacientes con indicador de verificación (✓/⚠)
-  - Formularios de crear/editar con campo email opcional
-  - Vista detalle con sección "Gestión de Autenticación"
-  - Botones para establecer contraseña y verificar email
-- ✅ **Seguridad:** Passwords hasheados con bcrypt, email único, login requiere verificación
-- ✅ **3 pacientes de prueba** con credenciales configuradas (password: `Test123!`)
-- ✅ **Documentación completa** en `docs/patient_auth_api.md`
+Ver el [índice completo de documentación](docs/README.md) para más detalles.
 
-**Testing rápido:**
+## 🚀 Inicio Rápido
+
+### Desarrollo Local
 ```bash
-# Login de paciente
-curl -X POST http://localhost:8080/api/patient-auth/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"maria.delgado@example.com","password":"Test123!"}'
+# 1. Clonar e instalar
+git clone <repo>
+cd HeartGuard
+cp .env.example .env
 
-# Registro de paciente
-curl -X POST http://localhost:8080/api/patient-auth/register \
-  -H "Content-Type: application/json" \
-  -d '{
-    "org_id":"<uuid-de-org>",
-    "person_name":"Test User",
-    "email":"test@example.com",
-    "password":"Password123!"
-  }'
+# 2. Iniciar servicios
+make dev-up          # Inicia PostgreSQL + Redis
+make db-reset        # Crea esquema y seed data
+
+# 3. Iniciar backend
+make dev             # Backend en localhost:8080
+
+# 4. Acceder
+# Panel admin: http://localhost:8080/login
+# Credenciales: admin@heartguard.com / Admin#2025
 ```
 
-### 🚀 Deploy en Producción (Nov 2025)
-
-Infraestructura completa para producción implementada:
-
-- ✅ **Docker Compose** con configuración prod/dev separada
-- ✅ **Nginx reverse proxy** con SSL/TLS (Let's Encrypt)
-- ✅ **Firewall IP-based** con whitelist configurable
-- ✅ **Rate limiting** y seguridad headers
-- ✅ **Makefile** con comandos para producción (prod-deploy, prod-logs, etc.)
-- ✅ **Health checks** y monitoreo básico
-- ✅ **Logs centralizados** con docker compose logs
-
-**Comandos de producción:**
+### Producción
 ```bash
-make prod-deploy       # Deploy completo
-make prod-db-reset     # Reset de BD
-make prod-logs         # Ver logs
-make prod-restart      # Reiniciar servicios
-make prod-backup       # Backup de BD (si configurado)
+# 1. Generar certificados SSL/TLS (primera vez)
+bash docs/scripts/generate_certs.sh
+
+# 2. Deploy completo
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+
+# 3. Verificar sistema
+bash docs/scripts/verify_production.sh
+
+# 4. Acceder
+# https://admin.heartguard.live
+```
+
+## 🔐 Credenciales de Demo
+
+### Panel de Administración
+- **Email**: admin@heartguard.com
+- **Password**: Admin#2025
+
+### Pacientes de Prueba (API)
+- **María Delgado**: maria.delgado@example.com / Test123!
+- **José Hernández**: jose.hernandez@example.com / Test123!
+- **Valeria Ortiz**: valeria.ortiz@example.com / Test123!
+
+## 🔧 Comandos Útiles
+
+```bash
+# Desarrollo
+make dev              # Iniciar backend en desarrollo
+make dev-up           # Iniciar servicios (PostgreSQL + Redis)
+make dev-down         # Detener servicios
+make db-reset         # Reset y seed de base de datos
+make test             # Ejecutar tests
+
+# Producción
+bash docs/scripts/verify_production.sh  # Verificar sistema
+docker compose logs -f backend          # Ver logs del backend
+docker compose ps                       # Ver estado de servicios
+docker compose restart backend          # Reiniciar backend
+
+# Base de datos
+make db-connect       # Conectar a PostgreSQL
+make db-migrate       # Aplicar migraciones
+make db-seed          # Cargar datos de prueba
+
+# Certificados
+bash docs/scripts/generate_certs.sh     # Generar certificados SSL/TLS
 ```
 
 ````
