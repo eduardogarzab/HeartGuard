@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HeartGuard · Invitación</title>
+    <link rel="stylesheet" href="css/main.css" />
+    <link rel="stylesheet" href="css/components.css" />
+    <link rel="stylesheet" href="css/responsive.css" />
+  </head>
+  <body class="standalone">
+    <main class="standalone__main" aria-labelledby="invite-heading">
+      <section class="card card--form invite-card">
+        <header class="card__header">
+          <span class="card__eyebrow">Acceso seguro</span>
+          <h1 id="invite-heading" class="card__title">Unirse a HeartGuard</h1>
+          <p class="card__subtitle" data-invite-subtitle>
+            Procesando la invitación, por favor espera…
+          </p>
+        </header>
+        <div id="invite-feedback" class="alert" role="status" hidden></div>
+        <dl class="definition-list" data-invite-summary hidden>
+          <div>
+            <dt>Organización</dt>
+            <dd data-org-name>—</dd>
+          </div>
+          <div>
+            <dt>Rol sugerido</dt>
+            <dd data-role-label>—</dd>
+          </div>
+          <div>
+            <dt>Expira</dt>
+            <dd data-expiration>—</dd>
+          </div>
+        </dl>
+        <form id="invite-choice" class="stack" hidden>
+          <fieldset>
+            <legend>¿Cómo deseas continuar?</legend>
+            <label class="radio-option">
+              <input type="radio" name="invite-mode" value="user" checked />
+              <span>Registrarme como usuario de la organización</span>
+            </label>
+            <label class="radio-option">
+              <input type="radio" name="invite-mode" value="patient" />
+              <span>Registrar a un paciente asociado</span>
+            </label>
+          </fieldset>
+        </form>
+        <form id="invite-user-form" class="stack" hidden aria-describedby="invite-feedback">
+          <h2 class="form-title">Crear cuenta de usuario</h2>
+          <label>
+            Nombre completo
+            <input id="invite-user-name" name="name" type="text" autocomplete="name" required />
+          </label>
+          <label>
+            Correo electrónico
+            <input id="invite-user-email" name="email" type="email" autocomplete="email" required />
+          </label>
+          <label>
+            Contraseña
+            <input id="invite-user-password" name="password" type="password" autocomplete="new-password" required />
+          </label>
+          <button class="button" type="submit">Crear cuenta</button>
+        </form>
+        <form id="invite-patient-form" class="stack" hidden aria-describedby="invite-feedback">
+          <h2 class="form-title">Registrar paciente</h2>
+          <label>
+            Nombre del paciente
+            <input id="invite-patient-name" name="person_name" type="text" required />
+          </label>
+          <button class="button" type="submit">Registrar paciente</button>
+        </form>
+      </section>
+    </main>
+    <script type="module" src="js/invite.js"></script>
+  </body>
+</html>

@@ -137,6 +137,13 @@ def test_create_invitation_success(app, client):
     assert invitation["status"] == "pending"
     assert invitation["token"]
     assert invitation["created_by"] == user_id
+    link = body["data"]["link"]
+    assert link["href"].startswith("/invite/")
+    assert link["token"]
+    metadata = body["data"]["metadata"]
+    assert metadata["organization"]["id"] == str(org.id)
+    assert metadata["suggested_role"]["id"] == str(role.id)
+    assert metadata["expires_at"] == invitation["expires_at"]
 
 
 def test_create_invitation_rejects_invalid_ttl(app, client):

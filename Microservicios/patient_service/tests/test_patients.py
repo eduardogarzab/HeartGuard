@@ -209,3 +209,48 @@ def test_list_patients_requires_org_id(client):
     payload = response.get_json()
     assert payload["status"] == "error"
     assert payload["error"]["id"] == "HG-PATIENT-ORG-ID-REQUIRED"
+
+
+def test_register_patient_from_invitation(app, client, monkeypatch):
+    org_id = uuid.uuid4()
+    signed_token = "signed-token"
+    invitation_payload = {
+        "invitation": {
+            "org_id": str(org_id),
+            "org_role_id": str(uuid.uuid4()),
+            "expires_at": datetime.utcnow().isoformat() + "Z",
+        },
+        "metadata": {"organization": {"id": str(org_id), "name": "Acme"}},
+    }
+    consumed = {}
+
+    monkeypatch.setattr(routes, "_fetch_invitation_details", lambda token: invitation_payload)
+    monkeypatch.setattr(
+        routes,
+        "_consume_invitation_token",
+        lambda token, payload: consumed.update({"token": token, "payload": payload}),
+    )
+
+    xml_body = (
+        "<PatientRegistration>"
+        f"<invite_token>{signed_token}</invite_token>"
+        "<person_name>Juan Perez</person_name>"
+        "</PatientRegistration>"
+    )
+
+    response = client.post(
+        "/patients/register",
+        data=xml_body,
+        headers={"Content-Type": "application/xml", "Accept": "application/json"},
+    )
+
+    assert response.status_code == 201
+    body = response.get_json()["data"]
+    assert body["patient"]["person_name"] == "Juan Perez"
+    assert consumed["token"] == signed_token
+    assert consumed["payload"]["consumer_type"] == "patient"
+
+    with app.app_context():
+        patient = models.Patient.query.filter_by(person_name="Juan Perez").first()
+        assert patient is not None
+        assert patient.org_id == org_id
