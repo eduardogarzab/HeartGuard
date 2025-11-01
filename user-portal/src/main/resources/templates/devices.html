@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>HeartGuard - Dispositivos</title>
+    <link rel="stylesheet" href="/css/main.css">
+    <style>
+        .devices-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1.5rem;
+        }
+        .device-card {
+            background: white;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            border: 2px solid #e2e8f0;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .device-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .device-card.inactive {
+            opacity: 0.6;
+            border-color: #cbd5e1;
+        }
+        .device-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+        .device-serial {
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: #0f172a;
+        }
+        .device-status {
+            padding: 0.25rem 0.75rem;
+            border-radius: 12px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+        .device-status.active {
+            background: #d1fae5;
+            color: #065f46;
+        }
+        .device-status.inactive {
+            background: #fee2e2;
+            color: #991b1b;
+        }
+        .device-info {
+            margin: 0.5rem 0;
+        }
+        .device-info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid #f1f5f9;
+        }
+        .device-info-row:last-child {
+            border-bottom: none;
+        }
+        .device-label {
+            color: #64748b;
+            font-size: 0.9rem;
+        }
+        .device-value {
+            color: #0f172a;
+            font-weight: 500;
+            font-size: 0.9rem;
+        }
+        .device-type {
+            background: #e0f2fe;
+            color: #075985;
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            text-align: center;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+        }
+    </style>
+</head>
+<body>
+<header class="top-nav">
+    <div class="logo">HeartGuard</div>
+    <nav>
+        <a href="/dashboard">Pacientes</a>
+        <a href="/alerts">Alertas</a>
+        <a href="/devices" class="active">Dispositivos</a>
+        <a href="/profile">Mi Perfil</a>
+        <form method="post" action="/logout" class="inline-form">
+            <button type="submit" class="link-button">Cerrar sesión</button>
+        </form>
+    </nav>
+</header>
+<main class="content">
+    <section class="panel">
+        <h1>Dispositivos Registrados</h1>
+        
+        <div th:if="${error}" class="error-message">
+            <p th:text="${error}">Error message</p>
+        </div>
+        
+        <p th:if="${#lists.isEmpty(devices) and error == null}">No hay dispositivos registrados en el sistema.</p>
+        
+        <div class="devices-grid" th:if="${!#lists.isEmpty(devices)}">
+            <div class="device-card" th:each="device : ${devices}" 
+                 th:classappend="${device.active ? 'active' : 'inactive'}">
+                <div class="device-header">
+                    <span class="device-serial" th:text="${device.serial}">SN-12345</span>
+                    <span class="device-status" 
+                          th:text="${device.active ? 'Activo' : 'Inactivo'}"
+                          th:classappend="${device.active ? 'active' : 'inactive'}">Activo</span>
+                </div>
+                
+                <div class="device-info">
+                    <div class="device-info-row" th:if="${device.brand}">
+                        <span class="device-label">Marca:</span>
+                        <span class="device-value" th:text="${device.brand}">Samsung</span>
+                    </div>
+                    <div class="device-info-row" th:if="${device.model}">
+                        <span class="device-label">Modelo:</span>
+                        <span class="device-value" th:text="${device.model}">Galaxy Watch 6</span>
+                    </div>
+                    <div class="device-info-row" th:if="${device.ownerPatientName}">
+                        <span class="device-label">Paciente:</span>
+                        <span class="device-value" th:text="${device.ownerPatientName}">Juan Pérez</span>
+                    </div>
+                </div>
+                
+                <div class="device-type" th:if="${device.deviceTypeLabel}">
+                    <span th:text="${device.deviceTypeLabel}">ECG de una derivación</span>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+</body>
+</html>

@@ -44,6 +44,25 @@ class User(db.Model):
         except Exception:
             return False
 
+    def get_roles(self) -> list[str]:
+        """Fetch user roles from user_role table."""
+        try:
+            # Query to join user_role and roles tables
+            result = db.session.execute(
+                db.text("""
+                    SELECT r.name 
+                    FROM user_role ur
+                    JOIN roles r ON ur.role_id = r.id
+                    WHERE ur.user_id = :user_id
+                """),
+                {'user_id': str(self.id)}
+            )
+            roles = [row[0] for row in result]
+            # Default to 'user' if no roles found
+            return roles if roles else ['user']
+        except Exception:
+            return ['user']
+
     def to_dict(self):
         """Serializes the user object to a dictionary."""
         return {

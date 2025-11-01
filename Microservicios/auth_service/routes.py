@@ -43,9 +43,9 @@ def register() -> "Response":
     db.session.add(new_user)
     db.session.commit()
 
-    # In a real RBAC system, you would fetch roles from the database.
-    # For now, we'll pass an empty list.
-    tokens = issue_tokens(str(new_user.id), [])
+    # Fetch roles from database (new users default to ['user'])
+    roles = new_user.get_roles()
+    tokens = issue_tokens(str(new_user.id), roles)
     return render_response({"user": new_user.to_dict(), "tokens": tokens}, status_code=201)
 
 
@@ -62,8 +62,9 @@ def login() -> "Response":
     if not user or not user.check_password(password):
         raise APIError("Invalid credentials", status_code=401, error_id="HG-AUTH-CREDENTIALS")
 
-    # In a real RBAC system, you would fetch roles from the database.
-    tokens = issue_tokens(str(user.id), [])
+    # Fetch user roles from database
+    roles = user.get_roles()
+    tokens = issue_tokens(str(user.id), roles)
     return render_response({"tokens": tokens, "user": user.to_dict()})
 
 
@@ -88,7 +89,9 @@ def refresh() -> "Response":
     if not user:
         raise APIError("User not found for refresh token", status_code=401, error_id="HG-AUTH-USER-NOT-FOUND")
 
-    tokens = issue_tokens(str(user.id), [])
+    # Fetch user roles from database
+    roles = user.get_roles()
+    tokens = issue_tokens(str(user.id), roles)
     return render_response({"tokens": tokens})
 
 
