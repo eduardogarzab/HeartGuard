@@ -140,23 +140,10 @@ ALTER TABLE IF EXISTS delivery_statuses ALTER COLUMN label SET NOT NULL;
 -- B) Seguridad global (RBAC) + Multi-tenant
 -- =========================================================
 CREATE TABLE IF NOT EXISTS roles (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  name          VARCHAR(50)  NOT NULL UNIQUE,
-  description   TEXT,
-  created_at    TIMESTAMP NOT NULL DEFAULT NOW()
-);
-
-CREATE TABLE IF NOT EXISTS permissions (
-  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code          VARCHAR(64)  NOT NULL UNIQUE,
-  description   TEXT
-);
-
-CREATE TABLE IF NOT EXISTS role_permission (
-  role_id       UUID NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-  permission_id UUID NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
-  granted_at    TIMESTAMP NOT NULL DEFAULT NOW(),
-  PRIMARY KEY(role_id, permission_id)
+  code        VARCHAR(40) PRIMARY KEY,
+  label       VARCHAR(80) NOT NULL,
+  description TEXT,
+  created_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS users (
@@ -165,20 +152,13 @@ CREATE TABLE IF NOT EXISTS users (
   email              VARCHAR(150) NOT NULL UNIQUE,
   password_hash      TEXT NOT NULL,
   user_status_id     UUID NOT NULL REFERENCES user_statuses(id) ON DELETE RESTRICT,
+  role_code          VARCHAR(40) NOT NULL DEFAULT 'user' REFERENCES roles(code) ON DELETE RESTRICT,
   two_factor_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   profile_photo_url  TEXT,
   created_at         TIMESTAMP NOT NULL DEFAULT NOW(),
   updated_at         TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(user_status_id);
-
-CREATE TABLE IF NOT EXISTS user_role (
-  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role_id UUID NOT NULL REFERENCES roles(id) ON DELETE RESTRICT,
-  assigned_at TIMESTAMP NOT NULL DEFAULT NOW(),
-  PRIMARY KEY(user_id, role_id)
-);
-CREATE INDEX IF NOT EXISTS idx_user_role_role ON user_role(role_id);
 
 CREATE TABLE IF NOT EXISTS system_settings (
   id SMALLINT PRIMARY KEY DEFAULT 1 CHECK (id = 1),
@@ -204,22 +184,14 @@ CREATE TABLE IF NOT EXISTS organizations (
   created_at  TIMESTAMP NOT NULL DEFAULT NOW()
 );
 
-CREATE TABLE IF NOT EXISTS org_roles (
-  id    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  code  VARCHAR(40) NOT NULL UNIQUE,
-  label VARCHAR(80) NOT NULL
-);
-
-ALTER TABLE IF EXISTS org_roles ALTER COLUMN label SET NOT NULL;
-
 CREATE TABLE IF NOT EXISTS user_org_membership (
   org_id      UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   user_id     UUID NOT NULL REFERENCES users(id)         ON DELETE CASCADE,
-  org_role_id UUID NOT NULL REFERENCES org_roles(id)     ON DELETE RESTRICT,
+  role_code   VARCHAR(40) NOT NULL REFERENCES roles(code) ON DELETE RESTRICT,
   joined_at   TIMESTAMP NOT NULL DEFAULT NOW(),
   PRIMARY KEY (org_id, user_id)
 );
-CREATE INDEX IF NOT EXISTS idx_user_org_membership_role ON user_org_membership(org_role_id);
+CREATE INDEX IF NOT EXISTS idx_user_org_membership_role ON user_org_membership(role_code);
 
 -- =========================================================
 -- C) Dominio clínico
@@ -270,13 +242,6 @@ CREATE TABLE IF NOT EXISTS caregiver_relationship_types (
 );
 
 ALTER TABLE IF EXISTS caregiver_relationship_types ALTER COLUMN label SET NOT NULL;
-
-ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS email VARCHAR(150);
-ALTER TABLE patients ADD COLUMN IF NOT EXISTS password_hash TEXT;
-ALTER TABLE patients ALTER COLUMN email SET NOT NULL;
-ALTER TABLE patients ALTER COLUMN password_hash SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS caregiver_patient (
   patient_id  UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
@@ -555,7 +520,7 @@ CREATE TABLE IF NOT EXISTS org_invitations (
   id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id       UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   email        VARCHAR(150),
-  org_role_id  UUID NOT NULL REFERENCES org_roles(id) ON DELETE RESTRICT,
+  role_code    VARCHAR(40) NOT NULL REFERENCES roles(code) ON DELETE RESTRICT,
   token        VARCHAR(120) NOT NULL UNIQUE,
   expires_at   TIMESTAMP NOT NULL,
   used_at      TIMESTAMP,
@@ -564,7 +529,7 @@ CREATE TABLE IF NOT EXISTS org_invitations (
   created_at   TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_org_inv_org ON org_invitations(org_id);
-CREATE INDEX IF NOT EXISTS idx_org_inv_role ON org_invitations(org_role_id);
+CREATE INDEX IF NOT EXISTS idx_org_inv_role_code ON org_invitations(role_code);
 CREATE INDEX IF NOT EXISTS idx_org_inv_created_by ON org_invitations(created_by);
 
 -- =========================================================
@@ -589,7 +554,6 @@ BEGIN
     WHEN 'platforms'         THEN table_name := 'platforms';
     WHEN 'service_statuses'  THEN table_name := 'service_statuses';
     WHEN 'delivery_statuses' THEN table_name := 'delivery_statuses';
-    WHEN 'org_roles'         THEN table_name := 'org_roles';
     WHEN 'device_types'      THEN table_name := 'device_types';
     WHEN 'risk_levels'       THEN table_name := 'risk_levels';       -- con weight
     WHEN 'team_member_roles' THEN table_name := 'team_member_roles';
@@ -741,7 +705,7 @@ $$;
 -- =========================================================
 CREATE OR REPLACE FUNCTION heartguard.sp_org_invitation_create(
   p_org_id uuid,
-  p_org_role_id uuid,
+  p_role_code text,
   p_email text,
   p_ttl_hours integer,
   p_created_by uuid)
@@ -749,8 +713,8 @@ RETURNS TABLE (
   id text,
   org_id text,
   email text,
-  org_role_id text,
-  org_role_code text,
+  role_code text,
+  role_label text,
   token text,
   expires_at timestamp,
   used_at timestamp,
@@ -765,9 +729,9 @@ DECLARE
   ttl integer := COALESCE(p_ttl_hours, 24);
 BEGIN
   INSERT INTO heartguard.org_invitations AS inv
-    (org_id, email, org_role_id, token, expires_at, created_by, created_at)
+    (org_id, email, role_code, token, expires_at, created_by, created_at)
   VALUES
-    (p_org_id, p_email, p_org_role_id, gen_random_uuid()::text,
+    (p_org_id, p_email, p_role_code, gen_random_uuid()::text,
      (NOW() + make_interval(hours => ttl))::timestamp,
      p_created_by, NOW()::timestamp)
   RETURNING inv.id INTO new_id;
@@ -777,8 +741,8 @@ BEGIN
     i.id::text,
     i.org_id::text,
     i.email::text,
-    i.org_role_id::text,
-    COALESCE(oroles.code,'')::text,
+    i.role_code::text,
+    COALESCE(r.label,'')::text,
     i.token::text,
     i.expires_at::timestamp,
     i.used_at::timestamp,
@@ -792,7 +756,7 @@ BEGIN
       ELSE 'pending'
     END::text
   FROM heartguard.org_invitations i
-  LEFT JOIN heartguard.org_roles oroles ON oroles.id = i.org_role_id
+  LEFT JOIN heartguard.roles r ON r.code = i.role_code
   WHERE i.id = new_id;
 END;
 $$;
@@ -805,8 +769,8 @@ RETURNS TABLE (
   id text,
   org_id text,
   email text,
-  org_role_id text,
-  org_role_code text,
+  role_code text,
+  role_label text,
   token text,
   expires_at timestamp,
   used_at timestamp,
@@ -825,8 +789,8 @@ BEGIN
     i.id::text,
     i.org_id::text,
     i.email::text,
-    i.org_role_id::text,
-    COALESCE(oroles.code,'')::text,
+    i.role_code::text,
+    COALESCE(r.label,'')::text,
     i.token::text,
     i.expires_at::timestamp,
     i.used_at::timestamp,
@@ -840,7 +804,7 @@ BEGIN
       ELSE 'pending'
     END::text
   FROM heartguard.org_invitations i
-  LEFT JOIN heartguard.org_roles oroles ON oroles.id = i.org_role_id
+  LEFT JOIN heartguard.roles r ON r.code = i.role_code
   WHERE p_org_id IS NULL OR i.org_id = p_org_id
   ORDER BY i.created_at DESC
   LIMIT safe_limit OFFSET safe_offset;

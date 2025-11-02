@@ -1,173 +1,44 @@
 {{define "superadmin/roles.html"}} {{template "layout" .}} {{end}} {{define "superadmin/roles.html:content"}}
 <section class="hg-section">
-	<h1>Roles</h1>
+	<h1>Roles del Sistema</h1>
 	<div class="hg-card">
-		<h2>Crear rol</h2>
-		<form method="post" action="/superadmin/roles" class="hg-form-grid">
-			<input type="hidden" name="_csrf" value="{{.CSRFToken}}" />
-			<div class="hg-form-field">
-				<label for="roleName">Nombre</label>
-				<input id="roleName" name="name" maxlength="50" required />
-				<span class="hg-field-hint">Ejemplo: Supervisor, Auditor, Soporte.</span>
-			</div>
-			<div class="hg-form-field hg-form-field--full">
-				<label for="roleDesc">Descripción</label>
-				<textarea id="roleDesc" name="description" maxlength="250" rows="2"></textarea>
-				<span class="hg-field-hint">Detalla brevemente para qué se utiliza este rol.</span>
-			</div>
-			<div class="hg-form-actions">
-				<button type="submit">Crear</button>
-			</div>
-		</form>
-	</div>
-</section>
-
-<section class="hg-section">
-	<div class="hg-card">
-		<h2>Roles registrados</h2>
+		<p class="hg-field-hint">El sistema cuenta con 4 roles predefinidos divididos en dos categorías:</p>
+		<ul class="hg-field-hint" style="margin: 1rem 0;">
+			<li><strong>Roles de Sistema:</strong> Determinan el acceso al panel de superadministración (superadmin, user)</li>
+			<li><strong>Roles de Organización:</strong> Determinan permisos dentro de cada organización (org_admin, org_viewer)</li>
+		</ul>
 		<table class="hg-table">
 			<thead>
 				<tr>
-					<th>Rol</th>
-					<th>Creado</th>
-					<th></th>
+					<th>Código</th>
+					<th>Nombre</th>
+					<th>Tipo</th>
+					<th>Descripción</th>
 				</tr>
 			</thead>
 			<tbody>
-				{{range .Data.Roles}} {{$role := .}} {{$state := index $.Data.Permissions $role.ID}}
+				{{range .Data.Roles}}
 				<tr>
+					<td><code>{{.Code}}</code></td>
+					<td><strong>{{.Label}}</strong></td>
 					<td>
-						<strong>{{$role.Name}}</strong>
-						{{if $role.Description}}
-						<p class="hg-field-hint">{{$role.Description}}</p>
+						{{if or (eq .Code "superadmin") (eq .Code "user")}}
+							<span class="hg-tag is-primary">Sistema</span>
+						{{else}}
+							<span class="hg-tag is-secondary">Organización</span>
 						{{end}}
 					</td>
-					<td>{{formatTime $role.CreatedAt}}</td>
 					<td>
-						<form method="post" action="/superadmin/roles/{{$role.ID}}/delete" data-hg-confirm="¿Eliminar rol?">
-							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-							<button type="submit" class="hg-link hg-link-danger">Eliminar</button>
-						</form>
-					</td>
-				</tr>
-				<tr>
-					<td colspan="3">
-						<div class="hg-card">
-							<h3>Permisos</h3>
-							{{if $state.Available}}
-							<form method="post" action="/superadmin/roles/{{$role.ID}}/permissions" class="hg-form-grid">
-								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-								<input type="hidden" name="redirect" value="/superadmin/roles" />
-								<div class="hg-form-field">
-									<label for="role-{{$role.ID}}-permission">Agregar permiso</label>
-									<select id="role-{{$role.ID}}-permission" name="permission" required>
-										<option value="">Selecciona un permiso</option>
-										{{range $state.Available}}
-										<option value="{{.Code}}">{{.Code}}{{if .Description}} — {{.Description}}{{end}}</option>
-										{{end}}
-									</select>
-									<span class="hg-field-hint">Asigna un permiso adicional a {{$role.Name}}.</span>
-								</div>
-								<div class="hg-form-actions">
-									<button type="submit">Asignar</button>
-								</div>
-							</form>
-							{{else}}
-							<p class="hg-empty-cell">Todos los permisos disponibles ya están asignados a este rol.</p>
-							{{end}}
-							<table class="hg-table">
-								<thead>
-									<tr>
-										<th>Permiso</th>
-										<th>Descripción</th>
-										<th>Otorgado</th>
-										<th></th>
-									</tr>
-								</thead>
-								<tbody>
-									{{if $state.Assigned}} {{range $perm := $state.Assigned}}
-									<tr>
-										<td><code>{{$perm.Code}}</code></td>
-										<td>{{if $perm.Description}}{{$perm.Description}}{{else}}Sin descripción{{end}}</td>
-										<td>{{formatTime $perm.GrantedAt}}</td>
-										<td>
-											<form
-												method="post"
-												action="/superadmin/roles/{{$role.ID}}/permissions/{{urlquery $perm.Code}}/delete?redirect=/superadmin/roles"
-												data-hg-confirm="¿Revocar permiso?">
-												<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-												<button type="submit" class="hg-link hg-link-danger">Revocar</button>
-											</form>
-										</td>
-									</tr>
-									{{end}} {{else}}
-									<tr>
-										<td colspan="4" class="hg-empty-cell">Este rol aún no tiene permisos asignados.</td>
-									</tr>
-									{{end}}
-								</tbody>
-							</table>
-							<div class="hg-divider"></div>
-							<h3>Usuarios asignados</h3>
-							{{if $state.Assignable}}
-							<form method="post" action="/superadmin/roles/{{$role.ID}}/members" class="hg-form-grid">
-								<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-								<input type="hidden" name="redirect" value="/superadmin/roles" />
-								<div class="hg-form-field">
-									<label for="role-{{$role.ID}}-user">Agregar usuario</label>
-									<select id="role-{{$role.ID}}-user" name="user_id" required>
-										<option value="">Selecciona un usuario</option>
-										{{range $state.Assignable}}
-										<option value="{{.ID}}">{{.Name}} — {{.Email}}</option>
-										{{end}}
-									</select>
-									<span class="hg-field-hint">Selecciona quién debe recibir el rol {{$role.Name}}.</span>
-								</div>
-								<div class="hg-form-actions">
-									<button type="submit">Asignar</button>
-								</div>
-							</form>
-							{{else}}
-							<p class="hg-empty-cell">Todos los usuarios disponibles ya tienen asignado este rol.</p>
-							{{end}}
-							<table class="hg-table">
-								<thead>
-									<tr>
-										<th>Usuario</th>
-										<th>Correo</th>
-										<th>Asignado</th>
-										<th></th>
-									</tr>
-								</thead>
-								<tbody>
-									{{if $state.Members}} {{range $member := $state.Members}}
-									<tr>
-										<td>{{$member.UserName}}</td>
-										<td>{{$member.UserEmail}}</td>
-										<td>{{formatTime $member.AssignedAt}}</td>
-										<td>
-											<form
-												method="post"
-												action="/superadmin/roles/{{$role.ID}}/members/{{$member.UserID}}/delete?redirect=/superadmin/roles"
-												data-hg-confirm="¿Remover usuario del rol?">
-												<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-												<button type="submit" class="hg-link hg-link-danger">Quitar</button>
-											</form>
-										</td>
-									</tr>
-									{{end}} {{else}}
-									<tr>
-										<td colspan="4" class="hg-empty-cell">Aún no hay usuarios con este rol.</td>
-									</tr>
-									{{end}}
-								</tbody>
-							</table>
-						</div>
+						{{if .Description}}
+							{{.Description}}
+						{{else}}
+							<span class="hg-field-hint">Sin descripción</span>
+						{{end}}
 					</td>
 				</tr>
 				{{else}}
 				<tr>
-					<td colspan="3" class="hg-empty-cell">No hay roles configurados.</td>
+					<td colspan="4" class="hg-empty-cell">No hay roles configurados.</td>
 				</tr>
 				{{end}}
 			</tbody>

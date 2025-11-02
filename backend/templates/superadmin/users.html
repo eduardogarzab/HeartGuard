@@ -17,7 +17,6 @@
 	</div>
 </section>
 
-
 <section class="hg-section">
 	<div class="hg-card">
 		<h3>Usuarios registrados</h3>
@@ -27,10 +26,9 @@
 					<th></th>
 					<th>Nombre</th>
 					<th>Correo</th>
+					<th>Rol del Sistema</th>
 					<th>Estado</th>
-					<th>Miembros</th>
-					<th>Roles actuales</th>
-					<th>Asignar rol</th>
+					<th>Membresías</th>
 					<th>Creado</th>
 					<th>Cambiar estado</th>
 				</tr>
@@ -43,8 +41,15 @@
 							<img src="{{if .ProfilePhotoURL}}{{.ProfilePhotoURL}}{{else}}/ui-assets/img/user_placeholder.svg{{end}}" alt="Foto de perfil" class="hg-avatar" />
 						</a>
 					</td>
-						<td><a href="/superadmin/users/{{.ID}}">{{.Name}}</a></td>
+					<td><a href="/superadmin/users/{{.ID}}">{{.Name}}</a></td>
 					<td>{{.Email}}</td>
+					<td>
+						{{if .RoleLabel}}
+							<span class="hg-tag">{{.RoleLabel}}</span>
+						{{else}}
+							<span class="hg-field-hint">Sin rol</span>
+						{{end}}
+					</td>
 					<td>
 						<span class="hg-status-chip {{if eq .Status "active"}}is-success{{else if eq .Status "blocked"}}is-danger{{else}}is-warn{{end}}">
 							{{if eq .Status "active"}}Activo{{else if eq .Status "blocked"}}Bloqueado{{else if eq .Status "pending"}}Pendiente{{else}}{{.Status}}{{end}}
@@ -54,31 +59,10 @@
 						{{if .Memberships}}
 						<ul class="hg-list-compact">
 							{{range .Memberships}}
-							<li>{{.OrgName}} ({{.OrgRoleLabel}})</li>
+							<li>{{.OrgName}} ({{.RoleLabel}})</li>
 							{{end}}
 						</ul>
 						{{else}} — {{end}}
-					</td>
-					<td>
-						{{if .Roles}}
-						<div class="hg-inline-roles">
-							{{range .Roles}}
-							<span class="hg-tag">{{.RoleName}}</span>
-							{{end}}
-						</div>
-						{{else}}—{{end}}
-					</td>
-					<td>
-						<form method="post" action="/superadmin/roles/users/{{.ID}}" class="hg-autoform">
-							<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
-							<input type="hidden" name="redirect" value="{{if $.Data.Query}}/superadmin/users?q={{urlquery $.Data.Query}}{{else}}/superadmin/users{{end}}" />
-							<select name="role_id" class="hg-role-select">
-								<option value="" {{if eq (len $user.Roles) 0}}selected{{end}}>Sin rol asignado</option>
-								{{range $role := $.Data.Roles}}
-								<option value="{{$role.ID}}"{{range $user.Roles}}{{if eq .RoleID $role.ID}} selected{{end}}{{end}}>{{$role.Name}}</option>
-								{{end}}
-							</select>
-						</form>
 					</td>
 					<td>{{formatTime .CreatedAt}}</td>
 					<td>
@@ -95,7 +79,7 @@
 				</tr>
 				{{else}}
 				<tr>
-					<td colspan="9" class="hg-empty-cell">No se encontraron usuarios.</td>
+					<td colspan="8" class="hg-empty-cell">No se encontraron usuarios.</td>
 				</tr>
 				{{end}}
 			</tbody>

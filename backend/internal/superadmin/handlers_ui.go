@@ -80,11 +80,11 @@ type Repository interface {
 	ListRiskLevels(ctx context.Context) ([]models.RiskLevel, error)
 	ListTeamMemberRoles(ctx context.Context) ([]models.TeamMemberRole, error)
 
-	CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error)
+	CreateInvitation(ctx context.Context, orgID, roleCode string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error)
 	ListInvitations(ctx context.Context, orgID *string, limit, offset int) ([]models.OrgInvitation, error)
 	CancelInvitation(ctx context.Context, invitationID string) error
 
-	AddMember(ctx context.Context, orgID, userID, orgRoleID string) error
+	AddMember(ctx context.Context, orgID, userID, roleCode string) error
 	RemoveMember(ctx context.Context, orgID, userID string) error
 	ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error)
 
@@ -202,24 +202,14 @@ type Repository interface {
 	GetUserWithRelations(ctx context.Context, userID string) (*models.User, error)
 	ListUserCareTeams(ctx context.Context, userID string) ([]models.CareTeamMember, error)
 	UpdateUserStatus(ctx context.Context, userID, status string) error
+	UpdateUserRole(ctx context.Context, userID, roleCode string) error
 	ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error)
-	ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error)
-	ListRoleAssignments(ctx context.Context, roleID string) ([]models.RoleAssignment, error)
-	CreateRole(ctx context.Context, name string, description *string) (*models.Role, error)
-	UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error)
-	DeleteRole(ctx context.Context, id string) error
-	ListUserRoles(ctx context.Context, userID string) ([]models.UserRole, error)
-	AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error)
-	RemoveRoleFromUser(ctx context.Context, userID, roleID string) error
-	GrantRolePermission(ctx context.Context, roleID, permissionCode string) (*models.RolePermission, error)
-	RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error
 
 	GetUserSummary(ctx context.Context, userID string) (*models.User, error)
 	IsSuperadmin(ctx context.Context, userID string) (bool, error)
 
 	GetSystemSettings(ctx context.Context) (*models.SystemSettings, error)
 	UpdateSystemSettings(ctx context.Context, payload models.SystemSettingsInput, updatedBy *string) (*models.SystemSettings, error)
-	ListPermissions(ctx context.Context) ([]models.Permission, error)
 	ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error)
 }
 
@@ -250,7 +240,6 @@ var allowedCatalogs = map[string]catalogMeta{
 	"platforms":         {Label: "Plataformas"},
 	"service_statuses":  {Label: "Estados de servicio"},
 	"delivery_statuses": {Label: "Estados de entrega"},
-	"org_roles":         {Label: "Roles de organización"},
 	"device_types":      {Label: "Tipos de dispositivo"},
 	"risk_levels":       {Label: "Niveles de riesgo", RequiresWeight: true},
 	"team_member_roles": {Label: "Roles de equipo"},
@@ -285,8 +274,7 @@ var operationLabels = map[string]string{
 	"CAREGIVER_ASSIGN_CREATE":   "Asignación de cuidador",
 	"CAREGIVER_ASSIGN_UPDATE":   "Actualización de cuidador asignado",
 	"CAREGIVER_ASSIGN_DELETE":   "Baja de cuidador asignado",
-	"ROLE_PERMISSION_GRANT":     "Asignación de permiso a rol",
-	"ROLE_PERMISSION_REVOKE":    "Revocación de permiso de rol",
+	"USER_ROLE_UPDATE":          "Actualización de rol de usuario",
 	"CATALOG_CREATE":            "Alta en catálogo",
 	"CATALOG_UPDATE":            "Actualización de catálogo",
 	"CATALOG_DELETE":            "Eliminación de catálogo",
@@ -1486,6 +1474,7 @@ type userDetailData struct {
 	CareTeams   []models.CareTeamMember
 	Caregiving  []models.CaregiverAssignment
 	PushDevices []models.PushDevice
+	SystemRoles []models.Role
 }
 
 type patientDetailData struct {
@@ -1573,7 +1562,7 @@ type invitationsViewData struct {
 	Organizations []models.Organization
 	OrgNames      map[string]string
 	SelectedOrgID string
-	Roles         []models.CatalogItem
+	Roles         []models.Role
 }
 
 type userStatusOption struct {
@@ -1601,19 +1590,7 @@ type usersViewData struct {
 }
 
 type rolesViewData struct {
-	Roles       []models.Role
-	Permissions map[string]rolePermissionsView
-	Users       []models.User
-	FormError   string
-	FormName    string
-	FormDesc    string
-}
-
-type rolePermissionsView struct {
-	Assigned   []models.RolePermission
-	Available  []models.Permission
-	Members    []models.RoleAssignment
-	Assignable []models.User
+	Roles []models.Role
 }
 
 type catalogNavItem struct {
@@ -1830,10 +1807,19 @@ func (h *Handlers) InvitationsIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	roles, err := h.repo.ListCatalog(ctx, "org_roles", 200, 0)
+	roles, err := h.repo.ListRoles(ctx, 100, 0)
 	if err != nil {
 		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
 		return
+	}
+
+	// Filtrar solo roles de organización (org_admin, org_viewer)
+	// No permitir seleccionar superadmin ni user en invitaciones
+	var orgRoles []models.Role
+	for _, role := range roles {
+		if role.Code == "org_admin" || role.Code == "org_viewer" {
+			orgRoles = append(orgRoles, role)
+		}
 	}
 
 	var selected *string
@@ -1857,7 +1843,7 @@ func (h *Handlers) InvitationsIndex(w http.ResponseWriter, r *http.Request) {
 		Organizations: orgs,
 		OrgNames:      names,
 		SelectedOrgID: selectedID,
-		Roles:         roles,
+		Roles:         orgRoles,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Invitaciones"}}
 	h.render(w, r, "superadmin/invitations.html", "Invitaciones", data, crumbs)
@@ -1869,14 +1855,22 @@ func (h *Handlers) InvitationsCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := strings.TrimSpace(r.FormValue("org_id"))
-	role := strings.TrimSpace(r.FormValue("org_role"))
+	roleCode := strings.TrimSpace(r.FormValue("role_code"))
 	email := strings.TrimSpace(r.FormValue("email"))
 	ttlStr := strings.TrimSpace(r.FormValue("ttl_hours"))
-	if orgID == "" || role == "" || ttlStr == "" {
+	if orgID == "" || roleCode == "" || ttlStr == "" {
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Todos los campos obligatorios deben completarse"})
 		http.Redirect(w, r, "/superadmin/invitations", http.StatusSeeOther)
 		return
 	}
+	
+	// Validar que solo se puedan usar roles de organización
+	if roleCode != "org_admin" && roleCode != "org_viewer" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Rol inválido para invitación. Solo se permiten roles de organización."})
+		http.Redirect(w, r, "/superadmin/invitations", http.StatusSeeOther)
+		return
+	}
+	
 	ttl, err := strconv.Atoi(ttlStr)
 	if err != nil || ttl <= 0 || ttl > 720 {
 		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "TTL inválido"})
@@ -1894,7 +1888,7 @@ func (h *Handlers) InvitationsCreate(w http.ResponseWriter, r *http.Request) {
 	if createdBy != "" {
 		createdByPtr = &createdBy
 	}
-	inv, err := h.repo.CreateInvitation(ctx, orgID, role, emailPtr, ttl, createdByPtr)
+	inv, err := h.repo.CreateInvitation(ctx, orgID, roleCode, emailPtr, ttl, createdByPtr)
 	if err != nil {
 		msg := "No se pudo crear la invitación"
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -1984,11 +1978,26 @@ func (h *Handlers) UserDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	roles, err := h.repo.ListRoles(ctx, 10, 0)
+	if err != nil {
+		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
+		return
+	}
+
+	// Filtrar solo roles de sistema (superadmin, user)
+	var systemRoles []models.Role
+	for _, role := range roles {
+		if role.Code == "superadmin" || role.Code == "user" {
+			systemRoles = append(systemRoles, role)
+		}
+	}
+
 	data := userDetailData{
 		User:        user,
 		CareTeams:   careTeams,
 		Caregiving:  caregiving,
 		PushDevices: pushDevices,
+		SystemRoles: systemRoles,
 	}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Usuarios", URL: "/superadmin/users"}, {Label: user.Name}}
 	h.render(w, r, "superadmin/user_detail.html", user.Name, data, crumbs)
@@ -2022,6 +2031,35 @@ func (h *Handlers) UsersUpdateStatus(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusSeeOther)
 }
 
+func (h *Handlers) UsersUpdateRole(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "formulario inválido", http.StatusBadRequest)
+		return
+	}
+	userID := chi.URLParam(r, "id")
+	roleCode := strings.TrimSpace(r.FormValue("role_code"))
+	
+	// Validar que solo se puedan asignar roles de sistema
+	if roleCode != "superadmin" && roleCode != "user" {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Rol inválido. Solo se permiten roles de sistema (superadmin o user)."})
+		http.Redirect(w, r, "/superadmin/users/"+userID, http.StatusSeeOther)
+		return
+	}
+	
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	
+	if err := h.repo.UpdateUserRole(ctx, userID, roleCode); err != nil {
+		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el rol"})
+		http.Redirect(w, r, "/superadmin/users/"+userID, http.StatusSeeOther)
+		return
+	}
+	
+	h.writeAudit(ctx, r, "USER_ROLE_UPDATE", "user", &userID, map[string]any{"role_code": roleCode})
+	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Rol actualizado"})
+	http.Redirect(w, r, "/superadmin/users/"+userID, http.StatusSeeOther)
+}
+
 func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
@@ -2031,333 +2069,10 @@ func (h *Handlers) RolesIndex(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "No se pudieron cargar los roles", http.StatusInternalServerError)
 		return
 	}
-	users, err := h.repo.SearchUsers(ctx, "", 200, 0)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los usuarios", http.StatusInternalServerError)
-		return
-	}
-	sort.Slice(users, func(i, j int) bool {
-		return strings.ToLower(users[i].Name) < strings.ToLower(users[j].Name)
-	})
-	allPerms, err := h.repo.ListPermissions(ctx)
-	if err != nil {
-		http.Error(w, "No se pudieron cargar los permisos", http.StatusInternalServerError)
-		return
-	}
-	permMap := make(map[string]rolePermissionsView, len(roles))
-	for _, role := range roles {
-		assigned, err := h.repo.ListRolePermissions(ctx, role.ID)
-		if err != nil {
-			http.Error(w, "No se pudieron cargar los permisos del rol", http.StatusInternalServerError)
-			return
-		}
-		assignedSet := make(map[string]struct{}, len(assigned))
-		for _, rp := range assigned {
-			assignedSet[rp.Code] = struct{}{}
-		}
-		available := make([]models.Permission, 0, len(allPerms))
-		for _, perm := range allPerms {
-			if _, ok := assignedSet[perm.Code]; ok {
-				continue
-			}
-			available = append(available, perm)
-		}
-		members, err := h.repo.ListRoleAssignments(ctx, role.ID)
-		if err != nil {
-			http.Error(w, "No se pudieron cargar los miembros del rol", http.StatusInternalServerError)
-			return
-		}
-		memberSet := make(map[string]struct{}, len(members))
-		for _, m := range members {
-			memberSet[m.UserID] = struct{}{}
-		}
-		assignable := make([]models.User, 0, len(users))
-		for _, candidate := range users {
-			if _, exists := memberSet[candidate.ID]; exists {
-				continue
-			}
-			assignable = append(assignable, candidate)
-		}
-		permMap[role.ID] = rolePermissionsView{Assigned: assigned, Available: available, Members: members, Assignable: assignable}
-	}
-	data := rolesViewData{Roles: roles, Permissions: permMap, Users: users}
+	
+	data := rolesViewData{Roles: roles}
 	crumbs := []ui.Breadcrumb{{Label: "Panel", URL: "/superadmin/dashboard"}, {Label: "Roles"}}
 	h.render(w, r, "superadmin/roles.html", "Roles", data, crumbs)
-}
-
-func (h *Handlers) RolesCreate(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	name := strings.TrimSpace(r.FormValue("name"))
-	desc := strings.TrimSpace(r.FormValue("description"))
-
-	redirect := "/superadmin/roles"
-
-	if name == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El nombre es obligatorio"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	if len(name) < 3 || len(name) > 50 {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "El nombre debe tener entre 3 y 50 caracteres"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	var descPtr *string
-	if desc != "" {
-		if len(desc) > 250 {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "La descripción no puede exceder 250 caracteres"})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
-		}
-		descPtr = &desc
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	role, err := h.repo.CreateRole(ctx, name, descPtr)
-	if err != nil {
-		var pgErr *pgconn.PgError
-		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Ya existe un rol con ese nombre"})
-		} else {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo crear el rol"})
-		}
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-
-	h.writeAudit(ctx, r, "ROLE_CREATE", "role", &role.ID, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Rol creado"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) RolesDelete(w http.ResponseWriter, r *http.Request) {
-	id := chi.URLParam(r, "id")
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	if err := h.repo.DeleteRole(ctx, id); err != nil {
-		status := http.StatusInternalServerError
-		msg := "No se pudo eliminar el rol"
-		if errors.Is(err, pgx.ErrNoRows) {
-			status = http.StatusNotFound
-			msg = "Rol no encontrado"
-		}
-		http.Error(w, msg, status)
-		return
-	}
-
-	h.writeAudit(ctx, r, "ROLE_DELETE", "role", &id, nil)
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Rol eliminado"})
-	http.Redirect(w, r, "/superadmin/roles", http.StatusSeeOther)
-}
-
-func (h *Handlers) RolesGrantPermission(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	roleID := chi.URLParam(r, "id")
-	permission := strings.TrimSpace(r.FormValue("permission"))
-	redirect := strings.TrimSpace(r.FormValue("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/roles"
-	}
-	if permission == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un permiso"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if _, err := h.repo.GrantRolePermission(ctx, roleID, permission); err != nil {
-		msg := "No se pudo asignar el permiso"
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			msg = "Permiso no encontrado"
-		default:
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) {
-				switch pgErr.Code {
-				case "23503":
-					msg = "Rol no encontrado"
-				case "22P02":
-					msg = "Identificador de rol inválido"
-				}
-			}
-		}
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "ROLE_PERMISSION_GRANT", "role", &roleID, map[string]any{"permission": permission})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso asignado"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) RolesAssignMember(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	roleID := chi.URLParam(r, "id")
-	userID := strings.TrimSpace(r.FormValue("user_id"))
-	redirect := strings.TrimSpace(r.FormValue("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/roles"
-	}
-	if userID == "" {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "Selecciona un usuario"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if _, err := h.repo.AssignRoleToUser(ctx, userID, roleID); err != nil {
-		msg := "No se pudo asignar el rol al usuario"
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			msg = "El rol seleccionado no existe"
-		default:
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) {
-				switch pgErr.Code {
-				case "22P02":
-					msg = "Identificadores inválidos"
-				case "23503":
-					msg = "Usuario no encontrado"
-				}
-			}
-		}
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "USER_ROLE_ASSIGN", "user", &userID, map[string]any{"role_id": roleID})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Usuario asignado al rol"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) RolesRemoveMember(w http.ResponseWriter, r *http.Request) {
-	roleID := chi.URLParam(r, "id")
-	userID := chi.URLParam(r, "userID")
-	redirect := strings.TrimSpace(r.URL.Query().Get("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/roles"
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.RemoveRoleFromUser(ctx, userID, roleID); err != nil {
-		msg := "No se pudo remover el rol"
-		if errors.Is(err, pgx.ErrNoRows) {
-			msg = "El usuario no tiene asignado este rol"
-		}
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "USER_ROLE_REMOVE", "user", &userID, map[string]any{"role_id": roleID})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Usuario removido del rol"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) RolesRevokePermission(w http.ResponseWriter, r *http.Request) {
-	roleID := chi.URLParam(r, "id")
-	permission := chi.URLParam(r, "code")
-	redirect := strings.TrimSpace(r.URL.Query().Get("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/roles"
-	}
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-	if err := h.repo.RevokeRolePermission(ctx, roleID, permission); err != nil {
-		msg := "No se pudo revocar el permiso"
-		switch {
-		case errors.Is(err, pgx.ErrNoRows):
-			msg = "El permiso no está asignado"
-		default:
-			var pgErr *pgconn.PgError
-			if errors.As(err, &pgErr) {
-				switch pgErr.Code {
-				case "23503":
-					msg = "Rol no encontrado"
-				case "22P02":
-					msg = "Identificador de rol inválido"
-				}
-			}
-		}
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-	h.writeAudit(ctx, r, "ROLE_PERMISSION_REVOKE", "role", &roleID, map[string]any{"permission": permission})
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: "Permiso revocado"})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
-}
-
-func (h *Handlers) RolesUpdateUserAssignment(w http.ResponseWriter, r *http.Request) {
-	if err := r.ParseForm(); err != nil {
-		http.Error(w, "formulario inválido", http.StatusBadRequest)
-		return
-	}
-	userID := chi.URLParam(r, "id")
-	selected := strings.TrimSpace(r.FormValue("role_id"))
-	redirect := strings.TrimSpace(r.FormValue("redirect"))
-	if redirect == "" || !strings.HasPrefix(redirect, "/") {
-		redirect = "/superadmin/roles"
-	}
-
-	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
-	defer cancel()
-
-	current, err := h.repo.ListUserRoles(ctx, userID)
-	if err != nil {
-		h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudieron recuperar los roles del usuario"})
-		http.Redirect(w, r, redirect, http.StatusSeeOther)
-		return
-	}
-
-	desired := selected != ""
-	alreadyAssigned := false
-	for _, role := range current {
-		if desired && role.RoleID == selected {
-			alreadyAssigned = true
-			continue
-		}
-		if err := h.repo.RemoveRoleFromUser(ctx, userID, role.RoleID); err != nil && !errors.Is(err, pgx.ErrNoRows) {
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: "No se pudo actualizar el rol"})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
-		}
-		h.writeAudit(ctx, r, "USER_ROLE_REMOVE", "user", &userID, map[string]any{"role_id": role.RoleID})
-	}
-
-	if desired && !alreadyAssigned {
-		if _, err := h.repo.AssignRoleToUser(ctx, userID, selected); err != nil {
-			var msg string
-			switch {
-			case errors.Is(err, pgx.ErrNoRows):
-				msg = "El rol seleccionado no existe"
-			default:
-				msg = "No se pudo asignar el rol"
-			}
-			h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "error", Message: msg})
-			http.Redirect(w, r, redirect, http.StatusSeeOther)
-			return
-		}
-		h.writeAudit(ctx, r, "USER_ROLE_ASSIGN", "user", &userID, map[string]any{"role_id": selected})
-	}
-
-	flashMsg := "Se eliminó el rol asignado"
-	if desired {
-		flashMsg = "Rol actualizado"
-	}
-	h.sessions.PushFlash(r.Context(), middleware.SessionJTIFromContext(r.Context()), session.Flash{Type: "success", Message: flashMsg})
-	http.Redirect(w, r, redirect, http.StatusSeeOther)
 }
 
 func (h *Handlers) CatalogsIndex(w http.ResponseWriter, r *http.Request) {

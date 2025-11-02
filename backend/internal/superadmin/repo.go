@@ -441,34 +441,27 @@ LIMIT $2
 // ------------------------------
 // Invitations
 // ------------------------------
-func (r *Repo) CreateInvitation(ctx context.Context, orgID, orgRoleID string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error) {
+func (r *Repo) CreateInvitation(ctx context.Context, orgID, roleCode string, email *string, ttlHours int, createdBy *string) (*models.OrgInvitation, error) {
 	var (
 		m          models.OrgInvitation
 		emailVal   sql.NullString
-		roleCode   sql.NullString
+		roleLabel  sql.NullString
 		usedAt     sql.NullTime
 		revokedAt  sql.NullTime
 		createdByU sql.NullString
 	)
-	roleID := orgRoleID
-	if _, err := uuid.Parse(orgRoleID); err != nil {
-		var resolved uuid.UUID
-		if err := r.pool.QueryRow(ctx, `SELECT id FROM heartguard.org_roles WHERE code=$1`, orgRoleID).Scan(&resolved); err != nil {
-			return nil, fmt.Errorf("org role not found: %w", err)
-		}
-		roleID = resolved.String()
-	}
+	
 	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_org_invitation_create($1, $2, $3, $4, $5)`,
-		orgID, roleID, email, ttlHours, createdBy).
-		Scan(&m.ID, &m.OrgID, &emailVal, &m.OrgRoleID, &roleCode, &m.Token, &m.ExpiresAt, &usedAt, &revokedAt, &createdByU, &m.CreatedAt, &m.Status)
+		orgID, roleCode, email, ttlHours, createdBy).
+		Scan(&m.ID, &m.OrgID, &emailVal, &m.RoleCode, &roleLabel, &m.Token, &m.ExpiresAt, &usedAt, &revokedAt, &createdByU, &m.CreatedAt, &m.Status)
 	if err != nil {
 		return nil, err
 	}
 	if emailVal.Valid {
 		m.Email = &emailVal.String
 	}
-	if roleCode.Valid {
-		m.OrgRoleCode = roleCode.String
+	if roleLabel.Valid {
+		m.RoleLabel = roleLabel.String
 	}
 	if usedAt.Valid {
 		t := usedAt.Time
@@ -520,7 +513,7 @@ func (r *Repo) ListInvitations(ctx context.Context, orgID *string, limit, offset
 		var (
 			item       models.OrgInvitation
 			emailVal   sql.NullString
-			roleCode   sql.NullString
+			roleLabel  sql.NullString
 			usedAt     sql.NullTime
 			revokedAt  sql.NullTime
 			createdByU sql.NullString
@@ -529,8 +522,8 @@ func (r *Repo) ListInvitations(ctx context.Context, orgID *string, limit, offset
 			&item.ID,
 			&item.OrgID,
 			&emailVal,
-			&item.OrgRoleID,
-			&roleCode,
+			&item.RoleCode,
+			&roleLabel,
 			&item.Token,
 			&item.ExpiresAt,
 			&usedAt,
@@ -544,8 +537,8 @@ func (r *Repo) ListInvitations(ctx context.Context, orgID *string, limit, offset
 		if emailVal.Valid {
 			item.Email = &emailVal.String
 		}
-		if roleCode.Valid {
-			item.OrgRoleCode = roleCode.String
+		if roleLabel.Valid {
+			item.RoleLabel = roleLabel.String
 		}
 		if usedAt.Valid {
 			t := usedAt.Time
@@ -3849,12 +3842,12 @@ func (r *Repo) MetricsUserActivityReport(ctx context.Context, filters models.Use
 // ------------------------------
 // Memberships
 // ------------------------------
-func (r *Repo) AddMember(ctx context.Context, orgID, userID, orgRoleID string) error {
+func (r *Repo) AddMember(ctx context.Context, orgID, userID, roleCode string) error {
 	_, err := r.pool.Exec(ctx, `
-INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
+INSERT INTO user_org_membership (org_id, user_id, role_code, joined_at)
 VALUES ($1, $2, $3, NOW())
-ON CONFLICT (org_id, user_id) DO UPDATE SET org_role_id = EXCLUDED.org_role_id
-`, orgID, userID, orgRoleID)
+ON CONFLICT (org_id, user_id) DO UPDATE SET role_code = EXCLUDED.role_code
+`, orgID, userID, roleCode)
 	return err
 }
 
@@ -3872,17 +3865,16 @@ func (r *Repo) RemoveMember(ctx context.Context, orgID, userID string) error {
 func (r *Repo) ListMembers(ctx context.Context, orgID string, limit, offset int) ([]models.Membership, error) {
 	rows, err := r.pool.Query(ctx, `
 SELECT
-        m.org_id::text,
-        m.user_id::text,
-        u.email,
-        u.name,
-        m.org_role_id::text,
-        COALESCE(oroles.code, '') AS role_code,
-        COALESCE(oroles.label, '') AS role_label,
-        m.joined_at
+	m.org_id::text,
+	m.user_id::text,
+	u.email,
+	u.name,
+	m.role_code,
+	COALESCE(r.label, '') AS role_label,
+	m.joined_at
 FROM user_org_membership m
 JOIN users u ON u.id = m.user_id
-LEFT JOIN org_roles oroles ON oroles.id = m.org_role_id
+LEFT JOIN roles r ON r.code = m.role_code
 WHERE m.org_id = $1
 ORDER BY m.joined_at DESC
 LIMIT $2 OFFSET $3
@@ -3900,9 +3892,8 @@ LIMIT $2 OFFSET $3
 			&item.UserID,
 			&item.Email,
 			&item.Name,
-			&item.OrgRoleID,
-			&item.OrgRoleCode,
-			&item.OrgRoleLabel,
+			&item.RoleCode,
+			&item.RoleLabel,
 			&item.JoinedAt,
 		); err != nil {
 			return nil, err
@@ -3922,8 +3913,8 @@ func (r *Repo) GetUserWithRelations(ctx context.Context, userID string) (*models
 	var (
 		user            models.User
 		membershipsRaw  []byte
-		rolesRaw        []byte
 		profilePhotoURL sql.NullString
+		roleDesc        sql.NullString
 	)
 	err := r.pool.QueryRow(ctx, `
 SELECT
@@ -3933,38 +3924,32 @@ SELECT
 	us.code AS status,
 	u.profile_photo_url,
 	u.created_at,
+	u.role_code,
+	r.label AS role_label,
+	r.description AS role_description,
 	COALESCE(
 		jsonb_agg(
 			jsonb_build_object(
 				'org_id', o.id,
 				'org_code', o.code,
 				'org_name', o.name,
-				'org_role_code', orl.code,
-				'org_role_label', orl.label,
-				'joined_at', to_char(mum.joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+				'role_code', m.role_code,
+				'role_label', COALESCE(mr.label, ''),
+				'joined_at', to_char(m.joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
 			)
 		) FILTER (WHERE o.id IS NOT NULL),
 		'[]'::jsonb
-	) AS memberships,
-	COALESCE(
-		jsonb_agg(DISTINCT jsonb_build_object(
-			'role_id', gr.id,
-			'role_name', gr.name,
-			'description', gr.description,
-			'assigned_at', to_char(ur.assigned_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-		)) FILTER (WHERE gr.id IS NOT NULL),
-		'[]'::jsonb
-	) AS roles
+	) AS memberships
 FROM users u
 JOIN user_statuses us ON us.id = u.user_status_id
-LEFT JOIN user_org_membership mum ON mum.user_id = u.id
-LEFT JOIN organizations o ON o.id = mum.org_id
-LEFT JOIN org_roles orl ON orl.id = mum.org_role_id
-LEFT JOIN user_role ur ON ur.user_id = u.id
-LEFT JOIN roles gr ON gr.id = ur.role_id
+LEFT JOIN roles r ON r.code = u.role_code
+LEFT JOIN user_org_membership m ON m.user_id = u.id
+LEFT JOIN organizations o ON o.id = m.org_id
+LEFT JOIN roles mr ON mr.code = m.role_code
 WHERE u.id = $1::uuid
-GROUP BY u.id, u.name, u.email, us.code, u.created_at
-`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.Status, &profilePhotoURL, &user.CreatedAt, &membershipsRaw, &rolesRaw)
+GROUP BY u.id, u.name, u.email, us.code, u.created_at, u.role_code, r.label, r.description
+`, userID).Scan(&user.ID, &user.Name, &user.Email, &user.Status, &profilePhotoURL, &user.CreatedAt, 
+		&user.RoleCode, &user.RoleLabel, &roleDesc, &membershipsRaw)
 	if err != nil {
 		return nil, err
 	}
@@ -3972,13 +3957,12 @@ GROUP BY u.id, u.name, u.email, us.code, u.created_at
 		v := profilePhotoURL.String
 		user.ProfilePhotoURL = &v
 	}
+	if roleDesc.Valid {
+		v := roleDesc.String
+		user.RoleDescription = &v
+	}
 	if len(membershipsRaw) > 0 {
 		if err := json.Unmarshal(membershipsRaw, &user.Memberships); err != nil {
-			return nil, err
-		}
-	}
-	if len(rolesRaw) > 0 {
-		if err := json.Unmarshal(rolesRaw, &user.Roles); err != nil {
 			return nil, err
 		}
 	}
@@ -3994,37 +3978,30 @@ SELECT
 	us.code AS status,
 	u.profile_photo_url,
 	u.created_at,
+	u.role_code,
+	COALESCE(r.label, '') AS role_label,
+	r.description AS role_description,
 	COALESCE(
 		jsonb_agg(
 			jsonb_build_object(
 				'org_id', o.id,
 				'org_code', o.code,
 				'org_name', o.name,
-				'org_role_code', orl.code,
-				'org_role_label', orl.label,
-				'joined_at', to_char(mum.joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
+				'role_code', m.role_code,
+				'role_label', COALESCE(mr.label, ''),
+				'joined_at', to_char(m.joined_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
 			)
 		) FILTER (WHERE o.id IS NOT NULL),
 		'[]'::jsonb
-	) AS memberships,
-	COALESCE(
-		jsonb_agg(DISTINCT jsonb_build_object(
-			'role_id', gr.id,
-			'role_name', gr.name,
-			'description', gr.description,
-			'assigned_at', to_char(ur.assigned_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')
-		)) FILTER (WHERE gr.id IS NOT NULL),
-		'[]'::jsonb
-	) AS roles
+	) AS memberships
 FROM users u
 JOIN user_statuses us ON us.id = u.user_status_id
-LEFT JOIN user_org_membership mum ON mum.user_id = u.id
-LEFT JOIN organizations o ON o.id = mum.org_id
-LEFT JOIN org_roles orl ON orl.id = mum.org_role_id
-LEFT JOIN user_role ur ON ur.user_id = u.id
-LEFT JOIN roles gr ON gr.id = ur.role_id
+LEFT JOIN roles r ON r.code = u.role_code
+LEFT JOIN user_org_membership m ON m.user_id = u.id
+LEFT JOIN organizations o ON o.id = m.org_id
+LEFT JOIN roles mr ON mr.code = m.role_code
 WHERE ($1 = '' OR u.email ILIKE '%'||$1||'%' OR u.name ILIKE '%'||$1||'%')
-GROUP BY u.id, u.name, u.email, us.code, u.created_at
+GROUP BY u.id, u.name, u.email, us.code, u.created_at, u.role_code, r.label, r.description
 ORDER BY u.created_at DESC
 LIMIT $2 OFFSET $3
 `, q, limit, offset)
@@ -4038,23 +4015,23 @@ LIMIT $2 OFFSET $3
 		var (
 			m               models.User
 			membershipsRaw  []byte
-			rolesRaw        []byte
 			profilePhotoURL sql.NullString
+			roleDesc        sql.NullString
 		)
-		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &profilePhotoURL, &m.CreatedAt, &membershipsRaw, &rolesRaw); err != nil {
+		if err := rows.Scan(&m.ID, &m.Name, &m.Email, &m.Status, &profilePhotoURL, &m.CreatedAt, 
+			&m.RoleCode, &m.RoleLabel, &roleDesc, &membershipsRaw); err != nil {
 			return nil, err
 		}
 		if profilePhotoURL.Valid {
 			v := profilePhotoURL.String
 			m.ProfilePhotoURL = &v
 		}
+		if roleDesc.Valid {
+			v := roleDesc.String
+			m.RoleDescription = &v
+		}
 		if len(membershipsRaw) > 0 {
 			if err := json.Unmarshal(membershipsRaw, &m.Memberships); err != nil {
-				return nil, err
-			}
-		}
-		if len(rolesRaw) > 0 {
-			if err := json.Unmarshal(rolesRaw, &m.Roles); err != nil {
 				return nil, err
 			}
 		}
@@ -4078,7 +4055,7 @@ WHERE id=$1
 
 func (r *Repo) ListRoles(ctx context.Context, limit, offset int) ([]models.Role, error) {
 	rows, err := r.pool.Query(ctx, `
-SELECT id::text, name, description, created_at
+SELECT code, label, description, created_at
 FROM roles
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
@@ -4094,7 +4071,7 @@ LIMIT $1 OFFSET $2
 			item models.Role
 			desc sql.NullString
 		)
-		if err := rows.Scan(&item.ID, &item.Name, &desc, &item.CreatedAt); err != nil {
+		if err := rows.Scan(&item.Code, &item.Label, &desc, &item.CreatedAt); err != nil {
 			return nil, err
 		}
 		if desc.Valid {
@@ -4109,271 +4086,12 @@ LIMIT $1 OFFSET $2
 	return out, nil
 }
 
-func (r *Repo) ListRolePermissions(ctx context.Context, roleID string) ([]models.RolePermission, error) {
-	rows, err := r.pool.Query(ctx, `
-SELECT rp.role_id::text, p.code, p.description, rp.granted_at
-FROM role_permission rp
-JOIN permissions p ON p.id = rp.permission_id
-WHERE rp.role_id = $1::uuid
-ORDER BY p.code
-`, roleID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.RolePermission, 0, 8)
-	for rows.Next() {
-		var (
-			item models.RolePermission
-			desc sql.NullString
-		)
-		if err := rows.Scan(&item.RoleID, &item.Code, &desc, &item.GrantedAt); err != nil {
-			return nil, err
-		}
-		if desc.Valid {
-			item.Description = desc.String
-		}
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) ListRoleAssignments(ctx context.Context, roleID string) ([]models.RoleAssignment, error) {
-	rows, err := r.pool.Query(ctx, `
-SELECT u.id::text, u.name, u.email, ur.assigned_at
-FROM user_role ur
-JOIN users u ON u.id = ur.user_id
-WHERE ur.role_id = $1::uuid
-ORDER BY ur.assigned_at DESC
-`, roleID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.RoleAssignment, 0, 8)
-	for rows.Next() {
-		var item models.RoleAssignment
-		if err := rows.Scan(&item.UserID, &item.UserName, &item.UserEmail, &item.AssignedAt); err != nil {
-			return nil, err
-		}
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) GrantRolePermission(ctx context.Context, roleID, permissionCode string) (*models.RolePermission, error) {
-	var (
-		item models.RolePermission
-		desc sql.NullString
-	)
-	err := r.pool.QueryRow(ctx, `
-WITH perm AS (
-        SELECT id, code, description
-        FROM permissions
-        WHERE code = $2
-), upsert AS (
-        INSERT INTO role_permission (role_id, permission_id)
-        SELECT $1::uuid, perm.id
-        FROM perm
-        ON CONFLICT (role_id, permission_id) DO UPDATE SET granted_at = role_permission.granted_at
-        RETURNING role_id::text, permission_id, granted_at
-)
-SELECT u.role_id, perm.code, perm.description, u.granted_at
-FROM upsert u
-JOIN perm ON TRUE
-`, roleID, permissionCode).Scan(&item.RoleID, &item.Code, &desc, &item.GrantedAt)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, pgx.ErrNoRows
-		}
-		return nil, err
-	}
-	if desc.Valid {
-		item.Description = desc.String
-	}
-	return &item, nil
-}
-
-func (r *Repo) RevokeRolePermission(ctx context.Context, roleID, permissionCode string) error {
+func (r *Repo) UpdateUserRole(ctx context.Context, userID, roleCode string) error {
 	ct, err := r.pool.Exec(ctx, `
-DELETE FROM role_permission
-WHERE role_id = $1::uuid
-  AND permission_id = (
-        SELECT id FROM permissions WHERE code = $2
-)
-`, roleID, permissionCode)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (r *Repo) CreateRole(ctx context.Context, name string, description *string) (*models.Role, error) {
-	var (
-		item models.Role
-		desc sql.NullString
-	)
-	var descParam any
-	if description != nil {
-		descParam = *description
-	}
-	err := r.pool.QueryRow(ctx, `
-INSERT INTO roles (name, description)
-VALUES ($1, NULLIF($2, ''))
-RETURNING id::text, name, description, created_at
-`, name, descParam).Scan(&item.ID, &item.Name, &desc, &item.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	if desc.Valid {
-		s := desc.String
-		item.Description = &s
-	}
-	return &item, nil
-}
-
-func (r *Repo) UpdateRole(ctx context.Context, id string, name, description *string) (*models.Role, error) {
-	setClauses := make([]string, 0, 2)
-	args := make([]any, 0, 3)
-	idx := 2
-	if name != nil {
-		setClauses = append(setClauses, fmt.Sprintf("name = $%d", idx))
-		args = append(args, *name)
-		idx++
-	}
-	if description != nil {
-		setClauses = append(setClauses, fmt.Sprintf("description = NULLIF($%d, '')", idx))
-		args = append(args, *description)
-		idx++
-	}
-	if len(setClauses) == 0 {
-		var (
-			item models.Role
-			desc sql.NullString
-		)
-		err := r.pool.QueryRow(ctx, `SELECT id::text, name, description, created_at FROM roles WHERE id = $1`, id).
-			Scan(&item.ID, &item.Name, &desc, &item.CreatedAt)
-		if err != nil {
-			return nil, err
-		}
-		if desc.Valid {
-			s := desc.String
-			item.Description = &s
-		}
-		return &item, nil
-	}
-	args = append([]any{id}, args...)
-	query := fmt.Sprintf(`
-UPDATE roles
-SET %s
+UPDATE users
+SET role_code = $2
 WHERE id = $1
-RETURNING id::text, name, description, created_at
-`, strings.Join(setClauses, ", "))
-	var (
-		item models.Role
-		desc sql.NullString
-	)
-	err := r.pool.QueryRow(ctx, query, args...).Scan(&item.ID, &item.Name, &desc, &item.CreatedAt)
-	if err != nil {
-		return nil, err
-	}
-	if desc.Valid {
-		s := desc.String
-		item.Description = &s
-	}
-	return &item, nil
-}
-
-func (r *Repo) DeleteRole(ctx context.Context, id string) error {
-	ct, err := r.pool.Exec(ctx, `DELETE FROM roles WHERE id = $1`, id)
-	if err != nil {
-		return err
-	}
-	if ct.RowsAffected() == 0 {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (r *Repo) ListUserRoles(ctx context.Context, userID string) ([]models.UserRole, error) {
-	rows, err := r.pool.Query(ctx, `
-SELECT r.id::text, r.name, r.description, ur.assigned_at
-FROM user_role ur
-JOIN roles r ON r.id = ur.role_id
-WHERE ur.user_id = $1
-ORDER BY ur.assigned_at DESC
-`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	out := make([]models.UserRole, 0, 4)
-	for rows.Next() {
-		var (
-			item     models.UserRole
-			desc     sql.NullString
-			assigned time.Time
-		)
-		if err := rows.Scan(&item.RoleID, &item.RoleName, &desc, &assigned); err != nil {
-			return nil, err
-		}
-		if desc.Valid {
-			s := desc.String
-			item.Description = &s
-		}
-		assignedCopy := assigned
-		item.AssignedAt = &assignedCopy
-		out = append(out, item)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-func (r *Repo) AssignRoleToUser(ctx context.Context, userID, roleID string) (*models.UserRole, error) {
-	var (
-		item     models.UserRole
-		desc     sql.NullString
-		assigned time.Time
-	)
-	err := r.pool.QueryRow(ctx, `
-WITH upsert AS (
-	INSERT INTO user_role (user_id, role_id, assigned_at)
-	VALUES ($1, $2, NOW())
-	ON CONFLICT (user_id, role_id) DO UPDATE SET assigned_at = EXCLUDED.assigned_at
-	RETURNING role_id, assigned_at
-)
-SELECT r.id::text, r.name, r.description, u.assigned_at
-FROM upsert u
-JOIN roles r ON r.id = u.role_id
-`, userID, roleID).Scan(&item.RoleID, &item.RoleName, &desc, &assigned)
-	if err != nil {
-		return nil, err
-	}
-	if desc.Valid {
-		s := desc.String
-		item.Description = &s
-	}
-	assignedCopy := assigned
-	item.AssignedAt = &assignedCopy
-	return &item, nil
-}
-
-func (r *Repo) RemoveRoleFromUser(ctx context.Context, userID, roleID string) error {
-	ct, err := r.pool.Exec(ctx, `DELETE FROM user_role WHERE user_id = $1 AND role_id = $2`, userID, roleID)
+`, userID, roleCode)
 	if err != nil {
 		return err
 	}
@@ -4567,15 +4285,6 @@ RETURNING
 // Audit
 // ------------------------------
 
-func (r *Repo) ListPermissions(ctx context.Context) ([]models.Permission, error) {
-	rows, err := r.pool.Query(ctx, "SELECT code, description FROM permissions ORDER BY code")
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return pgx.CollectRows(rows, pgx.RowToStructByName[models.Permission])
-}
-
 func (r *Repo) ListAudit(ctx context.Context, from, to *time.Time, action *string, limit, offset int) ([]models.AuditLog, error) {
 	where := "WHERE 1=1\n"
 	args := []any{}
@@ -4712,9 +4421,8 @@ func (r *Repo) IsSuperadmin(ctx context.Context, userID string) (bool, error) {
 	err := r.pool.QueryRow(ctx, `
 SELECT EXISTS (
   SELECT 1
-  FROM user_role ur
-  JOIN roles r ON r.id = ur.role_id
-  WHERE ur.user_id = $1 AND r.name = 'superadmin'
+  FROM users
+  WHERE id = $1 AND role_code = 'superadmin'
 )
 `, userID).Scan(&ok)
 	return ok, err

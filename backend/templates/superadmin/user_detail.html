@@ -19,8 +19,8 @@
 			<span class="hg-summary-value">{{len .Data.User.Memberships}}</span>
 		</article>
 		<article class="hg-summary-card">
-			<span class="hg-summary-label">Roles</span>
-			<span class="hg-summary-value">{{len .Data.User.Roles}}</span>
+			<span class="hg-summary-label">Rol del sistema</span>
+			<span class="hg-summary-value">{{if .Data.User.RoleLabel}}{{.Data.User.RoleLabel}}{{else}}—{{end}}</span>
 		</article>
 		<article class="hg-summary-card">
 			<span class="hg-summary-label">Equipos de cuidado</span>
@@ -40,14 +40,50 @@
 <section class="hg-section">
 	<div class="hg-card">
 		<header class="hg-card-header">
+			<h2>Rol del Sistema</h2>
+			<span class="hg-card-meta">Determina acceso al panel de superadministración</span>
+		</header>
+		<div class="hg-form-grid">
+			<div class="hg-form-field">
+				<label>Rol actual</label>
+				<p>
+					{{if .Data.User.RoleLabel}}
+						<span class="hg-tag {{if eq .Data.User.RoleCode "superadmin"}}is-success{{else}}is-secondary{{end}}">{{.Data.User.RoleLabel}}</span>
+						{{if .Data.User.RoleDescription}}
+							<br><span class="hg-field-hint">{{.Data.User.RoleDescription}}</span>
+						{{end}}
+					{{else}}
+						<span class="hg-field-hint">Sin rol asignado</span>
+					{{end}}
+				</p>
+			</div>
+			<div class="hg-form-field">
+				<label for="role_code">Cambiar rol del sistema</label>
+				<form method="post" action="/superadmin/users/{{.Data.User.ID}}/role" class="hg-form-inline">
+					<input type="hidden" name="_csrf" value="{{$.CSRFToken}}" />
+					<select id="role_code" name="role_code">
+						{{range .Data.SystemRoles}}
+						<option value="{{.Code}}" {{if eq .Code $.Data.User.RoleCode}}selected{{end}}>{{.Label}}</option>
+						{{end}}
+					</select>
+					<button type="submit">Actualizar</button>
+				</form>
+			</div>
+		</div>
+	</div>
+</section>
+
+<section class="hg-section">
+	<div class="hg-card">
+		<header class="hg-card-header">
 			<h2>Organizaciones</h2>
-			<span class="hg-card-meta">{{len .Data.User.Memberships}} miembros</span>
+			<span class="hg-card-meta">{{len .Data.User.Memberships}} membresías</span>
 		</header>
 		<table class="hg-table">
 			<thead>
 				<tr>
 					<th>Organización</th>
-					<th>Rol</th>
+					<th>Rol en Organización</th>
 					<th>Ingreso</th>
 				</tr>
 			</thead>
@@ -55,7 +91,7 @@
 				{{range .Data.User.Memberships}}
 				<tr>
 					<td>{{.OrgName}}</td>
-					<td>{{.OrgRoleLabel}}</td>
+					<td><span class="hg-tag {{if eq .RoleCode "org_admin"}}is-primary{{else}}is-secondary{{end}}">{{.RoleLabel}}</span></td>
 					<td>{{if .JoinedAt}}{{formatTimePtr .JoinedAt}}{{else}}—{{end}}</td>
 				</tr>
 				{{else}}
@@ -69,50 +105,33 @@
 </section>
 
 <section class="hg-section">
-	<div class="hg-split-grid">
-		<div class="hg-card">
-			<header class="hg-card-header">
-				<h2>Roles asignados</h2>
-				<span class="hg-card-meta">{{len .Data.User.Roles}} roles</span>
-			</header>
-			{{if .Data.User.Roles}}
-			<div class="hg-inline-roles">
-				{{range .Data.User.Roles}}
-				<span class="hg-tag">{{.RoleName}}</span>
+	<div class="hg-card">
+		<header class="hg-card-header">
+			<h2>Equipos de cuidado</h2>
+			<span class="hg-card-meta">{{len .Data.CareTeams}} equipos</span>
+		</header>
+		<table class="hg-table">
+			<thead>
+				<tr>
+					<th>Equipo</th>
+					<th>Rol</th>
+					<th>Ingreso</th>
+				</tr>
+			</thead>
+			<tbody>
+				{{range .Data.CareTeams}}
+				<tr>
+					<td>{{.CareTeamName}}</td>
+					<td>{{.RoleLabel}}</td>
+					<td>{{formatTime .JoinedAt}}</td>
+				</tr>
+				{{else}}
+				<tr>
+					<td colspan="3" class="hg-empty-cell">Sin participación en equipos.</td>
+				</tr>
 				{{end}}
-			</div>
-			{{else}}
-			<p class="remark">Sin roles asignados.</p>
-			{{end}}
-		</div>
-		<div class="hg-card">
-			<header class="hg-card-header">
-				<h2>Equipos de cuidado</h2>
-				<span class="hg-card-meta">{{len .Data.CareTeams}} equipos</span>
-			</header>
-			<table class="hg-table">
-				<thead>
-					<tr>
-						<th>Equipo</th>
-						<th>Rol</th>
-						<th>Ingreso</th>
-					</tr>
-				</thead>
-				<tbody>
-					{{range .Data.CareTeams}}
-					<tr>
-						<td>{{.CareTeamName}}</td>
-						<td>{{.RoleLabel}}</td>
-						<td>{{formatTime .JoinedAt}}</td>
-					</tr>
-					{{else}}
-					<tr>
-						<td colspan="3" class="hg-empty-cell">Sin participación en equipos.</td>
-					</tr>
-					{{end}}
-				</tbody>
-			</table>
-		</div>
+			</tbody>
+		</table>
 	</div>
 </section>
 

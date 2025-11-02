@@ -17,18 +17,18 @@ type OrganizationStats struct {
 }
 
 type OrgInvitation struct {
-	ID          string     `json:"id"`
-	OrgID       string     `json:"org_id"`
-	Email       *string    `json:"email,omitempty"`
-	OrgRoleID   string     `json:"org_role_id"`
-	OrgRoleCode string     `json:"org_role_code,omitempty"`
-	Token       string     `json:"token"`
-	ExpiresAt   time.Time  `json:"expires_at"`
-	UsedAt      *time.Time `json:"used_at,omitempty"`
-	RevokedAt   *time.Time `json:"revoked_at,omitempty"`
-	Status      string     `json:"status"`
-	CreatedBy   *string    `json:"created_by,omitempty"`
-	CreatedAt   time.Time  `json:"created_at"`
+	ID        string     `json:"id"`
+	OrgID     string     `json:"org_id"`
+	Email     *string    `json:"email,omitempty"`
+	RoleCode  string     `json:"role_code"`
+	RoleLabel string     `json:"role_label"`
+	Token     string     `json:"token"`
+	ExpiresAt time.Time  `json:"expires_at"`
+	UsedAt    *time.Time `json:"used_at,omitempty"`
+	RevokedAt *time.Time `json:"revoked_at,omitempty"`
+	Status    string     `json:"status"`
+	CreatedBy *string    `json:"created_by,omitempty"`
+	CreatedAt time.Time  `json:"created_at"`
 }
 
 type CatalogItem struct {
@@ -607,46 +607,17 @@ type User struct {
 	Status          string           `json:"status"`
 	ProfilePhotoURL *string          `json:"profile_photo_url,omitempty"`
 	CreatedAt       time.Time        `json:"created_at"`
+	RoleCode        string           `json:"role_code"`
+	RoleLabel       string           `json:"role_label"`
+	RoleDescription *string          `json:"role_description,omitempty"`
 	Memberships     []UserMembership `json:"memberships"`
-	Roles           []UserRole       `json:"roles"`
 }
 
 type Role struct {
-	ID          string    `json:"id"`
-	Name        string    `json:"name"`
+	Code        string    `json:"code"`
+	Label       string    `json:"label"`
 	Description *string   `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"created_at"`
-	Permissions []string  `json:"permissions,omitempty"`
-}
-
-type RolePermission struct {
-	RoleID      string    `json:"role_id"`
-	Code        string    `json:"code"`
-	Description string    `json:"description,omitempty"`
-	GrantedAt   time.Time `json:"granted_at"`
-}
-
-type RolePermissionRequest struct {
-	Permission string `json:"permission" validate:"required"`
-}
-
-type RolePermissionsResponse struct {
-	RoleID      string           `json:"role_id"`
-	Permissions []RolePermission `json:"permissions"`
-}
-
-type RoleAssignment struct {
-	UserID     string    `json:"user_id"`
-	UserName   string    `json:"user_name"`
-	UserEmail  string    `json:"user_email"`
-	AssignedAt time.Time `json:"assigned_at"`
-}
-
-type UserRole struct {
-	RoleID      string     `json:"role_id"`
-	RoleName    string     `json:"role_name"`
-	Description *string    `json:"description,omitempty"`
-	AssignedAt  *time.Time `json:"assigned_at,omitempty"`
 }
 
 type Membership struct {
@@ -654,9 +625,8 @@ type Membership struct {
 	UserID       string    `json:"user_id"`
 	Email        string    `json:"email"`
 	Name         string    `json:"name"`
-	OrgRoleID    string    `json:"org_role_id"`
-	OrgRoleCode  string    `json:"org_role_code"`
-	OrgRoleLabel string    `json:"org_role_label"`
+	RoleCode     string    `json:"role_code"`
+	RoleLabel    string    `json:"role_label"`
 	JoinedAt     time.Time `json:"joined_at"`
 }
 
@@ -664,14 +634,9 @@ type UserMembership struct {
 	OrgID        string     `json:"org_id"`
 	OrgCode      string     `json:"org_code"`
 	OrgName      string     `json:"org_name"`
-	OrgRoleCode  string     `json:"org_role_code"`
-	OrgRoleLabel string     `json:"org_role_label"`
+	RoleCode     string     `json:"role_code"`
+	RoleLabel    string     `json:"role_label"`
 	JoinedAt     *time.Time `json:"joined_at,omitempty"`
-}
-
-type Permission struct {
-	Code        string `json:"code"`
-	Description string `json:"description"`
 }
 
 type AuditLog struct {

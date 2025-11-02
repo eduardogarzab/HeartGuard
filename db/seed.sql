@@ -60,44 +60,17 @@ INSERT INTO team_member_roles(code, label) VALUES
   ('specialist', 'Especialista')
 ON CONFLICT (code) DO NOTHING;
 
--- Roles globales y permisos
-INSERT INTO roles(name, description) VALUES
-  ('superadmin','Full system access'),
-  ('clinician','Healthcare professional'),
-  ('caregiver','Family/guardian'),
-  ('ops','Operations/DevOps')
-ON CONFLICT (name) DO NOTHING;
+-- Roles del sistema
+INSERT INTO roles(code, label, description) VALUES
+  ('superadmin','Superadministrador','Acceso completo al panel de superadministración'),
+  ('user','Usuario','Usuario normal del sistema sin acceso al panel de superadmin'),
+  ('org_admin','Admin de Organización','Administrador con permisos completos en la organización'),
+  ('org_viewer','Observador de Organización','Acceso de solo lectura a datos de la organización')
+ON CONFLICT (code) DO NOTHING;
 
 INSERT INTO system_settings (id, brand_name, support_email, primary_color, secondary_color, logo_url, contact_phone, default_locale, default_timezone, maintenance_mode, maintenance_message)
 VALUES (1, 'HeartGuard', 'support@heartguard.com', '#0ea5e9', '#1e293b', NULL, '+52 55 1234 5678', 'es-MX', 'America/Mexico_City', FALSE, NULL)
 ON CONFLICT (id) DO NOTHING;
-
-INSERT INTO permissions(code, description) VALUES
-  ('alerts.read','Ver alertas'),
-  ('alerts.manage','Atender/cerrar alertas'),
-  ('patients.read','Ver pacientes'),
-  ('patients.manage','Crear/editar pacientes'),
-  ('services.read','Ver servicios'),
-  ('services.manage','Configurar servicios')
-ON CONFLICT (code) DO NOTHING;
-
--- superadmin: todos los permisos
-INSERT INTO role_permission(role_id, permission_id)
-SELECT r.id, p.id FROM roles r CROSS JOIN permissions p
-WHERE r.name='superadmin'
-ON CONFLICT DO NOTHING;
-
--- clinician / caregiver: lectura básica
-INSERT INTO role_permission(role_id, permission_id)
-SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN ('alerts.read','patients.read')
-WHERE r.name IN ('clinician','caregiver')
-ON CONFLICT DO NOTHING;
-
--- ops: servicios.*
-INSERT INTO role_permission(role_id, permission_id)
-SELECT r.id, p.id FROM roles r JOIN permissions p ON p.code IN ('services.read','services.manage')
-WHERE r.name='ops'
-ON CONFLICT DO NOTHING;
 
 -- Estados de alerta
 INSERT INTO alert_status(code, description, step_order) VALUES
@@ -137,13 +110,6 @@ INSERT INTO device_types(code, label) VALUES
   ('PULSE_OX','Pulsioxímetro')
 ON CONFLICT (code) DO NOTHING;
 
--- Roles por organización
-INSERT INTO org_roles(code,label) VALUES
-  ('org_admin','Administrador de organización'),
-  ('org_user','Usuario de organización'),
-  ('viewer','Solo lectura')
-ON CONFLICT (code) DO NOTHING;
-
 -- Relación cuidador
 INSERT INTO caregiver_relationship_types(code,label) VALUES
  ('parent','Padre/Madre'),('spouse','Esposo/a'),('sibling','Hermano/a'),
@@ -155,26 +121,21 @@ ON CONFLICT (code) DO NOTHING;
 -- - Usa bcrypt generado por pgcrypto (crypt + gen_salt('bf', 10))
 -- - ON CONFLICT actualiza password/status para mantener el acceso
 -- =========================================================
-INSERT INTO users (name, email, password_hash, user_status_id, two_factor_enabled, created_at)
+INSERT INTO users (name, email, password_hash, user_status_id, role_code, two_factor_enabled, created_at)
 VALUES (
   'Super Admin',
   'admin@heartguard.com',
   crypt('Admin#2025', gen_salt('bf', 10)),
   (SELECT id FROM user_statuses WHERE code='active'),
+  'superadmin',
   FALSE,
   NOW()
 )
 ON CONFLICT (email) DO UPDATE
 SET name = EXCLUDED.name,
     password_hash = EXCLUDED.password_hash,
-    user_status_id = EXCLUDED.user_status_id;
-
--- Asignar rol superadmin
-INSERT INTO user_role(user_id, role_id)
-SELECT u.id, r.id
-FROM users u, roles r
-WHERE u.email='admin@heartguard.com' AND r.name='superadmin'
-ON CONFLICT DO NOTHING;
+    user_status_id = EXCLUDED.user_status_id,
+    role_code = EXCLUDED.role_code;
 
 -- Organización demo
 INSERT INTO organizations(code,name) VALUES ('FAM-001','Familia García')
@@ -186,62 +147,41 @@ INSERT INTO organizations(code,name) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- Usuarios adicionales para métricas (password demo: Demo#2025)
-INSERT INTO users (name, email, password_hash, user_status_id, two_factor_enabled, created_at)
+INSERT INTO users (name, email, password_hash, user_status_id, role_code, two_factor_enabled, created_at)
 VALUES
-  ('Dra. Ana Ruiz','ana.ruiz@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='active'), TRUE, NOW() - INTERVAL '90 days'),
-  ('Martín López','martin.ops@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='active'), FALSE, NOW() - INTERVAL '60 days'),
-  ('Sofía Care','sofia.care@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='pending'), FALSE, NOW() - INTERVAL '15 days'),
-  ('Carlos Vega','carlos.vega@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='blocked'), FALSE, NOW() - INTERVAL '120 days')
+  ('Dra. Ana Ruiz','ana.ruiz@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='active'), 'user', TRUE, NOW() - INTERVAL '90 days'),
+  ('Martín López','martin.ops@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='active'), 'user', FALSE, NOW() - INTERVAL '60 days'),
+  ('Sofía Care','sofia.care@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='pending'), 'user', FALSE, NOW() - INTERVAL '15 days'),
+  ('Carlos Vega','carlos.vega@heartguard.com', crypt('Demo#2025', gen_salt('bf', 10)), (SELECT id FROM user_statuses WHERE code='blocked'), 'user', FALSE, NOW() - INTERVAL '120 days')
 ON CONFLICT (email) DO NOTHING;
 
--- Asignar roles globales
-INSERT INTO user_role(user_id, role_id)
-SELECT u.id, r.id
-FROM users u
-JOIN roles r ON r.name = 'clinician'
-WHERE u.email = 'ana.ruiz@heartguard.com'
-ON CONFLICT DO NOTHING;
-
-INSERT INTO user_role(user_id, role_id)
-SELECT u.id, r.id
-FROM users u
-JOIN roles r ON r.name = 'ops'
-WHERE u.email = 'martin.ops@heartguard.com'
-ON CONFLICT DO NOTHING;
-
-INSERT INTO user_role(user_id, role_id)
-SELECT u.id, r.id
-FROM users u
-JOIN roles r ON r.name = 'caregiver'
-WHERE u.email = 'sofia.care@heartguard.com'
-ON CONFLICT DO NOTHING;
-
 -- Membresías por organización
-INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
-SELECT o.id, u.id, r.id, NOW() - INTERVAL '60 days'
-FROM organizations o, users u, org_roles r
-WHERE o.code='FAM-001' AND u.email='ana.ruiz@heartguard.com' AND r.code='org_admin'
+-- Membresías por organización
+INSERT INTO user_org_membership (org_id, user_id, role_code, joined_at)
+SELECT o.id, u.id, 'org_admin', NOW() - INTERVAL '60 days'
+FROM organizations o, users u
+WHERE o.code='FAM-001' AND u.email='ana.ruiz@heartguard.com'
 ON CONFLICT (org_id, user_id) DO NOTHING;
 
-INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
-SELECT o.id, u.id, r.id, NOW() - INTERVAL '45 days'
-FROM organizations o, users u, org_roles r
-WHERE o.code='FAM-001' AND u.email='martin.ops@heartguard.com' AND r.code='org_user'
+INSERT INTO user_org_membership (org_id, user_id, role_code, joined_at)
+SELECT o.id, u.id, 'org_admin', NOW() - INTERVAL '45 days'
+FROM organizations o, users u
+WHERE o.code='FAM-001' AND u.email='martin.ops@heartguard.com'
 ON CONFLICT (org_id, user_id) DO NOTHING;
 
-INSERT INTO user_org_membership (org_id, user_id, org_role_id, joined_at)
-SELECT o.id, u.id, r.id, NOW() - INTERVAL '20 days'
-FROM organizations o, users u, org_roles r
-WHERE o.code='CLIN-001' AND u.email='sofia.care@heartguard.com' AND r.code='viewer'
+INSERT INTO user_org_membership (org_id, user_id, role_code, joined_at)
+SELECT o.id, u.id, 'org_viewer', NOW() - INTERVAL '20 days'
+FROM organizations o, users u
+WHERE o.code='CLIN-001' AND u.email='sofia.care@heartguard.com'
 ON CONFLICT (org_id, user_id) DO NOTHING;
 
 -- Invitaciones demo (pendiente, usada, revocada)
-INSERT INTO org_invitations (org_id, email, org_role_id, token, expires_at, used_at, revoked_at, created_by, created_at)
+INSERT INTO org_invitations (org_id, email, role_code, token, expires_at, used_at, revoked_at, created_by, created_at)
 VALUES
   (
     (SELECT id FROM organizations WHERE code='FAM-001'),
     'coordinador@heartguard.com',
-    (SELECT id FROM org_roles WHERE code='org_admin'),
+    'org_admin',
     'INVITE-DEMO-001',
     NOW() + INTERVAL '7 days',
     NULL,
@@ -252,7 +192,7 @@ VALUES
   (
     (SELECT id FROM organizations WHERE code='FAM-001'),
     'analista@heartguard.com',
-    (SELECT id FROM org_roles WHERE code='org_user'),
+    'org_admin',
     'INVITE-DEMO-002',
     NOW() - INTERVAL '10 days',
     NOW() - INTERVAL '9 days',
@@ -263,7 +203,7 @@ VALUES
   (
     (SELECT id FROM organizations WHERE code='CLIN-001'),
     'visitante@heartguard.com',
-    (SELECT id FROM org_roles WHERE code='viewer'),
+    'org_viewer',
     'INVITE-DEMO-003',
     NOW() + INTERVAL '14 days',
     NULL,

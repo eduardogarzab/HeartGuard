@@ -157,19 +157,13 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 
 		s.Route("/users", func(ur chi.Router) {
 			ur.Get("/", uiHandlers.UsersIndex)
-				ur.Get("/{id}", uiHandlers.UserDetail)
+			ur.Get("/{id}", uiHandlers.UserDetail)
 			ur.Post("/{id}/status", uiHandlers.UsersUpdateStatus)
+			ur.Post("/{id}/role", uiHandlers.UsersUpdateRole)
 		})
 
 		s.Route("/roles", func(rr chi.Router) {
 			rr.Get("/", uiHandlers.RolesIndex)
-			rr.Post("/", uiHandlers.RolesCreate)
-			rr.Post("/{id}/permissions", uiHandlers.RolesGrantPermission)
-			rr.Post("/{id}/permissions/{code}/delete", uiHandlers.RolesRevokePermission)
-			rr.Post("/{id}/members", uiHandlers.RolesAssignMember)
-			rr.Post("/{id}/members/{userID}/delete", uiHandlers.RolesRemoveMember)
-			rr.Post("/users/{id}", uiHandlers.RolesUpdateUserAssignment)
-			rr.Post("/{id}/delete", uiHandlers.RolesDelete)
 		})
 
 		s.Route("/catalogs", func(cr chi.Router) {

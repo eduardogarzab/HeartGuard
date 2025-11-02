@@ -51,7 +51,7 @@
 				<tr>
 					<td><a href="/superadmin/users/{{.UserID}}" class="hg-link">{{.Name}}</a></td>
 					<td>{{.Email}}</td>
-					<td>{{.OrgRoleLabel}}</td>
+					<td>{{.RoleLabel}}</td>
 					<td>{{formatTime .JoinedAt}}</td>
 				</tr>
 				{{else}}
@@ -142,7 +142,7 @@
 				{{range .Data.Invitations}}
 				<tr>
 					<td>{{if .Email}}{{.Email}}{{else}}—{{end}}</td>
-					<td>{{.OrgRoleCode}}</td>
+					<td>{{if .RoleLabel}}{{.RoleLabel}}{{else}}{{.RoleCode}}{{end}}</td>
 					<td>{{formatTime .ExpiresAt}}</td>
 					<td>{{.Status}}</td>
 				</tr>

@@ -16,8 +16,8 @@
 				<span class="hg-field-hint">El enlace quedará asociado a la organización seleccionada.</span>
 			</div>
 			<div class="hg-form-field">
-				<label for="org_role">Rol</label>
-				<select id="org_role" name="org_role" required>
+				<label for="role_code">Rol</label>
+				<select id="role_code" name="role_code" required>
 					<option value="">Selecciona...</option>
 					{{range .Data.Roles}}
 					<option value="{{.Code}}">{{.Label}} ({{.Code}})</option>
@@ -71,7 +71,7 @@
 				<tr>
 					<td>{{with index $.Data.OrgNames .OrgID}}{{.}}{{else}}{{.OrgID}}{{end}}</td>
 					<td>{{if .Email}}{{.Email}}{{else}}—{{end}}</td>
-					<td>{{if .OrgRoleCode}}{{.OrgRoleCode}}{{else}}{{.OrgRoleID}}{{end}}</td>
+					<td>{{if .RoleLabel}}{{.RoleLabel}}{{else}}{{.RoleCode}}{{end}}</td>
 					<td>{{formatTime .CreatedAt}}</td>
 					<td>{{formatTime .ExpiresAt}}</td>
 					<td>
