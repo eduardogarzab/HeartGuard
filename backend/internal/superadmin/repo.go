@@ -20,7 +20,6 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/redis/go-redis/v9"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type pgPool interface {
@@ -365,6 +364,7 @@ SELECT
 	p.org_id::text,
 	o.name::text,
 	p.person_name::text,
+	p.email::text,
 	p.birthdate,
 	sx.code::text,
 	sx.label::text,
@@ -398,7 +398,7 @@ LIMIT $2
 			riskCode  sql.NullString
 			riskLabel sql.NullString
 		)
-		if err := rows.Scan(&patient.ID, &orgIDVal, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &patient.CreatedAt); err != nil {
+		if err := rows.Scan(&patient.ID, &orgIDVal, &orgName, &patient.Name, &patient.Email, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &patient.CreatedAt); err != nil {
 			return nil, err
 		}
 		if orgIDVal.Valid {
@@ -693,6 +693,7 @@ SELECT
 	p.org_id::text,
 	o.name::text,
 	p.person_name::text,
+	p.email::text,
 	p.birthdate,
 	sx.code::text,
 	sx.label::text,
@@ -706,7 +707,7 @@ LEFT JOIN heartguard.organizations o ON o.id = p.org_id
 LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
 LEFT JOIN heartguard.risk_levels rl ON rl.id = p.risk_level_id
 WHERE p.id = $1::uuid
-`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
+`, id).Scan(&patient.ID, &orgID, &orgName, &patient.Name, &patient.Email, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -762,7 +763,6 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 			patient         models.Patient
 			orgID           sql.NullString
 			org             sql.NullString
-			email           sql.NullString
 			birth           sql.NullTime
 			sexCode         sql.NullString
 			sexLabel        sql.NullString
@@ -770,14 +770,9 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 			riskCode        sql.NullString
 			riskLabel       sql.NullString
 			profilePhotoURL sql.NullString
-			lastLogin       sql.NullTime
 		)
-		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &email, &patient.EmailVerified, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt, &lastLogin); err != nil {
+		if err := rows.Scan(&patient.ID, &orgID, &org, &patient.Name, &patient.Email, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt); err != nil {
 			return nil, err
-		}
-		if email.Valid {
-			v := email.String
-			patient.Email = &v
 		}
 		if profilePhotoURL.Valid {
 			v := profilePhotoURL.String
@@ -794,10 +789,6 @@ func (r *Repo) ListPatients(ctx context.Context, limit, offset int) ([]models.Pa
 		if birth.Valid {
 			bt := birth.Time
 			patient.Birthdate = &bt
-		}
-		if lastLogin.Valid {
-			lt := lastLogin.Time
-			patient.LastLoginAt = &lt
 		}
 		if sexCode.Valid {
 			v := sexCode.String
@@ -829,7 +820,6 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 		patient         models.Patient
 		orgID           sql.NullString
 		org             sql.NullString
-		email           sql.NullString
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
@@ -838,22 +828,10 @@ func (r *Repo) CreatePatient(ctx context.Context, input models.PatientInput) (*m
 		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6, $7, $8)`, 
-		stringParam(input.OrgID, true), 
-		input.Name, 
-		stringParam(input.Email, true), 
-		nil, // password_hash (nil por ahora)
-		timeParam(input.Birthdate), 
-		stringParam(input.SexCode, true), 
-		stringParam(input.RiskLevelID, true), 
-		stringParam(input.ProfilePhotoURL, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &email, &patient.EmailVerified, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_create($1, $2, $3, $4, $5, $6, $7, $8)`, stringParam(input.OrgID, true), input.Name, input.Email, stringParam(input.Password, false), timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevelID, true), stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &patient.Email, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
-	}
-	if email.Valid {
-		v := email.String
-		patient.Email = &v
 	}
 	if profilePhotoURL.Valid {
 		v := profilePhotoURL.String
@@ -899,7 +877,6 @@ func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.Patien
 		patient         models.Patient
 		orgID           sql.NullString
 		org             sql.NullString
-		email           sql.NullString
 		birth           sql.NullTime
 		sexCode         sql.NullString
 		sexLabel        sql.NullString
@@ -908,22 +885,10 @@ func (r *Repo) UpdatePatient(ctx context.Context, id string, input models.Patien
 		riskLabel       sql.NullString
 		profilePhotoURL sql.NullString
 	)
-	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7, $8)`, 
-		id, 
-		stringParam(input.OrgID, true), 
-		input.Name, 
-		stringParam(input.Email, true), 
-		timeParam(input.Birthdate), 
-		stringParam(input.SexCode, true), 
-		stringParam(input.RiskLevelID, true), 
-		stringParam(input.ProfilePhotoURL, true)).
-		Scan(&patient.ID, &orgID, &org, &patient.Name, &email, &patient.EmailVerified, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
+	err := r.pool.QueryRow(ctx, `SELECT * FROM heartguard.sp_patient_update($1, $2, $3, $4, $5, $6, $7, $8, $9)`, id, stringParam(input.OrgID, true), input.Name, input.Email, stringParam(input.Password, false), timeParam(input.Birthdate), stringParam(input.SexCode, true), stringParam(input.RiskLevelID, true), stringParam(input.ProfilePhotoURL, true)).
+		Scan(&patient.ID, &orgID, &org, &patient.Name, &patient.Email, &birth, &sexCode, &sexLabel, &riskID, &riskCode, &riskLabel, &profilePhotoURL, &patient.CreatedAt)
 	if err != nil {
 		return nil, err
-	}
-	if email.Valid {
-		v := email.String
-		patient.Email = &v
 	}
 	if profilePhotoURL.Valid {
 		v := profilePhotoURL.String
@@ -969,43 +934,6 @@ func (r *Repo) DeletePatient(ctx context.Context, id string) error {
 	if err := r.pool.QueryRow(ctx, `SELECT heartguard.sp_patient_delete($1)`, id).Scan(&ok); err != nil {
 		return err
 	}
-	if !ok {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (r *Repo) SetPatientPassword(ctx context.Context, patientID, password string) error {
-	// Hash password with bcrypt
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-	if err != nil {
-		return err
-	}
-
-	var ok bool
-	if err := r.pool.QueryRow(ctx, 
-		`SELECT heartguard.sp_patient_set_password($1, $2)`,
-		patientID,
-		string(hashedPassword),
-	).Scan(&ok); err != nil {
-		return err
-	}
-	
-	if !ok {
-		return pgx.ErrNoRows
-	}
-	return nil
-}
-
-func (r *Repo) VerifyPatientEmail(ctx context.Context, patientID string) error {
-	var ok bool
-	if err := r.pool.QueryRow(ctx, 
-		`SELECT heartguard.sp_patient_verify_email($1)`,
-		patientID,
-	).Scan(&ok); err != nil {
-		return err
-	}
-	
 	if !ok {
 		return pgx.ErrNoRows
 	}
@@ -2642,18 +2570,10 @@ func (r *Repo) ListInferences(ctx context.Context, limit, offset int) ([]models.
 			v := seriesRef.String
 			inf.SeriesRef = &v
 		}
-		labelParts := strings.TrimSpace(inf.PatientName)
-		if labelParts != "" {
-			inf.StreamLabel = labelParts
-		}
+		// StreamLabel solo debe ser el número de serie del dispositivo
 		if inf.DeviceSerial != "" {
-			if inf.StreamLabel != "" {
-				inf.StreamLabel = fmt.Sprintf("%s · %s", inf.StreamLabel, inf.DeviceSerial)
-			} else {
-				inf.StreamLabel = inf.DeviceSerial
-			}
-		}
-		if inf.StreamLabel == "" {
+			inf.StreamLabel = inf.DeviceSerial
+		} else {
 			inf.StreamLabel = inf.StreamID
 		}
 		out = append(out, inf)

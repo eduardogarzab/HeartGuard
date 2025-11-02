@@ -2,8 +2,6 @@
 
 Servicio en Go que renderiza el panel de superadministración de HeartGuard completamente del lado del servidor (SSR). Utiliza sesiones firmadas (JWT corto almacenado en cookie HttpOnly), Redis para rate limiting y revocaciones de sesión, y PostgreSQL/PostGIS como persistencia.
 
-> ℹ️ La antigua API JSON permanece en el repositorio bajo el build tag `rest_api_legacy` únicamente como referencia histórica. No participa en el binario por defecto.
-
 ## Stack
 
 -   Go 1.22 (`chi` para routing, `zap` para logging, `pgx` para Postgres y `go-redis` para Redis).
@@ -45,59 +43,6 @@ Comandos útiles:
 -   `make lint` ⇒ `go vet ./...`
 -   `make build` ⇒ binario Linux (`GOOS=linux`, `GOARCH=amd64`).
 -   `make reset-all` ⇒ reinicia contenedores y vuelve a aplicar init/seed.
-
-## Despliegue Docker (producción)
-
-1. Prepara variables copiando la plantilla y ajustando los secretos:
-
-	```sh
-	cp .env.production.example .env.production
-	# edita JWT_SECRET, DBPASS y cualquier otro valor sensible
-	# establece ADMIN_HOST (ej. admin.heartguard.live) y TLS_EMAIL
-	```
-
-	- Actualiza `nginx/conf.d/admin.conf` si usas un hostname distinto (reemplaza `admin.heartguard.live` en `server_name` y en las rutas de los certificados).
-
-2. Compila la imagen y levanta el backend junto con Postgres/Redis (solo red interna):
-
-	```sh
-	make prod-build
-	make prod-up
-	```
-
-3. Inicializa y siembra la base de datos desde los contenedores (sin `psql` local):
-
-	```sh
-	make prod-db-init
-	make prod-db-seed
-	```
-
-4. Con el DNS del dominio apuntando a la máquina (A/AAAA hacia tu servidor), solicita un certificado TLS de Let's Encrypt. Detén el proxy si estuviera activo para liberar los puertos 80/443 y luego ejecuta:
-
-	```sh
-	make prod-proxy-down    # no-op la primera vez
-	make prod-certbot       # usa certbot en modo standalone (-d ${ADMIN_HOST})
-	```
-
-5. Levanta el reverse proxy con Nginx una vez emitido el certificado (servirá HTTPS → backend interno):
-
-	```sh
-	make prod-proxy-up
-	```
-
-6. Consulta logs o detén el entorno cuando termines:
-
-	```sh
-	make prod-logs   # tail del backend
-	make prod-proxy-logs
-	make prod-down   # apaga el stack
-	```
-
-`make prod-db-reset` combina drop + init + seed dentro de Docker. Tras habilitar Nginx, accede al panel mediante `https://${ADMIN_HOST}`. El contenedor del backend queda aislado (puerto 8080 sólo expuesto dentro de la red de Docker).
-
-> 🔁 Renovación: programa `make prod-certbot-renew` (deteniendo antes `make prod-proxy-down`) y luego recarga el proxy con `docker compose -f docker-compose.yml -f docker-compose.prod.yml exec nginx nginx -s reload`.
-
-> 💡 Si operas detrás de túneles (SSH, ngrok, reverse proxy) y ves `403 forbidden`, agrega la subred interna al permitir del middleware en `.env.production`, por ejemplo: `LOOPBACK_ALLOW_CIDRS=172.16.0.0/12` para redes de Docker/Compose. Usa una lista separada por comas para múltiples CIDRs.
 
 ## Health y observabilidad
 
@@ -164,13 +109,8 @@ Las operaciones de mutación (creación/actualización/eliminación) invocan `Ha
 -   `go fmt ./...` mantiene el formato estándar (recuerda ejecutarlo antes de subir cambios).
 -   Para inspeccionar consultas, utiliza `make db-psql` o habilita logging en Postgres.
 
-## Legacy REST API
-
-Los antiguos handlers JSON viven en `internal/superadmin/handlers.go` y sólo se compilan si el binario se construye con `-tags rest_api_legacy`. Esto permite consultarlos como referencia sin exponerse en producción.
-
 ## Preguntas frecuentes
 
 -   **¿Dónde encuentro los templates?** `backend/templates/layout.html`, `backend/templates/login.html` y `backend/templates/superadmin/*.html`.
--   **¿Puedo seguir consumiendo la API JSON?** Sólo compilando con `go build -tags rest_api_legacy`; el router principal no monta esas rutas.
 -   **¿Cómo cambio el logo/colores?** Ajusta los campos en `/superadmin/settings/system`; los valores se guardan en `system_settings`.
--   **`csrf inválido` en login:** borra cookies previas (`hg_guest_csrf`) y vuelve a cargar `/login` para obtener un token nuevo. Si accedes vía HTTP plano, la cookie segura no viajará; usa siempre `https://${ADMIN_HOST}` (o pon `SECURE_COOKIES=false` sólo para pruebas controladas).
+-   **`csrf inválido` en login:** borra cookies previas (`hg_guest_csrf`) y vuelve a cargar `/login` para obtener un token nuevo.

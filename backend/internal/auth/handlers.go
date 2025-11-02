@@ -79,33 +79,23 @@ func (h *Handlers) LoginSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	formToken := r.FormValue("_csrf")
-	
-	// Debug logging
-	if h.logger != nil {
-		cookie, _ := r.Cookie(h.sessions.GuestCookieName())
-		h.logger.Info("login attempt",
-			zap.String("form_token", formToken),
-			zap.String("cookie_value", func() string {
-				if cookie != nil {
-					return cookie.Value
-				}
-				return "NO_COOKIE"
-			}()),
-		)
-	}
-	
-	// Validate CSRF token from form (stored in Redis)
-	if err := h.sessions.ValidateGuestCSRF(r.Context(), formToken); err != nil {
-		if h.logger != nil {
-			h.logger.Error("csrf validation failed", zap.Error(err))
+	cookie, err := r.Cookie(h.sessions.GuestCookieName())
+	if err != nil || cookie.Value == "" {
+		if h.cfg.Env != "dev" {
+			http.Error(w, "csrf inválido", http.StatusForbidden)
+			return
 		}
+	}
+	if err := h.sessions.ValidateGuestCSRF(r.Context(), formToken); err != nil {
 		http.Error(w, "csrf inválido", http.StatusForbidden)
 		return
 	}
-	// Note: We don't validate cookie.Value == formToken because browsers with strict
-	// privacy settings (Brave, etc.) may cache old cookies. ValidateGuestCSRF already
-	// ensures the token is valid and stored in Redis.
-	
+	if cookie != nil && cookie.Value != "" && cookie.Value != formToken {
+		if h.cfg.Env != "dev" {
+			http.Error(w, "csrf inválido", http.StatusForbidden)
+			return
+		}
+	}
 	h.sessions.ConsumeGuestCSRF(r.Context(), formToken)
 	http.SetCookie(w, h.sessions.ClearGuestCSRFCookie())
 

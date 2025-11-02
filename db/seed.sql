@@ -151,16 +151,15 @@ INSERT INTO caregiver_relationship_types(code,label) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- =========================================================
--- Usuario superadmin (password desde variable de entorno)
+-- Usuario superadmin demo (password fijo: Admin#2025)
 -- - Usa bcrypt generado por pgcrypto (crypt + gen_salt('bf', 10))
--- - La contraseña se pasa como variable :admin_password
 -- - ON CONFLICT actualiza password/status para mantener el acceso
 -- =========================================================
 INSERT INTO users (name, email, password_hash, user_status_id, two_factor_enabled, created_at)
 VALUES (
   'Super Admin',
   'admin@heartguard.com',
-  crypt(:'admin_password', gen_salt('bf', 10)),
+  crypt('Admin#2025', gen_salt('bf', 10)),
   (SELECT id FROM user_statuses WHERE code='active'),
   FALSE,
   NOW()
@@ -366,15 +365,14 @@ ON CONFLICT (id) DO NOTHING;
 -- Datos demo clínicos y operativos
 -- =========================================================
 
-INSERT INTO patients (id, org_id, person_name, email, password_hash, email_verified, birthdate, sex_id, risk_level_id, created_at)
+INSERT INTO patients (id, org_id, person_name, email, password_hash, birthdate, sex_id, risk_level_id, created_at)
 VALUES
   (
     '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
     (SELECT id FROM organizations WHERE code='FAM-001'),
     'María Delgado',
-    'maria.delgado@example.com',
-    '$2a$10$rN8qJKMvDf8pXmKW9r2nEeFKc3WvXQH9qz5xKvP6L3mN2tR1sY7wC', -- password: Test123!
-    TRUE,
+    'maria.delgado@patients.heartguard.com',
+    crypt('Paciente#2025', gen_salt('bf', 10)),
     '1978-03-22',
     (SELECT id FROM sexes WHERE code='F'),
     (SELECT id FROM risk_levels WHERE code='high'),
@@ -384,9 +382,8 @@ VALUES
     'fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21'::uuid,
     (SELECT id FROM organizations WHERE code='CLIN-001'),
     'José Hernández',
-    'jose.hernandez@example.com',
-    '$2a$10$rN8qJKMvDf8pXmKW9r2nEeFKc3WvXQH9qz5xKvP6L3mN2tR1sY7wC', -- password: Test123!
-    TRUE,
+    'jose.hernandez@patients.heartguard.com',
+    crypt('Paciente#2025', gen_salt('bf', 10)),
     '1965-11-04',
     (SELECT id FROM sexes WHERE code='M'),
     (SELECT id FROM risk_levels WHERE code='medium'),
@@ -396,9 +393,8 @@ VALUES
     'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid,
     (SELECT id FROM organizations WHERE code='FAM-001'),
     'Valeria Ortiz',
-    'valeria.ortiz@example.com',
-    '$2a$10$rN8qJKMvDf8pXmKW9r2nEeFKc3WvXQH9qz5xKvP6L3mN2tR1sY7wC', -- password: Test123!
-    FALSE,
+    'valeria.ortiz@patients.heartguard.com',
+    crypt('Paciente#2025', gen_salt('bf', 10)),
     '1992-07-15',
     (SELECT id FROM sexes WHERE code='F'),
     (SELECT id FROM risk_levels WHERE code='low'),
@@ -858,11 +854,11 @@ WHERE NOT EXISTS (SELECT 1 FROM signal_streams ss WHERE ss.patient_id = 'ae15cd8
 
 -- Añadir inferences para diversificar el breakdown de inferencias
 INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
-SELECT gen_random_uuid()::uuid, '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid, (SELECT id FROM signal_streams LIMIT 1), NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours 58 minutes', (SELECT id FROM event_types WHERE code='AFIB'), 0.91, 0.8, '{}'::jsonb, NOW() - INTERVAL '3 hours 58 minutes', 'sim/1'
+SELECT gen_random_uuid()::uuid, '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid, (SELECT ss.id FROM signal_streams ss JOIN devices d ON ss.device_id = d.id WHERE d.serial = 'HG-ECG-001' LIMIT 1), NOW() - INTERVAL '4 hours', NOW() - INTERVAL '3 hours 58 minutes', (SELECT id FROM event_types WHERE code='AFIB'), 0.91, 0.8, '{}'::jsonb, NOW() - INTERVAL '3 hours 58 minutes', 'sim/1'
 WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.model_id = '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid AND i.created_at > NOW() - INTERVAL '5 hours');
 
 INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
-SELECT gen_random_uuid()::uuid, 'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid, (SELECT id FROM signal_streams WHERE signal_type_id = (SELECT id FROM signal_types WHERE code='SpO2') LIMIT 1), NOW() - INTERVAL '26 hours', NOW() - INTERVAL '25 hours 58 minutes', (SELECT id FROM event_types WHERE code='DESAT'), 0.72, 0.6, '{}'::jsonb, NOW() - INTERVAL '25 hours 58 minutes', 'sim/2'
+SELECT gen_random_uuid()::uuid, 'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid, (SELECT ss.id FROM signal_streams ss JOIN devices d ON ss.device_id = d.id WHERE d.serial = 'HG-PUL-201' LIMIT 1), NOW() - INTERVAL '26 hours', NOW() - INTERVAL '25 hours 58 minutes', (SELECT id FROM event_types WHERE code='DESAT'), 0.72, 0.6, '{}'::jsonb, NOW() - INTERVAL '25 hours 58 minutes', 'sim/2'
 WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.model_id = 'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid AND i.created_at > NOW() - INTERVAL '2 days');
 
 -- Auditoría adicional para operaciones recientes
@@ -913,7 +909,7 @@ DELETE FROM signal_streams ss WHERE ss.device_id = (SELECT id FROM devices WHERE
 INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
 SELECT gen_random_uuid()::uuid,
        '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
-       (SELECT id FROM signal_streams ORDER BY started_at DESC LIMIT 1),
+       (SELECT ss.id FROM signal_streams ss JOIN devices d ON ss.device_id = d.id WHERE d.serial = 'HG-ECG-001' ORDER BY ss.started_at DESC LIMIT 1),
        NOW() - INTERVAL '55 minutes',
        NOW() - INTERVAL '54 minutes',
        (SELECT id FROM event_types WHERE code='AFIB'),
@@ -927,7 +923,7 @@ WHERE NOT EXISTS (SELECT 1 FROM inferences i WHERE i.series_ref = 'sim/recent/af
 INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
 SELECT gen_random_uuid()::uuid,
        '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
-       (SELECT id FROM signal_streams ORDER BY started_at DESC LIMIT 1),
+       (SELECT ss.id FROM signal_streams ss JOIN devices d ON ss.device_id = d.id WHERE d.serial = 'HG-ECG-001' ORDER BY ss.started_at DESC LIMIT 1),
        NOW() - INTERVAL '3 hours',
        NOW() - INTERVAL '2 hours 58 minutes',
        (SELECT id FROM event_types WHERE code='TACHY'),
@@ -942,7 +938,7 @@ WHERE EXISTS (SELECT 1 FROM event_types et WHERE et.code='TACHY')
 INSERT INTO inferences (id, model_id, stream_id, window_start, window_end, predicted_event_id, score, threshold, metadata, created_at, series_ref)
 SELECT gen_random_uuid()::uuid,
        'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
-       (SELECT id FROM signal_streams WHERE signal_type_id = (SELECT id FROM signal_types WHERE code='SpO2') LIMIT 1),
+       (SELECT ss.id FROM signal_streams ss JOIN devices d ON ss.device_id = d.id WHERE d.serial = 'HG-PUL-201' ORDER BY ss.started_at DESC LIMIT 1),
        NOW() - INTERVAL '6 hours',
        NOW() - INTERVAL '5 hours 58 minutes',
        (SELECT id FROM event_types WHERE code='DESAT'),

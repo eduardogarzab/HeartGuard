@@ -12,9 +12,8 @@
 				<input id="patient-name" name="name" type="text" required placeholder="Nombre completo" />
 			</div>
 			<div class="hg-form-field">
-				<label for="patient-email">Email</label>
-				<input id="patient-email" name="email" type="email" placeholder="email@ejemplo.com" />
-				<small style="color: #666;">Opcional. Permite al paciente iniciar sesión en el futuro</small>
+				<label for="patient-email">Correo</label>
+				<input id="patient-email" name="email" type="email" required placeholder="correo@ejemplo.com" />
 			</div>
 			<div class="hg-form-field">
 				<label for="patient-org">Organización</label>
@@ -51,6 +50,10 @@
 				<label for="patient-photo">URL de la foto</label>
 				<input id="patient-photo" name="profile_photo_url" type="url" placeholder="https://..." />
 			</div>
+			<div class="hg-form-field">
+				<label for="patient-password">Contraseña</label>
+				<input id="patient-password" name="password" type="password" required placeholder="Contraseña temporal" />
+			</div>
 			<div class="hg-form-actions">
 				<button type="submit">Crear paciente</button>
 			</div>
@@ -66,7 +69,7 @@
 				<tr>
 					<th></th>
 					<th>Nombre</th>
-					<th>Email</th>
+					<th>Correo</th>
 					<th>Organización</th>
 					<th>Sexo</th>
 					<th>Riesgo</th>
@@ -85,12 +88,7 @@
 						</a>
 					</td>
 					<td><a href="/superadmin/patients/{{$patient.ID}}">{{$patient.Name}}</a></td>
-					<td>
-						{{if $patient.Email}}
-							{{$patient.Email}}
-							{{if $patient.EmailVerified}}<span style="color: green; margin-left: 4px;" title="Email verificado">✓</span>{{else}}<span style="color: orange; margin-left: 4px;" title="Email no verificado">⚠</span>{{end}}
-						{{else}}—{{end}}
-					</td>
+					<td>{{$patient.Email}}</td>
 					<td>{{if $patient.OrgName}}{{$patient.OrgName}}{{else}}—{{end}}</td>
 					<td>{{if $patient.SexLabel}}{{$patient.SexLabel}}{{else}}—{{end}}</td>
 					<td>{{if $patient.RiskLevelLabel}}{{stringValue $patient.RiskLevelLabel}}{{else}}—{{end}}</td>
@@ -106,15 +104,8 @@
 									<input name="name" type="text" value="{{$patient.Name}}" required />
 								</div>
 								<div class="hg-form-field">
-									<label>Email</label>
-									<input name="email" type="email" value="{{stringValue $patient.Email}}" placeholder="email@ejemplo.com" />
-									<small style="color: #666;">
-										{{if $patient.Email}}
-											{{if $patient.EmailVerified}}✓ Email verificado{{else}}⚠ Email no verificado{{end}}
-										{{else}}
-											Opcional. Permite al paciente iniciar sesión
-										{{end}}
-									</small>
+									<label>Correo</label>
+									<input name="email" type="email" value="{{$patient.Email}}" required />
 								</div>
 								<div class="hg-form-field">
 									<label>Organización</label>
@@ -150,6 +141,10 @@
 								<div class="hg-form-field">
 									<label>URL de la foto</label>
 									<input name="profile_photo_url" type="url" value="{{stringValue $patient.ProfilePhotoURL}}" />
+								</div>
+								<div class="hg-form-field">
+									<label>Contraseña (opcional)</label>
+									<input name="password" type="password" placeholder="Dejar en blanco para mantener" />
 								</div>
 								<div class="hg-form-actions">
 									<button type="submit">Guardar</button>

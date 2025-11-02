@@ -11,14 +11,13 @@ import (
 	"heartguard-superadmin/internal/auth"
 	"heartguard-superadmin/internal/config"
 	authmw "heartguard-superadmin/internal/middleware"
-	"heartguard-superadmin/internal/patientauth"
 	"heartguard-superadmin/internal/session"
 	"heartguard-superadmin/internal/superadmin"
 )
 
-func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Repository, rdb *redis.Client, sessions *session.Manager, authHandlers *auth.Handlers, uiHandlers *superadmin.Handlers, patientAuthHandlers *patientauth.Handlers) http.Handler {
+func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Repository, rdb *redis.Client, sessions *session.Manager, authHandlers *auth.Handlers, uiHandlers *superadmin.Handlers) http.Handler {
 	r := chi.NewRouter()
-	r.Use(authmw.LoopbackOnly(logger, cfg.LoopbackAllowCIDRs))
+	r.Use(authmw.LoopbackOnly(logger))
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(authmw.RateLimit(rdb, cfg.RateLimitRPS, cfg.RateLimitBurst))
 	r.Use(authmw.SecurityHeaders())
@@ -38,14 +37,6 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 	r.Post("/login", authHandlers.LoginSubmit)
 	r.With(authmw.CSRF(sessions)).Post("/logout", authHandlers.Logout)
 	r.With(authmw.RequireSuperadmin(sessions, repo)).Post("/session/refresh", authHandlers.RefreshSession)
-
-	// Patient auth API routes (public)
-	r.Route("/api/patient-auth", func(pa chi.Router) {
-		pa.Post("/login", patientAuthHandlers.Login)
-		pa.Post("/register", patientAuthHandlers.Register)
-		pa.Post("/verify-email", patientAuthHandlers.VerifyEmail)
-		pa.Post("/reset-password", patientAuthHandlers.ResetPassword)
-	})
 
 	r.Route("/superadmin", func(s chi.Router) {
 		s.Use(authmw.RequireSuperadmin(sessions, repo))
@@ -68,8 +59,6 @@ func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Reposit
 			pr.Post("/", uiHandlers.PatientsCreate)
 			pr.Post("/{id}/update", uiHandlers.PatientsUpdate)
 			pr.Post("/{id}/delete", uiHandlers.PatientsDelete)
-			pr.Post("/{id}/set-password", uiHandlers.PatientsSetPassword)
-			pr.Post("/{id}/verify-email", uiHandlers.PatientsVerifyEmail)
 		})
 
 		s.Route("/care-teams", func(ct chi.Router) {

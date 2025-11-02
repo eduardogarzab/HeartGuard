@@ -24,15 +24,6 @@
 .env
 .env.local
 .env.*.local
-.env.production
-Microservicios/.env.production
-
-# Credentials and secrets (NUNCA commitear)
-CREDENTIALS.md
-*.credentials
-*.secrets
-secrets/
-**/setup_distributed_deployment.sh
 
 # DB artifacts
 db/*.dump
@@ -51,22 +42,4 @@ Thumbs.db
 # Ignorar cualquier carpeta __pycache__ en cualquier lugar del proyecto
 **/__pycache__/
 **/validation_logs/
-
-# Python bytecode
-__pycache__/
-
-# SSL/TLS Certificates (NUNCA commitear claves privadas)
-certs/*.key
-certs/**/*.key
-certs/ca.key
-certs/client.key
-
-# Nginx SSL (auto-firmados y Let's Encrypt)
-nginx/ssl/*.key
-nginx/ssl/*.pem
-nginx/ssl/nginx.key
-nginx/ssl/nginx.crt
-nginx/ssl/chain.pem
-
-# Permitir certificados públicos (.crt) solo para desarrollo
-# En producción usar Let's Encrypt o CA confiable
+\n# Python bytecode\n__pycache__/

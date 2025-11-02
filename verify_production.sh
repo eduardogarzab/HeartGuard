@@ -1,1 +1,0 @@
-docs/scripts/verify_production.sh

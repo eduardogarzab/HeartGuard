@@ -2,68 +2,6 @@
 
 All notable changes to this project are documented here.
 
-## [2.0.0] - 2025-11-01
-
-### 🚀 Production Complete
-
-#### HTTPS and SSL/TLS
--   **Let's Encrypt SSL**: Valid certificate until 2026-01-30 for admin.heartguard.live
--   **Automatic renewal**: Systemd timer configured (every 12 hours)
--   **PostgreSQL SSL**: Self-signed certificates with SANs, sslmode=require enforced
--   **Redis TLS**: Port 6380 with TLS authentication and password protection
--   **Backend SSL/TLS verification**: Certificate validation enabled for all connections
--   **End-to-end encryption**: HTTPS frontend + SSL database + TLS Redis
-
-#### Infrastructure
--   **Reserved IP**: 134.199.133.125 (Digital Ocean atl1) configured and persistent
--   **Domain**: admin.heartguard.live pointing to reserved IP
--   **Nginx reverse proxy**: HTTPS with HTTP/2, security headers, and rate limiting
--   **UFW firewall**: Ports 22, 80, 443 properly configured
--   **iptables fix**: DOCKER-USER chain rules corrected for Let's Encrypt validation
--   **Systemd services**: iptables-docker.service and certbot-renew.service for persistence
-
-#### Documentation Reorganization
--   **Centralized docs**: All documentation moved to `docs/` with proper structure
--   **docs/deployment/**: Production guides (PRODUCTION_STATUS.md, production_deployment.md)
--   **docs/security/**: Security docs (CREDENTIALS.md, SECURITY_SSL_TLS.md, ssl_tls_setup.md)
--   **docs/scripts/**: Utility scripts (generate_certs.sh, verify_production.sh, etc.)
--   **docs/README.md**: Complete documentation index
--   **Updated readme.md**: New structure, quick start guides, and production status
-
-#### Scripts and Utilities
--   **verify_production.sh**: Complete system verification script
--   **generate_certs.sh**: Enhanced certificate generation with SANs
--   **reset_and_deploy_prod.sh**: Complete production reset and deploy
--   **redis-entrypoint.sh**: Custom Redis entrypoint with TLS support
-
-#### Security Credentials
--   **All generated with openssl**: 32+ bytes entropy for all passwords
--   **PostgreSQL credentials**: Updated and synchronized with .env.production
--   **Redis password**: Strong password for TLS connections
--   **JWT secret**: Cryptographically secure secret
--   **CREDENTIALS.md**: Complete credentials documentation (not in git)
-
-### 🐛 Critical Fixes
--   Fixed Backend TLS config: Added `ServerName: "postgres"` for TLS connection
--   Fixed Certificates: Regenerated with Subject Alternative Names (SANs) for Go 1.22+
--   Fixed heartguard_app password: Updated in PostgreSQL to match .env.production
--   Fixed iptables blocking: Removed DROP rules blocking Let's Encrypt validation
--   Fixed Nginx SSL errors: Temporary HTTP config during certificate acquisition
--   Fixed Docker Compose: Removed obsolete `version: "3.9"`, fixed POSTGRES_INITDB_ARGS
--   Fixed Redis TLS: Added `--tls-auth-clients optional` for healthchecks
-
-### ✅ Verified Working
--   ✅ PostgreSQL SSL enabled (`SHOW ssl;` = on)
--   ✅ Redis TLS active (redis-cli --tls PING = PONG)
--   ✅ Backend SSL/TLS verification logs working
--   ✅ HTTPS working (curl -I https://admin.heartguard.live)
--   ✅ Login functional (admin@heartguard.com / Admin#2025)
--   ✅ Certificate valid until 2026-01-30
--   ✅ Firewall configured (UFW + iptables)
--   ✅ DNS resolution (admin.heartguard.live → 134.199.133.125)
-
----
-
 ## [Unreleased]
 
 ### Added

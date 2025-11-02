@@ -228,25 +228,17 @@ CREATE TABLE IF NOT EXISTS patients (
   id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   org_id            UUID REFERENCES organizations(id) ON DELETE RESTRICT,
   person_name       VARCHAR(120) NOT NULL,
-  email             VARCHAR(150) UNIQUE,
-  password_hash     TEXT,
-  email_verified    BOOLEAN NOT NULL DEFAULT FALSE,
+  email             VARCHAR(150) NOT NULL UNIQUE,
+  password_hash     TEXT NOT NULL,
   birthdate         DATE,
   sex_id            UUID REFERENCES sexes(id) ON DELETE RESTRICT,
   risk_level_id     UUID REFERENCES risk_levels(id) ON DELETE SET NULL,
   profile_photo_url TEXT,
-  created_at        TIMESTAMP NOT NULL DEFAULT NOW(),
-  last_login_at     TIMESTAMP
+  created_at        TIMESTAMP NOT NULL DEFAULT NOW()
 );
 CREATE INDEX IF NOT EXISTS idx_patients_org ON patients(org_id);
 CREATE INDEX IF NOT EXISTS idx_patients_sex ON patients(sex_id);
 CREATE INDEX IF NOT EXISTS idx_patients_risk_level ON patients(risk_level_id);
-CREATE INDEX IF NOT EXISTS idx_patients_email ON patients(email) WHERE email IS NOT NULL;
-
-COMMENT ON COLUMN patients.email IS 'Email para login del paciente (opcional, para futura funcionalidad)';
-COMMENT ON COLUMN patients.password_hash IS 'Hash bcrypt de la contraseña del paciente';
-COMMENT ON COLUMN patients.email_verified IS 'Indica si el email ha sido verificado';
-COMMENT ON COLUMN patients.last_login_at IS 'Última fecha de login del paciente';
 
 CREATE TABLE IF NOT EXISTS care_teams (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -281,6 +273,10 @@ ALTER TABLE IF EXISTS caregiver_relationship_types ALTER COLUMN label SET NOT NU
 
 ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
 ALTER TABLE patients ADD COLUMN IF NOT EXISTS profile_photo_url TEXT;
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS email VARCHAR(150);
+ALTER TABLE patients ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE patients ALTER COLUMN email SET NOT NULL;
+ALTER TABLE patients ALTER COLUMN password_hash SET NOT NULL;
 
 CREATE TABLE IF NOT EXISTS caregiver_patient (
   patient_id  UUID NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
@@ -303,7 +299,6 @@ RETURNS TABLE (
   org_name text,
   person_name text,
   email text,
-  email_verified boolean,
   birthdate date,
   sex_code text,
   sex_label text,
@@ -311,8 +306,7 @@ RETURNS TABLE (
   risk_level_code text,
   risk_level_label text,
   profile_photo_url text,
-  created_at timestamp,
-  last_login_at timestamp)
+  created_at timestamp)
 LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
@@ -326,7 +320,6 @@ BEGIN
     o.name::text,
     p.person_name::text,
     p.email::text,
-    p.email_verified,
     p.birthdate,
     sx.code::text,
     sx.label::text,
@@ -334,8 +327,7 @@ BEGIN
     rl.code::text,
     rl.label::text,
     p.profile_photo_url::text,
-    p.created_at,
-    p.last_login_at
+    p.created_at
   FROM heartguard.patients p
   LEFT JOIN heartguard.organizations o ON o.id = p.org_id
   LEFT JOIN heartguard.sexes sx ON sx.id = p.sex_id
@@ -369,8 +361,8 @@ $$;
 CREATE OR REPLACE FUNCTION heartguard.sp_patient_create(
   p_org_id uuid,
   p_person_name text,
-  p_email text DEFAULT NULL,
-  p_password_hash text DEFAULT NULL,
+  p_email text,
+  p_password text,
   p_birthdate date DEFAULT NULL,
   p_sex_code text DEFAULT NULL,
   p_risk_level_id uuid DEFAULT NULL,
@@ -381,7 +373,6 @@ RETURNS TABLE (
   org_name text,
   person_name text,
   email text,
-  email_verified boolean,
   birthdate date,
   sex_code text,
   sex_label text,
@@ -394,22 +385,25 @@ LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_name text;
-  v_email text;
   v_sex_id uuid := NULL;
   v_photo_url text;
+  v_email text;
+  v_password_hash text;
 BEGIN
   v_name := NULLIF(btrim(p_person_name), '');
   IF v_name IS NULL THEN
     RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
   END IF;
 
-  -- Validar email si se proporciona
-  v_email := NULLIF(btrim(p_email), '');
-  IF v_email IS NOT NULL THEN
-    IF v_email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN
-      RAISE EXCEPTION 'Formato de email inválido' USING ERRCODE = '23514';
-    END IF;
+  v_email := lower(NULLIF(btrim(p_email), ''));
+  IF v_email IS NULL THEN
+    RAISE EXCEPTION 'Correo requerido' USING ERRCODE = '23514';
   END IF;
+
+  IF p_password IS NULL OR btrim(p_password) = '' THEN
+    RAISE EXCEPTION 'Contraseña requerida' USING ERRCODE = '23514';
+  END IF;
+  v_password_hash := crypt(p_password, gen_salt('bf', 10));
 
   IF p_sex_code IS NOT NULL THEN
     IF btrim(p_sex_code) = '' THEN
@@ -429,14 +423,13 @@ BEGIN
 
   RETURN QUERY
   INSERT INTO heartguard.patients AS p (org_id, person_name, email, password_hash, birthdate, sex_id, risk_level_id, profile_photo_url)
-  VALUES (p_org_id, v_name, v_email, p_password_hash, p_birthdate, v_sex_id, p_risk_level_id, v_photo_url)
+  VALUES (p_org_id, v_name, v_email, v_password_hash, p_birthdate, v_sex_id, p_risk_level_id, v_photo_url)
   RETURNING
     p.id::text,
     p.org_id::text,
     (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = p.org_id),
     p.person_name::text,
     p.email::text,
-    p.email_verified,
     p.birthdate,
     (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
@@ -450,20 +443,20 @@ $$;
 
 CREATE OR REPLACE FUNCTION heartguard.sp_patient_update(
   p_id uuid,
-  p_org_id uuid DEFAULT NULL,
-  p_person_name text DEFAULT NULL,
-  p_email text DEFAULT NULL,
-  p_birthdate date DEFAULT NULL,
-  p_sex_code text DEFAULT NULL,
-  p_risk_level_id uuid DEFAULT NULL,
-  p_profile_photo_url text DEFAULT NULL)
+  p_org_id uuid,
+  p_person_name text,
+  p_email text,
+  p_password text,
+  p_birthdate date,
+  p_sex_code text,
+  p_risk_level_id uuid,
+  p_profile_photo_url text)
 RETURNS TABLE (
   id text,
   org_id text,
   org_name text,
   person_name text,
   email text,
-  email_verified boolean,
   birthdate date,
   sex_code text,
   sex_label text,
@@ -476,25 +469,28 @@ LANGUAGE plpgsql SECURITY DEFINER
 AS $$
 DECLARE
   v_name text;
-  v_email text;
   v_sex_id uuid := NULL;
   v_photo_url text;
+  v_email text := NULL;
+  v_password_hash text := NULL;
 BEGIN
-  IF p_person_name IS NOT NULL THEN
-    v_name := NULLIF(btrim(p_person_name), '');
-    IF v_name IS NULL THEN
-      RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
+  v_name := NULLIF(btrim(p_person_name), '');
+  IF v_name IS NULL THEN
+    RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
+  END IF;
+
+  IF p_email IS NOT NULL THEN
+    v_email := lower(NULLIF(btrim(p_email), ''));
+    IF v_email IS NULL THEN
+      RAISE EXCEPTION 'Correo requerido' USING ERRCODE = '23514';
     END IF;
   END IF;
 
-  -- Validar email si se proporciona
-  IF p_email IS NOT NULL THEN
-    v_email := NULLIF(btrim(p_email), '');
-    IF v_email IS NOT NULL THEN
-      IF v_email !~ '^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' THEN
-        RAISE EXCEPTION 'Formato de email inválido' USING ERRCODE = '23514';
-      END IF;
+  IF p_password IS NOT NULL THEN
+    IF btrim(p_password) = '' THEN
+      RAISE EXCEPTION 'Contraseña inválida' USING ERRCODE = '23514';
     END IF;
+    v_password_hash := crypt(p_password, gen_salt('bf', 10));
   END IF;
 
   IF p_sex_code IS NOT NULL THEN
@@ -511,18 +507,17 @@ BEGIN
     END IF;
   END IF;
 
-  IF p_profile_photo_url IS NOT NULL THEN
-    v_photo_url := NULLIF(btrim(p_profile_photo_url), '');
-  END IF;
+  v_photo_url := NULLIF(btrim(p_profile_photo_url), '');
 
   RETURN QUERY
   UPDATE heartguard.patients AS p
      SET org_id = COALESCE(p_org_id, p.org_id),
-         person_name = COALESCE(v_name, p.person_name),
-         email = CASE WHEN p_email IS NULL THEN p.email ELSE v_email END,
-         birthdate = COALESCE(p_birthdate, p.birthdate),
+         person_name = v_name,
+         email = COALESCE(v_email, p.email),
+         password_hash = COALESCE(v_password_hash, p.password_hash),
+         birthdate = CASE WHEN p_birthdate IS NULL THEN p.birthdate ELSE p_birthdate END,
          sex_id = CASE WHEN p_sex_code IS NULL THEN p.sex_id ELSE v_sex_id END,
-         risk_level_id = COALESCE(p_risk_level_id, p.risk_level_id),
+         risk_level_id = CASE WHEN p_risk_level_id IS NULL THEN p.risk_level_id ELSE p_risk_level_id END,
          profile_photo_url = CASE WHEN p_profile_photo_url IS NULL THEN p.profile_photo_url ELSE v_photo_url END
    WHERE p.id = p_id
   RETURNING
@@ -531,7 +526,6 @@ BEGIN
     (SELECT o.name::text FROM heartguard.organizations o WHERE o.id = p.org_id),
     p.person_name::text,
     p.email::text,
-    p.email_verified,
     p.birthdate,
     (SELECT sx.code::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
     (SELECT sx.label::text FROM heartguard.sexes sx WHERE sx.id = p.sex_id),
@@ -2560,200 +2554,5 @@ JOIN alert_types at  ON at.id = a.type_id
 JOIN alert_levels al ON al.id = a.alert_level_id
 JOIN alert_status s  ON s.id = a.status_id
 WHERE s.code IN ('created','notified','ack');
-
--- =========================================================
--- O) Funciones adicionales para autenticación de pacientes
--- =========================================================
-
--- Función para actualizar password de paciente
-CREATE OR REPLACE FUNCTION heartguard.sp_patient_set_password(
-  p_id uuid,
-  p_password_hash text)
-RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-  affected integer;
-BEGIN
-  IF p_password_hash IS NULL OR btrim(p_password_hash) = '' THEN
-    RAISE EXCEPTION 'Password hash requerido' USING ERRCODE = '23514';
-  END IF;
-
-  UPDATE heartguard.patients
-  SET password_hash = p_password_hash
-  WHERE id = p_id;
-  
-  GET DIAGNOSTICS affected = ROW_COUNT;
-  RETURN affected > 0;
-END;
-$$;
-
--- Función para buscar paciente por email (para login)
-CREATE OR REPLACE FUNCTION heartguard.sp_patient_find_by_email(
-  p_email text)
-RETURNS TABLE (
-  id text,
-  person_name text,
-  email text,
-  password_hash text,
-  email_verified boolean,
-  org_id text,
-  last_login_at timestamp)
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-  v_email text;
-BEGIN
-  v_email := lower(NULLIF(btrim(p_email), ''));
-  IF v_email IS NULL THEN
-    RAISE EXCEPTION 'Email requerido' USING ERRCODE = '23514';
-  END IF;
-
-  RETURN QUERY
-  SELECT
-    p.id::text,
-    p.person_name::text,
-    p.email::text,
-    p.password_hash::text,
-    p.email_verified,
-    p.org_id::text,
-    p.last_login_at
-  FROM heartguard.patients p
-  WHERE lower(p.email) = v_email
-  LIMIT 1;
-END;
-$$;
-
--- Función para registrar último login
-CREATE OR REPLACE FUNCTION heartguard.sp_patient_update_last_login(
-  p_id uuid)
-RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-  affected integer;
-BEGIN
-  UPDATE heartguard.patients
-  SET last_login_at = NOW()
-  WHERE id = p_id;
-  
-  GET DIAGNOSTICS affected = ROW_COUNT;
-  RETURN affected > 0;
-END;
-$$;
-
--- Función para verificar email
-CREATE OR REPLACE FUNCTION heartguard.sp_patient_verify_email(
-  p_id uuid)
-RETURNS boolean
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-  affected integer;
-BEGIN
-  UPDATE heartguard.patients
-  SET email_verified = TRUE
-  WHERE id = p_id;
-  
-  GET DIAGNOSTICS affected = ROW_COUNT;
-  RETURN affected > 0;
-END;
-$$;
-
--- Función para registrar paciente con email/password (auto-registro público)
-CREATE OR REPLACE FUNCTION heartguard.sp_patient_register(
-  p_org_id uuid,
-  p_person_name text,
-  p_email text,
-  p_password_hash text,
-  p_birthdate date DEFAULT NULL,
-  p_sex_id uuid DEFAULT NULL)
-RETURNS TABLE (
-  id text,
-  person_name text,
-  email text,
-  email_verified boolean,
-  org_id text,
-  birthdate date,
-  sex_id text,
-  risk_level_id text,
-  profile_photo_url text,
-  created_at timestamp,
-  last_login_at timestamp)
-LANGUAGE plpgsql SECURITY DEFINER
-AS $$
-DECLARE
-  v_email text;
-  v_name text;
-  v_id uuid;
-BEGIN
-  -- Validaciones
-  v_name := NULLIF(btrim(p_person_name), '');
-  IF v_name IS NULL THEN
-    RAISE EXCEPTION 'Nombre requerido' USING ERRCODE = '23514';
-  END IF;
-
-  v_email := lower(NULLIF(btrim(p_email), ''));
-  IF v_email IS NULL THEN
-    RAISE EXCEPTION 'Email requerido' USING ERRCODE = '23514';
-  END IF;
-
-  IF p_password_hash IS NULL OR btrim(p_password_hash) = '' THEN
-    RAISE EXCEPTION 'Password requerido' USING ERRCODE = '23514';
-  END IF;
-
-  IF p_org_id IS NULL THEN
-    RAISE EXCEPTION 'Organización requerida' USING ERRCODE = '23514';
-  END IF;
-
-  -- Verificar que el email no exista
-  IF EXISTS (SELECT 1 FROM heartguard.patients WHERE lower(email) = v_email) THEN
-    RAISE EXCEPTION 'Email ya registrado' USING ERRCODE = '23505';
-  END IF;
-
-  -- Insertar paciente
-  INSERT INTO heartguard.patients (
-    org_id,
-    person_name,
-    email,
-    password_hash,
-    email_verified,
-    birthdate,
-    sex_id
-  ) VALUES (
-    p_org_id,
-    v_name,
-    v_email,
-    p_password_hash,
-    FALSE,
-    p_birthdate,
-    p_sex_id
-  )
-  RETURNING patients.id INTO v_id;
-
-  -- Retornar paciente creado
-  RETURN QUERY
-  SELECT
-    p.id::text,
-    p.person_name::text,
-    p.email::text,
-    p.email_verified,
-    p.org_id::text,
-    p.birthdate,
-    p.sex_id::text,
-    p.risk_level_id::text,
-    p.profile_photo_url::text,
-    p.created_at,
-    p.last_login_at
-  FROM heartguard.patients p
-  WHERE p.id = v_id;
-END;
-$$;
-
-COMMENT ON FUNCTION heartguard.sp_patient_set_password IS 'Actualiza el password hash de un paciente';
-COMMENT ON FUNCTION heartguard.sp_patient_find_by_email IS 'Busca un paciente por email para autenticación';
-COMMENT ON FUNCTION heartguard.sp_patient_update_last_login IS 'Actualiza la fecha de último login del paciente';
-COMMENT ON FUNCTION heartguard.sp_patient_verify_email IS 'Marca el email del paciente como verificado';
-COMMENT ON FUNCTION heartguard.sp_patient_register IS 'Registra un nuevo paciente con email y password (auto-registro)';
 
 -- FIN init.sql
