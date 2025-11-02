@@ -1,0 +1,365 @@
+# =========================================================
+# Docker Compose - Producción Microservicios
+# Configuración para despliegue en servidor separado
+# Backend en: 134.199.133.125
+# Microservicios en: servidor independiente
+# =========================================================
+
+x-database-url: &database-url postgresql://heartguard_app:HeartGuard2024Secure!@10.50.0.5:5432/heartguard?sslmode=require
+
+services:
+  rabbitmq:
+    image: rabbitmq:3.12-management-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: heartguard
+      RABBITMQ_DEFAULT_PASS: HG_RabbitMQ_2025_Secure!
+      RABBITMQ_DEFAULT_VHOST: heartguard
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: gateway
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: gateway
+      SERVICE_PORT: ${GATEWAY_PORT}
+      INTERNAL_API_KEY: ${INTERNAL_API_KEY}
+      REQUIRE_API_KEY: ${REQUIRE_API_KEY}
+      SSL_VERIFY: "false"  # false porque usamos IP externa sin certificado
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "5000:5000"  # Exponer para que el backend pueda conectarse
+    depends_on:
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${GATEWAY_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  auth_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: auth_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: auth
+      SERVICE_PORT: ${AUTH_PORT}
+      DATABASE_URL: *database-url
+      REDIS_URL: ${REDIS_URL}
+      REDIS_TLS_ENABLED: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUTH_PORT}/auth/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  organization_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: organization_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: organization
+      SERVICE_PORT: ${ORGANIZATION_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ORGANIZATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  user_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: user_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: user
+      SERVICE_PORT: ${USER_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${USER_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  patient_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: patient_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: patient
+      SERVICE_PORT: ${PATIENT_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${PATIENT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  device_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: device_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: device
+      SERVICE_PORT: ${DEVICE_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      influx_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${DEVICE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  influx_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: influx_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: influx_service
+      SERVICE_PORT: ${INFLUX_SERVICE_PORT}
+      INFLUX_URL: ${INFLUX_URL}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFLUX_SERVICE_PORT}/influx/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  inference_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: inference_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: inference
+      SERVICE_PORT: ${INFERENCE_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    volumes:
+      - inference_models:/models
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${INFERENCE_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  alert_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: alert_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: alert
+      SERVICE_PORT: ${ALERT_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${ALERT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  notification_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: notification_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: notification
+      SERVICE_PORT: ${NOTIFICATION_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${NOTIFICATION_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  media_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: media_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: media
+      SERVICE_PORT: ${MEDIA_PORT}
+      DATABASE_URL: *database-url
+      GCS_BUCKET: ${GCS_BUCKET}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      auth_service:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${MEDIA_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+  audit_service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        SERVICE_DIR: audit_service
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      SERVICE_NAME: audit
+      SERVICE_PORT: ${AUDIT_PORT}
+      DATABASE_URL: *database-url
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      auth_service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:${AUDIT_PORT}/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - microservices_net
+
+networks:
+  microservices_net:
+    driver: bridge
+
+volumes:
+  inference_models:

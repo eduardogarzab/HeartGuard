@@ -8,7 +8,16 @@ include .env
 export
 endif
 
-COMPOSE := docker compose --env-file .env
+# Variables para producción
+ENV ?= development
+ifeq ($(ENV),production)
+	ENV_FILE := .env.production
+	COMPOSE := docker compose --env-file .env.production
+else
+	ENV_FILE := .env
+	COMPOSE := docker compose --env-file .env
+endif
+
 PROJECT := heartguard_micro
 MEDIA_SECRET := secrets/gcp-sa.json
 PORTS := 5000 5001 5002 5003 5004 5005 5006 5007 5008 5009 5010 5011 5672 8086
@@ -19,15 +28,20 @@ CMD ?=
 export COMPOSE_PROJECT_NAME := $(PROJECT)
 
 .PHONY: help doctor up down reset-all-microservices start stop build pull logs logs-% ps clean deep-clean \
-	shell exec free-ports free-port-% check-env ensure-secret check-tools
+	shell exec free-ports free-port-% check-env ensure-secret check-tools \
+	prod-up prod-down prod-build prod-logs prod-ps prod-reset
 
 help:
 	@echo "Targets:"
-	@echo "  up / down / reset-all-microservices"
-	@echo "  build / pull / logs / ps"
-	@echo "  shell SERVICE=svc | exec SERVICE=svc CMD=\"...\""
-	@echo "  clean / deep-clean / free-ports"
-	@echo "  doctor (valida .env, secretos y puertos)"
+	@echo "  Development:"
+	@echo "    up / down / reset-all-microservices"
+	@echo "    build / pull / logs / ps"
+	@echo "    shell SERVICE=svc | exec SERVICE=svc CMD=\"...\""
+	@echo "    clean / deep-clean / free-ports"
+	@echo "  Production:"
+	@echo "    prod-up / prod-down / prod-build / prod-logs / prod-ps / prod-reset"
+	@echo "  Other:"
+	@echo "    doctor (valida .env, secretos y puertos)"
 
 # =========================
 # Docker Compose (Microservices stack)
@@ -176,3 +190,45 @@ free-port-%:
 	else \
 		echo "[WARN] No se puede liberar puerto $$port automáticamente." >&2; \
 	fi
+
+# =========================
+# Production targets
+# =========================
+prod-up: ENV=production
+prod-up:
+	@echo ">> Levantando servicios en PRODUCCIÓN..."
+	@if [ ! -f .env.production ]; then \
+		echo "[ERROR] .env.production no existe" >&2; \
+		exit 1; \
+	fi
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d $(SERVICES)
+
+prod-down: ENV=production
+prod-down:
+	@echo ">> Deteniendo servicios de PRODUCCIÓN..."
+	docker compose --env-file .env.production -f docker-compose.prod.yml down
+
+prod-build: ENV=production
+prod-build:
+	@echo ">> Construyendo servicios de PRODUCCIÓN..."
+	docker compose --env-file .env.production -f docker-compose.prod.yml build $(SERVICES)
+
+prod-logs: ENV=production
+prod-logs:
+	@echo ">> Logs de servicios de PRODUCCIÓN..."
+	docker compose --env-file .env.production -f docker-compose.prod.yml logs -f $(SERVICES)
+
+prod-ps: ENV=production
+prod-ps:
+	@echo ">> Estado de servicios de PRODUCCIÓN..."
+	docker compose --env-file .env.production -f docker-compose.prod.yml ps
+
+prod-reset: ENV=production
+prod-reset:
+	@echo ">> RESET COMPLETO DE PRODUCCIÓN..."
+	docker compose --env-file .env.production -f docker-compose.prod.yml down --rmi all -v
+	@echo ">> Limpiando contenedores huérfanos..."
+	docker ps -a --filter "name=$(PROJECT)" --format "{{.ID}}" | xargs -r docker rm -f
+	docker system prune -a --volumes -f
+	@echo ">> Reconstruyendo servicios..."
+	docker compose --env-file .env.production -f docker-compose.prod.yml up -d --build
