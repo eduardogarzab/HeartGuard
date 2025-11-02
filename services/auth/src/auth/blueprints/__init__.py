@@ -1,17 +1,16 @@
-"""Registro de blueprints del gateway."""
+"""Registro de blueprints para Auth Service."""
 from __future__ import annotations
 
 from flask import Blueprint, Flask
 
-from . import auth_proxy, health
+from . import auth, health
 
 ROUTES: tuple[Blueprint, ...] = (
     health.bp,
-    auth_proxy.bp,
+    auth.bp,
 )
 
 
 def register_blueprints(app: Flask) -> None:
-    """Adjunta los blueprints al objeto Flask."""
     for blueprint in ROUTES:
         app.register_blueprint(blueprint)

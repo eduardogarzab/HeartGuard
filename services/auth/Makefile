@@ -12,8 +12,10 @@ install: $(VENV)
 	$(BIN)/pip install --upgrade pip
 	$(BIN)/pip install -r requirements.txt
 
+DevEnv := FLASK_DEBUG=1 FLASK_ENV=development
+
 dev: install
-	FLASK_DEBUG=1 FLASK_APP=src/gateway/app.py $(BIN)/flask run --host=0.0.0.0 --port=8000 --reload
+	$(DevEnv) $(BIN)/flask run --host=127.0.0.1 --port=5001 --reload
 
 lint: install
 	$(BIN)/python -m compileall src

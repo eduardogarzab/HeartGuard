@@ -1,58 +1,122 @@
-# HeartGuard Gateway Service
+# HeartGuard API Gateway
 
-Servicio gateway para el ecosistema HeartGuard basado en Flask. Este microservicio expone un punto de acceso unificado para paneles de organizaciones y clientes finales, orquestando llamadas hacia otros servicios internos.
+Gateway principal de la plataforma HeartGuard que centraliza el acceso a todos los microservicios del sistema.
 
-## Características
+## Descripción
 
-- Arquitectura basada en `Flask` con patrón de aplicación por fábrica.
-- Configuración por entorno mediante variables de entorno y archivo `.env` opcional.
-- Rutas organizadas en *blueprints* para facilitar la modularidad.
-- Cliente HTTP interno preparado para delegar llamadas a microservicios.
-- Pruebas rápidas con `pytest` y servidor de desarrollo autorecargable.
+El Gateway actúa como único punto de entrada (single entry point) para todas las peticiones HTTP hacia la plataforma HeartGuard. Se encarga de:
+
+- **Enrutamiento**: Distribuye las peticiones a los microservicios correspondientes
+- **Proxy transparente**: Reenvía requests/responses sin modificar payloads
+- **CORS**: Gestiona políticas de acceso desde clientes web
+- **Logging centralizado**: Registra todas las peticiones para auditoría
+- **Manejo de errores**: Normaliza respuestas de error entre microservicios
+
+## Arquitectura
+
+\`\`\`
+Cliente (Web/Mobile)
+        ↓
+   [Gateway :8000]
+        ↓
+   ┌────┴────┐
+   │         │
+Auth       (Otros
+Service    Servicios)
+:5001
+\`\`\`
 
 ## Requisitos
 
-- Python 3.11+
-- `pip` y `virtualenv` (o gestor equivalente)
+- Python 3.10+
+- PostgreSQL (compartida con microservicios)
+- Auth Service corriendo en puerto 5001
 
-## Instalación y ejecución en desarrollo
+## Instalación y Uso
 
-```bash
-cd services/gateway
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
+\`\`\`bash
+# Instalar dependencias
+make install
+
+# Iniciar gateway en modo desarrollo
 make dev
-```
 
-El comando `make dev` levanta el servidor en modo debug escuchando en `http://localhost:5000`.
+# El gateway estará disponible en http://localhost:8000
+\`\`\`
 
-## Estructura
+## Configuración
 
-```
-services/gateway
+Crear archivo \`.env\` basado en \`.env.example\`:
+
+\`\`\`env
+FLASK_DEBUG=1
+FLASK_SECRET_KEY=your-secret-key-here
+GATEWAY_SERVICE_TIMEOUT=10
+AUTH_SERVICE_URL=http://localhost:5001
+\`\`\`
+
+## Testing
+
+\`\`\`bash
+# Ejecutar suite completa de pruebas
+./test_gateway.sh
+\`\`\`
+
+## Endpoints Disponibles
+
+### Health Check
+\`\`\`bash
+GET /health/
+\`\`\`
+
+### Autenticación (Proxy a Auth Service)
+
+Todos los endpoints bajo \`/auth/*\` son proxies transparentes al Auth Service:
+
+- \`POST /auth/register/user\` - Registro de usuario (staff)
+- \`POST /auth/register/patient\` - Registro de paciente
+- \`POST /auth/login/user\` - Login de usuario
+- \`POST /auth/login/patient\` - Login de paciente
+- \`GET /auth/verify\` - Verificar token JWT
+- \`GET /auth/me\` - Obtener datos de cuenta autenticada
+- \`POST /auth/refresh\` - Renovar access token
+
+Ver documentación completa en [Auth Service README](../auth/README.md)
+
+## Estructura del Proyecto
+
+\`\`\`
+services/gateway/
+├── src/gateway/
+│   ├── app.py              # Factory de Flask app
+│   ├── config.py           # Configuración
+│   ├── extensions.py       # CORS
+│   ├── routes/
+│   │   ├── health.py       # Health check
+│   │   └── auth_proxy.py   # Proxy para Auth Service
+│   └── services/
+│       └── auth_client.py  # Cliente HTTP para Auth Service
+├── tests/
+├── .env.example
 ├── Makefile
 ├── README.md
 ├── requirements.txt
-├── src/
-│   └── gateway/
-│       ├── __init__.py
-│       ├── app.py
-│       ├── config.py
-│       ├── extensions.py
-│       ├── routes/
-│       │   ├── __init__.py
-│       │   └── health.py
-│       └── services/
-│           └── __init__.py
-└── tests/
-    ├── __init__.py
-    └── test_health.py
-```
+└── test_gateway.sh
+\`\`\`
 
-## Próximos pasos sugeridos
+## Seguridad
 
-1. Definir contratos entre el gateway y los microservicios de organizaciones, pacientes y usuarios.
-2. Implementar autenticación delegada (por ejemplo JWT) y autorización basada en roles en el gateway.
-3. Añadir clientes específicos dentro de `src/gateway/services/` para cada microservicio.
-4. Integrar el gateway a la orquestación existente en `docker-compose.yml` cuando esté listo.
+- **CORS**: Habilitado para todos los orígenes (configurar en producción)
+- **Tokens JWT**: Validación delegada a Auth Service
+- **HTTPS**: Recomendado usar proxy reverso (nginx/traefik) en producción
+
+## Producción
+
+\`\`\`bash
+pip install gunicorn
+PYTHONPATH=src gunicorn -w 4 -b 0.0.0.0:8000 "gateway.app:create_app()"
+\`\`\`
+
+## Licencia
+
+Propiedad de HeartGuard. Todos los derechos reservados.

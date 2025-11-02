@@ -1,3 +1,5 @@
 """Clientes para interactuar con microservicios internos."""
 
-# Este módulo servirá como namespace para clientes concretos (organizational, pacientes, etc.).
+from .auth_client import AuthClient, AuthClientError
+
+__all__ = ["AuthClient", "AuthClientError"]
