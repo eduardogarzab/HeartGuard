@@ -1,0 +1,10 @@
+Flask==2.3.2
+Flask-SQLAlchemy==3.0.5
+psycopg2-binary==2.9.9
+python-dotenv==1.0.0
+requests==2.31.0
+pydantic==1.10.12
+Flask-Cors==3.0.10
+pytest==7.4.0
+black==23.7.0
+flake8==6.1.0

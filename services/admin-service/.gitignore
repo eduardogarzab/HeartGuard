@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.env
+.venv
+
+# Editor
+.vscode/
+.idea/
+
+# Byte-compiled / optimized / DLL files
+*.log
+*.sqlite3
+instance/
+
+# pytest cache
+.pytest_cache/
+.coverage
+htmlcov/
+
+# dotenv
+.env.local
