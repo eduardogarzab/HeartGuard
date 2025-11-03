@@ -265,39 +265,29 @@ public class LoginFrame extends JFrame {
 
         // Email
         JTextField emailField = new JTextField(20);
-        addFormField(formPanel, gbc, row++, "Email:", emailField);
+        addFormField(formPanel, gbc, row++, "*Email:", emailField);
 
         // Password
         JPasswordField passwordField = new JPasswordField(20);
-        addFormField(formPanel, gbc, row++, "Contraseña:", passwordField);
+        addFormField(formPanel, gbc, row++, "*Contraseña:", passwordField);
 
         // Confirm Password
         JPasswordField confirmPasswordField = new JPasswordField(20);
-        addFormField(formPanel, gbc, row++, "Confirmar Contraseña:", confirmPasswordField);
+        addFormField(formPanel, gbc, row++, "*Confirmar Contraseña:", confirmPasswordField);
 
-        // First Name
-        JTextField firstNameField = new JTextField(20);
-        addFormField(formPanel, gbc, row++, "Nombre:", firstNameField);
+        // Nombre Completo
+        JTextField nameField = new JTextField(20);
+        nameField.setToolTipText("Ej: Dr. Juan Pérez López");
+        addFormField(formPanel, gbc, row++, "*Nombre Completo:", nameField);
 
-        // Last Name
-        JTextField lastNameField = new JTextField(20);
-        addFormField(formPanel, gbc, row++, "Apellido:", lastNameField);
-
-        // Phone
-        JTextField phoneField = new JTextField(20);
-        addFormField(formPanel, gbc, row++, "Teléfono:", phoneField);
-
-        // Organization Code
-        JTextField orgCodeField = new JTextField(20);
-        orgCodeField.setText("CLIN-001");
-        orgCodeField.setToolTipText("Ej: CLIN-001, FAM-001");
-        addFormField(formPanel, gbc, row++, "Código Organización:", orgCodeField);
-
-        // Role Code
-        JTextField roleCodeField = new JTextField(20);
-        roleCodeField.setText("user");
-        roleCodeField.setToolTipText("Ej: user, org_admin");
-        addFormField(formPanel, gbc, row++, "Código Rol:", roleCodeField);
+        // Nota informativa
+        gbc.gridx = 0;
+        gbc.gridy = row++;
+        gbc.gridwidth = 2;
+        JLabel noteLabel = new JLabel("<html><i>Nota: Se unirá a organizaciones mediante invitaciones</i></html>");
+        noteLabel.setForeground(Color.GRAY);
+        formPanel.add(noteLabel, gbc);
+        gbc.gridwidth = 1;
 
         // Label de estado
         JLabel statusLabel = new JLabel(" ");
@@ -323,8 +313,7 @@ public class LoginFrame extends JFrame {
         buttonPanel.add(backButton);
 
         registerButton.addActionListener(e -> handleRegisterUser(
-            emailField, passwordField, confirmPasswordField, firstNameField,
-            lastNameField, phoneField, orgCodeField, roleCodeField,
+            emailField, passwordField, confirmPasswordField, nameField,
             statusLabel, registerButton, backButton
         ));
 
@@ -344,22 +333,16 @@ public class LoginFrame extends JFrame {
     }
 
     private void handleRegisterUser(JTextField emailField, JPasswordField passwordField,
-                                   JPasswordField confirmPasswordField, JTextField firstNameField,
-                                   JTextField lastNameField, JTextField phoneField,
-                                   JTextField orgCodeField, JTextField roleCodeField,
+                                   JPasswordField confirmPasswordField, JTextField nameField,
                                    JLabel statusLabel, JButton registerButton, JButton backButton) {
         String email = emailField.getText().trim();
         String password = new String(passwordField.getPassword());
         String confirmPassword = new String(confirmPasswordField.getPassword());
-        String firstName = firstNameField.getText().trim();
-        String lastName = lastNameField.getText().trim();
-        String phone = phoneField.getText().trim();
-        String orgCode = orgCodeField.getText().trim();
-        String roleCode = roleCodeField.getText().trim();
+        String name = nameField.getText().trim();
 
-        if (email.isEmpty() || password.isEmpty() || firstName.isEmpty() || 
-            lastName.isEmpty() || phone.isEmpty() || orgCode.isEmpty() || roleCode.isEmpty()) {
-            statusLabel.setText("Por favor complete todos los campos");
+        // Validaciones - Solo campos obligatorios (email, password, name)
+        if (email.isEmpty() || password.isEmpty() || name.isEmpty()) {
+            statusLabel.setText("Por favor complete todos los campos obligatorios (*)");
             statusLabel.setForeground(Color.RED);
             return;
         }
@@ -384,8 +367,8 @@ public class LoginFrame extends JFrame {
         SwingWorker<LoginResponse, Void> worker = new SwingWorker<>() {
             @Override
             protected LoginResponse doInBackground() throws Exception {
-                return apiClient.registerUser(email, password, firstName, lastName, 
-                                            phone, orgCode, roleCode);
+                // Registro de usuario: solo requiere name, email, password
+                return apiClient.registerUser(email, password, name);
             }
 
             @Override
@@ -399,7 +382,10 @@ public class LoginFrame extends JFrame {
                     
                     JOptionPane.showMessageDialog(
                         LoginFrame.this,
-                        "Usuario registrado exitosamente!\n\nEmail: " + email,
+                        "Usuario registrado exitosamente!\n\n" +
+                        "Email: " + email + "\n" +
+                        "Nombre: " + name + "\n\n" +
+                        "Ahora puedes iniciar sesión.",
                         "Registro Exitoso",
                         JOptionPane.INFORMATION_MESSAGE
                     );
@@ -408,11 +394,7 @@ public class LoginFrame extends JFrame {
                     emailField.setText("");
                     passwordField.setText("");
                     confirmPasswordField.setText("");
-                    firstNameField.setText("");
-                    lastNameField.setText("");
-                    phoneField.setText("");
-                    orgCodeField.setText("CLIN-001");
-                    roleCodeField.setText("");
+                    nameField.setText("");
                     
                     cardLayout.show(mainPanel, LOGIN_VIEW);
                 } catch (Exception ex) {
@@ -451,77 +433,90 @@ public class LoginFrame extends JFrame {
 
         int row = 0;
 
-        // Email
+        // === CAMPOS OBLIGATORIOS ===
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 4;
+        JLabel requiredLabel = new JLabel("Campos Obligatorios:");
+        requiredLabel.setFont(new Font("Arial", Font.BOLD, 12));
+        formPanel.add(requiredLabel, gbc);
+        row++;
+
+        // Email *
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Email:"), gbc);
+        formPanel.add(new JLabel("*Email:"), gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
         JTextField emailField = new JTextField(20);
         formPanel.add(emailField, gbc);
         row++;
 
-        // Password
+        // Password *
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Contraseña:"), gbc);
+        formPanel.add(new JLabel("*Contraseña:"), gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
         JPasswordField passwordField = new JPasswordField(20);
         formPanel.add(passwordField, gbc);
         row++;
 
-        // Confirm Password
+        // Confirm Password *
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Confirmar Contraseña:"), gbc);
+        formPanel.add(new JLabel("*Confirmar Contraseña:"), gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
         JPasswordField confirmPasswordField = new JPasswordField(20);
         formPanel.add(confirmPasswordField, gbc);
         row++;
 
-        // First Name
+        // Name * (Nombre completo)
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Nombre:"), gbc);
+        formPanel.add(new JLabel("*Nombre Completo:"), gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
-        JTextField firstNameField = new JTextField(20);
-        formPanel.add(firstNameField, gbc);
+        JTextField nameField = new JTextField(20);
+        nameField.setToolTipText("Ej: María González López");
+        formPanel.add(nameField, gbc);
         row++;
 
-        // Last Name
+        // Organization ID * (UUID o Código)
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Apellido:"), gbc);
+        formPanel.add(new JLabel("*Organización:"), gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
-        JTextField lastNameField = new JTextField(20);
-        formPanel.add(lastNameField, gbc);
+        JTextField orgIdField = new JTextField(20);
+        orgIdField.setText("FAM-001");
+        orgIdField.setToolTipText("UUID (ej: 550e8400-...) o Código (ej: CLIN-001, FAM-001)");
+        formPanel.add(orgIdField, gbc);
         row++;
 
-        // Phone
+        // === CAMPOS OPCIONALES ===
+        gbc.gridx = 0;
+        gbc.gridy = row;
+        gbc.gridwidth = 4;
+        JLabel optionalLabel = new JLabel("Campos Opcionales:");
+        optionalLabel.setFont(new Font("Arial", Font.BOLD, 12));
+        optionalLabel.setForeground(Color.GRAY);
+        formPanel.add(optionalLabel, gbc);
+        row++;
+
+        // Fecha de Nacimiento (birthdate) - OPCIONAL
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Teléfono:"), gbc);
-        gbc.gridx = 1;
-        gbc.gridwidth = 3;
-        JTextField phoneField = new JTextField(20);
-        formPanel.add(phoneField, gbc);
-        row++;
-
-        // Fecha de Nacimiento con selectores
-        gbc.gridx = 0;
-        gbc.gridy = row;
-        gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Fecha de Nacimiento:"), gbc);
+        JLabel birthdateLabel = new JLabel("Fecha de Nacimiento:");
+        birthdateLabel.setForeground(Color.GRAY);
+        formPanel.add(birthdateLabel, gbc);
         
         // Día
         gbc.gridx = 1;
@@ -534,8 +529,8 @@ public class LoginFrame extends JFrame {
         
         // Mes
         gbc.gridx = 2;
-        String[] months = {"Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
-                          "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"};
+        String[] months = {"Ene", "Feb", "Mar", "Abr", "May", "Jun", 
+                          "Jul", "Ago", "Sep", "Oct", "Nov", "Dic"};
         JComboBox<String> monthCombo = new JComboBox<>(months);
         monthCombo.setSelectedIndex(0);
         formPanel.add(monthCombo, gbc);
@@ -550,32 +545,36 @@ public class LoginFrame extends JFrame {
         formPanel.add(yearCombo, gbc);
         row++;
 
-        // Gender
+        // Género (sex_code) - OPCIONAL
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Género:"), gbc);
+        JLabel genderLabel = new JLabel("Género:");
+        genderLabel.setForeground(Color.GRAY);
+        formPanel.add(genderLabel, gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
         
-        // Crear ComboBox con objetos que tengan label y value
-        String[] genderLabels = {"Masculino", "Femenino", "Otro/No especifica"};
+        String[] genderLabels = {"Masculino", "Femenino", "Otro"};
         String[] genderCodes = {"M", "F", "O"};
         JComboBox<String> genderComboBox = new JComboBox<>(genderLabels);
         formPanel.add(genderComboBox, gbc);
         row++;
 
-        // Organization Code
+        // Nivel de Riesgo (risk_level_code) - OPCIONAL
         gbc.gridx = 0;
         gbc.gridy = row;
         gbc.gridwidth = 1;
-        formPanel.add(new JLabel("Código Organización:"), gbc);
+        JLabel riskLabel = new JLabel("Nivel de Riesgo:");
+        riskLabel.setForeground(Color.GRAY);
+        formPanel.add(riskLabel, gbc);
         gbc.gridx = 1;
         gbc.gridwidth = 3;
-        JTextField orgCodeField = new JTextField(20);
-        orgCodeField.setText("CLIN-001");
-        orgCodeField.setToolTipText("Ej: CLIN-001, FAM-001");
-        formPanel.add(orgCodeField, gbc);
+        String[] riskLevels = {"Bajo (low)", "Medio (medium)", "Alto (high)"};
+        String[] riskLevelCodes = {"low", "medium", "high"};
+        JComboBox<String> riskLevelComboBox = new JComboBox<>(riskLevels);
+        riskLevelComboBox.setSelectedIndex(1); // medium por defecto
+        formPanel.add(riskLevelComboBox, gbc);
         row++;
 
         // Label de estado
@@ -602,9 +601,9 @@ public class LoginFrame extends JFrame {
         buttonPanel.add(backButton);
 
         registerButton.addActionListener(e -> handleRegisterPatient(
-            emailField, passwordField, confirmPasswordField, firstNameField,
-            lastNameField, phoneField, dayCombo, monthCombo, yearCombo,
-            genderComboBox, orgCodeField, statusLabel, registerButton, backButton
+            emailField, passwordField, confirmPasswordField, nameField,
+            orgIdField, dayCombo, monthCombo, yearCombo,
+            genderComboBox, riskLevelComboBox, statusLabel, registerButton, backButton
         ));
 
         // Ensamblar
@@ -623,32 +622,34 @@ public class LoginFrame extends JFrame {
     }
 
     private void handleRegisterPatient(JTextField emailField, JPasswordField passwordField,
-                                      JPasswordField confirmPasswordField, JTextField firstNameField,
-                                      JTextField lastNameField, JTextField phoneField,
-                                      JComboBox<Integer> dayCombo, JComboBox<String> monthCombo, 
-                                      JComboBox<Integer> yearCombo, JComboBox<String> genderComboBox,
-                                      JTextField orgCodeField, JLabel statusLabel,
-                                      JButton registerButton, JButton backButton) {
+                                      JPasswordField confirmPasswordField, JTextField nameField,
+                                      JTextField orgIdField, JComboBox<Integer> dayCombo, 
+                                      JComboBox<String> monthCombo, JComboBox<Integer> yearCombo,
+                                      JComboBox<String> genderComboBox, JComboBox<String> riskLevelComboBox,
+                                      JLabel statusLabel, JButton registerButton, JButton backButton) {
         String email = emailField.getText().trim();
         String password = new String(passwordField.getPassword());
         String confirmPassword = new String(confirmPasswordField.getPassword());
-        String firstName = firstNameField.getText().trim();
-        String lastName = lastNameField.getText().trim();
-        String phone = phoneField.getText().trim();
+        String name = nameField.getText().trim();
+        String orgId = orgIdField.getText().trim();
         
+        // Campos opcionales
         int day = (Integer) dayCombo.getSelectedItem();
         int month = monthCombo.getSelectedIndex() + 1; // 1-12
         int year = (Integer) yearCombo.getSelectedItem();
-        String dateOfBirth = String.format("%04d-%02d-%02d", year, month, day);
+        String birthdate = String.format("%04d-%02d-%02d", year, month, day);
         
         // Convertir el índice del género al código correcto: M, F, O
         String[] genderCodes = {"M", "F", "O"};
-        String gender = genderCodes[genderComboBox.getSelectedIndex()];
-        String orgCode = orgCodeField.getText().trim();
+        String sexCode = genderCodes[genderComboBox.getSelectedIndex()];
+        
+        // Risk level code
+        String[] riskLevelCodes = {"low", "medium", "high"};
+        String riskLevelCode = riskLevelCodes[riskLevelComboBox.getSelectedIndex()];
 
-        if (email.isEmpty() || password.isEmpty() || firstName.isEmpty() || 
-            lastName.isEmpty() || phone.isEmpty() || orgCode.isEmpty()) {
-            statusLabel.setText("Por favor complete todos los campos");
+        // Validaciones - Solo campos obligatorios
+        if (email.isEmpty() || password.isEmpty() || name.isEmpty() || orgId.isEmpty()) {
+            statusLabel.setText("Por favor complete todos los campos obligatorios (*)");
             statusLabel.setForeground(Color.RED);
             return;
         }
@@ -673,8 +674,9 @@ public class LoginFrame extends JFrame {
         SwingWorker<LoginResponse, Void> worker = new SwingWorker<>() {
             @Override
             protected LoginResponse doInBackground() throws Exception {
-                return apiClient.registerPatient(email, password, firstName, lastName, 
-                                                phone, dateOfBirth, gender, orgCode);
+                // Llamar a la API con todos los campos (obligatorios y opcionales)
+                return apiClient.registerPatient(email, password, name, orgId, 
+                                                birthdate, sexCode, riskLevelCode);
             }
 
             @Override
@@ -688,7 +690,10 @@ public class LoginFrame extends JFrame {
                     
                     JOptionPane.showMessageDialog(
                         LoginFrame.this,
-                        "Paciente registrado exitosamente!\n\nEmail: " + email,
+                        "Paciente registrado exitosamente!\n\n" +
+                        "Email: " + email + "\n" +
+                        "Nombre: " + name + "\n\n" +
+                        "Ahora puedes iniciar sesión.",
                         "Registro Exitoso",
                         JOptionPane.INFORMATION_MESSAGE
                     );
@@ -697,14 +702,13 @@ public class LoginFrame extends JFrame {
                     emailField.setText("");
                     passwordField.setText("");
                     confirmPasswordField.setText("");
-                    firstNameField.setText("");
-                    lastNameField.setText("");
-                    phoneField.setText("");
+                    nameField.setText("");
+                    orgIdField.setText("");
                     dayCombo.setSelectedIndex(0);
                     monthCombo.setSelectedIndex(0);
                     yearCombo.setSelectedIndex(0);
                     genderComboBox.setSelectedIndex(0);
-                    orgCodeField.setText("CLIN-001");
+                    riskLevelComboBox.setSelectedIndex(1); // medium
                     
                     cardLayout.show(mainPanel, LOGIN_VIEW);
                 } catch (Exception ex) {

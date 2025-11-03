@@ -13,22 +13,30 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * Cliente HTTP para comunicarse con el Gateway API
+ * Los microservicios corren en localhost, pero el backend está en 136.115.53.140
  */
 public class ApiClient {
     private static final String DEFAULT_GATEWAY_URL = "http://localhost:8000";
+    private static final String DEFAULT_AUTH_SERVICE_URL = "http://localhost:5001";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     
     private final String gatewayUrl;
+    private final String authServiceUrl;
     private final OkHttpClient httpClient;
     private final Gson gson;
     private String accessToken;
 
     public ApiClient() {
-        this(DEFAULT_GATEWAY_URL);
+        this(DEFAULT_GATEWAY_URL, DEFAULT_AUTH_SERVICE_URL);
     }
 
     public ApiClient(String gatewayUrl) {
+        this(gatewayUrl, DEFAULT_AUTH_SERVICE_URL);
+    }
+
+    public ApiClient(String gatewayUrl, String authServiceUrl) {
         this.gatewayUrl = gatewayUrl;
+        this.authServiceUrl = authServiceUrl;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .writeTimeout(10, TimeUnit.SECONDS)
@@ -54,7 +62,7 @@ public class ApiClient {
         payload.addProperty("email", email);
         payload.addProperty("password", password);
 
-        String url = gatewayUrl + "/auth/login/user";
+        String url = authServiceUrl + "/auth/login/user";
         return executeLogin(url, payload);
     }
 
@@ -66,42 +74,110 @@ public class ApiClient {
         payload.addProperty("email", email);
         payload.addProperty("password", password);
 
-        String url = gatewayUrl + "/auth/login/patient";
+        String url = authServiceUrl + "/auth/login/patient";
         return executeLogin(url, payload);
     }
 
     /**
      * Registro de usuario (staff)
+     * Según el README, solo requiere: name, email, password
+     * Se crea sin organización inicial (se agregan por invitaciones)
      */
-    public LoginResponse registerUser(String email, String password, String firstName, 
-                                     String lastName, String phoneNumber, 
-                                     String organizationCode, String roleCode) throws ApiException {
+    public LoginResponse registerUser(String email, String password, String name) throws ApiException {
         JsonObject payload = new JsonObject();
+        payload.addProperty("name", name);
         payload.addProperty("email", email);
         payload.addProperty("password", password);
-        payload.addProperty("name", firstName + " " + lastName); // Nombre completo
 
-        String url = gatewayUrl + "/auth/register/user";
-        return executeLogin(url, payload);
+        String url = authServiceUrl + "/auth/register/user";
+        
+        // El registro de usuario NO devuelve tokens, solo devuelve user_id y message
+        RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
+        Request request = new Request.Builder()
+                .url(url)
+                .post(body)
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorMessage = errorObj.has("error") ? errorObj.get("error").getAsString() : "Error desconocido";
+                throw new ApiException(errorMessage, response.code(), "registration_error", responseBody);
+            }
+
+            // Parsear la respuesta de registro
+            JsonObject responseObj = gson.fromJson(responseBody, JsonObject.class);
+            
+            // Crear una respuesta básica (el registro NO devuelve tokens)
+            LoginResponse loginResponse = new LoginResponse();
+            loginResponse.setAccountType("user");
+            
+            return loginResponse;
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión: " + e.getMessage(), e);
+        }
     }
 
     /**
      * Registro de paciente
+     * Acepta tanto org_id (UUID) como org_code (código de organización)
+     * Detecta automáticamente si es UUID o código
      */
-    public LoginResponse registerPatient(String email, String password, String firstName,
-                                        String lastName, String phoneNumber,
-                                        String dateOfBirth, String gender,
-                                        String organizationCode) throws ApiException {
+    public LoginResponse registerPatient(String email, String password, String name,
+                                        String orgIdOrCode, String birthdate, String sexCode,
+                                        String riskLevelCode) throws ApiException {
         JsonObject payload = new JsonObject();
+        payload.addProperty("name", name);
         payload.addProperty("email", email);
         payload.addProperty("password", password);
-        payload.addProperty("name", firstName + " " + lastName); // Nombre completo
-        payload.addProperty("org_code", organizationCode); // Enviar como org_code
-        payload.addProperty("birthdate", dateOfBirth); // birthdate en lugar de date_of_birth
-        payload.addProperty("sex_code", gender); // sex_code en lugar de gender
+        
+        // Detectar si es UUID o código de organización
+        // UUID tiene formato: 8-4-4-4-12 caracteres hexadecimales con guiones
+        if (orgIdOrCode.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
+            payload.addProperty("org_id", orgIdOrCode); // Es un UUID
+        } else {
+            payload.addProperty("org_code", orgIdOrCode); // Es un código como CLIN-001
+        }
+        
+        payload.addProperty("birthdate", birthdate); // Formato: YYYY-MM-DD
+        payload.addProperty("sex_code", sexCode); // M, F, O
+        
+        // risk_level_code es opcional, pero lo incluimos si se proporciona
+        if (riskLevelCode != null && !riskLevelCode.isEmpty()) {
+            payload.addProperty("risk_level_code", riskLevelCode);
+        }
 
-        String url = gatewayUrl + "/auth/register/patient";
-        return executeLogin(url, payload);
+        String url = authServiceUrl + "/auth/register/patient";
+        
+        // El registro de paciente NO devuelve tokens, solo devuelve patient_id y message
+        RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
+        Request request = new Request.Builder()
+                .url(url)
+                .post(body)
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+            
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorMessage = errorObj.has("error") ? errorObj.get("error").getAsString() : "Error desconocido";
+                throw new ApiException(errorMessage, response.code(), "registration_error", responseBody);
+            }
+
+            // Parsear la respuesta de registro
+            JsonObject responseObj = gson.fromJson(responseBody, JsonObject.class);
+            
+            // Crear una respuesta básica (el registro NO devuelve tokens)
+            LoginResponse loginResponse = new LoginResponse();
+            loginResponse.setAccountType("patient");
+            
+            return loginResponse;
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión: " + e.getMessage(), e);
+        }
     }
 
     /**
@@ -112,7 +188,7 @@ public class ApiClient {
             return false;
         }
 
-        String url = gatewayUrl + "/auth/verify";
+        String url = authServiceUrl + "/auth/verify";
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Authorization", "Bearer " + accessToken)
@@ -134,7 +210,7 @@ public class ApiClient {
             throw new ApiException("No hay token de acceso");
         }
 
-        String url = gatewayUrl + "/auth/me";
+        String url = authServiceUrl + "/auth/me";
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Authorization", "Bearer " + accessToken)
