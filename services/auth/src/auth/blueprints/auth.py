@@ -59,15 +59,17 @@ def register_patient():
     email = (payload.get("email") or "").strip()
     password = payload.get("password") or ""
     org_id = (payload.get("org_id") or "").strip()
+    org_code = (payload.get("org_code") or "").strip()
 
-    if not name or not email or not password or not org_id:
-        raise ValidationError("Nombre, email, contraseña y org_id son obligatorios")
+    if not name or not email or not password or not (org_id or org_code):
+        raise ValidationError("Nombre, email, contraseña y org_id/org_code son obligatorios")
 
     result = _service().register_patient(
         name=name,
         email=email,
         password=password,
         org_id=org_id,
+        org_code=org_code,
         birthdate=payload.get("birthdate"),
         sex_code=payload.get("sex_code"),
         risk_level_code=payload.get("risk_level_code"),

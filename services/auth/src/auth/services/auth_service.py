@@ -53,17 +53,28 @@ class AuthService:
         email: str,
         password: str,
         org_id: str,
+        org_code: str,
         birthdate: str | None,
         sex_code: str | None,
         risk_level_code: str | None,
     ) -> dict[str, Any]:
+        """Registra un nuevo paciente. Acepta org_code o org_id."""
         email_norm = normalize_email(email)
         if patients.get_by_email(email_norm):
             raise ConflictError("El correo ya está registrado para un paciente")
 
-        org = organizations.get_by_id(org_id)
-        if not org:
-            raise ValidationError("La organización indicada no existe")
+        # Buscar organización por código si se proporciona
+        if org_code:
+            org = organizations.get_by_code(org_code)
+            if not org:
+                raise ValidationError(f"La organización con código '{org_code}' no existe")
+            org_id = org["id"]
+        elif org_id:
+            org = organizations.get_by_id(org_id)
+            if not org:
+                raise ValidationError("La organización indicada no existe")
+        else:
+            raise ValidationError("Debe proporcionar org_id o org_code")
 
         password_hash = self._hash_password(password)
         try:
@@ -225,6 +236,23 @@ class AuthService:
             raise ValidationError("La contraseña debe tener al menos 8 caracteres")
         return hash_password(password, self.bcrypt_rounds)
 
+    def _serialize_memberships(self, memberships: list[Mapping[str, Any]]) -> list[dict[str, Any]]:
+        """Convierte memberships a un formato serializable a JSON."""
+        serialized = []
+        for m in memberships:
+            membership = {
+                "org_id": m["org_id"],
+                "org_code": m.get("org_code"),
+                "org_name": m.get("org_name"),
+                "role_code": m.get("role_code"),
+                "role_label": m.get("role_label"),
+            }
+            # Convertir datetime a string ISO si existe
+            if m.get("joined_at"):
+                membership["joined_at"] = m["joined_at"].isoformat() if hasattr(m["joined_at"], "isoformat") else str(m["joined_at"])
+            serialized.append(membership)
+        return serialized
+
     def _issue_tokens_for_user(self, user: Mapping[str, Any], memberships: list[Mapping[str, Any]]) -> Tuple[str, str]:
         base_payload = {
             "user_id": user["id"],
@@ -232,7 +260,7 @@ class AuthService:
             "email": user["email"],
             "name": user["name"],
             "system_role": user["role_code"],
-            "org_memberships": memberships,
+            "org_memberships": self._serialize_memberships(memberships),
         }
         access_token = encode_token(
             base_payload,
