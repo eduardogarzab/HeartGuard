@@ -126,9 +126,13 @@ const Api = (() => {
                 id: Xml.text(node, "id"),
                 email: Xml.text(node, "email"),
                 roleCode: Xml.text(node, "role_code"),
+                roleLabel: Xml.text(node, "role_label"),
                 token: Xml.text(node, "token"),
                 expiresAt: Xml.text(node, "expires_at"),
+                usedAt: Xml.text(node, "used_at"),
+                revokedAt: Xml.text(node, "revoked_at"),
                 createdAt: Xml.text(node, "created_at"),
+                status: Xml.text(node, "status"),
             };
         },
         patient(node) {
@@ -147,6 +151,33 @@ const Api = (() => {
                 id: Xml.text(node, "id"),
                 name: Xml.text(node, "name"),
                 createdAt: Xml.text(node, "created_at"),
+            };
+        },
+        careTeamMember(node) {
+            return {
+                careTeamId: Xml.text(node, "care_team_id"),
+                userId: Xml.text(node, "user_id"),
+                name: Xml.text(node, "name"),
+                email: Xml.text(node, "email"),
+                roleId: Xml.text(node, "role_id"),
+                roleCode: Xml.text(node, "role_code"),
+                roleLabel: Xml.text(node, "role_label"),
+                joinedAt: Xml.text(node, "joined_at"),
+            };
+        },
+        careTeamPatient(node) {
+            return {
+                careTeamId: Xml.text(node, "care_team_id"),
+                patientId: Xml.text(node, "patient_id"),
+                name: Xml.text(node, "person_name"),
+                email: Xml.text(node, "email"),
+            };
+        },
+        careTeamRole(node) {
+            return {
+                id: Xml.text(node, "id"),
+                code: Xml.text(node, "code"),
+                label: Xml.text(node, "label"),
             };
         },
         caregiverAssignment(node) {
@@ -318,6 +349,17 @@ const Api = (() => {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/`, { token });
                 return Xml.mapNodes(doc, "response > staff_members > staff_member", transform.staffMember);
             },
+            async listInvitations(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/invitations`, { token });
+                return Xml.mapNodes(doc, "response > invitations > invitation", transform.invitation);
+            },
+            async listRoles(token) {
+                // Only org_admin and org_viewer roles are allowed for org staff
+                return [
+                    { code: 'org_admin', label: 'Admin de Organización' },
+                    { code: 'org_viewer', label: 'Observador de Organización' }
+                ];
+            },
             async listPatients(token, orgId) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/`, { token });
                 return Xml.mapNodes(doc, "response > patients > patient", transform.patient);
@@ -340,13 +382,20 @@ const Api = (() => {
                 return Xml.mapNodes(doc, "response > alerts > alert", transform.alert);
             },
             async createStaffInvitation(token, orgId, payload) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/invitations/`, {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/invitations`, {
                     method: "POST",
                     token,
                     body: payload,
                 });
                 const node = doc.querySelector("response > invitation");
                 return transform.invitation(node);
+            },
+            async revokeInvitation(token, orgId, invitationId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/invitations/${invitationId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
             },
             async updateStaffRole(token, orgId, userId, payload) {
                 await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/${userId}`, {
@@ -389,6 +438,70 @@ const Api = (() => {
                 });
                 const node = doc.querySelector("response > care_team");
                 return transform.careTeam(node);
+            },
+            async listCareTeamRoles(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/member-roles`, { token });
+                return Xml.mapNodes(doc, "response > member_roles > member_role", transform.careTeamRole);
+            },
+            async getCareTeam(token, orgId, careTeamId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}`, { token });
+                const teamNode = doc.querySelector("response > care_team");
+                if (!teamNode) {
+                    return null;
+                }
+                return {
+                    team: transform.careTeam(teamNode),
+                    members: Xml.mapNodes(doc, "response > members > member", transform.careTeamMember),
+                    patients: Xml.mapNodes(doc, "response > patients > patient", transform.careTeamPatient),
+                };
+            },
+            async updateCareTeam(token, orgId, careTeamId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}`, {
+                    method: "PATCH",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > care_team");
+                return node ? transform.careTeam(node) : null;
+            },
+            async deleteCareTeam(token, orgId, careTeamId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
+            },
+            async addCareTeamMember(token, orgId, careTeamId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}/members`, {
+                    method: "POST",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > member");
+                return node ? transform.careTeamMember(node) : null;
+            },
+            async removeCareTeamMember(token, orgId, careTeamId, userId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}/members/${userId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
+            },
+            async addCareTeamPatient(token, orgId, careTeamId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}/patients`, {
+                    method: "POST",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > patient");
+                return node ? transform.careTeamPatient(node) : null;
+            },
+            async removeCareTeamPatient(token, orgId, careTeamId, patientId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/${careTeamId}/patients/${patientId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
             },
             async listCaregiverRelationshipTypes(token, orgId) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/relationship-types/`, { token });

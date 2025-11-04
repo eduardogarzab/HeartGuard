@@ -49,14 +49,27 @@ def create_invitation(org_id: str):
         return xml_error_response("invalid_input", "Email is required", status=400)
     if not role_code:
         return xml_error_response("invalid_input", "Role code is required", status=400)
+    
+    # Validate that only org_admin and org_viewer roles are allowed
+    if role_code not in ("org_admin", "org_viewer"):
+        return xml_error_response("invalid_input", "Only org_admin and org_viewer roles are allowed", status=400)
 
     invitation = _repo.create_invitation(org_id, ctx.user_id, email, role_code, ttl_hours)
     return xml_response({"invitation": invitation}, status=201)
 
 
-@bp.patch("/<user_id>")
+@bp.delete("/invitations/<invitation_id>")
+@require_org_admin
+def revoke_invitation(org_id: str, invitation_id: str):
+    """Revoke an invitation. Must be defined before generic /<user_id> route."""
+    _repo.revoke_invitation(org_id, invitation_id)
+    return xml_response({"revoked": True})
+
+
+@bp.patch("/members/<user_id>")
 @require_org_admin
 def update_role(org_id: str, user_id: str):
+    """Update a staff member's role."""
     payload = parse_payload(request)
     role_code = (payload.get("role_code") or "").strip()
     if not role_code:
@@ -65,9 +78,10 @@ def update_role(org_id: str, user_id: str):
     return xml_response({"updated": True})
 
 
-@bp.delete("/<user_id>")
+@bp.delete("/members/<user_id>")
 @require_org_admin
 def remove_member(org_id: str, user_id: str):
+    """Remove a staff member from the organization."""
     _repo.remove_member(org_id, user_id)
     return xml_response({"deleted": True})
 

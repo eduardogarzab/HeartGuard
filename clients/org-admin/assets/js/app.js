@@ -15,6 +15,10 @@
         tabCache: new Map(),
         charts: {},
         relationshipTypesCache: [],
+        careTeamRoles: [],
+        activeCareTeamDetail: null,
+        availableStaff: [],
+        availablePatients: [],
     };
 
     const el = {
@@ -469,19 +473,84 @@
 
     const renderStaff = (data) => {
         const container = el.tabBodies.staff || el.tabPanels.staff;
-        renderTable(
-            container,
-            ["Nombre", "Correo", "Rol", "Miembro desde"],
-            data,
-            (member) => `
-                <tr>
-                    <td>${escapeHtml(member.name)}</td>
-                    <td>${escapeHtml(member.email)}</td>
-                    <td>${escapeHtml(member.roleLabel || member.roleCode)}</td>
-                    <td>${escapeHtml(formatDate(member.joinedAt))}</td>
-                </tr>` ,
-            "No se encontraron miembros del staff"
-        );
+        
+        // Split into two sections: staff members and invitations
+        const staffHtml = `
+            <div class="staff-section">
+                <h4 class="section-subtitle">Miembros del Staff</h4>
+                ${!data.members || !data.members.length ? '<p class="muted">No se encontraron miembros del staff</p>' : `
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Nombre</th>
+                                    <th>Correo</th>
+                                    <th>Rol</th>
+                                    <th>Miembro desde</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.members.map(member => `
+                                    <tr>
+                                        <td>${escapeHtml(member.name)}</td>
+                                        <td>${escapeHtml(member.email)}</td>
+                                        <td>${escapeHtml(member.roleLabel || member.roleCode)}</td>
+                                        <td>${escapeHtml(formatDate(member.joinedAt))}</td>
+                                    </tr>
+                                `).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `}
+            </div>
+            <div class="staff-section">
+                <h4 class="section-subtitle">Invitaciones</h4>
+                ${!data.invitations || !data.invitations.length ? '<p class="muted">No hay invitaciones</p>' : `
+                    <div class="table-wrapper">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Email</th>
+                                    <th>Rol</th>
+                                    <th>Token</th>
+                                    <th>Expira</th>
+                                    <th>Estado</th>
+                                    <th>Acciones</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${data.invitations.map(inv => {
+                                    const statusClass = inv.status === 'pending' ? 'status-warning' : 
+                                                       inv.status === 'used' ? 'status-success' : 
+                                                       inv.status === 'expired' ? 'status-muted' : 
+                                                       inv.status === 'revoked' ? 'status-danger' : '';
+                                    const statusLabel = inv.status === 'pending' ? 'Pendiente' : 
+                                                       inv.status === 'used' ? 'Usada' : 
+                                                       inv.status === 'expired' ? 'Expirada' : 
+                                                       inv.status === 'revoked' ? 'Revocada' : inv.status;
+                                    return `
+                                    <tr>
+                                        <td>${escapeHtml(inv.email)}</td>
+                                        <td>${escapeHtml(inv.roleLabel || inv.roleCode)}</td>
+                                        <td><code class="token-display">${escapeHtml(inv.token?.substring(0, 16))}...</code></td>
+                                        <td>${escapeHtml(formatDateTime(inv.expiresAt))}</td>
+                                        <td><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                                        <td>
+                                            ${inv.status === 'pending' ? 
+                                                `<button class="btn btn-sm btn-danger" onclick="window.app.revokeInvitation('${escapeHtml(inv.id)}')">Revocar</button>` : 
+                                                '<span class="muted">—</span>'
+                                            }
+                                        </td>
+                                    </tr>
+                                `}).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `}
+            </div>
+        `;
+        
+        container.innerHTML = staffHtml;
     };
 
     const renderPatients = (patients) => {
@@ -510,13 +579,17 @@
         const container = el.tabBodies["care-teams"] || el.tabPanels["care-teams"];
         renderTable(
             container,
-            ["Equipo", "Creado el", "ID"],
+            ["Equipo", "Creado el", "ID", "Acciones"],
             careTeams,
             (team) => `
                 <tr>
                     <td>${escapeHtml(team.name)}</td>
                     <td>${escapeHtml(formatDate(team.createdAt))}</td>
                     <td><code>${escapeHtml(team.id)}</code></td>
+                    <td>
+                        <button class="btn btn-sm" onclick="window.app.openCareTeamDetail('${escapeHtml(team.id)}')">Ver detalles</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteCareTeam('${escapeHtml(team.id)}', '${escapeHtml(team.name)}')">Eliminar</button>
+                    </td>
                 </tr>` ,
             "No se encontraron equipos de cuidado"
         );
@@ -643,7 +716,12 @@
             let data;
             switch (tabName) {
                 case "staff":
-                    data = await Api.admin.listStaff(state.token, state.selectedOrgId);
+                    // Fetch both staff members and invitations
+                    const [members, invitations] = await Promise.all([
+                        Api.admin.listStaff(state.token, state.selectedOrgId),
+                        Api.admin.listInvitations(state.token, state.selectedOrgId)
+                    ]);
+                    data = { members, invitations };
                     break;
                 case "patients":
                     data = await Api.admin.listPatients(state.token, state.selectedOrgId);
@@ -867,6 +945,471 @@
         });
     };
 
+    const showInvitationModal = async () => {
+        let roles = [];
+        try {
+            roles = await Api.admin.listRoles(state.token);
+        } catch (error) {
+            console.error('Error loading roles:', error);
+        }
+        
+        const modalHtml = `
+            <div class="modal-overlay" id="invitationModalOverlay">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Invitar Miembro del Staff</h3>
+                        <button class="modal-close" onclick="document.getElementById('invitationModalOverlay').remove()">&times;</button>
+                    </div>
+                    <form id="invitationForm" class="modal-form">
+                        <div class="form-group">
+                            <label for="invitationEmail">Correo electrónico *</label>
+                            <input type="email" id="invitationEmail" name="email" placeholder="usuario@ejemplo.com" required>
+                            <small class="form-hint">Se enviará una invitación a este correo</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="invitationRole">Rol *</label>
+                            <select id="invitationRole" name="role_code" required>
+                                <option value="">-- Selecciona un rol --</option>
+                                ${roles.map(role => `
+                                    <option value="${escapeHtml(role.code)}">${escapeHtml(role.label)}</option>
+                                `).join('')}
+                            </select>
+                            <small class="form-hint">El rol determina los permisos del usuario</small>
+                        </div>
+                        <div class="form-group">
+                            <label for="invitationTTL">Vigencia (horas)</label>
+                            <input type="number" id="invitationTTL" name="ttl_hours" value="24" min="1" max="720">
+                            <small class="form-hint">Tiempo en horas que la invitación estará activa (máximo 720)</small>
+                        </div>
+                        <div class="form-error hidden" id="invitationFormError"></div>
+                        <div class="form-success hidden" id="invitationFormSuccess"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('invitationModalOverlay').remove()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Crear Invitación</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        const form = document.getElementById('invitationForm');
+        const errorEl = document.getElementById('invitationFormError');
+        const successEl = document.getElementById('invitationFormSuccess');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.classList.add('hidden');
+            successEl.classList.add('hidden');
+            
+            const formData = new FormData(form);
+            const payload = {
+                email: formData.get('email'),
+                role_code: formData.get('role_code'),
+                ttl_hours: parseInt(formData.get('ttl_hours')) || 24,
+            };
+            
+            try {
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Generando invitación...';
+                
+                const invitation = await Api.admin.createStaffInvitation(state.token, state.selectedOrgId, payload);
+                
+                successEl.innerHTML = `
+                    <strong>¡Invitación creada exitosamente!</strong><br>
+                    Token: <code style="word-break: break-all;">${escapeHtml(invitation.token)}</code><br>
+                    Expira: ${escapeHtml(formatDateTime(invitation.expiresAt))}
+                `;
+                successEl.classList.remove('hidden');
+                
+                // Reset form
+                form.reset();
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Crear Invitación';
+                
+                // Clear cache to reload staff data
+                state.tabCache.delete('staff');
+                
+                // Show success toast
+                showToast('Invitación creada exitosamente', 'success');
+                
+                // Close modal after 3 seconds
+                setTimeout(() => {
+                    document.getElementById('invitationModalOverlay')?.remove();
+                    activateTab('staff');
+                }, 3000);
+                
+            } catch (error) {
+                errorEl.textContent = error.message || 'Error al crear la invitación';
+                errorEl.classList.remove('hidden');
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Crear Invitación';
+            }
+        });
+    };
+
+    const showCareTeamCreateModal = () => {
+        if (!state.selectedOrgId) {
+            showToast("Selecciona una organización antes de crear un equipo", "warning");
+            return;
+        }
+
+        const modalHtml = `
+            <div class="modal-overlay" id="careTeamCreateModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>Nuevo equipo de cuidado</h3>
+                        <button class="modal-close" type="button" onclick="document.getElementById('careTeamCreateModal').remove()">&times;</button>
+                    </div>
+                    <form id="careTeamCreateForm" class="modal-form">
+                        <div class="form-group">
+                            <label for="careTeamName">Nombre del equipo *</label>
+                            <input type="text" id="careTeamName" name="name" maxlength="80" required>
+                        </div>
+                        <div class="form-error hidden" id="careTeamCreateError"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('careTeamCreateModal').remove()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">Crear</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        const form = document.getElementById('careTeamCreateForm');
+        const errorEl = document.getElementById('careTeamCreateError');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            errorEl.classList.add('hidden');
+
+            const formData = new FormData(form);
+            const name = (formData.get('name') || '').toString().trim();
+            if (!name) {
+                errorEl.textContent = 'Ingresa el nombre del equipo';
+                errorEl.classList.remove('hidden');
+                return;
+            }
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creando...';
+
+            try {
+                await Api.admin.createCareTeam(state.token, state.selectedOrgId, { name });
+                document.getElementById('careTeamCreateModal')?.remove();
+                showToast('Equipo creado correctamente', 'success');
+                state.tabCache.delete('care-teams');
+                await activateTab('care-teams');
+            } catch (error) {
+                errorEl.textContent = error.message || 'No se pudo crear el equipo';
+                errorEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Crear';
+            }
+        });
+    };
+
+    const CARE_TEAM_DETAIL_OVERLAY_ID = 'careTeamDetailOverlay';
+
+    const closeCareTeamDetailModal = () => {
+        document.getElementById(CARE_TEAM_DETAIL_OVERLAY_ID)?.remove();
+        state.activeCareTeamDetail = null;
+    };
+
+    const loadCareTeamSupportData = async () => {
+        const [roles, staff, patients] = await Promise.all([
+            Api.admin.listCareTeamRoles(state.token, state.selectedOrgId),
+            Api.admin.listStaff(state.token, state.selectedOrgId),
+            Api.admin.listPatients(state.token, state.selectedOrgId),
+        ]);
+        state.careTeamRoles = roles || [];
+        state.availableStaff = Array.isArray(staff) ? staff : [];
+        state.availablePatients = Array.isArray(patients) ? patients : [];
+    };
+
+    const renderCareTeamDetailModal = () => {
+        const overlay = document.getElementById(CARE_TEAM_DETAIL_OVERLAY_ID);
+        if (!overlay) return;
+        const contentEl = overlay.querySelector('#careTeamDetailContent');
+        if (!contentEl) return;
+
+        const detail = state.activeCareTeamDetail;
+        if (!detail?.team) {
+            contentEl.innerHTML = '<p class="form-error">No se pudo cargar la información del equipo.</p>';
+            return;
+        }
+
+        const { team, members = [], patients = [] } = detail;
+        const assignedUserIds = new Set(members.map((member) => member.userId));
+        const assignedPatientIds = new Set(patients.map((patient) => patient.patientId));
+
+        const availableMemberOptions = state.availableStaff
+            .filter((staffMember) => !assignedUserIds.has(staffMember.userId))
+            .map((staffMember) => `<option value="${escapeHtml(staffMember.userId)}">${escapeHtml(staffMember.name)} (${escapeHtml(staffMember.email)})</option>`) // eslint-disable-line max-len
+            .join('');
+
+        const roleOptions = state.careTeamRoles
+            .map((role) => `<option value="${escapeHtml(role.id)}">${escapeHtml(role.label)}</option>`)
+            .join('');
+
+        const availablePatientOptions = state.availablePatients
+            .filter((patient) => !assignedPatientIds.has(patient.id))
+            .map((patient) => `<option value="${escapeHtml(patient.id)}">${escapeHtml(patient.name)} (${escapeHtml(patient.email || 'Sin correo')})</option>`) // eslint-disable-line max-len
+            .join('');
+
+        const membersTable = members.length
+            ? `
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Correo</th>
+                                <th>Rol</th>
+                                <th>Miembro desde</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${members.map((member) => `
+                                <tr>
+                                    <td>${escapeHtml(member.name)}</td>
+                                    <td>${escapeHtml(member.email)}</td>
+                                    <td>${escapeHtml(member.roleLabel || member.roleCode)}</td>
+                                    <td>${escapeHtml(formatDate(member.joinedAt))}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" onclick="window.app.removeCareTeamMember('${escapeHtml(team.id)}', '${escapeHtml(member.userId)}')">Quitar</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `
+            : '<p class="muted">No hay miembros asignados.</p>';
+
+        const patientsTable = patients.length
+            ? `
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Paciente</th>
+                                <th>Correo</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${patients.map((patient) => `
+                                <tr>
+                                    <td>${escapeHtml(patient.name)}</td>
+                                    <td>${escapeHtml(patient.email)}</td>
+                                    <td>
+                                        <button class="btn btn-sm btn-danger" onclick="window.app.removeCareTeamPatient('${escapeHtml(team.id)}', '${escapeHtml(patient.patientId)}')">Quitar</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `
+            : '<p class="muted">No hay pacientes asignados.</p>';
+
+        const memberForm = availableMemberOptions && roleOptions
+            ? `
+                <form id="careTeamAddMemberForm" class="care-team-inline-form">
+                    <div class="form-group">
+                        <label for="careTeamMemberSelect">Selecciona un usuario</label>
+                        <select id="careTeamMemberSelect" name="user_id" required>
+                            <option value="">-- Selecciona un miembro --</option>
+                            ${availableMemberOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="careTeamRoleSelect">Rol</label>
+                        <select id="careTeamRoleSelect" name="role_id" required>
+                            <option value="">-- Selecciona un rol --</option>
+                            ${roleOptions}
+                        </select>
+                    </div>
+                    <div class="form-error hidden" id="careTeamMemberFormError"></div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Agregar miembro</button>
+                    </div>
+                </form>
+            `
+            : '<p class="muted">No hay usuarios disponibles para asignar o faltan roles configurados.</p>';
+
+        const patientForm = availablePatientOptions
+            ? `
+                <form id="careTeamAddPatientForm" class="care-team-inline-form">
+                    <div class="form-group">
+                        <label for="careTeamPatientSelect">Selecciona un paciente</label>
+                        <select id="careTeamPatientSelect" name="patient_id" required>
+                            <option value="">-- Selecciona un paciente --</option>
+                            ${availablePatientOptions}
+                        </select>
+                    </div>
+                    <div class="form-error hidden" id="careTeamPatientFormError"></div>
+                    <div class="form-actions">
+                        <button type="submit" class="btn btn-primary">Agregar paciente</button>
+                    </div>
+                </form>
+            `
+            : '<p class="muted">No hay pacientes disponibles para asignar.</p>';
+
+        contentEl.innerHTML = `
+            <section class="care-team-summary">
+                <p><strong>Nombre:</strong> ${escapeHtml(team.name)}</p>
+                <p><strong>ID:</strong> <code>${escapeHtml(team.id)}</code></p>
+                <p><strong>Creado el:</strong> ${escapeHtml(formatDate(team.createdAt))}</p>
+                <p><strong>Miembros asignados:</strong> ${members.length}</p>
+                <p><strong>Pacientes asignados:</strong> ${patients.length}</p>
+            </section>
+            <section class="care-team-section">
+                <header class="care-team-section__header">
+                    <h4>Miembros del equipo</h4>
+                </header>
+                ${membersTable}
+                ${memberForm}
+            </section>
+            <section class="care-team-section">
+                <header class="care-team-section__header">
+                    <h4>Pacientes asignados</h4>
+                </header>
+                ${patientsTable}
+                ${patientForm}
+            </section>
+        `;
+
+        const memberFormEl = contentEl.querySelector('#careTeamAddMemberForm');
+        if (memberFormEl) {
+            memberFormEl.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const formData = new FormData(memberFormEl);
+                const payload = {
+                    user_id: formData.get('user_id'),
+                    role_id: formData.get('role_id'),
+                };
+                const errorEl = memberFormEl.querySelector('#careTeamMemberFormError');
+                const submitBtn = memberFormEl.querySelector('button[type="submit"]');
+                errorEl.classList.add('hidden');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Agregando...';
+                try {
+                    await Api.admin.addCareTeamMember(state.token, state.selectedOrgId, team.id, payload);
+                    showToast('Miembro asignado correctamente', 'success');
+                    await refreshCareTeamDetail(team.id);
+                } catch (error) {
+                    errorEl.textContent = error.message || 'No se pudo asignar el miembro';
+                    errorEl.classList.remove('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Agregar miembro';
+                }
+            });
+        }
+
+        const patientFormEl = contentEl.querySelector('#careTeamAddPatientForm');
+        if (patientFormEl) {
+            patientFormEl.addEventListener('submit', async (event) => {
+                event.preventDefault();
+                const formData = new FormData(patientFormEl);
+                const payload = {
+                    patient_id: formData.get('patient_id'),
+                };
+                const errorEl = patientFormEl.querySelector('#careTeamPatientFormError');
+                const submitBtn = patientFormEl.querySelector('button[type="submit"]');
+                errorEl.classList.add('hidden');
+                submitBtn.disabled = true;
+                submitBtn.textContent = 'Agregando...';
+                try {
+                    await Api.admin.addCareTeamPatient(state.token, state.selectedOrgId, team.id, payload);
+                    showToast('Paciente asignado correctamente', 'success');
+                    await refreshCareTeamDetail(team.id);
+                } catch (error) {
+                    errorEl.textContent = error.message || 'No se pudo asignar el paciente';
+                    errorEl.classList.remove('hidden');
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Agregar paciente';
+                }
+            });
+        }
+    };
+
+    const refreshCareTeamDetail = async (careTeamId) => {
+        try {
+            const detail = await Api.admin.getCareTeam(state.token, state.selectedOrgId, careTeamId);
+            state.activeCareTeamDetail = detail;
+            await loadCareTeamSupportData();
+            renderCareTeamDetailModal();
+        } catch (error) {
+            handleApiError(error);
+            const contentEl = document.getElementById('careTeamDetailContent');
+            if (contentEl) {
+                contentEl.innerHTML = `<p class="form-error">${escapeHtml(error.message || 'No se pudo actualizar el equipo')}</p>`;
+            }
+        }
+    };
+
+    const showCareTeamDetailModal = async (careTeamId) => {
+        if (!state.selectedOrgId) {
+            showToast("Selecciona una organización para ver los equipos", "warning");
+            return;
+        }
+
+        const existingOverlay = document.getElementById(CARE_TEAM_DETAIL_OVERLAY_ID);
+        if (existingOverlay) existingOverlay.remove();
+
+        const modalHtml = `
+            <div class="modal-overlay" id="${CARE_TEAM_DETAIL_OVERLAY_ID}">
+                <div class="modal-content modal-lg">
+                    <div class="modal-header">
+                        <h3>Equipo de cuidado</h3>
+                        <button class="modal-close" type="button" id="careTeamDetailCloseBtn">&times;</button>
+                    </div>
+                    <div class="modal-body" id="careTeamDetailContent">
+                        <div class="loader"><span class="spinner"></span>Cargando equipo...</div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-ghost" id="careTeamDetailCloseFooter">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        document.getElementById('careTeamDetailCloseBtn')?.addEventListener('click', closeCareTeamDetailModal);
+        document.getElementById('careTeamDetailCloseFooter')?.addEventListener('click', closeCareTeamDetailModal);
+
+        try {
+            const [detail] = await Promise.all([
+                Api.admin.getCareTeam(state.token, state.selectedOrgId, careTeamId),
+                loadCareTeamSupportData(),
+            ]);
+            state.activeCareTeamDetail = detail;
+            if (!detail) {
+                const contentEl = document.getElementById('careTeamDetailContent');
+                if (contentEl) {
+                    contentEl.innerHTML = '<p class="form-error">No se encontró el equipo solicitado.</p>';
+                }
+                return;
+            }
+            renderCareTeamDetailModal();
+        } catch (error) {
+            handleApiError(error);
+            const contentEl = document.getElementById('careTeamDetailContent');
+            if (contentEl) {
+                contentEl.innerHTML = `<p class="form-error">${escapeHtml(error.message || 'No se pudo cargar el equipo')}</p>`;
+            }
+        }
+    };
+
     const bindEvents = () => {
         el.loginForm?.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -915,6 +1458,14 @@
         });
 
         // New CRUD button handlers
+        el.buttons.inviteStaff?.addEventListener("click", () => {
+            showInvitationModal();
+        });
+
+        el.buttons.createCareTeam?.addEventListener("click", () => {
+            showCareTeamCreateModal();
+        });
+
         el.buttons.createPatient?.addEventListener("click", () => {
             showPatientModal();
         });
@@ -976,6 +1527,62 @@
                 // Limpiar caché para forzar recarga de datos
                 state.tabCache.delete('patients');
                 await activateTab("patients");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        revokeInvitation: async (invitationId) => {
+            if (!confirm("¿Está seguro de revocar esta invitación? Esta acción no se puede deshacer.")) return;
+            try {
+                await Api.admin.revokeInvitation(state.token, state.selectedOrgId, invitationId);
+                showToast('Invitación revocada exitosamente', 'success');
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('staff');
+                await activateTab("staff");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        openCareTeamDetail: async (careTeamId) => {
+            try {
+                await showCareTeamDetailModal(careTeamId);
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        deleteCareTeam: async (careTeamId, teamName = '') => {
+            const label = teamName ? ` "${teamName}"` : '';
+            if (!confirm(`¿Eliminar el equipo${label}? Debe estar vacío para poder eliminarlo.`)) return;
+            try {
+                await Api.admin.deleteCareTeam(state.token, state.selectedOrgId, careTeamId);
+                showToast('Equipo eliminado correctamente', 'success');
+                closeCareTeamDetailModal();
+                state.tabCache.delete('care-teams');
+                await activateTab('care-teams');
+            } catch (error) {
+                if (error?.status === 409) {
+                    showToast(error.message || 'El equipo aún tiene miembros o pacientes asignados', 'warning');
+                } else {
+                    handleApiError(error);
+                }
+            }
+        },
+        removeCareTeamMember: async (careTeamId, userId) => {
+            if (!confirm('¿Quitar este miembro del equipo?')) return;
+            try {
+                await Api.admin.removeCareTeamMember(state.token, state.selectedOrgId, careTeamId, userId);
+                showToast('Miembro eliminado del equipo', 'success');
+                await refreshCareTeamDetail(careTeamId);
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        removeCareTeamPatient: async (careTeamId, patientId) => {
+            if (!confirm('¿Quitar este paciente del equipo?')) return;
+            try {
+                await Api.admin.removeCareTeamPatient(state.token, state.selectedOrgId, careTeamId, patientId);
+                showToast('Paciente desvinculado del equipo', 'success');
+                await refreshCareTeamDetail(careTeamId);
             } catch (error) {
                 handleApiError(error);
             }

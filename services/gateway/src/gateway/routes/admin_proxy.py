@@ -115,10 +115,16 @@ def staff_invitations(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}/staff/invitations", request.method)
 
 
-@bp.route("/organizations/<org_id>/staff/<user_id>", methods=["PATCH", "DELETE"])
+@bp.route("/organizations/<org_id>/staff/invitations/<invitation_id>", methods=["DELETE"])
+def revoke_staff_invitation(org_id: str, invitation_id: str):
+    """Revocar una invitación específica."""
+    return _proxy_request(f"/admin/organizations/{org_id}/staff/invitations/{invitation_id}", request.method)
+
+
+@bp.route("/organizations/<org_id>/staff/members/<user_id>", methods=["PATCH", "DELETE"])
 def manage_staff_member(org_id: str, user_id: str):
     """Actualizar o eliminar miembro del staff."""
-    return _proxy_request(f"/admin/organizations/{org_id}/staff/{user_id}", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/staff/members/{user_id}", request.method)
 
 
 # Rutas de pacientes
@@ -141,34 +147,40 @@ def care_teams(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}/care-teams/", request.method)
 
 
-@bp.route("/organizations/<org_id>/care-teams/<team_id>", methods=["GET", "PATCH", "DELETE"])
-def care_team_detail(org_id: str, team_id: str):
+@bp.route("/organizations/<org_id>/care-teams/member-roles", methods=["GET"])
+def care_team_member_roles(org_id: str):
+    """Lista roles disponibles para miembros de un equipo de cuidado."""
+    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/member-roles", "GET")
+
+
+@bp.route("/organizations/<org_id>/care-teams/<care_team_id>", methods=["GET", "PATCH", "DELETE"])
+def care_team_detail(org_id: str, care_team_id: str):
     """Gestión de un equipo específico."""
-    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{team_id}", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{care_team_id}", request.method)
 
 
-@bp.route("/organizations/<org_id>/care-teams/<team_id>/members", methods=["GET", "POST"])
-def care_team_members(org_id: str, team_id: str):
+@bp.route("/organizations/<org_id>/care-teams/<care_team_id>/members", methods=["GET", "POST"])
+def care_team_members(org_id: str, care_team_id: str):
     """Gestión de miembros del equipo."""
-    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{team_id}/members", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{care_team_id}/members", request.method)
 
 
-@bp.route("/organizations/<org_id>/care-teams/<team_id>/members/<user_id>", methods=["PATCH", "DELETE"])
-def care_team_member_detail(org_id: str, team_id: str, user_id: str):
+@bp.route("/organizations/<org_id>/care-teams/<care_team_id>/members/<user_id>", methods=["PATCH", "DELETE"])
+def care_team_member_detail(org_id: str, care_team_id: str, user_id: str):
     """Gestión de un miembro específico."""
-    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{team_id}/members/{user_id}", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{care_team_id}/members/{user_id}", request.method)
 
 
-@bp.route("/organizations/<org_id>/care-teams/<team_id>/patients", methods=["GET", "POST"])
-def care_team_patients(org_id: str, team_id: str):
+@bp.route("/organizations/<org_id>/care-teams/<care_team_id>/patients", methods=["GET", "POST"])
+def care_team_patients(org_id: str, care_team_id: str):
     """Gestión de pacientes en el equipo."""
-    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{team_id}/patients", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{care_team_id}/patients", request.method)
 
 
-@bp.route("/organizations/<org_id>/care-teams/<team_id>/patients/<patient_id>", methods=["DELETE"])
-def care_team_patient_detail(org_id: str, team_id: str, patient_id: str):
+@bp.route("/organizations/<org_id>/care-teams/<care_team_id>/patients/<patient_id>", methods=["DELETE"])
+def care_team_patient_detail(org_id: str, care_team_id: str, patient_id: str):
     """Remover paciente del equipo."""
-    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{team_id}/patients/{patient_id}", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/care-teams/{care_team_id}/patients/{patient_id}", request.method)
 
 
 # Rutas de cuidadores

@@ -18,6 +18,35 @@ class CareTeamsRepository:
         """
         return db.fetch_all(query, (org_id,))
 
+    def list_member_roles(self) -> list[dict[str, Any]]:
+        query = """
+            SELECT id, code, label
+            FROM team_member_roles
+            ORDER BY label ASC
+        """
+        return db.fetch_all(query)
+
+    def get(self, care_team_id: str, org_id: str) -> dict[str, Any] | None:
+        query = """
+            SELECT id, org_id, name, created_at
+            FROM care_teams
+            WHERE id = %s AND org_id = %s
+        """
+        return db.fetch_one(query, (care_team_id, org_id))
+
+    def dependency_counts(self, care_team_id: str, org_id: str) -> dict[str, int] | None:
+        query = """
+            SELECT
+                (SELECT COUNT(*) FROM care_team_member m
+                 JOIN care_teams ct ON ct.id = m.care_team_id
+                 WHERE m.care_team_id = %(care_team_id)s AND ct.org_id = %(org_id)s) AS member_count,
+                (SELECT COUNT(*) FROM patient_care_team pct
+                 JOIN care_teams ct2 ON ct2.id = pct.care_team_id
+                 WHERE pct.care_team_id = %(care_team_id)s AND ct2.org_id = %(org_id)s) AS patient_count
+        """
+        params = {"care_team_id": care_team_id, "org_id": org_id}
+        return db.fetch_one(query, params)
+
     def create(self, org_id: str, name: str) -> dict[str, Any] | None:
         query = """
             INSERT INTO care_teams (org_id, name)
@@ -46,6 +75,7 @@ class CareTeamsRepository:
     def list_members(self, care_team_id: str, org_id: str) -> list[dict[str, Any]]:
         query = """
             SELECT
+                m.care_team_id,
                 m.user_id,
                 u.name,
                 u.email,

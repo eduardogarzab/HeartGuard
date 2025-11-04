@@ -79,3 +79,12 @@ class StaffRepository:
             "invited_by": invited_by,
         }
         return db.fetch_one(query, params) or {}
+
+    def revoke_invitation(self, org_id: str, invitation_id: str) -> None:
+        """Revoke an invitation by setting revoked_at timestamp."""
+        query = """
+            UPDATE org_invitations
+            SET revoked_at = NOW()
+            WHERE id = %s AND org_id = %s AND revoked_at IS NULL
+        """
+        db.execute(query, (invitation_id, org_id))
