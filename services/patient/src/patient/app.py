@@ -44,9 +44,11 @@ def create_app():
                 'profile': '/patient/profile',
                 'alerts': '/patient/alerts',
                 'devices': '/patient/devices',
+                'caregivers': '/patient/caregivers',
                 'readings': '/patient/readings',
                 'care_team': '/patient/care-team',
-                'location': '/patient/location/latest',
+                'location_latest': '/patient/location/latest',
+                'location_history': '/patient/locations',
                 'health': '/patient/health'
             }
         }), 200

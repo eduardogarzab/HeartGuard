@@ -206,6 +206,27 @@ class PatientService:
             }
         }
     
+    def get_location_history(self, patient_id: str, limit: int = 50, offset: int = 0) -> Dict:
+        """
+        Obtiene el historial de ubicaciones del paciente
+        
+        Args:
+            patient_id: UUID del paciente
+            limit: Cantidad de resultados
+            offset: Desplazamiento
+            
+        Returns:
+            Dict con historial de ubicaciones y metadata
+        """
+        locations, total = self.repo.get_location_history(patient_id, limit, offset)
+        
+        return {
+            'locations': [self._format_location(loc) for loc in locations],
+            'total': total,
+            'limit': limit,
+            'offset': offset
+        }
+    
     # Métodos auxiliares de formateo
     
     @staticmethod
@@ -291,6 +312,18 @@ class PatientService:
             'ended_at': reading['ended_at'].isoformat() if reading['ended_at'] else None,
             'duration_minutes': round(float(reading['duration_minutes']), 2) if reading.get('duration_minutes') else None,
             'sample_rate_hz': reading.get('sample_rate_hz')
+        }
+    
+    @staticmethod
+    def _format_location(location: Dict) -> Dict:
+        """Formatea una ubicación para respuesta"""
+        return {
+            'id': str(location['id']),
+            'latitude': float(location['latitude']) if location['latitude'] else None,
+            'longitude': float(location['longitude']) if location['longitude'] else None,
+            'timestamp': location['timestamp'].isoformat() if location['timestamp'] else None,
+            'source': location.get('source'),
+            'accuracy_meters': float(location['accuracy_meters']) if location.get('accuracy_meters') else None
         }
     
     @staticmethod

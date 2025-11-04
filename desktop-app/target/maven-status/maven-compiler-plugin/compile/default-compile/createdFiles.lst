@@ -1,8 +1,10 @@
 com\heartguard\desktop\Main.class
+com\heartguard\desktop\ui\PatientDashboardPanel$1.class
 com\heartguard\desktop\models\User.class
 com\heartguard\desktop\api\ApiClient.class
 com\heartguard\desktop\ui\PatientDashboardPanel.class
 com\heartguard\desktop\models\UserLoginData.class
+com\heartguard\desktop\ui\PatientDashboardPanel$OpenStreetMapPanel.class
 com\heartguard\desktop\ui\LoginFrame$1.class
 com\heartguard\desktop\models\LoginResponse.class
 com\heartguard\desktop\models\PatientLoginData.class

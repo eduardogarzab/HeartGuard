@@ -172,6 +172,40 @@ def get_latest_location(patient_id: str):
         return jsonify({'error': 'Error al obtener ubicación', 'details': str(e)}), 500
 
 
+@patient_bp.route('/locations', methods=['GET'])
+@require_patient_token
+def get_location_history(patient_id: str):
+    """
+    Obtiene el historial de ubicaciones del paciente con paginación
+    
+    Query params:
+        - limit: (opcional) Cantidad de resultados (default: 50, max: 500)
+        - offset: (opcional) Desplazamiento para paginación (default: 0)
+    
+    Returns:
+        JSON con historial de ubicaciones y metadata de paginación
+    """
+    try:
+        # Obtener query params
+        limit = int(request.args.get('limit', 50))
+        offset = int(request.args.get('offset', 0))
+        
+        # Validar limit
+        if limit > 500:
+            limit = 500
+        if limit < 1:
+            limit = 1
+        if offset < 0:
+            offset = 0
+        
+        data = patient_service.get_location_history(patient_id, limit, offset)
+        return jsonify(data), 200
+    except ValueError as e:
+        return jsonify({'error': 'Parámetros inválidos', 'details': str(e)}), 400
+    except Exception as e:
+        return jsonify({'error': 'Error al obtener historial de ubicaciones', 'details': str(e)}), 500
+
+
 @patient_bp.route('/health', methods=['GET'])
 def health_check():
     """

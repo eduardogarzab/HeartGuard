@@ -302,6 +302,70 @@ public class ApiClient {
             throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
         }
     }
+    
+    /**
+     * Obtiene la última ubicación del paciente
+     */
+    public JsonObject getPatientLatestLocation(String token) throws ApiException {
+        if (token == null || token.isEmpty()) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        String url = gatewayUrl + "/patient/location/latest";
+        
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer " + token)
+                .get()
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
+                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener ubicación";
+                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+            }
+
+            return gson.fromJson(responseBody, JsonObject.class);
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Obtiene las últimas N ubicaciones del paciente
+     */
+    public JsonObject getPatientLocations(String token, int limit) throws ApiException {
+        if (token == null || token.isEmpty()) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        String url = gatewayUrl + "/patient/locations?limit=" + limit + "&offset=0";
+        
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer " + token)
+                .get()
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
+                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener ubicaciones";
+                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+            }
+
+            return gson.fromJson(responseBody, JsonObject.class);
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
+        }
+    }
 
     /**
      * Obtiene la URL del gateway configurada

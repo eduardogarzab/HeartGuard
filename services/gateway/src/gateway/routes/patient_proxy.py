@@ -116,6 +116,16 @@ def get_latest_location():
     return _proxy_get("/patient/location/latest")
 
 
+@bp.get("/locations")
+def get_locations():
+    """Proxy: Obtiene el historial de ubicaciones del paciente."""
+    # Pasar query params (limit, offset)
+    from flask import request
+    limit = request.args.get('limit', '50')
+    offset = request.args.get('offset', '0')
+    return _proxy_get(f"/patient/locations?limit={limit}&offset={offset}")
+
+
 @bp.get("/health")
 def health_check():
     """Proxy: Health check del Patient Service."""

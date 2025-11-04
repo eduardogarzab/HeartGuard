@@ -333,3 +333,43 @@ class PatientRepository:
                 LIMIT 1
             """, (patient_id,))
             return cursor.fetchone()
+    
+    @staticmethod
+    def get_location_history(patient_id: str, limit: int = 50, offset: int = 0) -> tuple[List[Dict], int]:
+        """
+        Obtiene el historial de ubicaciones del paciente con paginación
+        
+        Args:
+            patient_id: UUID del paciente
+            limit: Cantidad de resultados
+            offset: Desplazamiento
+            
+        Returns:
+            Tupla con (lista de ubicaciones, total de registros)
+        """
+        with get_db_cursor() as cursor:
+            # Total de ubicaciones
+            cursor.execute("""
+                SELECT COUNT(*) as total
+                FROM patient_locations
+                WHERE patient_id = %s
+            """, (patient_id,))
+            total = cursor.fetchone()['total']
+            
+            # Historial con paginación
+            cursor.execute("""
+                SELECT 
+                    id,
+                    ST_Y(geom) as latitude,
+                    ST_X(geom) as longitude,
+                    ts as timestamp,
+                    source,
+                    accuracy_m as accuracy_meters
+                FROM patient_locations
+                WHERE patient_id = %s
+                ORDER BY ts DESC
+                LIMIT %s OFFSET %s
+            """, (patient_id, limit, offset))
+            
+            locations = cursor.fetchall()
+            return locations, total

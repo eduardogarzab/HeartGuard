@@ -1,0 +1,172 @@
+# ============================================================================
+# COMANDOS PARA LEVANTAR SERVICIOS - HeartGuard
+# ============================================================================
+# Sistema: Windows con PowerShell
+# Fecha: Noviembre 2025
+# ============================================================================
+
+# ====================
+# 1. AUTH SERVICE
+# ====================
+# Puerto: 5001
+# Descripción: Servicio de autenticación y autorización
+
+# Terminal 1: Auth Service
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\services\auth
+.\restart.ps1
+
+# O manualmente:
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\services\auth
+python -m flask --app src.auth.app run --port 5001 --reload
+
+
+# ====================
+# 2. PATIENT SERVICE  
+# ====================
+# Puerto: 5004 (ACTUALIZADO de 5002 a 5004)
+# Descripción: Servicio dedicado al portal del paciente
+
+# Terminal 2: Patient Service
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\services\patient
+.\start.ps1
+
+# O manualmente:
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\services\patient
+python -m flask --app src.patient.app run --port 5004 --reload
+
+
+# ====================
+# 3. GATEWAY SERVICE
+# ====================
+# Puerto: 8000
+# Descripción: API Gateway que enruta peticiones a los microservicios
+
+# Terminal 3: Gateway
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\services\gateway
+python -m flask --app src.gateway.app run --port 8000 --reload
+
+
+# ====================
+# 4. DESKTOP APP
+# ====================
+# Descripción: Aplicación de escritorio Java (Swing)
+
+# Terminal 4: Desktop App
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\desktop-app
+java -jar target\desktop-app-1.0.0.jar
+
+
+# ============================================================================
+# VERIFICACIÓN DE SERVICIOS
+# ============================================================================
+
+# Health checks (ejecutar en otro terminal después de levantar servicios):
+
+# Auth Service
+curl http://localhost:5001/health
+
+# Patient Service  
+curl http://localhost:5004/health
+
+# Gateway
+curl http://localhost:8000/health
+
+
+# ============================================================================
+# CREDENCIALES DE PRUEBA
+# ============================================================================
+
+# Paciente con datos completos (caregivers, alertas, ubicaciones):
+# Email: maria.delgado@patients.heartguard.com
+# Password: (la contraseña que configuraste al registrar)
+
+# Para probar el login desde la aplicación de escritorio:
+# 1. Ejecuta la Desktop App
+# 2. Selecciona "Patient" en el tipo de cuenta
+# 3. Ingresa las credenciales
+# 4. El dashboard mostrará todas las secciones
+
+
+# ============================================================================
+# ENDPOINTS DISPONIBLES DEL PATIENT SERVICE
+# ============================================================================
+
+# Dashboard completo:
+GET http://localhost:8000/patient/dashboard
+Headers: Authorization: Bearer <token>
+
+# Perfil del paciente:
+GET http://localhost:8000/patient/profile
+Headers: Authorization: Bearer <token>
+
+# Alertas con paginación:
+GET http://localhost:8000/patient/alerts?status=new&limit=20&offset=0
+Headers: Authorization: Bearer <token>
+
+# Dispositivos:
+GET http://localhost:8000/patient/devices
+Headers: Authorization: Bearer <token>
+
+# Cuidadores (caregivers):
+GET http://localhost:8000/patient/caregivers
+Headers: Authorization: Bearer <token>
+
+# Última ubicación:
+GET http://localhost:8000/patient/location/latest
+Headers: Authorization: Bearer <token>
+
+# Historial de ubicaciones (NUEVO):
+GET http://localhost:8000/patient/locations?limit=50&offset=0
+Headers: Authorization: Bearer <token>
+
+# Lecturas de señales:
+GET http://localhost:8000/patient/readings?limit=50&offset=0
+Headers: Authorization: Bearer <token>
+
+# Equipo de cuidado:
+GET http://localhost:8000/patient/care-team
+Headers: Authorization: Bearer <token>
+
+
+# ============================================================================
+# TROUBLESHOOTING
+# ============================================================================
+
+# Si Patient Service no inicia:
+# 1. Verificar que el puerto 5004 esté libre:
+netstat -ano | findstr :5004
+
+# 2. Si está ocupado, matar el proceso:
+Stop-Process -Id <PID> -Force
+
+# Si Desktop App no encuentra el JAR:
+cd C:\Users\mendo\Downloads\code\UDEM\integracion\HeartGuard\desktop-app
+mvn clean package -DskipTests
+
+# Si hay errores de conexión a BD:
+# Verificar que las credenciales en .env sean correctas:
+# DATABASE_URL=postgresql://heartguard_app:dev_change_me@136.115.53.140:5432/heartguard
+
+# Si Gateway no puede conectar con Patient Service:
+# Verificar que PATIENT_SERVICE_URL en services/gateway/.env sea:
+# PATIENT_SERVICE_URL=http://localhost:5004
+
+
+# ============================================================================
+# PUERTOS UTILIZADOS
+# ============================================================================
+# 5001 - Auth Service
+# 5004 - Patient Service (actualizado de 5002)
+# 8000 - Gateway Service
+# 5432 - PostgreSQL (servidor remoto: 136.115.53.140)
+
+
+# ============================================================================
+# ORDEN RECOMENDADO DE INICIO
+# ============================================================================
+# 1. Auth Service (puerto 5001)
+# 2. Patient Service (puerto 5004)
+# 3. Gateway Service (puerto 8000)
+# 4. Desktop App
+
+# Una vez levantados los servicios, puedes abrir la Desktop App y probar.

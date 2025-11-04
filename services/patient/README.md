@@ -217,6 +217,58 @@ Authorization: Bearer <patient-token>
 }
 ```
 
+**Respuesta cuando no hay ubicaciones (200):**
+```json
+{
+  "location": null
+}
+```
+
+### 8. Historial de Ubicaciones (NUEVO)
+```http
+GET /patient/locations?limit=50&offset=0
+Authorization: Bearer <patient-token>
+```
+
+**Query Parameters:**
+- `limit` (opcional): Cantidad de resultados (default: 50, max: 500)
+- `offset` (opcional): Desplazamiento para paginación (default: 0)
+
+**Respuesta (200):**
+```json
+{
+  "locations": [
+    {
+      "id": "uuid",
+      "latitude": 19.4326,
+      "longitude": -99.1332,
+      "timestamp": "2025-11-03T10:00:00",
+      "source": "GPS",
+      "accuracy_meters": 15.0
+    },
+    {
+      "id": "uuid",
+      "latitude": 19.4305,
+      "longitude": -99.1400,
+      "timestamp": "2025-11-03T09:30:00",
+      "source": "manual",
+      "accuracy_meters": 50.0
+    }
+  ],
+  "total": 127,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+**Campos de cada ubicación:**
+- `id`: UUID de la ubicación
+- `latitude`: Latitud (decimal)
+- `longitude`: Longitud (decimal)
+- `timestamp`: Fecha y hora de la ubicación (ISO 8601)
+- `source`: Fuente de la ubicación (GPS, manual, network, etc.)
+- `accuracy_meters`: Precisión en metros (puede ser null)
+
 ## 🔒 Autenticación
 
 Todos los endpoints requieren un JWT válido de tipo `patient`:
