@@ -17,6 +17,7 @@ class AppConfig:
     secret_key: str = "dev"
     service_timeout: float = 5.0
     auth_service_url: str = "http://localhost:5001"
+    patient_service_url: str = "http://localhost:5004"
 
 
 CONFIG_CLASS = AppConfig
@@ -31,7 +32,8 @@ def configure_app(app: Any) -> None:
         testing=_str_to_bool(os.getenv("FLASK_TESTING", "0")),
         secret_key=os.getenv("FLASK_SECRET_KEY", "dev"),
         service_timeout=float(os.getenv("GATEWAY_SERVICE_TIMEOUT", "5")),
-    auth_service_url=os.getenv("AUTH_SERVICE_URL", "http://localhost:5001"),
+        auth_service_url=os.getenv("AUTH_SERVICE_URL", "http://localhost:5001"),
+    patient_service_url=os.getenv("PATIENT_SERVICE_URL", "http://localhost:5004"),
     )
 
     app.config.update(
@@ -40,6 +42,7 @@ def configure_app(app: Any) -> None:
         SECRET_KEY=config.secret_key,
         GATEWAY_SERVICE_TIMEOUT=config.service_timeout,
         AUTH_SERVICE_URL=config.auth_service_url,
+        PATIENT_SERVICE_URL=config.patient_service_url,
     )
 
 

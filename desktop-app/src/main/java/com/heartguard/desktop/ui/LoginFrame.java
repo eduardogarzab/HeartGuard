@@ -214,19 +214,25 @@ public class LoginFrame extends JFrame {
                     
                     String accountType = response.getAccountType();
                     String fullName = response.getFullName();
-                    String message = String.format(
-                        "Bienvenido, %s!\n\nTipo de cuenta: %s\nEmail: %s",
-                        fullName,
-                        accountType.equals("user") ? "Usuario (Staff)" : "Paciente",
-                        response.getEmail()
-                    );
                     
-                    JOptionPane.showMessageDialog(
-                        LoginFrame.this,
-                        message,
-                        "Login Exitoso",
-                        JOptionPane.INFORMATION_MESSAGE
-                    );
+                    // Si es paciente, abrir dashboard
+                    if (accountType.equals("patient")) {
+                        openPatientDashboard(response);
+                    } else {
+                        // Si es usuario (staff), mostrar mensaje temporal
+                        String message = String.format(
+                            "Bienvenido, %s!\n\nTipo de cuenta: Usuario (Staff)\nEmail: %s\n\nDashboard de staff próximamente...",
+                            fullName,
+                            response.getEmail()
+                        );
+                        
+                        JOptionPane.showMessageDialog(
+                            LoginFrame.this,
+                            message,
+                            "Login Exitoso",
+                            JOptionPane.INFORMATION_MESSAGE
+                        );
+                    }
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();
                     if (cause instanceof ApiException) {
@@ -735,4 +741,29 @@ public class LoginFrame extends JFrame {
         gbc.gridx = 1;
         panel.add(field, gbc);
     }
+    
+    /**
+     * Abre la ventana del dashboard del paciente
+     */
+    private void openPatientDashboard(LoginResponse loginResponse) {
+        // Crear nueva ventana para el dashboard
+        JFrame dashboardFrame = new JFrame("HeartGuard - Dashboard del Paciente");
+        dashboardFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        dashboardFrame.setSize(1000, 800);
+        dashboardFrame.setLocationRelativeTo(null);
+        
+        // Crear panel del dashboard
+        PatientDashboardPanel dashboardPanel = new PatientDashboardPanel(
+            apiClient,
+            loginResponse.getAccessToken(),
+            loginResponse.getPatientId()
+        );
+        
+        dashboardFrame.add(dashboardPanel);
+        dashboardFrame.setVisible(true);
+        
+        // Cerrar la ventana de login
+        this.dispose();
+    }
 }
+

@@ -6,7 +6,7 @@ import com.google.gson.annotations.SerializedName;
  * DTO simplificado para la respuesta de paciente en login
  */
 public class PatientLoginData {
-    private Long id;
+    private String id;  // UUID como string
     private String email;
     private String name;
     
@@ -20,11 +20,11 @@ public class PatientLoginData {
     public PatientLoginData() {}
 
     // Getters y Setters
-    public Long getId() {
+    public String getId() {
         return id;
     }
 
-    public void setId(Long id) {
+    public void setId(String id) {
         this.id = id;
     }
 

@@ -116,6 +116,16 @@ public class LoginResponse {
         return null;
     }
 
+    /**
+     * Obtiene el ID del paciente (solo para account_type = "patient")
+     */
+    public String getPatientId() {
+        if (patient != null && patient.getId() != null) {
+            return patient.getId();
+        }
+        return null;
+    }
+
     @Override
     public String toString() {
         return "LoginResponse{" +

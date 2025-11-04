@@ -267,6 +267,43 @@ public class ApiClient {
     }
 
     /**
+     * Obtiene el dashboard completo del paciente autenticado
+     * Requiere que el token de acceso esté configurado
+     * 
+     * @param token Token de acceso del paciente
+     * @return JsonObject con los datos del dashboard
+     * @throws ApiException si hay error en la petición
+     */
+    public JsonObject getPatientDashboard(String token) throws ApiException {
+        if (token == null || token.isEmpty()) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        String url = gatewayUrl + "/patient/dashboard";
+        
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer " + token)
+                .get()
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
+                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener dashboard";
+                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+            }
+
+            return gson.fromJson(responseBody, JsonObject.class);
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Obtiene la URL del gateway configurada
      */
     public String getGatewayUrl() {
