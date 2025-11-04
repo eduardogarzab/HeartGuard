@@ -96,10 +96,10 @@ def get_organization(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}", "GET")
 
 
-@bp.route("/organizations/<org_id>/dashboard", methods=["GET"])
+@bp.route("/organizations/<org_id>/dashboard/", methods=["GET"])
 def organization_dashboard(org_id: str):
     """Dashboard de la organización."""
-    return _proxy_request(f"/admin/organizations/{org_id}/dashboard", "GET")
+    return _proxy_request(f"/admin/organizations/{org_id}/dashboard/", "GET")
 
 
 # Rutas de staff
@@ -191,16 +191,16 @@ def caregiver_assignment_detail(org_id: str, patient_id: str, caregiver_id: str)
 
 
 # Rutas de alertas
-@bp.route("/organizations/<org_id>/alerts/", methods=["GET"])
+@bp.route("/organizations/<org_id>/alerts/", methods=["GET", "POST"])
 def alerts(org_id: str):
-    """Lista alertas de la organización."""
-    return _proxy_request(f"/admin/organizations/{org_id}/alerts/", "GET")
+    """Lista o crea alertas de la organización."""
+    return _proxy_request(f"/admin/organizations/{org_id}/alerts/", request.method)
 
 
-@bp.route("/organizations/<org_id>/alerts/<alert_id>", methods=["GET"])
+@bp.route("/organizations/<org_id>/alerts/<alert_id>", methods=["GET", "PATCH", "DELETE"])
 def alert_detail(org_id: str, alert_id: str):
     """Detalle de una alerta."""
-    return _proxy_request(f"/admin/organizations/{org_id}/alerts/{alert_id}", "GET")
+    return _proxy_request(f"/admin/organizations/{org_id}/alerts/{alert_id}", request.method)
 
 
 @bp.route("/organizations/<org_id>/alerts/<alert_id>/ack", methods=["POST"])
@@ -213,3 +213,55 @@ def alert_ack(org_id: str, alert_id: str):
 def alert_resolve(org_id: str, alert_id: str):
     """Resolver alerta."""
     return _proxy_request(f"/admin/organizations/{org_id}/alerts/{alert_id}/resolve", "POST")
+
+
+# Rutas de dispositivos
+@bp.route("/organizations/<org_id>/devices/", methods=["GET", "POST"])
+def devices(org_id: str):
+    """Lista o crea dispositivos."""
+    return _proxy_request(f"/admin/organizations/{org_id}/devices/", request.method)
+
+
+@bp.route("/organizations/<org_id>/devices/<device_id>", methods=["GET", "PATCH", "DELETE"])
+def device_detail(org_id: str, device_id: str):
+    """Gestión de un dispositivo específico."""
+    return _proxy_request(f"/admin/organizations/{org_id}/devices/{device_id}", request.method)
+
+
+# Rutas de push devices
+@bp.route("/organizations/<org_id>/push-devices/", methods=["GET"])
+def push_devices(org_id: str):
+    """Lista push devices."""
+    return _proxy_request(f"/admin/organizations/{org_id}/push-devices/", "GET")
+
+
+@bp.route("/organizations/<org_id>/push-devices/<push_device_id>", methods=["PATCH", "DELETE"])
+def push_device_detail(org_id: str, push_device_id: str):
+    """Gestión de un push device específico."""
+    return _proxy_request(f"/admin/organizations/{org_id}/push-devices/{push_device_id}", request.method)
+
+
+# Rutas de ground truth
+@bp.route("/organizations/<org_id>/patients/<patient_id>/ground-truth", methods=["GET", "POST"])
+def patient_ground_truth(org_id: str, patient_id: str):
+    """Gestión de ground truth labels de un paciente."""
+    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/ground-truth", request.method)
+
+
+@bp.route("/organizations/<org_id>/patients/<patient_id>/ground-truth/<label_id>", methods=["GET", "PATCH", "DELETE"])
+def patient_ground_truth_detail(org_id: str, patient_id: str, label_id: str):
+    """Gestión de un ground truth label específico."""
+    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/ground-truth/{label_id}", request.method)
+
+
+# Rutas de ubicaciones de pacientes
+@bp.route("/organizations/<org_id>/patients/<patient_id>/locations", methods=["GET", "POST"])
+def patient_locations(org_id: str, patient_id: str):
+    """Gestión de ubicaciones de un paciente."""
+    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/locations", request.method)
+
+
+@bp.route("/organizations/<org_id>/patients/<patient_id>/locations/<location_id>", methods=["DELETE"])
+def patient_location_detail(org_id: str, patient_id: str, location_id: str):
+    """Eliminar una ubicación específica."""
+    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/locations/{location_id}", request.method)

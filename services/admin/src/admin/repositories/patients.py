@@ -39,6 +39,16 @@ class PatientsRepository:
         birthdate: str | None,
         risk_level_id: str | None,
     ) -> dict[str, Any]:
+        # Si risk_level_id parece ser un código (no un UUID), convertirlo primero
+        if risk_level_id and len(risk_level_id) < 36:
+            # Es un código, no un UUID - buscar el UUID correspondiente
+            lookup_query = "SELECT id FROM risk_levels WHERE code = %s"
+            risk_level_row = db.fetch_one(lookup_query, (risk_level_id,))
+            if risk_level_row:
+                risk_level_id = str(risk_level_row['id'])
+            else:
+                risk_level_id = None
+        
         query = """
             SELECT * FROM sp_patient_create(
                 %(org_id)s,
@@ -88,6 +98,16 @@ class PatientsRepository:
         birthdate: str | None,
         risk_level_id: str | None,
     ) -> dict[str, Any] | None:
+        # Si risk_level_id parece ser un código (no un UUID), convertirlo primero
+        if risk_level_id and len(risk_level_id) < 36:
+            # Es un código, no un UUID - buscar el UUID correspondiente
+            lookup_query = "SELECT id FROM risk_levels WHERE code = %s"
+            risk_level_row = db.fetch_one(lookup_query, (risk_level_id,))
+            if risk_level_row:
+                risk_level_id = str(risk_level_row['id'])
+            else:
+                risk_level_id = None
+        
         query = """
             UPDATE patients
             SET person_name = COALESCE(%(name)s, person_name),

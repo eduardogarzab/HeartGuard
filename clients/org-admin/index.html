@@ -85,6 +85,8 @@
                     <button class="tab" data-tab="care-teams" type="button">Equipos de cuidado</button>
                     <button class="tab" data-tab="caregivers" type="button">Cuidadores</button>
                     <button class="tab" data-tab="alerts" type="button">Alertas</button>
+                    <button class="tab" data-tab="devices" type="button">Dispositivos</button>
+                    <button class="tab" data-tab="push-devices" type="button">Push Devices</button>
                 </div>
 
                 <div id="tabContent" class="tab-content">
@@ -118,9 +120,22 @@
                     </div>
                     <div id="tab-alerts" class="tab-panel">
                         <div class="tab-actions">
-                            <button id="btnRefreshAlerts" class="btn btn-ghost" type="button">Actualizar alertas</button>
+                            <button id="btnCreateAlert" class="btn btn-primary" type="button">Nueva alerta</button>
+                            <button id="btnRefreshAlerts" class="btn btn-ghost" type="button">Actualizar</button>
                         </div>
                         <div class="tab-body" id="alertsTable"></div>
+                    </div>
+                    <div id="tab-devices" class="tab-panel">
+                        <div class="tab-actions">
+                            <button id="btnCreateDevice" class="btn btn-primary" type="button">Nuevo dispositivo</button>
+                        </div>
+                        <div class="tab-body" id="devicesTable"></div>
+                    </div>
+                    <div id="tab-push-devices" class="tab-panel">
+                        <div class="tab-actions">
+                            <button id="btnRefreshPushDevices" class="btn btn-ghost" type="button">Actualizar</button>
+                        </div>
+                        <div class="tab-body" id="pushDevicesTable"></div>
                     </div>
                 </div>
             </section>

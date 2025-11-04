@@ -176,6 +176,58 @@ const Api = (() => {
                 levelLabel: Xml.text(node, "level_label"),
                 statusCode: Xml.text(node, "status_code"),
                 statusDescription: Xml.text(node, "status_description"),
+                locationWkt: Xml.text(node, "location_wkt"),
+            };
+        },
+        device(node) {
+            return {
+                id: Xml.text(node, "id"),
+                serialNumber: Xml.text(node, "serial_number"),
+                deviceTypeCode: Xml.text(node, "device_type_code"),
+                deviceTypeLabel: Xml.text(node, "device_type_label"),
+                patientId: Xml.text(node, "patient_id"),
+                patientName: Xml.text(node, "patient_name"),
+                statusCode: Xml.text(node, "status_code"),
+                statusLabel: Xml.text(node, "status_label"),
+                firmwareVersion: Xml.text(node, "firmware_version"),
+                lastSeen: Xml.text(node, "last_seen"),
+                createdAt: Xml.text(node, "created_at"),
+            };
+        },
+        pushDevice(node) {
+            return {
+                id: Xml.text(node, "id"),
+                userId: Xml.text(node, "user_id"),
+                userName: Xml.text(node, "user_name"),
+                deviceToken: Xml.text(node, "device_token"),
+                platform: Xml.text(node, "platform"),
+                isActive: Xml.bool(node, "is_active"),
+                lastUsed: Xml.text(node, "last_used"),
+                createdAt: Xml.text(node, "created_at"),
+            };
+        },
+        groundTruthLabel(node) {
+            return {
+                id: Xml.text(node, "id"),
+                patientId: Xml.text(node, "patient_id"),
+                eventTypeCode: Xml.text(node, "event_type_code"),
+                eventTypeLabel: Xml.text(node, "event_type_label"),
+                startTime: Xml.text(node, "start_time"),
+                endTime: Xml.text(node, "end_time"),
+                confidence: Xml.float(node, "confidence"),
+                notes: Xml.text(node, "notes"),
+                createdAt: Xml.text(node, "created_at"),
+            };
+        },
+        patientLocation(node) {
+            return {
+                id: Xml.text(node, "id"),
+                patientId: Xml.text(node, "patient_id"),
+                latitude: Xml.float(node, "latitude"),
+                longitude: Xml.float(node, "longitude"),
+                accuracy: Xml.float(node, "accuracy"),
+                recordedAt: Xml.text(node, "recorded_at"),
+                createdAt: Xml.text(node, "created_at"),
             };
         },
     };
@@ -219,12 +271,13 @@ const Api = (() => {
             },
             async dashboard(token, orgId, periodDays) {
                 const params = periodDays ? `?period_days=${encodeURIComponent(periodDays)}` : "";
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/dashboard${params}`, { token });
+                const url = `${cfg.adminBasePath}/organizations/${orgId}/dashboard/${params}`;
+                const doc = await requestXml(url, { token });
                 const statsNode = doc.querySelector("dashboard > stats");
                 if (!statsNode) {
                     throw new Error("El dashboard no devolvio estadisticas");
                 }
-                return {
+                const result = {
                     periodDays: Xml.integer(doc, "dashboard > period_days", 30),
                     stats: {
                         memberCount: Xml.integer(statsNode, "member_count"),
@@ -259,6 +312,7 @@ const Api = (() => {
                         count: Xml.integer(node, "count"),
                     })),
                 };
+                return result;
             },
             async listStaff(token, orgId) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/`, { token });
@@ -268,12 +322,17 @@ const Api = (() => {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/`, { token });
                 return Xml.mapNodes(doc, "response > patients > patient", transform.patient);
             },
+            async getPatient(token, orgId, patientId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}`, { token });
+                const node = doc.querySelector("response > patient");
+                return node ? transform.patient(node) : null;
+            },
             async listCareTeams(token, orgId) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/`, { token });
                 return Xml.mapNodes(doc, "response > care_teams > care_team", transform.careTeam);
             },
             async listCaregiverAssignments(token, orgId) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments`, { token });
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments/`, { token });
                 return Xml.mapNodes(doc, "response > caregiver_assignments > assignment", transform.caregiverAssignment);
             },
             async listAlerts(token, orgId) {
@@ -281,7 +340,7 @@ const Api = (() => {
                 return Xml.mapNodes(doc, "response > alerts > alert", transform.alert);
             },
             async createStaffInvitation(token, orgId, payload) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/invitations`, {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/invitations/`, {
                     method: "POST",
                     token,
                     body: payload,
@@ -332,7 +391,7 @@ const Api = (() => {
                 return transform.careTeam(node);
             },
             async listCaregiverRelationshipTypes(token, orgId) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/relationship-types`, { token });
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/relationship-types/`, { token });
                 return Xml.mapNodes(doc, "response > relationship_types > relationship_type", (node) => ({
                     id: Xml.text(node, "id"),
                     code: Xml.text(node, "code"),
@@ -340,7 +399,7 @@ const Api = (() => {
                 }));
             },
             async createCaregiverAssignment(token, orgId, payload) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments`, {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments/`, {
                     method: "POST",
                     token,
                     body: payload,
@@ -361,6 +420,154 @@ const Api = (() => {
                     method: "POST",
                     token,
                     body: payload,
+                });
+                return true;
+            },
+            
+            // Alerts CRUD
+            async getAlert(token, orgId, alertId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/${alertId}`, { token });
+                const alertNode = doc.querySelector("response > alert");
+                return alertNode ? transform.alert(alertNode) : null;
+            },
+            async createAlert(token, orgId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/`, {
+                    method: "POST",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > alert");
+                return transform.alert(node);
+            },
+            async updateAlert(token, orgId, alertId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/${alertId}`, {
+                    method: "PATCH",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > alert");
+                return node ? transform.alert(node) : null;
+            },
+            async deleteAlert(token, orgId, alertId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/${alertId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
+            },
+            
+            // Devices
+            async listDevices(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/devices/`, { token });
+                return Xml.mapNodes(doc, "response > devices > device", transform.device);
+            },
+            async getDevice(token, orgId, deviceId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/devices/${deviceId}`, { token });
+                const node = doc.querySelector("response > device");
+                return node ? transform.device(node) : null;
+            },
+            async createDevice(token, orgId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/devices/`, {
+                    method: "POST",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > device");
+                return transform.device(node);
+            },
+            async updateDevice(token, orgId, deviceId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/devices/${deviceId}`, {
+                    method: "PATCH",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > device");
+                return node ? transform.device(node) : null;
+            },
+            async deleteDevice(token, orgId, deviceId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/devices/${deviceId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
+            },
+            
+            // Push Devices
+            async listPushDevices(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/push-devices/`, { token });
+                return Xml.mapNodes(doc, "response > push_devices > push_device", transform.pushDevice);
+            },
+            async togglePushDevice(token, orgId, pushDeviceId, isActive) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/push-devices/${pushDeviceId}`, {
+                    method: "PATCH",
+                    token,
+                    body: { is_active: isActive },
+                });
+                const node = doc.querySelector("response > push_device");
+                return node ? transform.pushDevice(node) : null;
+            },
+            async deletePushDevice(token, orgId, pushDeviceId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/push-devices/${pushDeviceId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
+            },
+            
+            // Ground Truth Labels
+            async listGroundTruthLabels(token, orgId, patientId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/ground-truth`, { token });
+                return Xml.mapNodes(doc, "response > labels > label", transform.groundTruthLabel);
+            },
+            async getGroundTruthLabel(token, orgId, patientId, labelId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/ground-truth/${labelId}`, { token });
+                const node = doc.querySelector("response > label");
+                return node ? transform.groundTruthLabel(node) : null;
+            },
+            async createGroundTruthLabel(token, orgId, patientId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/ground-truth/`, {
+                    method: "POST",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > label");
+                return transform.groundTruthLabel(node);
+            },
+            async updateGroundTruthLabel(token, orgId, patientId, labelId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/ground-truth/${labelId}/`, {
+                    method: "PATCH",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > label");
+                return node ? transform.groundTruthLabel(node) : null;
+            },
+            async deleteGroundTruthLabel(token, orgId, patientId, labelId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/ground-truth/${labelId}/`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
+            },
+            
+            // Patient Locations
+            async listPatientLocations(token, orgId, patientId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/locations/`, { token });
+                return Xml.mapNodes(doc, "response > locations > location", transform.patientLocation);
+            },
+            async createPatientLocation(token, orgId, patientId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/locations/`, {
+                    method: "POST",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > location");
+                return transform.patientLocation(node);
+            },
+            async deletePatientLocation(token, orgId, patientId, locationId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/locations/${locationId}/`, {
+                    method: "DELETE",
+                    token,
                 });
                 return true;
             },

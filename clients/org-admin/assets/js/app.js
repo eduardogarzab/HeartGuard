@@ -49,6 +49,8 @@
             "care-teams": document.querySelector("#tab-care-teams"),
             caregivers: document.querySelector("#tab-caregivers"),
             alerts: document.querySelector("#tab-alerts"),
+            devices: document.querySelector("#tab-devices"),
+            "push-devices": document.querySelector("#tab-push-devices"),
         },
         tabBodies: {
             staff: document.querySelector("#staffTable"),
@@ -56,6 +58,8 @@
             "care-teams": document.querySelector("#careTeamsTable"),
             caregivers: document.querySelector("#caregiversTable"),
             alerts: document.querySelector("#alertsTable"),
+            devices: document.querySelector("#devicesTable"),
+            "push-devices": document.querySelector("#pushDevicesTable"),
         },
         tabs: Array.from(document.querySelectorAll(".tab-bar .tab")),
         buttons: {
@@ -63,7 +67,10 @@
             createPatient: document.querySelector("#btnCreatePatient"),
             createCareTeam: document.querySelector("#btnCreateCareTeam"),
             assignCaregiver: document.querySelector("#btnAssignCaregiver"),
+            createAlert: document.querySelector("#btnCreateAlert"),
             refreshAlerts: document.querySelector("#btnRefreshAlerts"),
+            createDevice: document.querySelector("#btnCreateDevice"),
+            refreshPushDevices: document.querySelector("#btnRefreshPushDevices"),
         },
         modal: {
             overlay: document.querySelector("#modalOverlay"),
@@ -481,14 +488,19 @@
         const container = el.tabBodies.patients || el.tabPanels.patients;
         renderTable(
             container,
-            ["Nombre", "Correo", "Riesgo", "Fecha de ingreso"],
+            ["Nombre", "Correo", "Fecha de nacimiento", "Riesgo", "Fecha de ingreso", "Acciones"],
             patients,
             (patient) => `
                 <tr>
                     <td>${escapeHtml(patient.name)}</td>
                     <td>${escapeHtml(patient.email)}</td>
+                    <td>${escapeHtml(formatDate(patient.birthdate))}</td>
                     <td><span class="status-badge">${escapeHtml(patient.riskLevelLabel || patient.riskLevelCode || "-")}</span></td>
                     <td>${escapeHtml(formatDate(patient.createdAt))}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="window.app.editPatient('${escapeHtml(patient.id)}')">Editar</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePatient('${escapeHtml(patient.id)}')">Eliminar</button>
+                    </td>
                 </tr>` ,
             "No se encontraron pacientes"
         );
@@ -533,7 +545,7 @@
         const container = el.tabBodies.alerts || el.tabPanels.alerts;
         renderTable(
             container,
-            ["Fecha", "Paciente", "Descripción", "Nivel", "Estado"],
+            ["Fecha", "Paciente", "Descripción", "Nivel", "Estado", "Acciones"],
             alerts,
             (alert) => `
                 <tr>
@@ -542,8 +554,57 @@
                     <td>${escapeHtml(alert.description)}</td>
                     <td><span class="status-badge ${alert.levelCode === "critical" ? "danger" : alert.levelCode === "high" ? "warning" : ""}">${escapeHtml(alert.levelLabel || alert.levelCode)}</span></td>
                     <td>${escapeHtml(alert.statusDescription || alert.statusCode)}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="window.app.editAlert('${escapeHtml(alert.id)}')">Editar</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteAlert('${escapeHtml(alert.id)}')">Eliminar</button>
+                    </td>
                 </tr>` ,
             "No se han generado alertas"
+        );
+    };
+
+    const renderDevices = (devices) => {
+        const container = el.tabBodies.devices || el.tabPanels.devices;
+        renderTable(
+            container,
+            ["Serial", "Tipo", "Paciente", "Estado", "Firmware", "Última conexión", "Acciones"],
+            devices,
+            (device) => `
+                <tr>
+                    <td><code>${escapeHtml(device.serialNumber)}</code></td>
+                    <td>${escapeHtml(device.deviceTypeLabel || device.deviceTypeCode)}</td>
+                    <td>${escapeHtml(device.patientName || "-")}</td>
+                    <td><span class="status-badge ${device.statusCode === "ACTIVE" ? "success" : ""}">${escapeHtml(device.statusLabel || device.statusCode)}</span></td>
+                    <td>${escapeHtml(device.firmwareVersion || "-")}</td>
+                    <td>${escapeHtml(formatDateTime(device.lastSeen))}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="window.app.editDevice('${escapeHtml(device.id)}')">Editar</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteDevice('${escapeHtml(device.id)}')">Eliminar</button>
+                    </td>
+                </tr>` ,
+            "No se encontraron dispositivos"
+        );
+    };
+
+    const renderPushDevices = (pushDevices) => {
+        const container = el.tabBodies["push-devices"] || el.tabPanels["push-devices"];
+        renderTable(
+            container,
+            ["Usuario", "Plataforma", "Token", "Estado", "Última uso", "Acciones"],
+            pushDevices,
+            (pd) => `
+                <tr>
+                    <td>${escapeHtml(pd.userName)}</td>
+                    <td><span class="status-badge">${escapeHtml(pd.platform)}</span></td>
+                    <td><code>${escapeHtml(pd.deviceToken?.substring(0, 20))}...</code></td>
+                    <td><span class="status-badge ${pd.isActive ? "success" : ""}">${pd.isActive ? "Activo" : "Inactivo"}</span></td>
+                    <td>${escapeHtml(formatDateTime(pd.lastUsed))}</td>
+                    <td>
+                        <button class="btn btn-sm" onclick="window.app.togglePushDevice('${escapeHtml(pd.id)}', ${!pd.isActive})">${pd.isActive ? "Desactivar" : "Activar"}</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePushDevice('${escapeHtml(pd.id)}')">Eliminar</button>
+                    </td>
+                </tr>` ,
+            "No se encontraron push devices"
         );
     };
 
@@ -553,6 +614,8 @@
         "care-teams": renderCareTeams,
         caregivers: renderCaregivers,
         alerts: renderAlerts,
+        devices: renderDevices,
+        "push-devices": renderPushDevices,
     };
 
     const activateTab = async (tabName) => {
@@ -593,6 +656,12 @@
                     break;
                 case "alerts":
                     data = await Api.admin.listAlerts(state.token, state.selectedOrgId);
+                    break;
+                case "devices":
+                    data = await Api.admin.listDevices(state.token, state.selectedOrgId);
+                    break;
+                case "push-devices":
+                    data = await Api.admin.listPushDevices(state.token, state.selectedOrgId);
                     break;
                 default:
                     data = [];
@@ -705,6 +774,99 @@
         }
     };
 
+    const showPatientModal = (patient = null) => {
+        const isEdit = !!patient;
+        const modalHtml = `
+            <div class="modal-overlay" id="patientModalOverlay">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>${isEdit ? 'Editar Paciente' : 'Nuevo Paciente'}</h3>
+                        <button class="modal-close" onclick="document.getElementById('patientModalOverlay').remove()">&times;</button>
+                    </div>
+                    <form id="patientForm" class="modal-form">
+                        <div class="form-group">
+                            <label for="patientName">Nombre completo *</label>
+                            <input type="text" id="patientName" name="name" value="${escapeHtml(patient?.name || '')}" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="patientEmail">Correo electrónico *</label>
+                            <input type="email" id="patientEmail" name="email" value="${escapeHtml(patient?.email || '')}" ${isEdit ? 'disabled' : 'required'}>
+                        </div>
+                        ${!isEdit ? `
+                        <div class="form-group">
+                            <label for="patientPassword">Contraseña *</label>
+                            <input type="password" id="patientPassword" name="password" required minlength="6">
+                        </div>
+                        ` : ''}
+                        <div class="form-group">
+                            <label for="patientBirthdate">Fecha de nacimiento</label>
+                            <input type="date" id="patientBirthdate" name="birthdate" value="${patient?.birthdate || ''}">
+                        </div>
+                        <div class="form-group">
+                            <label for="patientRiskLevel">Nivel de riesgo</label>
+                            <select id="patientRiskLevel" name="risk_level_id">
+                                <option value="">-- Sin especificar --</option>
+                                <option value="low" ${patient?.riskLevelCode === 'low' ? 'selected' : ''}>Bajo</option>
+                                <option value="medium" ${patient?.riskLevelCode === 'medium' ? 'selected' : ''}>Medio</option>
+                                <option value="high" ${patient?.riskLevelCode === 'high' ? 'selected' : ''}>Alto</option>
+                            </select>
+                        </div>
+                        <div class="form-error hidden" id="patientFormError"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('patientModalOverlay').remove()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">${isEdit ? 'Actualizar' : 'Crear'}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+        
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        const form = document.getElementById('patientForm');
+        const errorEl = document.getElementById('patientFormError');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            errorEl.classList.add('hidden');
+            
+            const formData = new FormData(form);
+            const payload = {
+                name: formData.get('name'),
+                birthdate: formData.get('birthdate') || null,
+                risk_level_id: formData.get('risk_level_id') || null,
+            };
+            
+            if (!isEdit) {
+                payload.email = formData.get('email');
+                payload.password = formData.get('password');
+            }
+            
+            try {
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+                submitBtn.textContent = isEdit ? 'Actualizando...' : 'Creando...';
+                
+                if (isEdit) {
+                    await Api.admin.updatePatient(state.token, state.selectedOrgId, patient.id, payload);
+                } else {
+                    await Api.admin.createPatient(state.token, state.selectedOrgId, payload);
+                }
+                
+                document.getElementById('patientModalOverlay').remove();
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('patients');
+                await activateTab('patients');
+            } catch (error) {
+                errorEl.textContent = error.message || 'Error al guardar el paciente';
+                errorEl.classList.remove('hidden');
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? 'Actualizar' : 'Crear';
+            }
+        });
+    };
+
     const bindEvents = () => {
         el.loginForm?.addEventListener("submit", (event) => {
             event.preventDefault();
@@ -751,6 +913,25 @@
                 activateTab(tabName);
             });
         });
+
+        // New CRUD button handlers
+        el.buttons.createPatient?.addEventListener("click", () => {
+            showPatientModal();
+        });
+
+        el.buttons.createAlert?.addEventListener("click", () => {
+            // TODO: Open modal form for creating alert
+            console.log("Create alert clicked");
+        });
+
+        el.buttons.createDevice?.addEventListener("click", () => {
+            // TODO: Open modal form for creating device
+            console.log("Create device clicked");
+        });
+
+        el.buttons.refreshPushDevices?.addEventListener("click", () => {
+            activateTab("push-devices");
+        });
     };
 
     const bootstrap = async () => {
@@ -773,6 +954,82 @@
             }
         } else {
             showView("login");
+        }
+    };
+
+    // Expose global functions for inline onclick handlers
+    window.app = {
+        editPatient: async (patientId) => {
+            try {
+                const patient = await Api.admin.getPatient(state.token, state.selectedOrgId, patientId);
+                if (patient) {
+                    showPatientModal(patient);
+                }
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        deletePatient: async (patientId) => {
+            if (!confirm("¿Está seguro de eliminar este paciente? Esta acción no se puede deshacer.")) return;
+            try {
+                await Api.admin.deletePatient(state.token, state.selectedOrgId, patientId);
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('patients');
+                await activateTab("patients");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        editAlert: async (alertId) => {
+            console.log("Edit alert:", alertId);
+            // TODO: Open modal form with alert data
+        },
+        deleteAlert: async (alertId) => {
+            if (!confirm("¿Está seguro de eliminar esta alerta?")) return;
+            try {
+                await Api.admin.deleteAlert(state.token, state.selectedOrgId, alertId);
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('alerts');
+                await activateTab("alerts");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        editDevice: async (deviceId) => {
+            console.log("Edit device:", deviceId);
+            // TODO: Open modal form with device data
+        },
+        deleteDevice: async (deviceId) => {
+            if (!confirm("¿Está seguro de eliminar este dispositivo?")) return;
+            try {
+                await Api.admin.deleteDevice(state.token, state.selectedOrgId, deviceId);
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('devices');
+                await activateTab("devices");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        togglePushDevice: async (pushDeviceId, activate) => {
+            try {
+                await Api.admin.togglePushDevice(state.token, state.selectedOrgId, pushDeviceId, activate);
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('push-devices');
+                await activateTab("push-devices");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        deletePushDevice: async (pushDeviceId) => {
+            if (!confirm("¿Está seguro de eliminar este push device?")) return;
+            try {
+                await Api.admin.deletePushDevice(state.token, state.selectedOrgId, pushDeviceId);
+                // Limpiar caché para forzar recarga de datos
+                state.tabCache.delete('push-devices');
+                await activateTab("push-devices");
+            } catch (error) {
+                handleApiError(error);
+            }
         }
     };
 

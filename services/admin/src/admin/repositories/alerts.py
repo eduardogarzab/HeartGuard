@@ -70,6 +70,9 @@ class AlertsRepository:
                 a.created_at,
                 a.description,
                 a.type_id,
+                a.created_by_model_id,
+                a.source_inference_id,
+                ST_AsText(a.location)::text AS location_wkt,
                 at.code AS type_code,
                 at.description AS type_description,
                 a.alert_level_id,
@@ -156,3 +159,84 @@ class AlertsRepository:
                       note
         """
         return db.fetch_one(query, (alert_id, user_id, outcome, note))
+
+    def create_alert(
+        self,
+        patient_id: str,
+        *,
+        alert_type_code: str,
+        alert_level_code: str,
+        status_code: str,
+        description: str | None = None,
+        model_id: str | None = None,
+        inference_id: str | None = None,
+        location_wkt: str | None = None,
+    ) -> dict[str, Any] | None:
+        query = """
+            SELECT *
+            FROM heartguard.sp_alert_create(
+                %(patient_id)s,
+                %(alert_type_code)s,
+                %(alert_level_code)s,
+                %(status_code)s,
+                %(model_id)s,
+                %(inference_id)s,
+                %(description)s,
+                %(location_wkt)s
+            )
+        """
+        params = {
+            "patient_id": patient_id,
+            "alert_type_code": alert_type_code,
+            "alert_level_code": alert_level_code,
+            "status_code": status_code,
+            "model_id": model_id,
+            "inference_id": inference_id,
+            "description": description,
+            "location_wkt": location_wkt,
+        }
+        return db.fetch_one(query, params)
+
+    def update_alert(
+        self,
+        alert_id: str,
+        *,
+        alert_type_code: str,
+        alert_level_code: str,
+        status_code: str,
+        description: str | None = None,
+        model_id: str | None = None,
+        inference_id: str | None = None,
+        location_wkt: str | None = None,
+    ) -> dict[str, Any] | None:
+        query = """
+            SELECT *
+            FROM heartguard.sp_alert_update(
+                %(alert_id)s,
+                %(alert_type_code)s,
+                %(alert_level_code)s,
+                %(status_code)s,
+                %(model_id)s,
+                %(inference_id)s,
+                %(description)s,
+                %(location_wkt)s
+            )
+        """
+        params = {
+            "alert_id": alert_id,
+            "alert_type_code": alert_type_code,
+            "alert_level_code": alert_level_code,
+            "status_code": status_code,
+            "model_id": model_id,
+            "inference_id": inference_id,
+            "description": description,
+            "location_wkt": location_wkt,
+        }
+        return db.fetch_one(query, params)
+
+    def delete_alert(self, alert_id: str) -> bool:
+        query = """
+            SELECT heartguard.sp_alert_delete(%(alert_id)s) AS deleted
+        """
+        result = db.fetch_one(query, {"alert_id": alert_id}) or {}
+        return bool(result.get("deleted"))

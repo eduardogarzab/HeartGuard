@@ -35,7 +35,7 @@ def create_patient(org_id: str):
     email = (payload.get("email") or "").strip().lower()
     password = payload.get("password") or payload.get("raw_password")
     birthdate = payload.get("birthdate")
-    risk_level_id = payload.get("risk_level_id")
+    risk_level_input = payload.get("risk_level_id")
 
     if not name:
         return xml_error_response("invalid_input", "Name is required", status=400)
@@ -44,13 +44,14 @@ def create_patient(org_id: str):
     if not password:
         return xml_error_response("invalid_input", "Password is required", status=400)
 
+    # El repositorio se encargará de convertir el código a UUID si es necesario
     patient = _repo.create_patient(
         org_id=org_id,
         name=name,
         email=email,
         raw_password=password,
         birthdate=birthdate,
-        risk_level_id=risk_level_id,
+        risk_level_id=risk_level_input,
     )
 
     error_response = _validate_org(patient, org_id)
@@ -79,6 +80,7 @@ def update_patient(org_id: str, patient_id: str):
     if error_response:
         return error_response
 
+    # El repositorio se encargará de convertir el código a UUID si es necesario
     updated = _repo.update_patient(
         patient_id,
         name=(payload.get("name") or None),

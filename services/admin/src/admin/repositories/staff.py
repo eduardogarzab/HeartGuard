@@ -12,10 +12,10 @@ class StaffRepository:
     def list_members(self, org_id: str) -> list[dict[str, Any]]:
         query = """
             SELECT
-                u.id,
+                u.id AS user_id,
                 u.name,
                 u.email,
-                m.role_code AS org_role,
+                m.role_code,
                 r.label AS role_label,
                 m.joined_at
             FROM user_org_membership m

@@ -23,7 +23,7 @@ def _auth_context(req: Request) -> AuthContext:
 @require_org_admin
 def list_staff(org_id: str):
     members = _repo.list_members(org_id)
-    return xml_response({"members": members})
+    return xml_response({"staff_members": members})
 
 
 @bp.get("/invitations")
