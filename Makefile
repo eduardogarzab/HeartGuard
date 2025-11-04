@@ -176,6 +176,7 @@ db-health:
 	psql "$(DB_URL)" -c "SHOW search_path;" && \
 	psql "$(DB_URL)" -c "SELECT postgis_version();" && \
 	psql "$(DB_URL)" -c "SELECT count(*) AS roles FROM roles;" && \
+	psql "$(DB_URL)" -c "SELECT count(*) AS permissions FROM permissions;" && \
 	psql "$(DB_URL)" -c "SELECT count(*) AS statuses FROM user_statuses;" && \
 	psql "$(DB_URL)" -c "SELECT count(*) AS alert_levels FROM alert_levels;" && \
 	psql "$(DB_URL)" -c "SELECT email FROM users WHERE email='admin@heartguard.com';"
