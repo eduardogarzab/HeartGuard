@@ -58,15 +58,33 @@ class AnalyticsRepository:
     def alert_response_stats(self, org_id: str, *, days: int = 30) -> dict[str, Any]:
         since = _since(days)
         query = """
+            WITH ack_times AS (
+                SELECT
+                    a.id,
+                    EXTRACT(EPOCH FROM ack.ack_at - a.created_at) AS ack_seconds
+                FROM alerts a
+                JOIN patients p ON p.id = a.patient_id
+                JOIN alert_ack ack ON ack.alert_id = a.id
+                WHERE p.org_id = %(org_id)s
+                  AND a.created_at >= %(since)s
+                  AND ack.ack_at > a.created_at
+            ),
+            resolve_times AS (
+                SELECT
+                    a.id,
+                    EXTRACT(EPOCH FROM res.resolved_at - a.created_at) AS resolve_seconds
+                FROM alerts a
+                JOIN patients p ON p.id = a.patient_id
+                JOIN alert_resolution res ON res.alert_id = a.id
+                WHERE p.org_id = %(org_id)s
+                  AND a.created_at >= %(since)s
+                  AND res.resolved_at > a.created_at
+            )
             SELECT
-                COALESCE(AVG(EXTRACT(EPOCH FROM ack.ack_at - a.created_at)), 0) AS avg_ack_seconds,
-                COALESCE(AVG(EXTRACT(EPOCH FROM res.resolved_at - a.created_at)), 0) AS avg_resolve_seconds
-            FROM alerts a
-            JOIN patients p ON p.id = a.patient_id
-            LEFT JOIN alert_ack ack ON ack.alert_id = a.id
-            LEFT JOIN alert_resolution res ON res.alert_id = a.id
-            WHERE p.org_id = %(org_id)s
-              AND a.created_at >= %(since)s
+                COALESCE(AVG(ack_seconds), 0) AS avg_ack_seconds,
+                COALESCE(AVG(resolve_seconds), 0) AS avg_resolve_seconds
+            FROM ack_times
+            FULL OUTER JOIN resolve_times ON ack_times.id = resolve_times.id
         """
         params = {"org_id": org_id, "since": since}
         stats = db.fetch_one(query, params) or {}
