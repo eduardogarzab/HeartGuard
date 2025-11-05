@@ -96,14 +96,36 @@
                         <div class="overview-charts" id="overviewCharts"></div>
                     </div>
                     <div id="tab-staff" class="tab-panel">
-                        <div class="tab-actions">
-                            <button id="btnInviteStaff" class="btn btn-primary" type="button">Invitar miembro</button>
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <input 
+                                    type="text" 
+                                    id="staffSearchInput" 
+                                    class="form-input" 
+                                    placeholder="Buscar por nombre o correo..." 
+                                    style="min-width: 250px;"
+                                />
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnInviteStaff" class="btn btn-primary" type="button">Invitar miembro</button>
+                            </div>
                         </div>
                         <div class="tab-body" id="staffTable"></div>
                     </div>
                     <div id="tab-patients" class="tab-panel">
-                        <div class="tab-actions">
-                            <button id="btnCreatePatient" class="btn btn-primary" type="button">Nuevo paciente</button>
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <input 
+                                    type="text" 
+                                    id="patientsSearchInput" 
+                                    class="form-input" 
+                                    placeholder="Buscar por nombre o correo..." 
+                                    style="min-width: 250px;"
+                                />
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreatePatient" class="btn btn-primary" type="button">Nuevo paciente</button>
+                            </div>
                         </div>
                         <div class="tab-body" id="patientsTable"></div>
                     </div>
@@ -120,9 +142,28 @@
                         <div class="tab-body" id="caregiversTable"></div>
                     </div>
                     <div id="tab-alerts" class="tab-panel">
-                        <div class="tab-actions">
-                            <button id="btnCreateAlert" class="btn btn-primary" type="button">Nueva alerta</button>
-                            <button id="btnRefreshAlerts" class="btn btn-ghost" type="button">Actualizar</button>
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <select id="alertsStatusFilter" class="form-select" style="min-width: 140px;">
+                                    <option value="">Todos los estados</option>
+                                    <option value="new">Nuevo</option>
+                                    <option value="acknowledged">Reconocida</option>
+                                    <option value="resolved">Resuelta</option>
+                                    <option value="dismissed">Descartada</option>
+                                </select>
+                                <select id="alertsLevelFilter" class="form-select" style="min-width: 130px;">
+                                    <option value="">Todos los niveles</option>
+                                    <option value="info">Info</option>
+                                    <option value="low">Bajo</option>
+                                    <option value="medium">Medio</option>
+                                    <option value="high">Alto</option>
+                                    <option value="critical">Crítico</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreateAlert" class="btn btn-primary" type="button">Nueva alerta</button>
+                                <button id="btnRefreshAlerts" class="btn btn-ghost" type="button">Actualizar</button>
+                            </div>
                         </div>
                         <div class="tab-body" id="alertsTable"></div>
                     </div>
@@ -142,14 +183,32 @@
                         <div class="tab-body" id="groundTruthTable"></div>
                     </div>
                     <div id="tab-devices" class="tab-panel">
-                        <div class="tab-actions">
-                            <button id="btnCreateDevice" class="btn btn-primary" type="button">Nuevo dispositivo</button>
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <select id="devicesStatusFilter" class="form-select" style="min-width: 140px;">
+                                    <option value="">Todos los estados</option>
+                                    <option value="active">Activo</option>
+                                    <option value="inactive">Inactivo</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreateDevice" class="btn btn-primary" type="button">Nuevo dispositivo</button>
+                            </div>
                         </div>
                         <div class="tab-body" id="devicesTable"></div>
                     </div>
                     <div id="tab-push-devices" class="tab-panel">
-                        <div class="tab-actions">
-                            <button id="btnRefreshPushDevices" class="btn btn-ghost" type="button">Actualizar</button>
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <select id="pushDevicesStatusFilter" class="form-select" style="min-width: 140px;">
+                                    <option value="">Todos los estados</option>
+                                    <option value="active">Activo</option>
+                                    <option value="inactive">Inactivo</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnRefreshPushDevices" class="btn btn-ghost" type="button">Actualizar</button>
+                            </div>
                         </div>
                         <div class="tab-body" id="pushDevicesTable"></div>
                     </div>

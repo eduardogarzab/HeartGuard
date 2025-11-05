@@ -177,6 +177,27 @@ a {
     box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
 }
 
+.form-input {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    font-size: 0.95rem;
+    background-color: #fff;
+    min-width: 220px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.form-input::placeholder {
+    color: var(--text-muted);
+    opacity: 0.7;
+}
+
 .sr-only {
     position: absolute;
     width: 1px;
@@ -1874,6 +1895,66 @@ table tbody tr.table-row-clickable:hover td:first-child {
     flex-shrink: 0;
 }
 
+/* Pagination Styles */
+.pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 1.5rem;
+    padding: 1rem 0;
+}
+
+.pagination-btn {
+    min-width: 36px;
+    height: 36px;
+    padding: 0 0.75rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(:disabled) {
+    background: var(--surface-alt);
+    border-color: var(--primary);
+    color: var(--primary);
+}
+
+.pagination-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.pagination-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+/* Filter Row Styles */
+.filter-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.filter-row label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin: 0;
+}
+
+.filter-row .form-select {
+    font-size: 0.875rem;
+}
+
 /* Responsive Adjustments */
 @media (max-width: 768px) {
     .modal-xl {
@@ -1910,6 +1991,17 @@ table tbody tr.table-row-clickable:hover td:first-child {
 
     .care-team-add-form .form-group {
         width: 100%;
+    }
+    
+    .filter-row {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+    }
+    
+    .filter-row .form-select {
+        width: 100%;
+        max-width: none !important;
     }
 }
 

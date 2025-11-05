@@ -21,6 +21,22 @@
         availablePatients: [],
         groundTruthSelectedPatientId: null,
         groundTruthEventTypes: [],
+        alertsFilterStatus: null,
+        alertsFilterLevel: null,
+        devicesFilterStatus: null,
+        pushDevicesFilterStatus: null,
+        invitationsFilterStatus: null,
+        patientsSearchQuery: '',
+        staffSearchQuery: '',
+        pagination: {
+            patients: { page: 1, perPage: 10 },
+            staff: { page: 1, perPage: 10 },
+            invitations: { page: 1, perPage: 10 },
+            alerts: { page: 1, perPage: 10 },
+            devices: { page: 1, perPage: 10 },
+            pushDevices: { page: 1, perPage: 10 },
+            caregivers: { page: 1, perPage: 10 },
+        },
     };
 
     const el = {
@@ -83,6 +99,12 @@
             refreshPushDevices: document.querySelector("#btnRefreshPushDevices"),
         },
         groundTruthPatientFilter: document.querySelector("#groundTruthPatientFilter"),
+        patientsSearchInput: document.querySelector("#patientsSearchInput"),
+        staffSearchInput: document.querySelector("#staffSearchInput"),
+        alertsStatusFilter: document.querySelector("#alertsStatusFilter"),
+        alertsLevelFilter: document.querySelector("#alertsLevelFilter"),
+        devicesStatusFilter: document.querySelector("#devicesStatusFilter"),
+        pushDevicesStatusFilter: document.querySelector("#pushDevicesStatusFilter"),
         modal: {
             overlay: document.querySelector("#modalOverlay"),
             title: document.querySelector("#modalTitle"),
@@ -284,6 +306,36 @@
     };
 
     const hasItems = (value) => Array.isArray(value) && value.length > 0;
+
+    const paginateArray = (array, page, perPage) => {
+        const start = (page - 1) * perPage;
+        const end = start + perPage;
+        return array.slice(start, end);
+    };
+
+    const renderPagination = (totalItems, currentPage, perPage, onPageChange) => {
+        if (totalItems <= perPage) return "";
+        const totalPages = Math.ceil(totalItems / perPage);
+        if (totalPages <= 1) return "";
+
+        const pages = [];
+        for (let i = 1; i <= totalPages; i++) {
+            pages.push(i);
+        }
+
+        const buttons = pages.map((page) => {
+            const activeClass = page === currentPage ? "pagination-btn--active" : "";
+            return `<button class="pagination-btn ${activeClass}" data-page="${page}" type="button">${page}</button>`;
+        });
+
+        return `
+            <div class="pagination">
+                <button class="pagination-btn" data-page="${currentPage - 1}" type="button" ${currentPage === 1 ? "disabled" : ""}>‹ Anterior</button>
+                ${buttons.join("")}
+                <button class="pagination-btn" data-page="${currentPage + 1}" type="button" ${currentPage === totalPages ? "disabled" : ""}>Siguiente ›</button>
+            </div>
+        `;
+    };
 
     const persistState = () => {
         if (state.token) {
@@ -600,11 +652,48 @@
     const renderStaff = (data) => {
         const container = el.tabBodies.staff || el.tabPanels.staff;
         
+        // Filter staff by search query
+        let staffMembers = data.members || [];
+        if (state.staffSearchQuery) {
+            const query = state.staffSearchQuery.toLowerCase();
+            staffMembers = staffMembers.filter((m) =>
+                (m.name && m.name.toLowerCase().includes(query)) ||
+                (m.email && m.email.toLowerCase().includes(query))
+            );
+        }
+        
+        // Paginate staff members
+        const staffPage = state.pagination.staff.page;
+        const staffPerPage = state.pagination.staff.perPage;
+        const paginatedStaff = paginateArray(staffMembers, staffPage, staffPerPage);
+        
+        // Filter invitations by status
+        let invitations = data.invitations || [];
+        if (state.invitationsFilterStatus) {
+            invitations = invitations.filter((inv) => inv.status === state.invitationsFilterStatus);
+        }
+        
+        // Paginate invitations
+        const invitationsPage = state.pagination.invitations.page;
+        const invitationsPerPage = state.pagination.invitations.perPage;
+        const paginatedInvitations = paginateArray(invitations, invitationsPage, invitationsPerPage);
+        
+        // Build pagination controls
+        const staffPagination = renderPagination(staffMembers.length, staffPage, staffPerPage, (page) => {
+            state.pagination.staff.page = page;
+            renderStaff(data);
+        });
+        
+        const invitationsPagination = renderPagination(invitations.length, invitationsPage, invitationsPerPage, (page) => {
+            state.pagination.invitations.page = page;
+            renderStaff(data);
+        });
+        
         // Split into two sections: staff members and invitations
         const staffHtml = `
             <div class="staff-section">
-                <h4 class="section-subtitle">Miembros del Staff</h4>
-                ${!data.members || !data.members.length ? '<p class="muted">No se encontraron miembros del staff</p>' : `
+                <h4 class="section-subtitle">Miembros del Staff (${staffMembers.length})</h4>
+                ${!paginatedStaff.length ? '<p class="muted">No se encontraron miembros del staff</p>' : `
                     <div class="table-wrapper">
                         <table>
                             <thead>
@@ -616,7 +705,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                ${data.members.map(member => `
+                                ${paginatedStaff.map(member => `
                                     <tr class="table-row-clickable" onclick="window.app.viewStaffProfile('${escapeHtml(member.userId || "")}')">
                                         <td>${escapeHtml(member.name)}</td>
                                         <td>${escapeHtml(member.email)}</td>
@@ -627,11 +716,22 @@
                             </tbody>
                         </table>
                     </div>
+                    ${staffPagination}
                 `}
             </div>
             <div class="staff-section">
-                <h4 class="section-subtitle">Invitaciones</h4>
-                ${!data.invitations || !data.invitations.length ? '<p class="muted">No hay invitaciones</p>' : `
+                <h4 class="section-subtitle">Invitaciones (${invitations.length})</h4>
+                <div class="filter-row" style="margin-bottom: 1rem;">
+                    <label for="invitationsStatusFilterInline">Filtrar por estado:</label>
+                    <select id="invitationsStatusFilterInline" class="form-select" style="max-width: 200px;">
+                        <option value="">Todos</option>
+                        <option value="pending" ${state.invitationsFilterStatus === 'pending' ? 'selected' : ''}>Pendiente</option>
+                        <option value="used" ${state.invitationsFilterStatus === 'used' ? 'selected' : ''}>Usada</option>
+                        <option value="expired" ${state.invitationsFilterStatus === 'expired' ? 'selected' : ''}>Expirada</option>
+                        <option value="revoked" ${state.invitationsFilterStatus === 'revoked' ? 'selected' : ''}>Revocada</option>
+                    </select>
+                </div>
+                ${!paginatedInvitations.length ? '<p class="muted">No hay invitaciones</p>' : `
                     <div class="table-wrapper">
                         <table>
                             <thead>
@@ -645,7 +745,7 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                ${data.invitations.map(inv => {
+                                ${paginatedInvitations.map(inv => {
                                     const statusClass = inv.status === 'pending' ? 'status-warning' : 
                                                        inv.status === 'used' ? 'status-success' : 
                                                        inv.status === 'expired' ? 'status-muted' : 
@@ -672,33 +772,99 @@
                             </tbody>
                         </table>
                     </div>
+                    ${invitationsPagination}
                 `}
             </div>
         `;
         
         container.innerHTML = staffHtml;
+        
+        // Bind inline filter
+        const inlineFilter = container.querySelector('#invitationsStatusFilterInline');
+        if (inlineFilter) {
+            inlineFilter.addEventListener('change', (e) => {
+                state.invitationsFilterStatus = e.target.value || null;
+                state.pagination.invitations.page = 1;
+                renderStaff(data);
+            });
+        }
+        
+        // Bind pagination clicks
+        container.querySelectorAll('.pagination-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const page = parseInt(btn.dataset.page, 10);
+                if (Number.isNaN(page) || page < 1) return;
+                const section = btn.closest('.staff-section');
+                if (section && section.querySelector('.section-subtitle')?.textContent.includes('Miembros')) {
+                    state.pagination.staff.page = page;
+                } else {
+                    state.pagination.invitations.page = page;
+                }
+                renderStaff(data);
+            });
+        });
     };
 
-    const renderPatients = (patients) => {
+    const renderPatients = (allPatients) => {
         const container = el.tabBodies.patients || el.tabPanels.patients;
-        renderTable(
-            container,
-            ["Nombre", "Correo", "Fecha de nacimiento", "Riesgo", "Fecha de ingreso", "Acciones"],
-            patients,
-            (patient) => `
-                <tr class="table-row-clickable" onclick="window.app.viewPatientProfile('${escapeHtml(patient.id || "")}')">
-                    <td>${escapeHtml(patient.name)}</td>
-                    <td>${escapeHtml(patient.email)}</td>
-                    <td>${escapeHtml(formatDate(patient.birthdate))}</td>
-                    <td>${buildRiskBadge(patient.riskLevelCode, patient.riskLevelLabel) || '<span class="status-badge">-</span>'}</td>
-                    <td>${escapeHtml(formatDate(patient.createdAt))}</td>
-                    <td onclick="event.stopPropagation();">
-                        <button class="btn btn-sm" onclick="window.app.editPatient('${escapeHtml(patient.id || "")}')">Editar</button>
-                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePatient('${escapeHtml(patient.id || "")}')">Eliminar</button>
-                    </td>
-                </tr>` ,
-            "No se encontraron pacientes"
-        );
+        
+        let patients = allPatients || [];
+        
+        // Filter by search query
+        if (state.patientsSearchQuery) {
+            const query = state.patientsSearchQuery.toLowerCase();
+            patients = patients.filter((p) => 
+                (p.name && p.name.toLowerCase().includes(query)) ||
+                (p.email && p.email.toLowerCase().includes(query))
+            );
+        }
+        
+        // Paginate
+        const page = state.pagination.patients.page;
+        const perPage = state.pagination.patients.perPage;
+        const paginated = paginateArray(patients, page, perPage);
+        
+        const pagination = renderPagination(patients.length, page, perPage, (newPage) => {
+            state.pagination.patients.page = newPage;
+            renderPatients(allPatients);
+        });
+        
+        if (!paginated.length) {
+            container.innerHTML = '<p class="muted">No se encontraron pacientes</p>';
+        } else {
+            const tableHtml = `
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Nombre</th>
+                                <th>Correo</th>
+                                <th>Fecha de nacimiento</th>
+                                <th>Riesgo</th>
+                                <th>Fecha de ingreso</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${paginated.map(patient => `
+                                <tr class="table-row-clickable" onclick="window.app.viewPatientProfile('${escapeHtml(patient.id || "")}')">
+                                    <td>${escapeHtml(patient.name)}</td>
+                                    <td>${escapeHtml(patient.email)}</td>
+                                    <td>${escapeHtml(formatDate(patient.birthdate))}</td>
+                                    <td>${buildRiskBadge(patient.riskLevelCode, patient.riskLevelLabel) || '<span class="status-badge">-</span>'}</td>
+                                    <td>${escapeHtml(formatDate(patient.createdAt))}</td>
+                                    <td onclick="event.stopPropagation();">
+                                        <button class="btn btn-sm" onclick="window.app.editPatient('${escapeHtml(patient.id || "")}')">Editar</button>
+                                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePatient('${escapeHtml(patient.id || "")}')">Eliminar</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = tableHtml + pagination;
+        }
     };
 
     const renderCareTeams = (careTeams) => {
@@ -846,26 +1012,64 @@
         container.innerHTML = `<div class="caregiver-cards">${cardsHtml}</div>`;
     };
 
-    const renderAlerts = (alerts) => {
+    const renderAlerts = (allAlerts) => {
         const container = el.tabBodies.alerts || el.tabPanels.alerts;
-        renderTable(
-            container,
-            ["Fecha", "Paciente", "Descripción", "Nivel", "Estado", "Acciones"],
-            alerts,
-            (alert) => `
-                <tr>
-                    <td>${escapeHtml(formatDateTime(alert.createdAt))}</td>
-                    <td>${escapeHtml(alert.patientName)}</td>
-                    <td>${escapeHtml(alert.description)}</td>
-                    <td><span class="status-badge ${alert.levelCode === "critical" ? "danger" : alert.levelCode === "high" ? "warning" : ""}">${escapeHtml(alert.levelLabel || alert.levelCode)}</span></td>
-                    <td>${escapeHtml(alert.statusDescription || alert.statusCode)}</td>
-                    <td>
-                        <button class="btn btn-sm" onclick="window.app.editAlert('${escapeHtml(alert.id)}')">Editar</button>
-                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteAlert('${escapeHtml(alert.id)}')">Eliminar</button>
-                    </td>
-                </tr>` ,
-            "No se han generado alertas"
-        );
+        
+        // Filter alerts by status and level
+        let alerts = allAlerts || [];
+        if (state.alertsFilterStatus) {
+            alerts = alerts.filter((alert) => alert.statusCode === state.alertsFilterStatus);
+        }
+        if (state.alertsFilterLevel) {
+            alerts = alerts.filter((alert) => alert.levelCode === state.alertsFilterLevel);
+        }
+        
+        // Paginate
+        const page = state.pagination.alerts.page;
+        const perPage = state.pagination.alerts.perPage;
+        const paginated = paginateArray(alerts, page, perPage);
+        
+        const pagination = renderPagination(alerts.length, page, perPage, (newPage) => {
+            state.pagination.alerts.page = newPage;
+            renderAlerts(allAlerts);
+        });
+        
+        if (!paginated.length) {
+            container.innerHTML = '<p class="muted">No se han generado alertas</p>';
+        } else {
+            const tableHtml = `
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Fecha</th>
+                                <th>Paciente</th>
+                                <th>Descripción</th>
+                                <th>Nivel</th>
+                                <th>Estado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${paginated.map(alert => `
+                                <tr>
+                                    <td>${escapeHtml(formatDateTime(alert.createdAt))}</td>
+                                    <td>${escapeHtml(alert.patientName)}</td>
+                                    <td>${escapeHtml(alert.description)}</td>
+                                    <td><span class="status-badge ${alert.levelCode === "critical" ? "danger" : alert.levelCode === "high" ? "warning" : ""}">${escapeHtml(alert.levelLabel || alert.levelCode)}</span></td>
+                                    <td>${escapeHtml(alert.statusDescription || alert.statusCode)}</td>
+                                    <td>
+                                        <button class="btn btn-sm" onclick="window.app.editAlert('${escapeHtml(alert.id)}')">Editar</button>
+                                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteAlert('${escapeHtml(alert.id)}')">Eliminar</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = tableHtml + pagination;
+        }
     };
 
     const renderGroundTruth = (data) => {
@@ -925,56 +1129,129 @@
         );
     };
 
-    const renderDevices = (devices) => {
+    const renderDevices = (allDevices) => {
         const container = el.tabBodies.devices || el.tabPanels.devices;
-        renderTable(
-            container,
-            ["Serial", "Tipo", "Marca", "Modelo", "Paciente asignado", "Estado", "Registrado", "Acciones"],
-            devices,
-            (device) => `
-                <tr>
-                    <td><code>${escapeHtml(device.serial)}</code></td>
-                    <td>${escapeHtml(device.deviceTypeLabel || device.deviceTypeCode || "-")}</td>
-                    <td>${escapeHtml(device.brand || "-")}</td>
-                    <td>${escapeHtml(device.model || "-")}</td>
-                    <td>${escapeHtml(device.ownerPatientName || "-")}</td>
-                    <td><span class="status-badge ${device.active ? "success" : ""}">${device.active ? "Activo" : "Inactivo"}</span></td>
-                    <td>${escapeHtml(formatDateTime(device.registeredAt))}</td>
-                    <td>
-                        <button class="btn btn-sm" onclick="window.app.editDevice('${escapeHtml(device.id)}')">Editar</button>
-                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteDevice('${escapeHtml(device.id)}')">Eliminar</button>
-                    </td>
-                </tr>` ,
-            "No se encontraron dispositivos"
-        );
+        
+        // Filter by status
+        let devices = allDevices || [];
+        if (state.devicesFilterStatus) {
+            const isActive = state.devicesFilterStatus === 'active';
+            devices = devices.filter((device) => device.active === isActive);
+        }
+        
+        // Paginate
+        const page = state.pagination.devices.page;
+        const perPage = state.pagination.devices.perPage;
+        const paginated = paginateArray(devices, page, perPage);
+        
+        const pagination = renderPagination(devices.length, page, perPage, (newPage) => {
+            state.pagination.devices.page = newPage;
+            renderDevices(allDevices);
+        });
+        
+        if (!paginated.length) {
+            container.innerHTML = '<p class="muted">No se encontraron dispositivos</p>';
+        } else {
+            const tableHtml = `
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Serial</th>
+                                <th>Tipo</th>
+                                <th>Marca</th>
+                                <th>Modelo</th>
+                                <th>Paciente asignado</th>
+                                <th>Estado</th>
+                                <th>Registrado</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${paginated.map(device => `
+                                <tr>
+                                    <td><code>${escapeHtml(device.serial)}</code></td>
+                                    <td>${escapeHtml(device.deviceTypeLabel || device.deviceTypeCode || "-")}</td>
+                                    <td>${escapeHtml(device.brand || "-")}</td>
+                                    <td>${escapeHtml(device.model || "-")}</td>
+                                    <td>${escapeHtml(device.ownerPatientName || "-")}</td>
+                                    <td><span class="status-badge ${device.active ? "success" : ""}">${device.active ? "Activo" : "Inactivo"}</span></td>
+                                    <td>${escapeHtml(formatDateTime(device.registeredAt))}</td>
+                                    <td>
+                                        <button class="btn btn-sm" onclick="window.app.editDevice('${escapeHtml(device.id)}')">Editar</button>
+                                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteDevice('${escapeHtml(device.id)}')">Eliminar</button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = tableHtml + pagination;
+        }
     };
 
-    const renderPushDevices = (pushDevices) => {
+    const renderPushDevices = (allPushDevices) => {
         const container = el.tabBodies["push-devices"] || el.tabPanels["push-devices"];
-        renderTable(
-            container,
-            ["Usuario", "Plataforma", "Token", "Estado", "Último uso", "Acciones"],
-            pushDevices,
-            (pd) => {
-                const tokenPreview = pd.pushToken ? `${escapeHtml(pd.pushToken.slice(0, 20))}…` : "-";
-                const statusBadge = pd.active
-                    ? buildStatusBadge('Activo', 'status-success')
-                    : buildStatusBadge('Inactivo', 'status-muted');
-                return `
-                <tr>
-                    <td>${escapeHtml(pd.userName || pd.userEmail || "-")}</td>
-                    <td><span class="status-badge">${escapeHtml(pd.platformLabel || pd.platformCode || "-")}</span></td>
-                    <td><code title="${escapeHtml(pd.pushToken || "Sin token")}">${tokenPreview}</code></td>
-                    <td>${statusBadge}</td>
-                    <td>${escapeHtml(formatDateTime(pd.lastSeenAt))}</td>
-                    <td>
-                        <button class="btn btn-sm" onclick="window.app.togglePushDevice('${escapeHtml(pd.id)}', ${!pd.active})">${pd.active ? "Desactivar" : "Activar"}</button>
-                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePushDevice('${escapeHtml(pd.id)}')">Eliminar</button>
-                    </td>
-                </tr>`;
-            },
-            "No se encontraron push devices"
-        );
+        
+        // Filter by status
+        let pushDevices = allPushDevices || [];
+        if (state.pushDevicesFilterStatus) {
+            const isActive = state.pushDevicesFilterStatus === 'active';
+            pushDevices = pushDevices.filter((pd) => pd.active === isActive);
+        }
+        
+        // Paginate
+        const page = state.pagination.pushDevices.page;
+        const perPage = state.pagination.pushDevices.perPage;
+        const paginated = paginateArray(pushDevices, page, perPage);
+        
+        const pagination = renderPagination(pushDevices.length, page, perPage, (newPage) => {
+            state.pagination.pushDevices.page = newPage;
+            renderPushDevices(allPushDevices);
+        });
+        
+        if (!paginated.length) {
+            container.innerHTML = '<p class="muted">No se encontraron push devices</p>';
+        } else {
+            const tableHtml = `
+                <div class="table-wrapper">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Usuario</th>
+                                <th>Plataforma</th>
+                                <th>Token</th>
+                                <th>Estado</th>
+                                <th>Último uso</th>
+                                <th>Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${paginated.map(pd => {
+                                const tokenPreview = pd.pushToken ? `${escapeHtml(pd.pushToken.slice(0, 20))}…` : "-";
+                                const statusBadge = pd.active
+                                    ? buildStatusBadge('Activo', 'status-success')
+                                    : buildStatusBadge('Inactivo', 'status-muted');
+                                return `
+                                <tr>
+                                    <td>${escapeHtml(pd.userName || pd.userEmail || "-")}</td>
+                                    <td><span class="status-badge">${escapeHtml(pd.platformLabel || pd.platformCode || "-")}</span></td>
+                                    <td><code title="${escapeHtml(pd.pushToken || "Sin token")}">${tokenPreview}</code></td>
+                                    <td>${statusBadge}</td>
+                                    <td>${escapeHtml(formatDateTime(pd.lastSeenAt))}</td>
+                                    <td>
+                                        <button class="btn btn-sm" onclick="window.app.togglePushDevice('${escapeHtml(pd.id)}', ${!pd.active})">${pd.active ? "Desactivar" : "Activar"}</button>
+                                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePushDevice('${escapeHtml(pd.id)}')">Eliminar</button>
+                                    </td>
+                                </tr>`;
+                            }).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            container.innerHTML = tableHtml + pagination;
+        }
     };
 
     const buildStatusBadge = (label, variant = "") => {
@@ -3291,6 +3568,49 @@
 
         el.buttons.refreshPushDevices?.addEventListener("click", () => {
             activateTab("push-devices");
+        });
+
+        // Search and filter event listeners
+        el.patientsSearchInput?.addEventListener("input", (e) => {
+            state.patientsSearchQuery = e.target.value;
+            state.pagination.patients.page = 1;
+            const cachedData = state.tabCache.get('patients');
+            if (cachedData) renderPatients(cachedData);
+        });
+
+        el.staffSearchInput?.addEventListener("input", (e) => {
+            state.staffSearchQuery = e.target.value;
+            state.pagination.staff.page = 1;
+            const cachedData = state.tabCache.get('staff');
+            if (cachedData) renderStaff(cachedData);
+        });
+
+        el.alertsStatusFilter?.addEventListener("change", (e) => {
+            state.alertsFilterStatus = e.target.value || null;
+            state.pagination.alerts.page = 1;
+            const cachedData = state.tabCache.get('alerts');
+            if (cachedData) renderAlerts(cachedData);
+        });
+
+        el.alertsLevelFilter?.addEventListener("change", (e) => {
+            state.alertsFilterLevel = e.target.value || null;
+            state.pagination.alerts.page = 1;
+            const cachedData = state.tabCache.get('alerts');
+            if (cachedData) renderAlerts(cachedData);
+        });
+
+        el.devicesStatusFilter?.addEventListener("change", (e) => {
+            state.devicesFilterStatus = e.target.value || null;
+            state.pagination.devices.page = 1;
+            const cachedData = state.tabCache.get('devices');
+            if (cachedData) renderDevices(cachedData);
+        });
+
+        el.pushDevicesStatusFilter?.addEventListener("change", (e) => {
+            state.pushDevicesFilterStatus = e.target.value || null;
+            state.pagination.pushDevices.page = 1;
+            const cachedData = state.tabCache.get('push-devices');
+            if (cachedData) renderPushDevices(cachedData);
         });
     };
 
