@@ -341,6 +341,42 @@ public class ApiClient {
     }
 
     /**
+     * Obtiene todos los dispositivos del paciente
+     * 
+     * @param token Token de acceso del paciente
+     * @return JsonObject con los dispositivos del paciente
+     * @throws ApiException si hay error en la petición
+     */
+    public JsonObject getPatientDevices(String token) throws ApiException {
+        if (token == null || token.isEmpty()) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        String url = gatewayUrl + "/patient/devices";
+        
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer " + token)
+                .get()
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
+                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener dispositivos";
+                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+            }
+
+            return gson.fromJson(responseBody, JsonObject.class);
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
+        }
+    }
+
+    /**
      * Obtiene la última ubicación del paciente
      */
     public JsonObject getPatientLatestLocation(String token) throws ApiException {

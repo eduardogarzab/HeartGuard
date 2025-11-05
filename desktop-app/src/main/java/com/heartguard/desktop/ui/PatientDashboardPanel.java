@@ -1,6 +1,7 @@
 package com.heartguard.desktop.ui;
 
 import com.heartguard.desktop.api.ApiClient;
+import com.heartguard.desktop.api.ApiException;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 
@@ -1025,12 +1026,196 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private void viewDevices() {
-        JOptionPane.showMessageDialog(
-                this,
-                "Funcionalidad en desarrollo: Ver dispositivos",
-                "Próximamente",
-                JOptionPane.INFORMATION_MESSAGE
-        );
+        // Obtener dispositivos en background
+        SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
+            @Override
+            protected JsonArray doInBackground() throws Exception {
+                try {
+                    JsonObject response = apiClient.getPatientDevices(accessToken);
+                    if (response != null && response.has("devices")) {
+                        return response.getAsJsonArray("devices");
+                    }
+                    return new JsonArray();
+                } catch (ApiException e) {
+                    e.printStackTrace();
+                    throw new Exception("Error al cargar dispositivos: " + e.getMessage());
+                }
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    JsonArray devices = get();
+                    showAllDevicesDialog(devices);
+                } catch (Exception e) {
+                    JOptionPane.showMessageDialog(
+                            PatientDashboardPanel.this,
+                            "No se pudieron cargar los dispositivos: " + e.getMessage(),
+                            "Error",
+                            JOptionPane.ERROR_MESSAGE
+                    );
+                }
+            }
+        };
+        worker.execute();
+    }
+
+    private void showAllDevicesDialog(JsonArray devices) {
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Todos los Dispositivos", true);
+        dialog.setSize(700, 500);
+        dialog.setLocationRelativeTo(this);
+
+        JPanel mainPanel = new JPanel(new BorderLayout(0, SECTION_SPACING));
+        mainPanel.setBackground(BACKGROUND_COLOR);
+        mainPanel.setBorder(BorderFactory.createEmptyBorder(SECTION_SPACING, SECTION_SPACING, SECTION_SPACING, SECTION_SPACING));
+
+        // Header
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.setBackground(BACKGROUND_COLOR);
+        headerPanel.setOpaque(false);
+
+        JLabel titleLabel = new JLabel("Dispositivos Registrados");
+        titleLabel.setFont(TITLE_FONT);
+        titleLabel.setForeground(TEXT_PRIMARY_COLOR);
+        headerPanel.add(titleLabel, BorderLayout.WEST);
+
+        JLabel countLabel = new JLabel(devices.size() + " dispositivos");
+        countLabel.setFont(BODY_FONT);
+        countLabel.setForeground(TEXT_SECONDARY_COLOR);
+        headerPanel.add(countLabel, BorderLayout.EAST);
+
+        mainPanel.add(headerPanel, BorderLayout.NORTH);
+
+        // Content
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setBackground(BACKGROUND_COLOR);
+        contentPanel.setOpaque(false);
+
+        if (devices.size() == 0) {
+            JPanel emptyPanel = new JPanel(new GridBagLayout());
+            emptyPanel.setBackground(BACKGROUND_COLOR);
+            emptyPanel.setOpaque(false);
+            
+            JLabel emptyLabel = new JLabel("No hay dispositivos registrados");
+            emptyLabel.setFont(BODY_FONT);
+            emptyLabel.setForeground(TEXT_SECONDARY_COLOR);
+            emptyPanel.add(emptyLabel);
+            
+            contentPanel.add(emptyPanel);
+        } else {
+            for (int i = 0; i < devices.size(); i++) {
+                JsonObject device = devices.get(i).getAsJsonObject();
+                contentPanel.add(createDeviceCard(device));
+                if (i < devices.size() - 1) {
+                    contentPanel.add(Box.createVerticalStrut(12));
+                }
+            }
+        }
+
+        JScrollPane scrollPane = new JScrollPane(contentPanel);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setBackground(BACKGROUND_COLOR);
+        scrollPane.getViewport().setBackground(BACKGROUND_COLOR);
+
+        mainPanel.add(scrollPane, BorderLayout.CENTER);
+
+        // Footer con botón de cerrar
+        JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        footerPanel.setBackground(BACKGROUND_COLOR);
+        footerPanel.setOpaque(false);
+
+        RoundedButton closeButton = new RoundedButton("Cerrar", TEXT_SECONDARY_COLOR, SURFACE_COLOR, TEXT_PRIMARY_COLOR);
+        closeButton.addActionListener(e -> dialog.dispose());
+        footerPanel.add(closeButton);
+
+        mainPanel.add(footerPanel, BorderLayout.SOUTH);
+
+        dialog.add(mainPanel);
+        dialog.setVisible(true);
+    }
+
+    private CardPanel createDeviceCard(JsonObject device) {
+        CardPanel card = new CardPanel();
+        card.setLayout(new BorderLayout(SECTION_SPACING, 12));
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+
+        // Indicador de estado (izquierda)
+        boolean isActive = device.has("active") && device.get("active").getAsBoolean();
+        Color statusColor = isActive ? SUCCESS_COLOR : TEXT_SECONDARY_COLOR;
+        
+        JPanel statusBar = new JPanel();
+        statusBar.setPreferredSize(new Dimension(4, 100));
+        statusBar.setBackground(statusColor);
+        card.add(statusBar, BorderLayout.WEST);
+
+        // Contenido principal
+        JPanel contentPanel = new JPanel();
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setOpaque(false);
+        contentPanel.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
+
+        // Línea 1: Serial y tipo
+        JPanel firstLine = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
+        firstLine.setOpaque(false);
+        
+        String serial = device.has("serial") ? device.get("serial").getAsString() : "N/A";
+        JLabel serialLabel = new JLabel("Serial: " + serial);
+        serialLabel.setFont(SECTION_TITLE_FONT);
+        serialLabel.setForeground(TEXT_PRIMARY_COLOR);
+        firstLine.add(serialLabel);
+
+        // Chip de estado
+        String statusText = isActive ? "Activo" : "Inactivo";
+        JLabel statusChip = new JLabel(" " + statusText + " ");
+        statusChip.setFont(CAPTION_FONT);
+        statusChip.setForeground(Color.WHITE);
+        statusChip.setOpaque(true);
+        statusChip.setBackground(statusColor);
+        statusChip.setBorder(BorderFactory.createEmptyBorder(2, 8, 2, 8));
+        firstLine.add(statusChip);
+
+        contentPanel.add(firstLine);
+        contentPanel.add(Box.createVerticalStrut(6));
+
+        // Línea 2: Marca y modelo
+        String brand = device.has("brand") && !device.get("brand").isJsonNull() 
+            ? device.get("brand").getAsString() : "Sin marca";
+        String model = device.has("model") && !device.get("model").isJsonNull()
+            ? device.get("model").getAsString() : "Sin modelo";
+        
+        JLabel brandModelLabel = new JLabel(brand + " - " + model);
+        brandModelLabel.setFont(BODY_FONT);
+        brandModelLabel.setForeground(TEXT_SECONDARY_COLOR);
+        brandModelLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        contentPanel.add(brandModelLabel);
+
+        contentPanel.add(Box.createVerticalStrut(6));
+
+        // Línea 3: Tipo de dispositivo
+        if (device.has("type") && !device.get("type").isJsonNull()) {
+            String type = device.get("type").getAsString();
+            JLabel typeLabel = new JLabel("Tipo: " + type);
+            typeLabel.setFont(CAPTION_FONT);
+            typeLabel.setForeground(TEXT_SECONDARY_COLOR);
+            typeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            contentPanel.add(typeLabel);
+        }
+
+        // Línea 4: Fecha de registro
+        if (device.has("registered_at") && !device.get("registered_at").isJsonNull()) {
+            String registeredAt = device.get("registered_at").getAsString();
+            JLabel dateLabel = new JLabel("Registrado: " + formatDate(registeredAt));
+            dateLabel.setFont(CAPTION_FONT);
+            dateLabel.setForeground(TEXT_SECONDARY_COLOR);
+            dateLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            contentPanel.add(dateLabel);
+        }
+
+        card.add(contentPanel, BorderLayout.CENTER);
+
+        return card;
     }
 
     private void logout() {
