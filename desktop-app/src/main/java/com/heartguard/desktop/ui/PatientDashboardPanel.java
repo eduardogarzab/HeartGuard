@@ -3,6 +3,7 @@ package com.heartguard.desktop.ui;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
 import javafx.application.Platform;
@@ -365,12 +366,15 @@ public class PatientDashboardPanel extends JPanel {
         SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
             private JsonObject dashboard;
             private JsonObject locationsResponse;
+            private JsonObject caregiversResponse;
+            private JsonObject careTeamResponse;
             private Exception dashboardError;
             private Exception locationsError;
+            private Exception caregiversError;
+            private Exception careTeamError;
 
             @Override
-            protected Void doInBackground() throws Exception {
-                // Cargar dashboard
+            protected Void doInBackground() {
                 try {
                     dashboard = apiClient.getPatientDashboard(accessToken);
                 } catch (Exception e) {
@@ -378,7 +382,6 @@ public class PatientDashboardPanel extends JPanel {
                     System.err.println("Error al cargar dashboard: " + e.getMessage());
                 }
 
-                // Cargar ubicaciones
                 try {
                     locationsResponse = apiClient.getPatientLocations(accessToken, 6);
                     System.out.println("DEBUG: Ubicaciones cargadas exitosamente");
@@ -391,27 +394,69 @@ public class PatientDashboardPanel extends JPanel {
                     e.printStackTrace();
                 }
 
+                try {
+                    caregiversResponse = apiClient.getPatientCaregivers(accessToken);
+                } catch (Exception e) {
+                    caregiversError = e;
+                    System.err.println("Error al cargar cuidadores: " + e.getMessage());
+                }
+
+                try {
+                    careTeamResponse = apiClient.getPatientCareTeam(accessToken);
+                } catch (Exception e) {
+                    careTeamError = e;
+                    System.err.println("Error al cargar equipo de cuidado: " + e.getMessage());
+                }
+
                 return null;
             }
 
             @Override
             protected void done() {
                 try {
+                    JsonArray careTeamArray = null;
+                    JsonArray caregiversArray = null;
+
                     if (dashboard != null) {
-                        // Actualizar información personal
-                        updateProfileSection(dashboard.getAsJsonObject("patient"));
+                        JsonObject patientObj = dashboard.has("patient") && dashboard.get("patient").isJsonObject()
+                                ? dashboard.getAsJsonObject("patient") : null;
+                        if (patientObj != null) {
+                            updateProfileSection(patientObj);
+                        }
 
-                        // Actualizar estadísticas
-                        updateStatsSection(dashboard.getAsJsonObject("stats"));
+                        JsonObject statsObj = dashboard.has("stats") && dashboard.get("stats").isJsonObject()
+                                ? dashboard.getAsJsonObject("stats") : null;
+                        if (statsObj != null) {
+                            updateStatsSection(statsObj);
+                        }
 
-                        // Actualizar alertas recientes
-                        updateAlertsSection(dashboard.getAsJsonArray("recent_alerts"));
+                        JsonArray alertsArray = dashboard.has("recent_alerts") && dashboard.get("recent_alerts").isJsonArray()
+                                ? dashboard.getAsJsonArray("recent_alerts") : null;
+                        updateAlertsSection(alertsArray);
 
-                        // Actualizar equipo de cuidado
-                        updateCareTeamSection(dashboard.getAsJsonArray("care_team"));
+                        if (dashboard.has("care_team")) {
+                            JsonElement careTeamElement = dashboard.get("care_team");
+                            if (careTeamElement.isJsonArray()) {
+                                careTeamArray = careTeamElement.getAsJsonArray();
+                            } else if (careTeamElement.isJsonObject()) {
+                                JsonObject careTeamObj = careTeamElement.getAsJsonObject();
+                                if (careTeamObj.has("teams") && careTeamObj.get("teams").isJsonArray()) {
+                                    careTeamArray = careTeamObj.getAsJsonArray("teams");
+                                }
+                            }
+                        }
 
-                        // Actualizar cuidadores
-                        updateCaregiversSection(dashboard.getAsJsonArray("caregivers"));
+                        if (dashboard.has("caregivers")) {
+                            JsonElement caregiversElement = dashboard.get("caregivers");
+                            if (caregiversElement.isJsonArray()) {
+                                caregiversArray = caregiversElement.getAsJsonArray();
+                            } else if (caregiversElement.isJsonObject()) {
+                                JsonObject caregiversObj = caregiversElement.getAsJsonObject();
+                                if (caregiversObj.has("caregivers") && caregiversObj.get("caregivers").isJsonArray()) {
+                                    caregiversArray = caregiversObj.getAsJsonArray("caregivers");
+                                }
+                            }
+                        }
                     } else if (dashboardError != null) {
                         JOptionPane.showMessageDialog(
                                 PatientDashboardPanel.this,
@@ -419,14 +464,32 @@ public class PatientDashboardPanel extends JPanel {
                                 "Error",
                                 JOptionPane.ERROR_MESSAGE
                         );
+                        updateAlertsSection(null);
+                    } else {
+                        updateAlertsSection(null);
                     }
 
+                    if (careTeamResponse != null && careTeamResponse.has("teams") && careTeamResponse.get("teams").isJsonArray()) {
+                        careTeamArray = careTeamResponse.getAsJsonArray("teams");
+                    } else if (careTeamError != null) {
+                        System.err.println("Error al cargar equipo de cuidado: " + careTeamError.getMessage());
+                    }
+
+                    if (caregiversResponse != null && caregiversResponse.has("caregivers") && caregiversResponse.get("caregivers").isJsonArray()) {
+                        caregiversArray = caregiversResponse.getAsJsonArray("caregivers");
+                    } else if (caregiversError != null) {
+                        System.err.println("Error al cargar cuidadores: " + caregiversError.getMessage());
+                    }
+
+                    updateCareTeamSection(careTeamArray);
+                    updateCaregiversSection(caregiversArray);
+
                     if (locationsResponse != null) {
-                        // Actualizar ubicaciones
                         updateLocationsSection(locationsResponse);
                     } else if (locationsError != null) {
-                        // Si falla, mostrar mensaje en el panel de ubicaciones
                         System.err.println("No se pudieron cargar las ubicaciones: " + locationsError.getMessage());
+                        updateLocationsSection(null);
+                    } else {
                         updateLocationsSection(null);
                     }
                 } catch (Exception e) {
@@ -526,7 +589,7 @@ public class PatientDashboardPanel extends JPanel {
     private void updateAlertsSection(JsonArray alerts) {
         alertsPanel.removeAll();
 
-        if (alerts.size() == 0) {
+        if (alerts == null || alerts.size() == 0) {
             JPanel emptyState = new JPanel(new FlowLayout(FlowLayout.CENTER));
             emptyState.setOpaque(false);
             JLabel noAlerts = new JLabel("No hay alertas recientes");
@@ -536,12 +599,14 @@ public class PatientDashboardPanel extends JPanel {
             alertsPanel.add(emptyState);
         } else {
             for (int i = 0; i < alerts.size(); i++) {
-                JsonObject alert = alerts.get(i).getAsJsonObject();
-                JPanel alertCard = createAlertCard(alert);
-                alertCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, alertCard.getPreferredSize().height));
-                alertsPanel.add(alertCard);
-                if (i < alerts.size() - 1) {
-                    alertsPanel.add(Box.createVerticalStrut(12));
+                if (alerts.get(i).isJsonObject()) {
+                    JsonObject alert = alerts.get(i).getAsJsonObject();
+                    JPanel alertCard = createAlertCard(alert);
+                    alertCard.setMaximumSize(new Dimension(Integer.MAX_VALUE, alertCard.getPreferredSize().height));
+                    alertsPanel.add(alertCard);
+                    if (i < alerts.size() - 1) {
+                        alertsPanel.add(Box.createVerticalStrut(12));
+                    }
                 }
             }
         }
@@ -631,18 +696,20 @@ public class PatientDashboardPanel extends JPanel {
     private void updateCareTeamSection(JsonArray teams) {
         careTeamPanel.removeAll();
 
-        if (teams.size() == 0) {
+        if (teams == null || teams.size() == 0) {
             JLabel noTeam = new JLabel("No hay equipo de cuidado asignado");
             noTeam.setFont(BODY_FONT.deriveFont(Font.ITALIC, 14f));
             noTeam.setForeground(TEXT_SECONDARY_COLOR);
             careTeamPanel.add(noTeam);
         } else {
             for (int i = 0; i < teams.size(); i++) {
-                JsonObject team = teams.get(i).getAsJsonObject();
-                JPanel teamPanel = createTeamPanel(team);
-                careTeamPanel.add(teamPanel);
-                if (i < teams.size() - 1) {
-                    careTeamPanel.add(Box.createVerticalStrut(15));
+                if (teams.get(i).isJsonObject()) {
+                    JsonObject team = teams.get(i).getAsJsonObject();
+                    JPanel teamPanel = createTeamPanel(team);
+                    careTeamPanel.add(teamPanel);
+                    if (i < teams.size() - 1) {
+                        careTeamPanel.add(Box.createVerticalStrut(15));
+                    }
                 }
             }
         }
@@ -654,18 +721,20 @@ public class PatientDashboardPanel extends JPanel {
     private void updateCaregiversSection(JsonArray caregivers) {
         caregiversPanel.removeAll();
 
-        if (caregivers.size() == 0) {
+        if (caregivers == null || caregivers.size() == 0) {
             JLabel noCaregivers = new JLabel("No hay cuidadores asignados");
             noCaregivers.setFont(BODY_FONT.deriveFont(Font.ITALIC, 14f));
             noCaregivers.setForeground(TEXT_SECONDARY_COLOR);
             caregiversPanel.add(noCaregivers);
         } else {
             for (int i = 0; i < caregivers.size(); i++) {
-                JsonObject caregiver = caregivers.get(i).getAsJsonObject();
-                JPanel caregiverPanel = createCaregiverPanel(caregiver);
-                caregiversPanel.add(caregiverPanel);
-                if (i < caregivers.size() - 1) {
-                    caregiversPanel.add(Box.createVerticalStrut(10));
+                if (caregivers.get(i).isJsonObject()) {
+                    JsonObject caregiver = caregivers.get(i).getAsJsonObject();
+                    JPanel caregiverPanel = createCaregiverPanel(caregiver);
+                    caregiversPanel.add(caregiverPanel);
+                    if (i < caregivers.size() - 1) {
+                        caregiversPanel.add(Box.createVerticalStrut(10));
+                    }
                 }
             }
         }
@@ -675,27 +744,35 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private JPanel createTeamPanel(JsonObject team) {
-    JPanel panel = new JPanel();
-    panel.setOpaque(false);
-    panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-    panel.setBorder(new CompoundBorder(
-        new MatteBorder(1, 1, 1, 1, NEUTRAL_BORDER_COLOR),
-        new EmptyBorder(14, 18, 14, 18)
-    ));
+        JPanel panel = new JPanel();
+        panel.setOpaque(false);
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new CompoundBorder(
+                new MatteBorder(1, 1, 1, 1, NEUTRAL_BORDER_COLOR),
+                new EmptyBorder(14, 18, 14, 18)
+        ));
 
-    JLabel teamNameLabel = new JLabel(team.get("team_name").getAsString());
-    teamNameLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
-    teamNameLabel.setForeground(PRIMARY_DARK);
-    panel.add(teamNameLabel);
-    panel.add(Box.createVerticalStrut(10));
+        String teamName = team.has("team_name") && !team.get("team_name").isJsonNull()
+                ? team.get("team_name").getAsString()
+                : "Equipo sin nombre";
+        JLabel teamNameLabel = new JLabel(teamName);
+        teamNameLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        teamNameLabel.setForeground(PRIMARY_DARK);
+        panel.add(teamNameLabel);
+        panel.add(Box.createVerticalStrut(10));
 
-        JsonArray members = team.getAsJsonArray("members");
+        JsonArray members = team.has("members") && team.get("members").isJsonArray()
+                ? team.getAsJsonArray("members")
+                : new JsonArray();
+
         for (int i = 0; i < members.size(); i++) {
-            JsonObject member = members.get(i).getAsJsonObject();
-            JPanel memberPanel = createMemberPanel(member);
-            panel.add(memberPanel);
-            if (i < members.size() - 1) {
-                panel.add(Box.createVerticalStrut(5));
+            if (members.get(i).isJsonObject()) {
+                JsonObject member = members.get(i).getAsJsonObject();
+                JPanel memberPanel = createMemberPanel(member);
+                panel.add(memberPanel);
+                if (i < members.size() - 1) {
+                    panel.add(Box.createVerticalStrut(5));
+                }
             }
         }
 
