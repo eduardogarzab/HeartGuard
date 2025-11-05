@@ -19,30 +19,30 @@ check_http_service() {
     local name=$1
     local url=$2
     local expected_service=$3
-    
+
     echo -e "${YELLOW}Verificando $name...${NC}"
-    
+
     response=$(curl -s -m 5 "$url" 2>&1)
     http_code=$?
-    
+
     if [ $http_code -eq 0 ]; then
         # Verificar si es XML (admin service)
         if echo "$response" | grep -q '<status>ok</status>'; then
             service_name=$(echo "$response" | grep -o '<service>[^<]*</service>' | sed 's/<[^>]*>//g')
             timestamp=$(echo "$response" | grep -o '<timestamp>[^<]*</timestamp>' | sed 's/<[^>]*>//g')
-            
+
             echo -e "${GREEN}✓ $name está corriendo${NC}"
             echo -e "  Servicio: $service_name"
             echo -e "  Timestamp: $timestamp"
             return 0
-        # Verificar si es JSON (auth, gateway)
-        elif echo "$response" | grep -q '"status"' && echo "$response" | grep -q '"ok"'; then
+        # Verificar si es JSON (auth, gateway, user)
+        elif echo "$response" | grep -q '"status"' && (echo "$response" | grep -q '"ok"' || echo "$response" | grep -q '"success"'); then
             service_name=$(echo "$response" | grep -o '"service":"[^"]*"' | cut -d'"' -f4)
             timestamp=$(echo "$response" | grep -o '"timestamp":"[^"]*"' | cut -d'"' -f4)
-            
+
             echo -e "${GREEN}✓ $name está corriendo${NC}"
-            echo -e "  Servicio: $service_name"
-            echo -e "  Timestamp: $timestamp"
+            [ -n "$service_name" ] && echo -e "  Servicio: $service_name"
+            [ -n "$timestamp" ] && echo -e "  Timestamp: $timestamp"
             return 0
         else
             echo -e "${RED}✗ $name no responde correctamente${NC}"
@@ -59,12 +59,12 @@ check_http_service() {
 # Función para verificar PostgreSQL
 check_postgres() {
     echo -e "${YELLOW}Verificando PostgreSQL...${NC}"
-    
+
     if docker ps | grep -q postgres; then
         container_status=$(docker ps --format "{{.Status}}" | grep postgres | head -1)
         echo -e "${GREEN}✓ PostgreSQL está corriendo${NC}"
         echo -e "  Estado: $container_status"
-        
+
         # Intentar conexión
         if PGPASSWORD=dev_change_me psql -h localhost -U heartguard_app -d heartguard -c "SELECT 1;" > /dev/null 2>&1; then
             echo -e "${GREEN}✓ Conexión a base de datos exitosa${NC}"
@@ -83,6 +83,7 @@ check_postgres() {
 gateway_ok=0
 auth_ok=0
 admin_ok=0
+user_ok=0
 postgres_ok=0
 
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}\n"
@@ -99,6 +100,11 @@ echo ""
 
 check_http_service "Admin Service (Puerto 5002)" "http://localhost:5002/health/" "heartguard-admin"
 admin_ok=$?
+
+echo ""
+
+check_http_service "User Service (Puerto 5003)" "http://localhost:5003/health" "heartguard-user"
+user_ok=$?
 
 echo ""
 
@@ -129,6 +135,12 @@ else
     echo -e "${RED}✗${NC} Admin Service   :5002  [ERROR]"
 fi
 
+if [ $user_ok -eq 0 ]; then
+    echo -e "${GREEN}✓${NC} User Service    :5003  [Solo Interno]"
+else
+    echo -e "${RED}✗${NC} User Service    :5003  [ERROR]"
+fi
+
 if [ $postgres_ok -eq 0 ]; then
     echo -e "${GREEN}✓${NC} PostgreSQL      :5432  [Solo Interno]"
 else
@@ -139,13 +151,13 @@ echo ""
 
 # Verificar puertos
 echo -e "${BLUE}Puertos Escuchando:${NC}"
-netstat -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5432)" | awk '{print "  "$4}' || \
-    ss -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5432)" | awk '{print "  "$4}'
+netstat -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5432)" | awk '{print "  "$4}' || \
+    ss -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5432)" | awk '{print "  "$4}'
 
 echo ""
 
 # Estado final
-if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $postgres_ok -eq 0 ]; then
+if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $user_ok -eq 0 ] && [ $postgres_ok -eq 0 ]; then
     echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║  ✅ TODOS LOS SERVICIOS OPERACIONALES                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
@@ -156,6 +168,7 @@ if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $post
     echo -e "Pruebas disponibles:"
     echo -e "  ${YELLOW}cd services && ./test_admin_service.sh${NC}"
     echo -e "  ${YELLOW}cd services/auth && ./test_auth_service.sh${NC}"
+    echo -e "  ${YELLOW}cd services/user && make test${NC}"
     echo ""
     exit 0
 else
@@ -178,6 +191,9 @@ else
     echo ""
     echo -e "  # Admin Service${NC}"
     echo -e "  cd services/admin && make dev"
+    echo ""
+    echo -e "  # User Service${NC}"
+    echo -e "  cd services/user && make dev"
     echo ""
     echo -e "  # Gateway${NC}"
     echo -e "  cd services/gateway && make dev"

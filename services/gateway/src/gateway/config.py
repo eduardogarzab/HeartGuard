@@ -18,6 +18,7 @@ class AppConfig:
     service_timeout: float = 5.0
     auth_service_url: str = "http://localhost:5001"
     admin_service_url: str = "http://localhost:5002"
+    user_service_url: str = "http://localhost:5003"
 
 
 CONFIG_CLASS = AppConfig
@@ -34,6 +35,7 @@ def configure_app(app: Any) -> None:
         service_timeout=float(os.getenv("GATEWAY_SERVICE_TIMEOUT", "5")),
         auth_service_url=os.getenv("AUTH_SERVICE_URL", "http://localhost:5001"),
         admin_service_url=os.getenv("ADMIN_SERVICE_URL", "http://localhost:5002"),
+    user_service_url=os.getenv("USER_SERVICE_URL", "http://localhost:5003"),
     )
 
     app.config.update(
@@ -43,6 +45,7 @@ def configure_app(app: Any) -> None:
         GATEWAY_SERVICE_TIMEOUT=config.service_timeout,
         AUTH_SERVICE_URL=config.auth_service_url,
         ADMIN_SERVICE_URL=config.admin_service_url,
+        USER_SERVICE_URL=config.user_service_url,
     )
 
 
