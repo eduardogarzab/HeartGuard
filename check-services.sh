@@ -84,6 +84,7 @@ gateway_ok=0
 auth_ok=0
 admin_ok=0
 user_ok=0
+patient_ok=0
 postgres_ok=0
 
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}\n"
@@ -105,6 +106,11 @@ echo ""
 
 check_http_service "User Service (Puerto 5003)" "http://localhost:5003/health" "heartguard-user"
 user_ok=$?
+
+echo ""
+
+check_http_service "Patient Service (Puerto 5004)" "http://localhost:5004/health" "heartguard-patient"
+patient_ok=$?
 
 echo ""
 
@@ -141,6 +147,12 @@ else
     echo -e "${RED}✗${NC} User Service    :5003  [ERROR]"
 fi
 
+if [ $patient_ok -eq 0 ]; then
+    echo -e "${GREEN}✓${NC} Patient Service :5004  [Solo Interno]"
+else
+    echo -e "${RED}✗${NC} Patient Service :5004  [ERROR]"
+fi
+
 if [ $postgres_ok -eq 0 ]; then
     echo -e "${GREEN}✓${NC} PostgreSQL      :5432  [Solo Interno]"
 else
@@ -151,13 +163,13 @@ echo ""
 
 # Verificar puertos
 echo -e "${BLUE}Puertos Escuchando:${NC}"
-netstat -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5432)" | awk '{print "  "$4}' || \
-    ss -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5432)" | awk '{print "  "$4}'
+netstat -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5004|5432)" | awk '{print "  "$4}' || \
+    ss -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5004|5432)" | awk '{print "  "$4}'
 
 echo ""
 
 # Estado final
-if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $user_ok -eq 0 ] && [ $postgres_ok -eq 0 ]; then
+if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $user_ok -eq 0 ] && [ $patient_ok -eq 0 ] && [ $postgres_ok -eq 0 ]; then
     echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║  ✅ TODOS LOS SERVICIOS OPERACIONALES                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
@@ -194,6 +206,9 @@ else
     echo ""
     echo -e "  # User Service${NC}"
     echo -e "  cd services/user && make dev"
+    echo ""
+    echo -e "  # Patient Service${NC}"
+    echo -e "  cd services/patient && make dev"
     echo ""
     echo -e "  # Gateway${NC}"
     echo -e "  cd services/gateway && make dev"
