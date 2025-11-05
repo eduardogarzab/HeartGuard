@@ -25,9 +25,28 @@ Microservicio destinado a gestionar la información del usuario autenticado dent
 | `PATCH` | `/users/me` | Actualiza nombre, foto de perfil o bandera de 2FA. |
 | `GET` | `/users/me/org-memberships` | Lista organizaciones y roles vinculados al usuario. |
 | `GET` | `/orgs/{org_id}/members/{user_id}` | Devuelve los detalles de la membresía en una organización. |
+| `GET` | `/orgs/{org_id}/dashboard` | Resumen operativo de la organización y métricas clave. |
+| `GET` | `/orgs/{org_id}/care-teams` | Equipos de cuidado y sus integrantes. |
+| `GET` | `/orgs/{org_id}/care-team-patients` | Pacientes agrupados por equipo de cuidado. |
+| `GET` | `/orgs/{org_id}/patients/{patient_id}` | Perfil clínico del paciente dentro de la organización. |
+| `GET` | `/orgs/{org_id}/patients/{patient_id}/alerts` | Alertas recientes del paciente (paginadas). |
+| `GET` | `/orgs/{org_id}/patients/{patient_id}/notes` | Notas / ground-truth registrados para el paciente. |
+| `GET` | `/orgs/{org_id}/metrics` | Métricas agregadas de pacientes y alertas. |
+| `GET` | `/caregiver/patients` | Pacientes disponibles para el cuidador autenticado. |
+| `GET` | `/caregiver/patients/{patient_id}` | Detalle del paciente y relación de cuidador. |
+| `GET` | `/caregiver/patients/{patient_id}/alerts` | Alertas del paciente visibles para el cuidador. |
+| `GET` | `/caregiver/patients/{patient_id}/notes` | Notas del paciente visibles para el cuidador. |
+| `POST` | `/caregiver/patients/{patient_id}/notes` | Registra una nueva nota/ground-truth asociada al paciente. |
+| `GET` | `/caregiver/metrics` | Métricas resumidas para el cuidador. |
 | `GET` | `/health` | Estado básico del servicio (sin autenticación). |
 
 Cada respuesta incluye los campos `status`, `message`, `error`, `data` y `trace_id`.
+
+### Nuevas capacidades
+
+- **Panel organizacional**: métricas agregadas, equipos de cuidado, pacientes y alertas filtradas por organización.
+- **Flujos de cuidador**: listado de pacientes asignados, detalle y creación de notas ground-truth con validación de permisos.
+- **Seguridad**: todos los endpoints verifican membresías de organización o relaciones de cuidador antes de exponer datos sensibles.
 
 ## 🔒 Autenticación
 
