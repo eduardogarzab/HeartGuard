@@ -2,131 +2,137 @@
 from __future__ import annotations
 
 from http import HTTPStatus
-from flask import Blueprint, current_app, jsonify, request
-import requests
+
+from flask import Blueprint, Response, current_app, jsonify, request
+
+from ..services.patient_client import PatientClient, PatientClientError
 
 bp = Blueprint("patient", __name__, url_prefix="/patient")
 
 
-def _get_patient_service_url() -> str:
-    """Obtiene la URL base del Patient Service."""
-    return current_app.config["PATIENT_SERVICE_URL"]
+def _get_patient_client() -> PatientClient:
+    """Construye una instancia de paciente que reutiliza la configuración del gateway."""
+    return PatientClient(
+        base_url=current_app.config["PATIENT_SERVICE_URL"],
+        timeout=current_app.config["GATEWAY_SERVICE_TIMEOUT"],
+    )
 
 
-def _get_timeout() -> float:
-    """Obtiene el timeout configurado para las peticiones."""
-    return current_app.config["GATEWAY_SERVICE_TIMEOUT"]
+def _proxy_request(path: str, method: str = "GET") -> Response:
+    """Reenvía la petición actual al Patient Service y replica su respuesta."""
+    headers: dict[str, str] = {}
+    if "Authorization" in request.headers:
+        headers["Authorization"] = request.headers["Authorization"]
+    if "Content-Type" in request.headers:
+        headers["Content-Type"] = request.headers["Content-Type"]
 
+    json_payload = None
+    raw_payload = None
+    if method in {"POST", "PATCH", "PUT"}:
+        if request.is_json:
+            json_payload = request.get_json(silent=True)
+        if json_payload is None and request.data:
+            raw_payload = request.get_data()
 
-def _get_auth_headers() -> dict:
-    """Extrae y retorna los headers de autenticación del request actual."""
-    auth_header = request.headers.get("Authorization")
-    if not auth_header:
-        return {}
-    return {"Authorization": auth_header}
+    params = request.args.to_dict(flat=False) if request.args else None
 
-
-def _proxy_get(path: str):
-    """
-    Proxy genérico para peticiones GET al Patient Service.
-    Incluye query params y headers de autenticación.
-    """
     try:
-        url = f"{_get_patient_service_url()}{path}"
-        headers = _get_auth_headers()
-        
-        response = requests.get(
-            url,
-            params=request.args,
-            headers=headers,
-            timeout=_get_timeout()
+        client = _get_patient_client()
+        upstream_response = client.proxy_request(
+            method=method,
+            path=path,
+            headers=headers or None,
+            json=json_payload,
+            data=raw_payload,
+            params=params,
         )
-        
-        return jsonify(response.json()), response.status_code
-    
-    except requests.Timeout:
-        return jsonify({
-            "error": "service_timeout",
-            "message": "El servicio de pacientes no respondió a tiempo"
-        }), HTTPStatus.GATEWAY_TIMEOUT
-    
-    except requests.ConnectionError:
-        return jsonify({
-            "error": "service_unavailable",
-            "message": "El servicio de pacientes no está disponible"
-        }), HTTPStatus.SERVICE_UNAVAILABLE
-    
-    except Exception as e:
-        current_app.logger.error(f"Error en proxy patient: {e}")
-        return jsonify({
-            "error": "proxy_error",
-            "message": "Error al comunicarse con el servicio de pacientes"
-        }), HTTPStatus.INTERNAL_SERVER_ERROR
+
+        excluded = {"content-length", "transfer-encoding", "connection"}
+        response_headers = [
+            (name, value)
+            for name, value in upstream_response.headers.items()
+            if name.lower() not in excluded
+        ]
+
+        return Response(
+            response=upstream_response.content,
+            status=upstream_response.status_code,
+            headers=response_headers,
+        )
+
+    except PatientClientError as exc:
+        return jsonify({"error": exc.error, "message": exc.message}), exc.status_code
+    except Exception as exc:  # pragma: no cover - log inesperado
+        current_app.logger.error(f"Error en proxy patient: {exc}")
+        return (
+            jsonify({
+                "error": "proxy_error",
+                "message": "Error interno del gateway al comunicarse con Patient Service",
+            }),
+            HTTPStatus.INTERNAL_SERVER_ERROR,
+        )
 
 
 # ---------------------------------------------------------------------------
 # Endpoints del Patient Service
 # ---------------------------------------------------------------------------
 
-@bp.get("/dashboard")
-def get_dashboard():
+
+@bp.route("/dashboard", methods=["GET"])
+def get_dashboard() -> Response:
     """Proxy: Obtiene el dashboard completo del paciente."""
-    return _proxy_get("/patient/dashboard")
+    return _proxy_request("/patient/dashboard", "GET")
 
 
-@bp.get("/profile")
-def get_profile():
+@bp.route("/profile", methods=["GET"])
+def get_profile() -> Response:
     """Proxy: Obtiene el perfil del paciente."""
-    return _proxy_get("/patient/profile")
+    return _proxy_request("/patient/profile", "GET")
 
 
-@bp.get("/alerts")
-def get_alerts():
-    """
-    Proxy: Obtiene alertas del paciente.
-    Query params: status, limit, offset
-    """
-    return _proxy_get("/patient/alerts")
+@bp.route("/alerts", methods=["GET"])
+def get_alerts() -> Response:
+    """Proxy: Obtiene alertas del paciente (status, limit, offset)."""
+    return _proxy_request("/patient/alerts", "GET")
 
 
-@bp.get("/devices")
-def get_devices():
+@bp.route("/devices", methods=["GET"])
+def get_devices() -> Response:
     """Proxy: Obtiene dispositivos asignados al paciente."""
-    return _proxy_get("/patient/devices")
+    return _proxy_request("/patient/devices", "GET")
 
 
-@bp.get("/readings")
-def get_readings():
-    """
-    Proxy: Obtiene historial de lecturas del paciente.
-    Query params: limit, offset
-    """
-    return _proxy_get("/patient/readings")
+@bp.route("/caregivers", methods=["GET"])
+def get_caregivers() -> Response:
+    """Proxy: Obtiene cuidadores del paciente."""
+    return _proxy_request("/patient/caregivers", "GET")
 
 
-@bp.get("/care-team")
-def get_care_team():
+@bp.route("/readings", methods=["GET"])
+def get_readings() -> Response:
+    """Proxy: Obtiene historial de lecturas (limit, offset)."""
+    return _proxy_request("/patient/readings", "GET")
+
+
+@bp.route("/care-team", methods=["GET"])
+def get_care_team() -> Response:
     """Proxy: Obtiene el equipo de cuidado del paciente."""
-    return _proxy_get("/patient/care-team")
+    return _proxy_request("/patient/care-team", "GET")
 
 
-@bp.get("/location/latest")
-def get_latest_location():
-    """Proxy: Obtiene la última ubicación del paciente."""
-    return _proxy_get("/patient/location/latest")
+@bp.route("/location/latest", methods=["GET"])
+def get_latest_location() -> Response:
+    """Proxy: Obtiene la última ubicación registrada del paciente."""
+    return _proxy_request("/patient/location/latest", "GET")
 
 
-@bp.get("/locations")
-def get_locations():
+@bp.route("/locations", methods=["GET"])
+def get_locations() -> Response:
     """Proxy: Obtiene el historial de ubicaciones del paciente."""
-    # Pasar query params (limit, offset)
-    from flask import request
-    limit = request.args.get('limit', '50')
-    offset = request.args.get('offset', '0')
-    return _proxy_get(f"/patient/locations?limit={limit}&offset={offset}")
+    return _proxy_request("/patient/locations", "GET")
 
 
-@bp.get("/health")
-def health_check():
+@bp.route("/health", methods=["GET"])
+def health_check() -> Response:
     """Proxy: Health check del Patient Service."""
-    return _proxy_get("/patient/health")
+    return _proxy_request("/patient/health", "GET")

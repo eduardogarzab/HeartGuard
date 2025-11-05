@@ -9,34 +9,30 @@ import com.heartguard.desktop.models.User;
 import okhttp3.*;
 
 import java.io.IOException;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
  * Cliente HTTP para comunicarse con el Gateway API
- * Los microservicios corren en localhost, pero el backend está en 136.115.53.140
+ * Todas las peticiones pasan por el Gateway (puerto 8080)
+ * El Gateway se encarga de enrutar a los microservicios internos
  */
 public class ApiClient {
-    private static final String DEFAULT_GATEWAY_URL = "http://localhost:8000";
-    private static final String DEFAULT_AUTH_SERVICE_URL = "http://localhost:5001";
+    private static final String DEFAULT_GATEWAY_URL = "http://4.246.170.83:8080";
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
     
     private final String gatewayUrl;
-    private final String authServiceUrl;
     private final OkHttpClient httpClient;
     private final Gson gson;
     private String accessToken;
 
     public ApiClient() {
-        this(DEFAULT_GATEWAY_URL, DEFAULT_AUTH_SERVICE_URL);
+        this(DEFAULT_GATEWAY_URL);
     }
 
     public ApiClient(String gatewayUrl) {
-        this(gatewayUrl, DEFAULT_AUTH_SERVICE_URL);
-    }
-
-    public ApiClient(String gatewayUrl, String authServiceUrl) {
-        this.gatewayUrl = gatewayUrl;
-        this.authServiceUrl = authServiceUrl;
+        this.gatewayUrl = gatewayUrl.endsWith("/") ? gatewayUrl.substring(0, gatewayUrl.length() - 1) : gatewayUrl;
         this.httpClient = new OkHttpClient.Builder()
                 .connectTimeout(10, TimeUnit.SECONDS)
                 .writeTimeout(10, TimeUnit.SECONDS)
@@ -56,30 +52,33 @@ public class ApiClient {
 
     /**
      * Login para usuario (staff)
+     * Ruta: POST /auth/login/user
      */
     public LoginResponse loginUser(String email, String password) throws ApiException {
         JsonObject payload = new JsonObject();
         payload.addProperty("email", email);
         payload.addProperty("password", password);
 
-        String url = authServiceUrl + "/auth/login/user";
+        String url = gatewayUrl + "/auth/login/user";
         return executeLogin(url, payload);
     }
 
     /**
      * Login para paciente
+     * Ruta: POST /auth/login/patient
      */
     public LoginResponse loginPatient(String email, String password) throws ApiException {
         JsonObject payload = new JsonObject();
         payload.addProperty("email", email);
         payload.addProperty("password", password);
 
-        String url = authServiceUrl + "/auth/login/patient";
+        String url = gatewayUrl + "/auth/login/patient";
         return executeLogin(url, payload);
     }
 
     /**
      * Registro de usuario (staff)
+     * Ruta: POST /auth/register/user
      * Según el README, solo requiere: name, email, password
      * Se crea sin organización inicial (se agregan por invitaciones)
      */
@@ -89,7 +88,7 @@ public class ApiClient {
         payload.addProperty("email", email);
         payload.addProperty("password", password);
 
-        String url = authServiceUrl + "/auth/register/user";
+        String url = gatewayUrl + "/auth/register/user";
         
         // El registro de usuario NO devuelve tokens, solo devuelve user_id y message
         RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
@@ -122,6 +121,7 @@ public class ApiClient {
 
     /**
      * Registro de paciente
+     * Ruta: POST /auth/register/patient
      * Acepta tanto org_id (UUID) como org_code (código de organización)
      * Detecta automáticamente si es UUID o código
      */
@@ -149,7 +149,7 @@ public class ApiClient {
             payload.addProperty("risk_level_code", riskLevelCode);
         }
 
-        String url = authServiceUrl + "/auth/register/patient";
+        String url = gatewayUrl + "/auth/register/patient";
         
         // El registro de paciente NO devuelve tokens, solo devuelve patient_id y message
         RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
@@ -182,13 +182,14 @@ public class ApiClient {
 
     /**
      * Verifica el token de acceso actual
+     * Ruta: GET /auth/verify
      */
     public boolean verifyToken() throws ApiException {
         if (accessToken == null || accessToken.isEmpty()) {
             return false;
         }
 
-        String url = authServiceUrl + "/auth/verify";
+        String url = gatewayUrl + "/auth/verify";
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Authorization", "Bearer " + accessToken)
@@ -204,13 +205,14 @@ public class ApiClient {
 
     /**
      * Obtiene información del usuario/paciente autenticado
+     * Ruta: GET /auth/me
      */
     public LoginResponse getMe() throws ApiException {
         if (accessToken == null || accessToken.isEmpty()) {
             throw new ApiException("No hay token de acceso");
         }
 
-        String url = authServiceUrl + "/auth/me";
+        String url = gatewayUrl + "/auth/me";
         Request request = new Request.Builder()
                 .url(url)
                 .addHeader("Authorization", "Bearer " + accessToken)
@@ -275,32 +277,7 @@ public class ApiClient {
      * @throws ApiException si hay error en la petición
      */
     public JsonObject getPatientDashboard(String token) throws ApiException {
-        if (token == null || token.isEmpty()) {
-            throw new ApiException("Token de acceso no proporcionado");
-        }
-
-        String url = gatewayUrl + "/patient/dashboard";
-        
-        Request request = new Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer " + token)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
-                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
-                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener dashboard";
-                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
-            }
-
-            return gson.fromJson(responseBody, JsonObject.class);
-        } catch (IOException e) {
-            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
-        }
+        return executeGatewayGet("/patient/dashboard", null, token, true, "Error al obtener dashboard");
     }
 
     /**
@@ -312,32 +289,17 @@ public class ApiClient {
      * @throws ApiException si hay error en la petición
      */
     public JsonObject getPatientAlerts(String token, int limit) throws ApiException {
-        if (token == null || token.isEmpty()) {
-            throw new ApiException("Token de acceso no proporcionado");
+        return getPatientAlerts(token, limit, 0, null);
+    }
+
+    public JsonObject getPatientAlerts(String token, int limit, int offset, String status) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        if (status != null && !status.trim().isEmpty()) {
+            params.put("status", status);
         }
-
-        String url = gatewayUrl + "/patient/alerts?limit=" + limit + "&offset=0";
-        
-        Request request = new Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer " + token)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
-                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
-                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener alertas";
-                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
-            }
-
-            return gson.fromJson(responseBody, JsonObject.class);
-        } catch (IOException e) {
-            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
-        }
+        return executeGatewayGet("/patient/alerts", params, token, true, "Error al obtener alertas");
     }
 
     /**
@@ -348,96 +310,47 @@ public class ApiClient {
      * @throws ApiException si hay error en la petición
      */
     public JsonObject getPatientDevices(String token) throws ApiException {
-        if (token == null || token.isEmpty()) {
-            throw new ApiException("Token de acceso no proporcionado");
-        }
-
-        String url = gatewayUrl + "/patient/devices";
-        
-        Request request = new Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer " + token)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
-                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
-                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener dispositivos";
-                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
-            }
-
-            return gson.fromJson(responseBody, JsonObject.class);
-        } catch (IOException e) {
-            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
-        }
+        return executeGatewayGet("/patient/devices", null, token, true, "Error al obtener dispositivos");
     }
 
     /**
      * Obtiene la última ubicación del paciente
      */
     public JsonObject getPatientLatestLocation(String token) throws ApiException {
-        if (token == null || token.isEmpty()) {
-            throw new ApiException("Token de acceso no proporcionado");
-        }
-
-        String url = gatewayUrl + "/patient/location/latest";
-        
-        Request request = new Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer " + token)
-                .get()
-                .build();
-
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
-
-            if (!response.isSuccessful()) {
-                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
-                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
-                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener ubicación";
-                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
-            }
-
-            return gson.fromJson(responseBody, JsonObject.class);
-        } catch (IOException e) {
-            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
-        }
+        return executeGatewayGet("/patient/location/latest", null, token, true, "Error al obtener ubicación");
     }
     
     /**
      * Obtiene las últimas N ubicaciones del paciente
      */
     public JsonObject getPatientLocations(String token, int limit) throws ApiException {
-        if (token == null || token.isEmpty()) {
-            throw new ApiException("Token de acceso no proporcionado");
-        }
+        return getPatientLocations(token, limit, 0);
+    }
 
-        String url = gatewayUrl + "/patient/locations?limit=" + limit + "&offset=0";
-        
-        Request request = new Request.Builder()
-                .url(url)
-                .addHeader("Authorization", "Bearer " + token)
-                .get()
-                .build();
+    public JsonObject getPatientLocations(String token, int limit, int offset) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        return executeGatewayGet("/patient/locations", params, token, true, "Error al obtener ubicaciones");
+    }
 
-        try (Response response = httpClient.newCall(request).execute()) {
-            String responseBody = response.body() != null ? response.body().string() : "";
+    public JsonObject getPatientCaregivers(String token) throws ApiException {
+        return executeGatewayGet("/patient/caregivers", null, token, true, "Error al obtener cuidadores");
+    }
 
-            if (!response.isSuccessful()) {
-                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
-                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
-                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener ubicaciones";
-                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
-            }
+    public JsonObject getPatientCareTeam(String token) throws ApiException {
+        return executeGatewayGet("/patient/care-team", null, token, true, "Error al obtener equipo de cuidado");
+    }
 
-            return gson.fromJson(responseBody, JsonObject.class);
-        } catch (IOException e) {
-            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
-        }
+    public JsonObject getPatientProfile(String token) throws ApiException {
+        return executeGatewayGet("/patient/profile", null, token, true, "Error al obtener perfil del paciente");
+    }
+
+    public JsonObject getPatientReadings(String token, int limit, int offset) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        return executeGatewayGet("/patient/readings", params, token, true, "Error al obtener lecturas");
     }
 
     /**
@@ -445,5 +358,77 @@ public class ApiClient {
      */
     public String getGatewayUrl() {
         return gatewayUrl;
+    }
+
+    private JsonObject executeGatewayGet(
+            String path,
+            Map<String, String> queryParams,
+            String token,
+            boolean requiresToken,
+            String defaultErrorMessage
+    ) throws ApiException {
+        if (requiresToken && (token == null || token.isEmpty())) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        HttpUrl baseUrl = HttpUrl.parse(gatewayUrl + path);
+        if (baseUrl == null) {
+            throw new ApiException("URL inválida del gateway: " + gatewayUrl + path);
+        }
+
+        HttpUrl.Builder urlBuilder = baseUrl.newBuilder();
+        if (queryParams != null) {
+            for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                if (entry.getValue() != null) {
+                    urlBuilder.addQueryParameter(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(urlBuilder.build())
+                .get();
+
+        if (token != null && !token.isEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer " + token);
+        }
+
+        try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                JsonObject errorPayload = null;
+                if (!responseBody.isEmpty()) {
+                    try {
+                        errorPayload = gson.fromJson(responseBody, JsonObject.class);
+                    } catch (Exception ignored) {
+                        errorPayload = null;
+                    }
+                }
+
+                String errorCode = "unknown_error";
+                String errorMessage = defaultErrorMessage;
+
+                if (errorPayload != null) {
+                    if (errorPayload.has("error") && !errorPayload.get("error").isJsonNull()) {
+                        errorCode = errorPayload.get("error").getAsString();
+                    }
+                    if (errorPayload.has("message") && !errorPayload.get("message").isJsonNull()) {
+                        errorMessage = errorPayload.get("message").getAsString();
+                    }
+                }
+
+                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+            }
+
+            if (responseBody.isEmpty()) {
+                return new JsonObject();
+            }
+
+            JsonObject payload = gson.fromJson(responseBody, JsonObject.class);
+            return payload != null ? payload : new JsonObject();
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el gateway: " + e.getMessage(), e);
+        }
     }
 }
