@@ -293,13 +293,14 @@ class PatientRepository:
                 SELECT 
                     ss.id,
                     d.serial as device_serial,
-                    ss.signal_type,
+                    st.code as signal_type,
                     ss.started_at,
                     ss.ended_at,
                     ss.sample_rate_hz,
                     EXTRACT(EPOCH FROM (ss.ended_at - ss.started_at))/60 as duration_minutes
                 FROM signal_streams ss
                 LEFT JOIN devices d ON ss.device_id = d.id
+                LEFT JOIN signal_types st ON ss.signal_type_id = st.id
                 WHERE ss.patient_id = %s
                 ORDER BY ss.started_at DESC
                 LIMIT %s OFFSET %s
