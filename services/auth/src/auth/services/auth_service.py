@@ -119,6 +119,7 @@ class AuthService:
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
+            "account_type": "user",
             "user": {
                 "id": record["id"],
                 "email": record["email"],
@@ -142,6 +143,7 @@ class AuthService:
         return {
             "access_token": access_token,
             "refresh_token": refresh_token,
+            "account_type": "patient",
             "patient": {
                 "id": record["id"],
                 "email": record["email"],
