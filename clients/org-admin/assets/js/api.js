@@ -266,9 +266,9 @@ const Api = (() => {
                 patientId: Xml.text(node, "patient_id"),
                 latitude: Xml.float(node, "latitude"),
                 longitude: Xml.float(node, "longitude"),
-                accuracy: Xml.float(node, "accuracy"),
-                recordedAt: Xml.text(node, "recorded_at"),
-                createdAt: Xml.text(node, "created_at"),
+                source: Xml.text(node, "source"),
+                accuracyMeters: Xml.float(node, "accuracy_m"),
+                timestamp: Xml.text(node, "ts"),
             };
         },
     };
@@ -379,6 +379,37 @@ const Api = (() => {
                 const node = doc.querySelector("response > patient");
                 return node ? transform.patient(node) : null;
             },
+            async getPatientProfile(token, orgId, patientId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/${patientId}/profile`, { token });
+                const root = doc.querySelector("response > patient_profile");
+                if (!root) {
+                    return null;
+                }
+                const patientNode = root.querySelector("patient");
+                const latestNode = root.querySelector("locations > latest");
+                let latestLocation = null;
+                if (latestNode && latestNode.children.length) {
+                    latestLocation = transform.patientLocation(latestNode);
+                }
+
+                return {
+                    patient: patientNode ? transform.patient(patientNode) : null,
+                    caregivers: Xml.mapNodes(root, "caregivers > caregiver", transform.caregiverAssignment),
+                    careTeams: Xml.mapNodes(root, "care_teams > care_team", (node) => {
+                        const team = transform.careTeam(node);
+                        team.orgId = Xml.text(node, "org_id");
+                        team.members = Xml.mapNodes(node, "members > member", transform.careTeamMember);
+                        return team;
+                    }),
+                    devices: Xml.mapNodes(root, "devices > device", transform.device),
+                    groundTruthLabels: Xml.mapNodes(root, "ground_truth_labels > ground_truth_label", transform.groundTruthLabel),
+                    alerts: Xml.mapNodes(root, "alerts > alert", transform.alert),
+                    locations: {
+                        latest: latestLocation,
+                        recent: Xml.mapNodes(root, "locations > recent > item", transform.patientLocation),
+                    },
+                };
+            },
             async listCareTeams(token, orgId) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/care-teams/`, { token });
                 return Xml.mapNodes(doc, "response > care_teams > care_team", transform.careTeam);
@@ -414,6 +445,46 @@ const Api = (() => {
                     body: payload,
                 });
                 return true;
+            },
+            async getStaffProfile(token, orgId, userId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/staff/${userId}/profile`, { token });
+                const root = doc.querySelector("response > staff_profile");
+                if (!root) {
+                    return null;
+                }
+                const memberNode = root.querySelector("member");
+                const member = memberNode
+                    ? {
+                        ...transform.staffMember(memberNode),
+                        profilePhotoUrl: Xml.text(memberNode, "profile_photo_url"),
+                        createdAt: Xml.text(memberNode, "created_at"),
+                        updatedAt: Xml.text(memberNode, "updated_at"),
+                    }
+                    : null;
+
+                const careTeams = Xml.mapNodes(root, "care_teams > care_team", (node) => {
+                    const team = transform.careTeam(node);
+                    team.orgId = Xml.text(node, "org_id");
+                    team.joinedAt = Xml.text(node, "joined_at");
+                    team.roleId = Xml.text(node, "role_id");
+                    team.roleCode = Xml.text(node, "role_code");
+                    team.roleLabel = Xml.text(node, "role_label");
+                    team.patients = Xml.mapNodes(node, "patients > patient", (patientNode) => ({
+                        careTeamId: Xml.text(patientNode, "care_team_id"),
+                        patientId: Xml.text(patientNode, "patient_id"),
+                        name: Xml.text(patientNode, "name"),
+                        email: Xml.text(patientNode, "email"),
+                    }));
+                    return team;
+                });
+
+                return {
+                    member,
+                    careTeams,
+                    caregiverAssignments: Xml.mapNodes(root, "caregiver_assignments > caregiver_assignment", transform.caregiverAssignment),
+                    groundTruthAnnotations: Xml.mapNodes(root, "ground_truth_annotations > ground_truth_annotation", transform.groundTruthLabel),
+                    pushDevices: Xml.mapNodes(root, "push_devices > push_device", transform.pushDevice),
+                };
             },
             async createPatient(token, orgId, payload) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/patients/`, {

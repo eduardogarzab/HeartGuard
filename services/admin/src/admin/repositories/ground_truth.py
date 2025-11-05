@@ -45,6 +45,42 @@ class GroundTruthRepository:
         }
         return db.fetch_all(query, params)
 
+    def list_for_annotator(
+        self,
+        user_id: str,
+        *,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        safe_limit = max(1, min(int(limit), 200))
+        safe_offset = max(0, int(offset))
+        query = """
+            SELECT
+                gt.id,
+                gt.patient_id,
+                gt.event_type_id,
+                et.code AS event_type_code,
+                et.description AS event_type_label,
+                gt.onset,
+                gt.offset_at,
+                gt.annotated_by_user_id,
+                u.name AS annotated_by_name,
+                gt.source,
+                gt.note
+            FROM ground_truth_labels gt
+            JOIN event_types et ON et.id = gt.event_type_id
+            LEFT JOIN users u ON u.id = gt.annotated_by_user_id
+            WHERE gt.annotated_by_user_id = %(user_id)s
+            ORDER BY gt.onset DESC
+            LIMIT %(limit)s OFFSET %(offset)s
+        """
+        params = {
+            "user_id": user_id,
+            "limit": safe_limit,
+            "offset": safe_offset,
+        }
+        return db.fetch_all(query, params)
+
     def get(self, label_id: str) -> dict[str, Any] | None:
         query = """
             SELECT

@@ -46,6 +46,64 @@ class CaregiversRepository:
         """
         return db.fetch_all(query, (org_id,))
 
+    def list_assignments_for_patient(self, org_id: str, patient_id: str) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                cp.patient_id,
+                p.person_name AS patient_name,
+                p.email AS patient_email,
+                cp.user_id AS caregiver_id,
+                u.name AS caregiver_name,
+                u.email AS caregiver_email,
+                cp.rel_type_id,
+                crt.code AS relationship_code,
+                crt.label AS relationship_label,
+                cp.is_primary,
+                cp.started_at,
+                cp.ended_at,
+                cp.note,
+                pct.care_team_id,
+                ct.name AS care_team_name
+            FROM caregiver_patient cp
+            JOIN patients p ON p.id = cp.patient_id
+            JOIN users u ON u.id = cp.user_id
+            LEFT JOIN caregiver_relationship_types crt ON crt.id = cp.rel_type_id
+            LEFT JOIN patient_care_team pct ON pct.patient_id = p.id
+            LEFT JOIN care_teams ct ON ct.id = pct.care_team_id
+            WHERE p.org_id = %s AND cp.patient_id = %s
+            ORDER BY u.name ASC
+        """
+        return db.fetch_all(query, (org_id, patient_id))
+
+    def list_assignments_for_caregiver(self, org_id: str, caregiver_id: str) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                cp.patient_id,
+                p.person_name AS patient_name,
+                p.email AS patient_email,
+                cp.user_id AS caregiver_id,
+                u.name AS caregiver_name,
+                u.email AS caregiver_email,
+                cp.rel_type_id,
+                crt.code AS relationship_code,
+                crt.label AS relationship_label,
+                cp.is_primary,
+                cp.started_at,
+                cp.ended_at,
+                cp.note,
+                pct.care_team_id,
+                ct.name AS care_team_name
+            FROM caregiver_patient cp
+            JOIN patients p ON p.id = cp.patient_id
+            JOIN users u ON u.id = cp.user_id
+            LEFT JOIN caregiver_relationship_types crt ON crt.id = cp.rel_type_id
+            LEFT JOIN patient_care_team pct ON pct.patient_id = p.id
+            LEFT JOIN care_teams ct ON ct.id = pct.care_team_id
+            WHERE p.org_id = %s AND cp.user_id = %s
+            ORDER BY p.person_name ASC
+        """
+        return db.fetch_all(query, (org_id, caregiver_id))
+
     def create_assignment(
         self,
         org_id: str,

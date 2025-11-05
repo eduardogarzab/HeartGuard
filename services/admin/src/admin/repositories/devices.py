@@ -50,6 +50,29 @@ class DevicesRepository:
         """
         return db.fetch_all(query, params)
 
+    def list_for_patient(self, org_id: str, patient_id: str) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                d.id,
+                d.org_id,
+                d.serial,
+                d.brand,
+                d.model,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                d.owner_patient_id,
+                p.person_name AS owner_patient_name,
+                d.registered_at,
+                d.active
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN patients p ON p.id = d.owner_patient_id
+            WHERE d.org_id = %(org_id)s AND d.owner_patient_id = %(patient_id)s
+            ORDER BY d.registered_at DESC
+        """
+        params = {"org_id": org_id, "patient_id": patient_id}
+        return db.fetch_all(query, params)
+
     def get(self, org_id: str, device_id: str) -> dict[str, Any] | None:
         query = """
             SELECT

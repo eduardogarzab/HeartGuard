@@ -7,7 +7,9 @@ from .health import bp as health_bp
 from .organizations import bp as organizations_bp
 from .dashboard import bp as dashboard_bp
 from .staff import bp as staff_bp
+from .staff_profile import bp as staff_profile_bp
 from .patients import bp as patients_bp
+from .patient_profile import bp as patient_profile_bp
 from .care_teams import bp as care_teams_bp
 from .caregivers import bp as caregivers_bp
 from .alerts import bp as alerts_bp
@@ -22,7 +24,9 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(organizations_bp)
     app.register_blueprint(dashboard_bp)
     app.register_blueprint(staff_bp)
+    app.register_blueprint(staff_profile_bp)
     app.register_blueprint(patients_bp)
+    app.register_blueprint(patient_profile_bp)
     app.register_blueprint(care_teams_bp)
     app.register_blueprint(caregivers_bp)
     app.register_blueprint(alerts_bp)

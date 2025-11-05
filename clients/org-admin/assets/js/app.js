@@ -212,6 +212,79 @@
         }, 5000);
     };
 
+    const modalSizeClassMap = {
+        sm: "modal-sm",
+        md: "",
+        lg: "modal-lg",
+        xl: "modal-xl",
+        wide: "modal-wide",
+    };
+
+    let modalEventsBound = false;
+
+    const getModalContent = () => el.modal.overlay?.querySelector(".modal-content");
+
+    const setModalTitle = (text) => {
+        if (!el.modal.title) return;
+        el.modal.title.textContent = text || "";
+    };
+
+    const setModalBody = (html) => {
+        if (!el.modal.body) return;
+        el.modal.body.innerHTML = html || "";
+    };
+
+    const setModalFooter = (html) => {
+        if (!el.modal.footer) return;
+        el.modal.footer.innerHTML = html || "";
+    };
+
+    const closeModal = () => {
+        if (!el.modal.overlay) return;
+        el.modal.overlay.classList.add("hidden");
+        const content = getModalContent();
+        if (content) {
+            Object.values(modalSizeClassMap)
+                .filter(Boolean)
+                .forEach((cls) => content.classList.remove(cls));
+        }
+        setModalTitle("");
+        setModalBody("");
+        setModalFooter("");
+    };
+
+    const openModal = ({
+        title = "",
+        body = "",
+        footer,
+        size = "lg",
+    } = {}) => {
+        if (!el.modal.overlay) return;
+        const content = getModalContent();
+        if (!content) return;
+        Object.values(modalSizeClassMap)
+            .filter(Boolean)
+            .forEach((cls) => content.classList.remove(cls));
+        const sizeClass = modalSizeClassMap[size] || modalSizeClassMap.lg;
+        if (sizeClass) {
+            content.classList.add(sizeClass);
+        }
+        setModalTitle(title);
+        setModalBody(body);
+        if (footer === undefined) {
+            setModalFooter('<button type="button" class="btn btn-secondary" data-modal-close>Cerrar</button>');
+        } else {
+            setModalFooter(footer);
+        }
+        el.modal.overlay.classList.remove("hidden");
+        const modalContent = getModalContent();
+        if (modalContent) {
+            modalContent.scrollTop = 0;
+        }
+    };
+
+    const hasItems = (value) => Array.isArray(value) && value.length > 0;
+
     const persistState = () => {
         if (state.token) {
             sessionStorage.setItem(storageKeys.token, state.token);
@@ -544,7 +617,7 @@
                             </thead>
                             <tbody>
                                 ${data.members.map(member => `
-                                    <tr>
+                                    <tr class="table-row-clickable" onclick="window.app.viewStaffProfile('${escapeHtml(member.userId || "")}')">
                                         <td>${escapeHtml(member.name)}</td>
                                         <td>${escapeHtml(member.email)}</td>
                                         <td>${escapeHtml(member.roleLabel || member.roleCode)}</td>
@@ -613,15 +686,15 @@
             ["Nombre", "Correo", "Fecha de nacimiento", "Riesgo", "Fecha de ingreso", "Acciones"],
             patients,
             (patient) => `
-                <tr>
+                <tr class="table-row-clickable" onclick="window.app.viewPatientProfile('${escapeHtml(patient.id || "")}')">
                     <td>${escapeHtml(patient.name)}</td>
                     <td>${escapeHtml(patient.email)}</td>
                     <td>${escapeHtml(formatDate(patient.birthdate))}</td>
-                    <td><span class="status-badge">${escapeHtml(patient.riskLevelLabel || patient.riskLevelCode || "-")}</span></td>
+                    <td>${buildRiskBadge(patient.riskLevelCode, patient.riskLevelLabel) || '<span class="status-badge">-</span>'}</td>
                     <td>${escapeHtml(formatDate(patient.createdAt))}</td>
-                    <td>
-                        <button class="btn btn-sm" onclick="window.app.editPatient('${escapeHtml(patient.id)}')">Editar</button>
-                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePatient('${escapeHtml(patient.id)}')">Eliminar</button>
+                    <td onclick="event.stopPropagation();">
+                        <button class="btn btn-sm" onclick="window.app.editPatient('${escapeHtml(patient.id || "")}')">Editar</button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deletePatient('${escapeHtml(patient.id || "")}')">Eliminar</button>
                     </td>
                 </tr>` ,
             "No se encontraron pacientes"
@@ -884,12 +957,15 @@
             pushDevices,
             (pd) => {
                 const tokenPreview = pd.pushToken ? `${escapeHtml(pd.pushToken.slice(0, 20))}…` : "-";
+                const statusBadge = pd.active
+                    ? buildStatusBadge('Activo', 'status-success')
+                    : buildStatusBadge('Inactivo', 'status-muted');
                 return `
                 <tr>
                     <td>${escapeHtml(pd.userName || pd.userEmail || "-")}</td>
                     <td><span class="status-badge">${escapeHtml(pd.platformLabel || pd.platformCode || "-")}</span></td>
                     <td><code title="${escapeHtml(pd.pushToken || "Sin token")}">${tokenPreview}</code></td>
-                    <td><span class="status-badge ${pd.active ? "success" : ""}">${pd.active ? "Activo" : "Inactivo"}</span></td>
+                    <td>${statusBadge}</td>
                     <td>${escapeHtml(formatDateTime(pd.lastSeenAt))}</td>
                     <td>
                         <button class="btn btn-sm" onclick="window.app.togglePushDevice('${escapeHtml(pd.id)}', ${!pd.active})">${pd.active ? "Desactivar" : "Activar"}</button>
@@ -899,6 +975,635 @@
             },
             "No se encontraron push devices"
         );
+    };
+
+    const buildStatusBadge = (label, variant = "") => {
+        if (!label) return "";
+        const classes = ["status-badge"];
+        if (variant) classes.push(variant);
+        return `<span class="${classes.join(" ")}">${escapeHtml(label)}</span>`;
+    };
+
+    const buildRiskBadge = (riskCode, riskLabel) => {
+        if (!riskCode && !riskLabel) return "";
+        const code = (riskCode || "").toLowerCase();
+        let variant = "";
+        if (code === "high" || code === "critical") {
+            variant = "status-danger";
+        } else if (code === "medium" || code === "moderate") {
+            variant = "status-warning";
+        } else if (code === "low") {
+            variant = "status-success";
+        }
+        return buildStatusBadge(riskLabel || riskCode, variant);
+    };
+
+    const buildAlertLevelBadge = (levelCode, levelLabel) => {
+        if (!levelCode && !levelLabel) return "";
+        const code = (levelCode || "").toLowerCase();
+        let variant = "";
+        if (code === "critical" || code === "high") {
+            variant = "status-danger";
+        } else if (code === "medium" || code === "moderate") {
+            variant = "status-warning";
+        } else if (code === "low") {
+            variant = "status-success";
+        }
+        return buildStatusBadge(levelLabel || levelCode, variant);
+    };
+
+    const buildChips = (items) => {
+        if (!hasItems(items)) return "";
+        const chips = items.map((item) => `<span class="profile-chip">${escapeHtml(item)}</span>`);
+        return `<div class="profile-chips">${chips.join("")}</div>`;
+    };
+
+    const truncate = (value, length = 24) => {
+        if (!value) return "-";
+        const stringValue = String(value);
+        if (stringValue.length <= length) {
+            return stringValue;
+        }
+        return `${stringValue.slice(0, length)}…`;
+    };
+
+    const renderListOrEmpty = (items, renderItem, emptyMessage) => {
+        if (!hasItems(items)) {
+            return `<p class="muted">${escapeHtml(emptyMessage)}</p>`;
+        }
+        return `<ul class="profile-list">${items.map((item) => renderItem(item).trim()).join("")}</ul>`;
+    };
+
+    const renderProfileStats = (items) => {
+        const rows = (items || []).filter((item) => item && item.label !== undefined);
+        if (!rows.length) return "";
+        return `<div class="profile-stats">${rows
+            .map((item) => `
+                <div class="profile-stat">
+                    <span class="profile-stat__value">${escapeHtml(String(item.value ?? 0))}</span>
+                    <span class="profile-stat__label">${escapeHtml(item.label)}</span>
+                </div>
+            `.trim())
+            .join("")}</div>`;
+    };
+
+    const buildDetailList = (rows = []) => {
+        const safeRows = rows.filter((row) => row && row.label);
+        if (!safeRows.length) return "";
+        return `<dl class="profile-dl">${safeRows
+            .map((row) => {
+                const value = row.html ? row.value : escapeHtml(row.value ?? "-");
+                return `
+                    <dt>${escapeHtml(row.label)}</dt>
+                    <dd>${value}</dd>
+                `.trim();
+            })
+            .join("")}</dl>`;
+    };
+
+    const formatCoordinate = (value) => {
+        const num = Number(value);
+        if (!Number.isFinite(num)) return "-";
+        return num.toFixed(5);
+    };
+
+    const buildMapSection = (location) => {
+        if (!location) {
+            return '<p class="muted">Sin ubicaciones recientes registradas.</p>';
+        }
+        const lat = Number(location.latitude);
+        const lon = Number(location.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+            return '<p class="muted">Ubicación más reciente sin coordenadas válidas.</p>';
+        }
+        const delta = 0.01;
+        const bboxCoords = [
+            lon - delta,
+            lat - delta,
+            lon + delta,
+            lat + delta,
+        ].map((value) => value.toFixed(5));
+        const bbox = bboxCoords.join(',');
+        const marker = `${lat.toFixed(5)},${lon.toFixed(5)}`;
+        const embedSrc = `https://www.openstreetmap.org/export/embed.html?bbox=${encodeURIComponent(bbox)}&layer=mapnik&marker=${encodeURIComponent(marker)}`;
+        const mapHref = `https://www.openstreetmap.org/?mlat=${lat.toFixed(5)}&mlon=${lon.toFixed(5)}#map=16/${lat.toFixed(5)}/${lon.toFixed(5)}`;
+        const timestampLabel = location.timestamp ? formatDateTime(location.timestamp) : null;
+        const accuracyLabel = Number.isFinite(location.accuracyMeters) ? `±${location.accuracyMeters.toFixed(1)} m` : null;
+        return `
+            <div class="profile-map">
+                <iframe src="${escapeHtml(embedSrc)}" title="Mapa de ubicación" loading="lazy" allowfullscreen referrerpolicy="no-referrer-when-downgrade"></iframe>
+                <div class="profile-map__meta">
+                    ${timestampLabel ? `<span>${escapeHtml(timestampLabel)}</span>` : ""}
+                    ${location.source ? `<span>Fuente: ${escapeHtml(location.source)}</span>` : ""}
+                    ${accuracyLabel ? `<span>Precisión: ${escapeHtml(accuracyLabel)}</span>` : ""}
+                    <a href="${escapeHtml(mapHref)}" target="_blank" rel="noopener" class="profile-map__link">Abrir en OpenStreetMap</a>
+                </div>
+            </div>
+        `.trim();
+    };
+
+    const renderLocationHistoryTable = (locations) => {
+        if (!hasItems(locations)) {
+            return '<p class="muted">No hay ubicaciones anteriores registradas.</p>';
+        }
+        const rows = locations
+            .slice(0, 10)
+            .map((location) => {
+                const timestampLabel = location.timestamp ? formatDateTime(location.timestamp) : 'Sin registro';
+                const accuracyLabel = Number.isFinite(location.accuracyMeters) ? `${location.accuracyMeters.toFixed(1)} m` : 'N/D';
+                return `
+                    <tr>
+                        <td>${escapeHtml(timestampLabel)}</td>
+                        <td>${escapeHtml(formatCoordinate(location.latitude))}, ${escapeHtml(formatCoordinate(location.longitude))}</td>
+                        <td>${escapeHtml(location.source || 'Sin fuente')}</td>
+                        <td>${escapeHtml(accuracyLabel)}</td>
+                    </tr>
+                `.trim();
+            })
+            .join("");
+        return `
+            <div class="table-wrapper profile-table-wrapper">
+                <table class="profile-table">
+                    <thead>
+                        <tr>
+                            <th>Registrado</th>
+                            <th>Coordenadas</th>
+                            <th>Fuente</th>
+                            <th>Precisión</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+        `.trim();
+    };
+
+    const renderPatientProfileView = (profile) => {
+        if (!profile || !profile.patient) {
+            return '<p class="form-error">No se encontró la información del paciente.</p>';
+        }
+        const {
+            patient,
+            caregivers = [],
+            careTeams = [],
+            devices = [],
+            groundTruthLabels = [],
+            alerts = [],
+            locations = {},
+        } = profile;
+
+        const patientName = patient.name || 'Paciente sin nombre';
+        const email = patient.email || 'Sin correo registrado';
+        const birthdateLabel = patient.birthdate ? formatDate(patient.birthdate) : 'No especificado';
+        const createdLabel = patient.createdAt ? formatDateTime(patient.createdAt) : 'No especificado';
+        const latestLocation = locations.latest || null;
+        const locationHistory = hasItems(locations.recent) ? locations.recent : [];
+
+        const caregiversHtml = renderListOrEmpty(
+            caregivers,
+            (item) => {
+                const relation = item.relationshipLabel || item.relationshipCode || 'Sin relación definida';
+                const startLabel = item.startedAt ? formatDate(item.startedAt) : 'No registrado';
+                const endLabel = item.endedAt ? formatDate(item.endedAt) : null;
+                const periodLabel = endLabel ? `${startLabel} – ${endLabel}` : startLabel;
+                const note = item.note ? `<p class="profile-list__note">${escapeHtml(item.note)}</p>` : '';
+                const badges = [];
+                if (item.isPrimary) {
+                    badges.push(buildStatusBadge('Principal', 'status-success'));
+                }
+                badges.push(`<span>${escapeHtml(item.caregiverEmail || 'Sin correo')}</span>`);
+                badges.push(`<span>Vigencia: ${escapeHtml(periodLabel)}</span>`);
+                if (item.careTeamName) {
+                    badges.push(`<span class="profile-chip profile-chip--accent">${escapeHtml(item.careTeamName)}</span>`);
+                }
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(item.caregiverName)}</div>
+                        <div class="profile-list__subtitle">${escapeHtml(relation)}</div>
+                        <div class="profile-list__meta">${badges.join("")}</div>
+                        ${note}
+                    </li>
+                `;
+            },
+            'No hay cuidadores asignados a este paciente.'
+        );
+
+        const careTeamsHtml = renderListOrEmpty(
+            careTeams,
+            (team) => {
+                const memberCount = hasItems(team.members) ? team.members.length : 0;
+                let membersPreview = '';
+                if (memberCount) {
+                    const preview = team.members.map((member) => member.name).slice(0, 3);
+                    const chips = preview.map((name) => `<span class="profile-chip">${escapeHtml(name)}</span>`);
+                    const remaining = memberCount - preview.length;
+                    if (remaining > 0) {
+                        chips.push(`<span class="profile-chip profile-chip--muted">+${escapeHtml(String(remaining))}</span>`);
+                    }
+                    membersPreview = `<div class="profile-chips">${chips.join("")}</div>`;
+                } else {
+                    membersPreview = '<p class="muted">Sin miembros asignados</p>';
+                }
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(team.name)}</div>
+                        <div class="profile-list__meta">
+                            <span>Miembros: ${escapeHtml(String(memberCount))}</span>
+                            <span>ID: <code>${escapeHtml(team.id || '-')}</code></span>
+                        </div>
+                        ${membersPreview}
+                    </li>
+                `;
+            },
+            'El paciente no pertenece a equipos de cuidado.'
+        );
+
+        const devicesHtml = renderListOrEmpty(
+            devices,
+            (device) => {
+                const typeLabel = device.deviceTypeLabel || device.deviceTypeCode || 'Sin tipo';
+                const registeredLabel = device.registeredAt ? formatDateTime(device.registeredAt) : 'Sin registro';
+                const status = device.active
+                    ? buildStatusBadge('Activo', 'status-success')
+                    : buildStatusBadge('Inactivo', 'status-muted');
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(typeLabel)}</div>
+                        <div class="profile-list__meta">
+                            <span>Serial: <code>${escapeHtml(device.serial || '-')}</code></span>
+                            ${status}
+                        </div>
+                        <div class="profile-list__meta">
+                            <span>Marca: ${escapeHtml(device.brand || '-')}</span>
+                            <span>Modelo: ${escapeHtml(device.model || '-')}</span>
+                            <span>Registrado: ${escapeHtml(registeredLabel)}</span>
+                        </div>
+                    </li>
+                `;
+            },
+            'Este paciente no tiene dispositivos vinculados.'
+        );
+
+        const alertsHtml = renderListOrEmpty(
+            alerts.slice(0, 6),
+            (alert) => {
+                const createdLabel = alert.createdAt ? formatDateTime(alert.createdAt) : 'Sin fecha';
+                const levelBadge = buildAlertLevelBadge(alert.levelCode, alert.levelLabel);
+                const statusBadge = buildStatusBadge(alert.statusDescription || alert.statusCode || 'Sin estado', 'status-muted');
+                const description = alert.description || alert.typeDescription || alert.typeCode || 'Alerta sin descripción';
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(description)}</div>
+                        <div class="profile-list__meta">
+                            <span>${escapeHtml(createdLabel)}</span>
+                            ${levelBadge}
+                            ${statusBadge}
+                        </div>
+                    </li>
+                `;
+            },
+            'No hay alertas recientes para este paciente.'
+        );
+
+        const groundTruthHtml = renderListOrEmpty(
+            groundTruthLabels.slice(0, 6),
+            (label) => {
+                const eventLabel = label.eventTypeLabel || label.eventTypeCode || 'Evento sin etiqueta';
+                const onsetLabel = label.onset ? formatDateTime(label.onset) : 'Sin inicio';
+                const offsetLabel = label.offsetAt ? formatDateTime(label.offsetAt) : null;
+                const author = label.annotatedByName || label.annotatedByUserId || 'Sin autor';
+                const source = label.source || 'Sin fuente';
+                const note = label.note ? `<p class="profile-list__note">${escapeHtml(label.note)}</p>` : '';
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(eventLabel)}</div>
+                        <div class="profile-list__meta">
+                            <span>Inicio: ${escapeHtml(onsetLabel)}</span>
+                            ${offsetLabel ? `<span>Fin: ${escapeHtml(offsetLabel)}</span>` : ''}
+                            <span>Fuente: ${escapeHtml(source)}</span>
+                        </div>
+                        <div class="profile-list__subtitle">Anotado por ${escapeHtml(author)}</div>
+                        ${note}
+                    </li>
+                `;
+            },
+            'Sin etiquetas recientes registradas.'
+        );
+
+        const statsHtml = renderProfileStats([
+            { label: 'Cuidadores', value: caregivers.length },
+            { label: 'Equipos', value: careTeams.length },
+            { label: 'Dispositivos', value: devices.length },
+            { label: 'Alertas', value: alerts.length },
+        ]);
+
+        const detailRows = [
+            { label: 'Correo', value: email },
+            { label: 'Fecha de nacimiento', value: birthdateLabel },
+            { label: 'Registrado', value: createdLabel },
+        ];
+        if (patient.id) {
+            detailRows.push({ label: 'ID', value: `<code>${escapeHtml(patient.id)}</code>`, html: true });
+        }
+        const detailList = buildDetailList(detailRows);
+        const riskBadge = buildRiskBadge(patient.riskLevelCode, patient.riskLevelLabel);
+        const heroMeta = riskBadge ? `<div class="profile-hero__meta">${riskBadge}</div>` : '';
+        const heroAvatar = `<span>${escapeHtml((patientName.charAt(0) || '?').toUpperCase())}</span>`;
+
+        return `
+            <div class="profile-modal">
+                <section class="profile-hero">
+                    <div class="profile-hero__avatar">${heroAvatar}</div>
+                    <div class="profile-hero__info">
+                        <h2 class="profile-hero__title">${escapeHtml(patientName)}</h2>
+                        ${heroMeta}
+                        ${detailList}
+                    </div>
+                </section>
+                ${statsHtml}
+                <section class="profile-section">
+                    <h4>Ubicación reciente</h4>
+                    ${buildMapSection(latestLocation)}
+                </section>
+                <div class="profile-grid">
+                    <section class="profile-section">
+                        <h4>Cuidadores asignados</h4>
+                        ${caregiversHtml}
+                    </section>
+                    <section class="profile-section">
+                        <h4>Equipos de cuidado</h4>
+                        ${careTeamsHtml}
+                    </section>
+                    <section class="profile-section">
+                        <h4>Dispositivos vinculados</h4>
+                        ${devicesHtml}
+                    </section>
+                </div>
+                <div class="profile-grid">
+                    <section class="profile-section">
+                        <h4>Alertas recientes</h4>
+                        ${alertsHtml}
+                    </section>
+                    <section class="profile-section">
+                        <h4>Ground truth reciente</h4>
+                        ${groundTruthHtml}
+                    </section>
+                </div>
+                <section class="profile-section">
+                    <h4>Historial de ubicaciones</h4>
+                    ${renderLocationHistoryTable(locationHistory)}
+                </section>
+            </div>
+        `.trim();
+    };
+
+    const renderStaffProfileView = (profile) => {
+        if (!profile || !profile.member) {
+            return '<p class="form-error">No se encontró la información del miembro del staff.</p>';
+        }
+        const {
+            member,
+            careTeams = [],
+            caregiverAssignments = [],
+            groundTruthAnnotations = [],
+            pushDevices = [],
+        } = profile;
+
+        const name = member.name || 'Miembro sin nombre';
+        const email = member.email || 'Sin correo';
+        const joinedLabel = member.joinedAt ? formatDate(member.joinedAt) : 'No especificado';
+        const updatedLabel = member.updatedAt ? formatDateTime(member.updatedAt) : null;
+        const roleLabel = member.roleLabel || member.roleCode || 'Sin rol asignado';
+
+        const avatarContent = member.profilePhotoUrl
+            ? `<img src="${escapeHtml(member.profilePhotoUrl)}" alt="${escapeHtml(name)}">`
+            : `<span>${escapeHtml((name.charAt(0) || '?').toUpperCase())}</span>`;
+
+        const detailRows = [
+            { label: 'Correo', value: email },
+            { label: 'Fecha de ingreso', value: joinedLabel },
+        ];
+        if (updatedLabel) {
+            detailRows.push({ label: 'Actualizado', value: updatedLabel });
+        }
+        detailRows.push({ label: 'ID', value: `<code>${escapeHtml(member.userId || '-')}</code>`, html: true });
+        const detailList = buildDetailList(detailRows);
+        const roleBadge = buildStatusBadge(roleLabel, 'info');
+
+        const careTeamsHtml = renderListOrEmpty(
+            careTeams,
+            (team) => {
+                const joined = team.joinedAt ? formatDate(team.joinedAt) : 'Sin registro';
+                const patientsCount = hasItems(team.patients) ? team.patients.length : 0;
+                let patientsPreview = '';
+                if (patientsCount) {
+                    const preview = team.patients.map((patientItem) => patientItem.name).slice(0, 3);
+                    const chips = preview.map((item) => `<span class="profile-chip profile-chip--patient">${escapeHtml(item)}</span>`);
+                    const remaining = patientsCount - preview.length;
+                    if (remaining > 0) {
+                        chips.push(`<span class="profile-chip profile-chip--muted">+${escapeHtml(String(remaining))}</span>`);
+                    }
+                    patientsPreview = `<div class="profile-chips">${chips.join("")}</div>`;
+                } else {
+                    patientsPreview = '<p class="muted">Sin pacientes asignados</p>';
+                }
+                const roleInfo = team.roleLabel || team.roleCode ? `<span>${escapeHtml(team.roleLabel || team.roleCode)}</span>` : '';
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(team.name)}</div>
+                        <div class="profile-list__meta">
+                            ${roleInfo}
+                            <span>Miembro desde: ${escapeHtml(joined)}</span>
+                        </div>
+                        ${patientsPreview}
+                    </li>
+                `;
+            },
+            'Este usuario no pertenece a equipos de cuidado.'
+        );
+
+        const caregiverAssignmentsHtml = renderListOrEmpty(
+            caregiverAssignments,
+            (assignment) => {
+                const relation = assignment.relationshipLabel || assignment.relationshipCode || 'Sin relación definida';
+                const startLabel = assignment.startedAt ? formatDate(assignment.startedAt) : 'No registrado';
+                const endLabel = assignment.endedAt ? formatDate(assignment.endedAt) : null;
+                const periodLabel = endLabel ? `${startLabel} – ${endLabel}` : startLabel;
+                const note = assignment.note ? `<p class="profile-list__note">${escapeHtml(assignment.note)}</p>` : '';
+                const badges = [];
+                if (assignment.isPrimary) {
+                    badges.push(buildStatusBadge('Principal', 'status-success'));
+                }
+                if (assignment.careTeamName) {
+                    badges.push(`<span class="profile-chip profile-chip--accent">${escapeHtml(assignment.careTeamName)}</span>`);
+                }
+                badges.push(`<span>Paciente: ${escapeHtml(assignment.patientName || assignment.patientEmail || '-')}</span>`);
+                badges.push(`<span>Vigencia: ${escapeHtml(periodLabel)}</span>`);
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(relation)}</div>
+                        <div class="profile-list__meta">${badges.join("")}</div>
+                        ${note}
+                    </li>
+                `;
+            },
+            'Este miembro no tiene asignaciones activas como cuidador.'
+        );
+
+        const groundTruthHtml = renderListOrEmpty(
+            groundTruthAnnotations.slice(0, 6),
+            (label) => {
+                const eventLabel = label.eventTypeLabel || label.eventTypeCode || 'Evento sin etiqueta';
+                const onsetLabel = label.onset ? formatDateTime(label.onset) : 'Sin inicio';
+                const offsetLabel = label.offsetAt ? formatDateTime(label.offsetAt) : null;
+                const patientInfo = label.patientId ? `Paciente: ${label.patientId}` : 'Paciente no disponible';
+                const note = label.note ? `<p class="profile-list__note">${escapeHtml(label.note)}</p>` : '';
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(eventLabel)}</div>
+                        <div class="profile-list__meta">
+                            <span>Inicio: ${escapeHtml(onsetLabel)}</span>
+                            ${offsetLabel ? `<span>Fin: ${escapeHtml(offsetLabel)}</span>` : ''}
+                            <span>${escapeHtml(patientInfo)}</span>
+                        </div>
+                        ${note}
+                    </li>
+                `;
+            },
+            'Sin anotaciones recientes registradas por este usuario.'
+        );
+
+        const pushDevicesHtml = renderListOrEmpty(
+            pushDevices,
+            (device) => {
+                const platformLabel = device.platformLabel || device.platformCode || 'Sin plataforma';
+                const tokenPreview = truncate(device.pushToken, 28);
+                const lastSeenLabel = device.lastSeenAt ? formatDateTime(device.lastSeenAt) : 'Sin uso reciente';
+                const status = device.active
+                    ? buildStatusBadge('Activo', 'status-success')
+                    : buildStatusBadge('Inactivo', 'status-muted');
+                return `
+                    <li class="profile-list__item">
+                        <div class="profile-list__title">${escapeHtml(platformLabel)}</div>
+                        <div class="profile-list__meta">
+                            ${status}
+                            <span>Token: <code>${escapeHtml(tokenPreview)}</code></span>
+                        </div>
+                        <div class="profile-list__meta">
+                            <span>${escapeHtml(lastSeenLabel)}</span>
+                        </div>
+                    </li>
+                `;
+            },
+            'Sin dispositivos push registrados.'
+        );
+
+        const statsHtml = renderProfileStats([
+            { label: 'Equipos', value: careTeams.length },
+            { label: 'Asignaciones de cuidador', value: caregiverAssignments.length },
+            { label: 'Etiquetas ground truth', value: groundTruthAnnotations.length },
+            { label: 'Push devices', value: pushDevices.length },
+        ]);
+
+        return `
+            <div class="profile-modal">
+                <section class="profile-hero profile-hero--staff">
+                    <div class="profile-hero__avatar">${avatarContent}</div>
+                    <div class="profile-hero__info">
+                        <h2 class="profile-hero__title">${escapeHtml(name)}</h2>
+                        <div class="profile-hero__meta">${roleBadge}</div>
+                        ${detailList}
+                    </div>
+                </section>
+                ${statsHtml}
+                <div class="profile-grid">
+                    <section class="profile-section">
+                        <h4>Equipos de cuidado</h4>
+                        ${careTeamsHtml}
+                    </section>
+                    <section class="profile-section">
+                        <h4>Asignaciones como cuidador</h4>
+                        ${caregiverAssignmentsHtml}
+                    </section>
+                </div>
+                <div class="profile-grid">
+                    <section class="profile-section">
+                        <h4>Ground truth reciente</h4>
+                        ${groundTruthHtml}
+                    </section>
+                    <section class="profile-section">
+                        <h4>Push devices registrados</h4>
+                        ${pushDevicesHtml}
+                    </section>
+                </div>
+            </div>
+        `.trim();
+    };
+
+    const viewPatientProfile = async (patientId) => {
+        if (!state.selectedOrgId) {
+            showToast('Selecciona una organización para consultar perfiles.', 'warning');
+            return;
+        }
+        if (!patientId) {
+            showToast('Paciente no válido.', 'warning');
+            return;
+        }
+        openModal({
+            title: 'Perfil del paciente',
+            size: 'wide',
+            body: '<div class="loader"><span class="spinner"></span>Cargando perfil...</div>',
+        });
+        try {
+            const profile = await Api.admin.getPatientProfile(state.token, state.selectedOrgId, patientId);
+            if (!profile) {
+                setModalBody('<p class="muted">No se encontró el paciente solicitado.</p>');
+                return;
+            }
+            const title = profile.patient?.name ? `👤 ${profile.patient.name}` : 'Perfil del paciente';
+            setModalTitle(title);
+            setModalBody(renderPatientProfileView(profile));
+        } catch (error) {
+            handleApiError(error);
+            if (error?.status === 401 || error?.status === 403) {
+                closeModal();
+                return;
+            }
+            setModalBody(`<p class="form-error">${escapeHtml(error.message || 'No se pudo cargar el perfil del paciente')}</p>`);
+        }
+    };
+
+    const viewStaffProfile = async (userId) => {
+        if (!state.selectedOrgId) {
+            showToast('Selecciona una organización para consultar perfiles.', 'warning');
+            return;
+        }
+        if (!userId) {
+            showToast('Miembro no válido.', 'warning');
+            return;
+        }
+        openModal({
+            title: 'Perfil del staff',
+            size: 'wide',
+            body: '<div class="loader"><span class="spinner"></span>Cargando perfil...</div>',
+        });
+        try {
+            const profile = await Api.admin.getStaffProfile(state.token, state.selectedOrgId, userId);
+            if (!profile) {
+                setModalBody('<p class="muted">No se encontró el miembro solicitado.</p>');
+                return;
+            }
+            const title = profile.member?.name ? `👥 ${profile.member.name}` : 'Perfil del staff';
+            setModalTitle(title);
+            setModalBody(renderStaffProfileView(profile));
+        } catch (error) {
+            handleApiError(error);
+            if (error?.status === 401 || error?.status === 403) {
+                closeModal();
+                return;
+            }
+            setModalBody(`<p class="form-error">${escapeHtml(error.message || 'No se pudo cargar el perfil del staff')}</p>`);
+        }
     };
 
     const tabRenderers = {
@@ -2466,6 +3171,26 @@
     };
 
     const bindEvents = () => {
+        if (!modalEventsBound) {
+            el.modal.close?.addEventListener("click", () => closeModal());
+            el.modal.overlay?.addEventListener("click", (event) => {
+                if (event.target === el.modal.overlay) {
+                    closeModal();
+                }
+            });
+            el.modal.footer?.addEventListener("click", (event) => {
+                if (event.target.closest("[data-modal-close]")) {
+                    closeModal();
+                }
+            });
+            document.addEventListener("keydown", (event) => {
+                if (event.key === "Escape" && !el.modal.overlay?.classList.contains("hidden")) {
+                    closeModal();
+                }
+            });
+            modalEventsBound = true;
+        }
+
         if (el.buttons.createGroundTruth) {
             el.buttons.createGroundTruth.disabled = true;
         }
@@ -2594,6 +3319,12 @@
 
     // Expose global functions for inline onclick handlers
     window.app = {
+        viewPatientProfile: async (patientId) => {
+            await viewPatientProfile(patientId);
+        },
+        viewStaffProfile: async (userId) => {
+            await viewStaffProfile(userId);
+        },
         editPatient: async (patientId) => {
             try {
                 const patient = await Api.admin.getPatient(state.token, state.selectedOrgId, patientId);

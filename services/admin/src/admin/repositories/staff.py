@@ -26,6 +26,25 @@ class StaffRepository:
         """
         return db.fetch_all(query, (org_id,))
 
+    def get_member(self, org_id: str, user_id: str) -> dict[str, Any] | None:
+        query = """
+            SELECT
+                u.id AS user_id,
+                u.name,
+                u.email,
+                u.profile_photo_url,
+                u.created_at,
+                u.updated_at,
+                m.role_code,
+                r.label AS role_label,
+                m.joined_at
+            FROM user_org_membership m
+            JOIN users u ON u.id = m.user_id
+            LEFT JOIN roles r ON r.code = m.role_code
+            WHERE m.org_id = %s AND m.user_id = %s
+        """
+        return db.fetch_one(query, (org_id, user_id))
+
     def update_role(self, org_id: str, user_id: str, role_code: str) -> None:
         query = """
             UPDATE user_org_membership

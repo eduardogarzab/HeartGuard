@@ -13,6 +13,7 @@ class AlertsRepository:
         self,
         org_id: str,
         *,
+        patient_id: str | None = None,
         status_code: str | None = None,
         level_code: str | None = None,
         limit: int = 50,
@@ -26,6 +27,9 @@ class AlertsRepository:
             "limit": max(1, min(limit, 200)),
             "offset": max(0, offset),
         }
+        if patient_id:
+            clauses.append("p.id = %(patient_id)s")
+            params["patient_id"] = patient_id
         if status_code:
             clauses.append("st.code = %(status)s")
             params["status"] = status_code

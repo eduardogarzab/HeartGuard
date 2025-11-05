@@ -50,6 +50,29 @@ class PushDevicesRepository:
         """
         return db.fetch_all(query, params)
 
+    def list_for_user(self, org_id: str, user_id: str) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                pd.id,
+                pd.user_id,
+                u.name AS user_name,
+                u.email AS user_email,
+                pd.platform_id,
+                pl.code AS platform_code,
+                pl.label AS platform_label,
+                pd.push_token,
+                pd.last_seen_at,
+                pd.active
+            FROM push_devices pd
+            JOIN users u ON u.id = pd.user_id
+            JOIN platforms pl ON pl.id = pd.platform_id
+            JOIN user_org_membership m ON m.user_id = pd.user_id
+            WHERE m.org_id = %(org_id)s AND pd.user_id = %(user_id)s
+            ORDER BY pd.last_seen_at DESC NULLS LAST
+        """
+        params = {"org_id": org_id, "user_id": user_id}
+        return db.fetch_all(query, params)
+
     def get(self, org_id: str, device_id: str) -> dict[str, Any] | None:
         query = """
             SELECT

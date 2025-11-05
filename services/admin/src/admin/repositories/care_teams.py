@@ -1,6 +1,7 @@
 """Repository helpers for care team operations."""
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from .. import db
@@ -179,6 +180,84 @@ class CareTeamsRepository:
             ORDER BY p.person_name ASC
         """
         return db.fetch_all(query, (care_team_id, org_id))
+
+    def list_for_patient(self, org_id: str, patient_id: str) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                ct.id,
+                ct.org_id,
+                ct.name,
+                ct.created_at,
+                (
+                    SELECT COALESCE(json_agg(
+                        json_build_object(
+                            'care_team_id', ct.id,
+                            'user_id', m.user_id,
+                            'name', u.name,
+                            'email', u.email,
+                            'role_id', m.role_id,
+                            'role_code', r.code,
+                            'role_label', r.label,
+                            'joined_at', m.joined_at
+                        )
+                        ORDER BY u.name ASC
+                    ), '[]'::json)
+                    FROM care_team_member m
+                    JOIN users u ON u.id = m.user_id
+                    JOIN team_member_roles r ON r.id = m.role_id
+                    WHERE m.care_team_id = ct.id
+                ) AS members
+            FROM patient_care_team pct
+            JOIN care_teams ct ON ct.id = pct.care_team_id
+            WHERE pct.patient_id = %(patient_id)s AND ct.org_id = %(org_id)s
+            ORDER BY ct.name ASC
+        """
+        params = {"patient_id": patient_id, "org_id": org_id}
+        teams = db.fetch_all(query, params)
+        for team in teams:
+            members = team.get("members") or []
+            if isinstance(members, str):
+                team["members"] = json.loads(members) if members else []
+        return teams
+
+    def list_for_member(self, org_id: str, user_id: str) -> list[dict[str, Any]]:
+        query = """
+            SELECT
+                ct.id,
+                ct.org_id,
+                ct.name,
+                ct.created_at,
+                m.joined_at,
+                m.role_id,
+                r.code AS role_code,
+                r.label AS role_label,
+                (
+                    SELECT COALESCE(json_agg(
+                        json_build_object(
+                            'care_team_id', ct.id,
+                            'patient_id', p.id,
+                            'name', p.person_name,
+                            'email', p.email
+                        )
+                        ORDER BY p.person_name ASC
+                    ), '[]'::json)
+                    FROM patient_care_team pct
+                    JOIN patients p ON p.id = pct.patient_id
+                    WHERE pct.care_team_id = ct.id
+                ) AS patients
+            FROM care_team_member m
+            JOIN care_teams ct ON ct.id = m.care_team_id
+            LEFT JOIN team_member_roles r ON r.id = m.role_id
+            WHERE ct.org_id = %(org_id)s AND m.user_id = %(user_id)s
+            ORDER BY ct.name ASC
+        """
+        params = {"org_id": org_id, "user_id": user_id}
+        teams = db.fetch_all(query, params)
+        for team in teams:
+            patients = team.get("patients") or []
+            if isinstance(patients, str):
+                team["patients"] = json.loads(patients) if patients else []
+        return teams
 
     def add_patient(self, care_team_id: str, org_id: str, patient_id: str) -> dict[str, Any] | None:
         query = """

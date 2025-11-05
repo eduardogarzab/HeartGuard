@@ -313,3 +313,15 @@ def patient_locations(org_id: str, patient_id: str):
 def patient_location_detail(org_id: str, patient_id: str, location_id: str):
     """Eliminar una ubicación específica."""
     return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/locations/{location_id}", request.method)
+
+
+@bp.route("/organizations/<org_id>/patients/<patient_id>/profile", methods=["GET"])
+def patient_profile(org_id: str, patient_id: str):
+    """Perfil detallado de un paciente."""
+    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/profile", "GET")
+
+
+@bp.route("/organizations/<org_id>/staff/<user_id>/profile", methods=["GET"])
+def staff_profile(org_id: str, user_id: str):
+    """Perfil detallado de un miembro del staff."""
+    return _proxy_request(f"/admin/organizations/{org_id}/staff/{user_id}/profile", "GET")
