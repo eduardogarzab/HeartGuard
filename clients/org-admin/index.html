@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HeartGuard | Panel Org Admin</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="assets/css/app.css">
+</head>
+<body>
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-accent"></span>
+            <h1>HeartGuard</h1>
+            <span class="brand-badge">Org Admin</span>
+        </div>
+        <nav class="header-actions">
+            <div id="sessionInfo" class="session-info hidden">
+                <span id="sessionUserName"></span>
+                <span id="sessionOrgContext"></span>
+            </div>
+            <button id="logoutButton" class="btn btn-secondary hidden" type="button">Salir</button>
+        </nav>
+    </header>
+
+    <main class="app-main">
+        <section id="loginView" class="view">
+            <div class="auth-card">
+                <h2>Acceso para administradores de organización</h2>
+                <p class="subtitle">Ingresa con las credenciales proporcionadas. Solo cuentas con rol <code>org_admin</code>.</p>
+                <form id="loginForm" class="form" method="post" action="javascript:void(0);">
+                    <div class="form-field">
+                        <label for="email">Correo electrónico</label>
+                        <input id="email" name="email" type="email" autocomplete="email" required>
+                    </div>
+                    <div class="form-field">
+                        <label for="password">Contraseña</label>
+                        <input id="password" name="password" type="password" autocomplete="current-password" required>
+                    </div>
+                    <button class="btn btn-primary" type="submit">Ingresar</button>
+                    <p id="loginError" class="form-error hidden"></p>
+                </form>
+            </div>
+        </section>
+
+        <section id="dashboardView" class="view hidden">
+            <div class="welcome-banner">
+                <div>
+                    <p class="welcome-overline">Bienvenido</p>
+                    <h2 id="welcomeName">Org Admin</h2>
+                    <p id="welcomeEmail" class="welcome-email"></p>
+                </div>
+                <div id="orgStatus" class="welcome-count hidden"></div>
+            </div>
+
+            <section id="orgListSection" class="panel">
+                <div class="panel-header">
+                    <div>
+                        <h3>Organizaciones asignadas</h3>
+                        <p>Selecciona una organización para administrar sus recursos.</p>
+                    </div>
+                    <button id="refreshOrgs" class="btn btn-ghost" type="button">Actualizar</button>
+                </div>
+                <div id="orgGrid" class="card-grid"></div>
+                <div id="orgEmptyState" class="empty-state hidden">
+                    <h4>No se encontraron organizaciones</h4>
+                    <p>Contacta al superadministrador para asignarte a una organización con rol <code>org_admin</code>.</p>
+                </div>
+            </section>
+
+            <section id="orgDetailSection" class="panel hidden">
+                <div class="panel-header">
+                    <div>
+                        <p class="breadcrumb"><button id="backToOrgs" class="link-button" type="button">Organizaciones</button> / <span id="orgBreadcrumbName"></span></p>
+                        <h3 id="orgTitle">Organización</h3>
+                        <p id="orgMeta" class="muted"></p>
+                    </div>
+                    <div id="orgMetrics" class="org-metrics"></div>
+                </div>
+
+                <div class="tab-bar" role="tablist">
+                    <button class="tab active" data-tab="overview" type="button">Resumen</button>
+                    <button class="tab" data-tab="staff" type="button">Staff</button>
+                    <button class="tab" data-tab="patients" type="button">Pacientes</button>
+                    <button class="tab" data-tab="care-teams" type="button">Equipos de cuidado</button>
+                    <button class="tab" data-tab="caregivers" type="button">Cuidadores</button>
+                    <button class="tab" data-tab="alerts" type="button">Alertas</button>
+                    <button class="tab" data-tab="ground-truth" type="button">Ground Truth</button>
+                    <button class="tab" data-tab="devices" type="button">Dispositivos</button>
+                    <button class="tab" data-tab="push-devices" type="button">Push Devices</button>
+                </div>
+
+                <div id="tabContent" class="tab-content">
+                    <div id="tab-overview" class="tab-panel active">
+                        <div class="overview-cards" id="overviewCards"></div>
+                        <div class="overview-charts" id="overviewCharts"></div>
+                    </div>
+                    <div id="tab-staff" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <input 
+                                    type="text" 
+                                    id="staffSearchInput" 
+                                    class="form-input" 
+                                    placeholder="Buscar por nombre o correo..." 
+                                    style="min-width: 250px;"
+                                />
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnInviteStaff" class="btn btn-primary" type="button">Invitar miembro</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="staffTable"></div>
+                    </div>
+                    <div id="tab-patients" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <input 
+                                    type="text" 
+                                    id="patientsSearchInput" 
+                                    class="form-input" 
+                                    placeholder="Buscar por nombre o correo..." 
+                                    style="min-width: 250px;"
+                                />
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreatePatient" class="btn btn-primary" type="button">Nuevo paciente</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="patientsTable"></div>
+                    </div>
+                    <div id="tab-care-teams" class="tab-panel">
+                        <div class="tab-actions">
+                            <button id="btnCreateCareTeam" class="btn btn-primary" type="button">Nuevo equipo</button>
+                        </div>
+                        <div class="tab-body" id="careTeamsTable"></div>
+                    </div>
+                    <div id="tab-caregivers" class="tab-panel">
+                        <div class="tab-actions">
+                            <button id="btnAssignCaregiver" class="btn btn-primary" type="button">Asignar cuidador</button>
+                        </div>
+                        <div class="tab-body" id="caregiversTable"></div>
+                    </div>
+                    <div id="tab-alerts" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <select id="alertsStatusFilter" class="form-select" style="min-width: 140px;">
+                                    <option value="">Todos los estados</option>
+                                    <option value="new">Nuevo</option>
+                                    <option value="acknowledged">Reconocida</option>
+                                    <option value="resolved">Resuelta</option>
+                                    <option value="dismissed">Descartada</option>
+                                </select>
+                                <select id="alertsLevelFilter" class="form-select" style="min-width: 130px;">
+                                    <option value="">Todos los niveles</option>
+                                    <option value="info">Info</option>
+                                    <option value="low">Bajo</option>
+                                    <option value="medium">Medio</option>
+                                    <option value="high">Alto</option>
+                                    <option value="critical">Crítico</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreateAlert" class="btn btn-primary" type="button">Nueva alerta</button>
+                                <button id="btnRefreshAlerts" class="btn btn-ghost" type="button">Actualizar</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="alertsTable"></div>
+                    </div>
+                    <div id="tab-ground-truth" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <label class="sr-only" for="groundTruthPatientFilter">Paciente</label>
+                                <select id="groundTruthPatientFilter" class="form-select">
+                                    <option value="">-- Selecciona un paciente --</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreateGroundTruth" class="btn btn-primary" type="button">Nueva etiqueta</button>
+                                <button id="btnRefreshGroundTruth" class="btn btn-ghost" type="button">Actualizar</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="groundTruthTable"></div>
+                    </div>
+                    <div id="tab-devices" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <select id="devicesStatusFilter" class="form-select" style="min-width: 140px;">
+                                    <option value="">Todos los estados</option>
+                                    <option value="active">Activo</option>
+                                    <option value="inactive">Inactivo</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreateDevice" class="btn btn-primary" type="button">Nuevo dispositivo</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="devicesTable"></div>
+                    </div>
+                    <div id="tab-push-devices" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <select id="pushDevicesStatusFilter" class="form-select" style="min-width: 140px;">
+                                    <option value="">Todos los estados</option>
+                                    <option value="active">Activo</option>
+                                    <option value="inactive">Inactivo</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnRefreshPushDevices" class="btn btn-ghost" type="button">Actualizar</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="pushDevicesTable"></div>
+                    </div>
+                </div>
+            </section>
+        </section>
+    </main>
+
+    <div id="globalToast" class="toast hidden" role="alert" aria-live="polite"></div>
+
+    <div id="modalOverlay" class="modal-overlay hidden" role="dialog" aria-modal="true">
+        <div class="modal-content" role="document">
+            <header class="modal-header">
+                <h3 id="modalTitle"></h3>
+                <button id="modalClose" class="modal-close" type="button" aria-label="Cerrar">×</button>
+            </header>
+            <div id="modalBody" class="modal-body"></div>
+            <footer id="modalFooter" class="modal-footer"></footer>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+    <script src="assets/js/config.js"></script>
+    <script src="assets/js/xml.js"></script>
+    <script src="assets/js/api.js"></script>
+    <script src="assets/js/app.js"></script>
+</body>
+</html>

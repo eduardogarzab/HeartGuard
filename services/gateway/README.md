@@ -53,6 +53,8 @@ FLASK_DEBUG=1
 FLASK_SECRET_KEY=your-secret-key-here
 GATEWAY_SERVICE_TIMEOUT=10
 AUTH_SERVICE_URL=http://localhost:5001
+ADMIN_SERVICE_URL=http://localhost:5002
+USER_SERVICE_URL=http://localhost:5003
 \`\`\`
 
 ## Testing
@@ -83,6 +85,19 @@ Todos los endpoints bajo \`/auth/*\` son proxies transparentes al Auth Service:
 
 Ver documentación completa en [Auth Service README](../auth/README.md)
 
+### Usuarios (Proxy a User Service)
+
+Las rutas expuestas por el User Service pueden consumirse a través del gateway sin cambiar el path. Ejemplos:
+
+- `GET /users/me` - Perfil del usuario autenticado
+- `PATCH /users/me` - Actualización del perfil
+- `GET /users/me/org-memberships` - Membresías del usuario
+- `GET /orgs/<org_id>/dashboard` - Dashboard de la organización
+- `GET /caregiver/patients` - Pacientes asignados al cuidador
+- `POST /users/me/push-devices` - Registro de dispositivo push
+
+Para la lista completa de endpoints revisa el [User Service README](../user/README.md).
+
 ## Estructura del Proyecto
 
 \`\`\`
@@ -92,10 +107,14 @@ services/gateway/
 │   ├── config.py           # Configuración
 │   ├── extensions.py       # CORS
 │   ├── routes/
-│   │   ├── health.py       # Health check
-│   │   └── auth_proxy.py   # Proxy para Auth Service
+│   │   ├── health.py        # Health check
+│   │   ├── auth_proxy.py    # Proxy para Auth Service
+│   │   ├── admin_proxy.py   # Proxy para Admin Service
+│   │   └── user_proxy.py    # Proxy para User Service
 │   └── services/
-│       └── auth_client.py  # Cliente HTTP para Auth Service
+│       ├── auth_client.py   # Cliente HTTP para Auth Service
+│       ├── admin_client.py  # Cliente HTTP para Admin Service
+│       └── user_client.py   # Cliente HTTP para User Service
 ├── tests/
 ├── .env.example
 ├── Makefile

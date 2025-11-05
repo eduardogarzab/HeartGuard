@@ -700,7 +700,7 @@ SELECT
   'a1b2c3d4-5678-90ab-cdef-1234567890ab'::uuid,
   'c20277df-7c2f-417c-902e-776bf4bf74c3'::uuid,
   u.id,
-  NOW() - INTERVAL '1 hour',
+  NOW() - INTERVAL '50 minutes',
   'Resolved',
   'Alerta resuelta después de seguimiento'
 FROM users u

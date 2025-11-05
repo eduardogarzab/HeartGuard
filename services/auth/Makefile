@@ -1,28 +1,41 @@
-PYTHON ?= python
-VENV ?= .venv
+# =============================================================================
+# Auth Service - Makefile
+# =============================================================================
+PYTHON := python3
+VENV := .venv
 BIN := $(VENV)/bin
+PORT := 5001
+
 export PYTHONPATH := src
 
-.PHONY: install dev lint test clean
+.PHONY: help install dev test clean
+
+help:
+	@echo "Auth Service - Comandos disponibles:"
+	@echo "  make install    - Instalar dependencias"
+	@echo "  make dev        - Ejecutar en modo desarrollo"
+	@echo "  make test       - Ejecutar suite de pruebas"
+	@echo "  make clean      - Limpiar archivos temporales"
 
 $(VENV):
 	$(PYTHON) -m venv $(VENV)
 
 install: $(VENV)
-	$(BIN)/pip install --upgrade pip
-	$(BIN)/pip install -r requirements.txt
-
-DevEnv := FLASK_DEBUG=1 FLASK_ENV=development
+	@echo "📦 Instalando dependencias de auth-service..."
+	@$(BIN)/pip install --upgrade pip -q
+	@$(BIN)/pip install -r requirements.txt -q
+	@echo "✓ Dependencias instaladas"
 
 dev: install
-	$(DevEnv) $(BIN)/flask run --host=127.0.0.1 --port=5001 --reload
-
-lint: install
-	$(BIN)/python -m compileall src
+	@echo "🚀 Iniciando auth-service en modo desarrollo (puerto $(PORT))..."
+	@FLASK_DEBUG=1 FLASK_APP=auth.app $(BIN)/flask run --host=0.0.0.0 --port=$(PORT) --reload
 
 test: install
-	$(BIN)/pytest -q
+	@echo "🧪 Ejecutando tests de auth-service..."
+	@./test_auth_service.sh
 
 clean:
-	rm -rf $(VENV)
-	find . -type d -name "__pycache__" -exec rm -rf {} +
+	@echo "🧹 Limpiando auth-service..."
+	@find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@echo "✓ Limpieza completada"
