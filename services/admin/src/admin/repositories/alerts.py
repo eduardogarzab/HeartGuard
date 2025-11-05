@@ -238,5 +238,44 @@ class AlertsRepository:
         query = """
             SELECT heartguard.sp_alert_delete(%(alert_id)s) AS deleted
         """
-        result = db.fetch_one(query, {"alert_id": alert_id}) or {}
-        return bool(result.get("deleted"))
+        result = db.fetch_one(query, {"alert_id": alert_id})
+        return bool(result and result.get("deleted"))
+
+    def list_alert_types(self) -> list[dict[str, Any]]:
+        """Get all alert types from the catalog."""
+        query = """
+            SELECT
+                id,
+                code,
+                description,
+                severity_min_id,
+                severity_max_id
+            FROM heartguard.alert_types
+            ORDER BY code
+        """
+        return db.fetch_all(query)
+
+    def list_alert_levels(self) -> list[dict[str, Any]]:
+        """Get all alert levels (severity) from the catalog."""
+        query = """
+            SELECT
+                id,
+                code,
+                label,
+                weight
+            FROM heartguard.alert_levels
+            ORDER BY weight
+        """
+        return db.fetch_all(query)
+
+    def list_alert_statuses(self) -> list[dict[str, Any]]:
+        """Get all alert statuses from the catalog."""
+        query = """
+            SELECT
+                id,
+                code,
+                description
+            FROM heartguard.alert_status
+            ORDER BY step_order
+        """
+        return db.fetch_all(query)

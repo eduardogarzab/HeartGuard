@@ -184,14 +184,19 @@ const Api = (() => {
             return {
                 patientId: Xml.text(node, "patient_id"),
                 patientName: Xml.text(node, "patient_name"),
-                caregiverUserId: Xml.text(node, "caregiver_user_id"),
+                patientEmail: Xml.text(node, "patient_email"),
+                caregiverId: Xml.text(node, "caregiver_id"),
                 caregiverName: Xml.text(node, "caregiver_name"),
                 caregiverEmail: Xml.text(node, "caregiver_email"),
-                relationshipCode: Xml.text(node, "relationship_type_code"),
-                relationshipLabel: Xml.text(node, "relationship_type_label"),
+                relationshipTypeId: Xml.text(node, "rel_type_id"),
+                relationshipCode: Xml.text(node, "relationship_code"),
+                relationshipLabel: Xml.text(node, "relationship_label"),
                 isPrimary: Xml.bool(node, "is_primary"),
                 startedAt: Xml.text(node, "started_at"),
+                endedAt: Xml.text(node, "ended_at"),
                 note: Xml.text(node, "note"),
+                careTeamId: Xml.text(node, "care_team_id"),
+                careTeamName: Xml.text(node, "care_team_name"),
             };
         },
         alert(node) {
@@ -374,8 +379,8 @@ const Api = (() => {
                 return Xml.mapNodes(doc, "response > care_teams > care_team", transform.careTeam);
             },
             async listCaregiverAssignments(token, orgId) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments/`, { token });
-                return Xml.mapNodes(doc, "response > caregiver_assignments > assignment", transform.caregiverAssignment);
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments`, { token });
+                return Xml.mapNodes(doc, "response > assignments > assignment", transform.caregiverAssignment);
             },
             async listAlerts(token, orgId) {
                 const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/`, { token });
@@ -504,7 +509,7 @@ const Api = (() => {
                 return true;
             },
             async listCaregiverRelationshipTypes(token, orgId) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/relationship-types/`, { token });
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/relationship-types`, { token });
                 return Xml.mapNodes(doc, "response > relationship_types > relationship_type", (node) => ({
                     id: Xml.text(node, "id"),
                     code: Xml.text(node, "code"),
@@ -512,13 +517,29 @@ const Api = (() => {
                 }));
             },
             async createCaregiverAssignment(token, orgId, payload) {
-                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments/`, {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments`, {
                     method: "POST",
                     token,
                     body: payload,
                 });
                 const node = doc.querySelector("response > assignment");
                 return node ? transform.caregiverAssignment(node) : null;
+            },
+            async updateCaregiverAssignment(token, orgId, patientId, caregiverId, payload) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments/${patientId}/${caregiverId}`, {
+                    method: "PATCH",
+                    token,
+                    body: payload,
+                });
+                const node = doc.querySelector("response > assignment");
+                return node ? transform.caregiverAssignment(node) : null;
+            },
+            async deleteCaregiverAssignment(token, orgId, patientId, caregiverId) {
+                await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/caregivers/assignments/${patientId}/${caregiverId}`, {
+                    method: "DELETE",
+                    token,
+                });
+                return true;
             },
             async ackAlert(token, orgId, alertId, payload) {
                 await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/${alertId}/ack`, {
@@ -567,6 +588,36 @@ const Api = (() => {
                     token,
                 });
                 return true;
+            },
+
+            async listAlertTypes(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/types`, { token });
+                return Xml.mapNodes(doc, "response > alert_types > alert_type", (node) => ({
+                    id: Xml.text(node, "id"),
+                    code: Xml.text(node, "code"),
+                    description: Xml.text(node, "description"),
+                    severity_min_id: Xml.text(node, "severity_min_id"),
+                    severity_max_id: Xml.text(node, "severity_max_id"),
+                }));
+            },
+
+            async listAlertLevels(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/levels`, { token });
+                return Xml.mapNodes(doc, "response > alert_levels > alert_level", (node) => ({
+                    id: Xml.text(node, "id"),
+                    code: Xml.text(node, "code"),
+                    label: Xml.text(node, "label"),
+                    weight: Xml.text(node, "weight"),
+                }));
+            },
+
+            async listAlertStatuses(token, orgId) {
+                const doc = await requestXml(`${cfg.adminBasePath}/organizations/${orgId}/alerts/statuses`, { token });
+                return Xml.mapNodes(doc, "response > alert_statuses > alert_status", (node) => ({
+                    id: Xml.text(node, "id"),
+                    code: Xml.text(node, "code"),
+                    description: Xml.text(node, "description"),
+                }));
             },
             
             // Devices

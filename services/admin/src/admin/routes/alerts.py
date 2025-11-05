@@ -202,6 +202,30 @@ def resolve_alert(org_id: str, alert_id: str):
     return xml_response({"resolution": resolution}, status=201)
 
 
+@bp.get("/types")
+@require_org_admin
+def list_alert_types(org_id: str):
+    """Get alert types catalog."""
+    types = _repo.list_alert_types()
+    return xml_response({"alert_types": types})
+
+
+@bp.get("/levels")
+@require_org_admin
+def list_alert_levels(org_id: str):
+    """Get alert levels (severity) catalog."""
+    levels = _repo.list_alert_levels()
+    return xml_response({"alert_levels": levels})
+
+
+@bp.get("/statuses")
+@require_org_admin
+def list_alert_statuses(org_id: str):
+    """Get alert statuses catalog."""
+    statuses = _repo.list_alert_statuses()
+    return xml_response({"alert_statuses": statuses})
+
+
 def _coerce_int(value: str | None, *, default: int, minimum: int, maximum: int | None = None) -> int:
     if value is None or value.strip() == "":
         result = default

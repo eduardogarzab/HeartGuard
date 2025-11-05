@@ -597,21 +597,127 @@
 
     const renderCaregivers = (assignments) => {
         const container = el.tabBodies.caregivers || el.tabPanels.caregivers;
-        renderTable(
-            container,
-            ["Paciente", "Cuidador", "Relación", "Principal", "Inicio", "Nota"],
-            assignments,
-            (assignment) => `
-                <tr>
-                    <td>${escapeHtml(assignment.patientName)}</td>
-                    <td>${escapeHtml(assignment.caregiverName)}<br><span class="muted">${escapeHtml(assignment.caregiverEmail)}</span></td>
-                    <td>${escapeHtml(assignment.relationshipLabel || assignment.relationshipCode)}</td>
-                    <td>${assignment.isPrimary ? "Sí" : "No"}</td>
-                    <td>${escapeHtml(formatDateTime(assignment.startedAt))}</td>
-                    <td>${escapeHtml(assignment.note)}</td>
-                </tr>` ,
-            "No hay cuidadores asignados"
-        );
+        
+        if (!assignments || assignments.length === 0) {
+            container.innerHTML = '<p class="muted">No hay cuidadores asignados</p>';
+            return;
+        }
+
+        const cardsHtml = assignments.map((assignment) => {
+            const isPrimary = assignment.isPrimary;
+            const hasEnded = assignment.endedAt && new Date(assignment.endedAt) < new Date();
+            const relationshipBadge = assignment.relationshipLabel 
+                ? `<span class="status-badge info">${escapeHtml(assignment.relationshipLabel)}</span>`
+                : '<span class="status-badge" style="background: #f3f4f6; color: #6b7280;">Sin relación</span>';
+            const primaryBadge = isPrimary 
+                ? '<span class="status-badge status-success">Principal</span>' 
+                : '';
+            const endedBadge = hasEnded 
+                ? '<span class="status-badge status-danger">Finalizado</span>'
+                : '<span class="status-badge" style="background: #d1fae5; color: #059669;">Activo</span>';
+            const careTeamBadge = assignment.careTeamName 
+                ? `<span class="status-badge" style="background: #dbeafe; color: #1e40af;">👥 ${escapeHtml(assignment.careTeamName)}</span>`
+                : '<span class="status-badge" style="background: #f3f4f6; color: #6b7280;">Sin equipo</span>';
+
+            const hasDetails = assignment.endedAt || assignment.note;
+            const detailsId = `details-${escapeHtml(assignment.patientId)}-${escapeHtml(assignment.caregiverId)}`;
+
+            return `
+                <div class="caregiver-card">
+                    <div class="caregiver-card__status-badges">
+                        ${primaryBadge}
+                        ${endedBadge}
+                    </div>
+                    
+                    <div class="caregiver-card__people">
+                        <div class="caregiver-card__person">
+                            <div class="caregiver-card__avatar caregiver-card__avatar--caregiver">
+                                ${escapeHtml(assignment.caregiverName.charAt(0).toUpperCase())}
+                            </div>
+                            <div class="caregiver-card__person-info">
+                                <div class="caregiver-card__person-header">
+                                    <span class="caregiver-card__label">Cuidador</span>
+                                    ${relationshipBadge}
+                                </div>
+                                <h5>${escapeHtml(assignment.caregiverName)}</h5>
+                                <p class="card-email">${escapeHtml(assignment.caregiverEmail)}</p>
+                            </div>
+                        </div>
+                        
+                        <div class="caregiver-card__arrow">
+                            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M12 5V19M12 19L5 12M12 19L19 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </div>
+                        
+                        <div class="caregiver-card__person">
+                            <div class="caregiver-card__avatar caregiver-card__avatar--patient">
+                                ${escapeHtml(assignment.patientName.charAt(0).toUpperCase())}
+                            </div>
+                            <div class="caregiver-card__person-info">
+                                <span class="caregiver-card__label">Paciente</span>
+                                <h5>${escapeHtml(assignment.patientName)}</h5>
+                                <p class="card-email">${escapeHtml(assignment.patientEmail || 'Sin correo')}</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="caregiver-card__summary">
+                        <div class="caregiver-card__summary-item">
+                            <span class="caregiver-card__summary-label">Equipo:</span>
+                            ${careTeamBadge}
+                        </div>
+                        <div class="caregiver-card__summary-dates">
+                            <div class="caregiver-card__summary-item">
+                                <span class="caregiver-card__summary-label">Inicio:</span>
+                                <span class="caregiver-card__summary-value">${escapeHtml(formatDate(assignment.startedAt))}</span>
+                            </div>
+                            ${assignment.endedAt ? `
+                                <div class="caregiver-card__summary-item caregiver-card__summary-item--end-date">
+                                    <span class="caregiver-card__summary-label">Fin:</span>
+                                    <span class="caregiver-card__summary-value">${escapeHtml(formatDate(assignment.endedAt))}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+                        <button class="caregiver-card__toggle" onclick="this.closest('.caregiver-card').classList.toggle('expanded')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M19 9L12 16L5 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <span class="toggle-text-show">Detalles</span>
+                            <span class="toggle-text-hide">Ocultar</span>
+                        </button>
+                    </div>
+                    
+                    <div class="caregiver-card__details">
+                        ${assignment.note ? `
+                            <div class="caregiver-card__detail-item">
+                                <span class="caregiver-card__detail-label">Nota:</span>
+                                <p class="caregiver-card__note-text">${escapeHtml(assignment.note)}</p>
+                            </div>
+                        ` : '<p class="caregiver-card__no-details">Sin notas adicionales</p>'}
+                    </div>
+                    
+                    <div class="caregiver-card__actions">
+                        <button class="btn btn-sm" onclick="window.app.editCaregiverAssignment('${escapeHtml(assignment.patientId)}', '${escapeHtml(assignment.caregiverId)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M11 4H4C3.46957 4 2.96086 4.21071 2.58579 4.58579C2.21071 4.96086 2 5.46957 2 6V20C2 20.5304 2.21071 21.0391 2.58579 21.4142C2.96086 21.7893 3.46957 22 4 22H18C18.5304 22 19.0391 21.7893 19.4142 21.4142C19.7893 21.0391 20 20.5304 20 20V13" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M18.5 2.50001C18.8978 2.10219 19.4374 1.87869 20 1.87869C20.5626 1.87869 21.1022 2.10219 21.5 2.50001C21.8978 2.89784 22.1213 3.4374 22.1213 4.00001C22.1213 4.56262 21.8978 5.10219 21.5 5.50001L12 15L8 16L9 12L18.5 2.50001Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Editar
+                        </button>
+                        <button class="btn btn-sm btn-danger" onclick="window.app.deleteCaregiverAssignment('${escapeHtml(assignment.patientId)}', '${escapeHtml(assignment.caregiverId)}')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                <path d="M3 6H5H21" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                <path d="M8 6V4C8 3.46957 8.21071 2.96086 8.58579 2.58579C8.96086 2.21071 9.46957 2 10 2H14C14.5304 2 15.0391 2.21071 15.4142 2.58579C15.7893 2.96086 16 3.46957 16 4V6M19 6V20C19 20.5304 18.7893 21.0391 18.4142 21.4142C18.0391 21.7893 17.5304 22 17 22H7C6.46957 22 5.96086 21.7893 5.58579 21.4142C5.21071 21.0391 5 20.5304 5 20V6H19Z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            Eliminar
+                        </button>
+                    </div>
+                </div>
+            `;
+        }).join('');
+
+        container.innerHTML = `<div class="caregiver-cards">${cardsHtml}</div>`;
     };
 
     const renderAlerts = (alerts) => {
@@ -1144,6 +1250,15 @@
             return;
         }
 
+        // Actualizar título e ID del equipo
+        const titleEl = overlay.querySelector('#careTeamDetailTitle');
+        const idEl = overlay.querySelector('#careTeamDetailId');
+        if (titleEl) titleEl.textContent = `💼 ${detail.team.name}`;
+        if (idEl) {
+            const shortId = detail.team.id.split('-')[0];
+            idEl.innerHTML = `ID: <code class="id-display">${escapeHtml(shortId)}...</code>`;
+        }
+
         const { team, members = [], patients = [] } = detail;
         const assignedUserIds = new Set(members.map((member) => member.userId));
         const assignedPatientIds = new Set(patients.map((patient) => patient.patientId));
@@ -1162,129 +1277,150 @@
             .map((patient) => `<option value="${escapeHtml(patient.id)}">${escapeHtml(patient.name)} (${escapeHtml(patient.email || 'Sin correo')})</option>`) // eslint-disable-line max-len
             .join('');
 
-        const membersTable = members.length
+        const membersList = members.length
             ? `
-                <div class="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Nombre</th>
-                                <th>Correo</th>
-                                <th>Rol</th>
-                                <th>Miembro desde</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${members.map((member) => `
-                                <tr>
-                                    <td>${escapeHtml(member.name)}</td>
-                                    <td>${escapeHtml(member.email)}</td>
-                                    <td>${escapeHtml(member.roleLabel || member.roleCode)}</td>
-                                    <td>${escapeHtml(formatDate(member.joinedAt))}</td>
-                                    <td>
-                                        <button class="btn btn-sm btn-danger" onclick="window.app.removeCareTeamMember('${escapeHtml(team.id)}', '${escapeHtml(member.userId)}')">Quitar</button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div class="care-team-cards">
+                    ${members.map((member) => `
+                        <div class="care-team-card">
+                            <div class="care-team-card__header">
+                                <div class="care-team-card__avatar">${escapeHtml(member.name.charAt(0).toUpperCase())}</div>
+                                <div class="care-team-card__info">
+                                    <h5>${escapeHtml(member.name)}</h5>
+                                    <p class="muted card-email">${escapeHtml(member.email)}</p>
+                                </div>
+                            </div>
+                            <div class="care-team-card__body">
+                                <div class="care-team-card__meta">
+                                    <span class="status-badge info">${escapeHtml(member.roleLabel || member.roleCode)}</span>
+                                </div>
+                                <p class="care-team-card__date">Miembro desde ${escapeHtml(formatDate(member.joinedAt))}</p>
+                            </div>
+                            <div class="care-team-card__actions">
+                                <button class="btn btn-sm btn-danger" onclick="window.app.removeCareTeamMember('${escapeHtml(team.id)}', '${escapeHtml(member.userId)}')">Quitar del equipo</button>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             `
-            : '<p class="muted">No hay miembros asignados.</p>';
+            : '<p class="muted">No hay miembros asignados a este equipo.</p>';
 
-        const patientsTable = patients.length
+        const patientsList = patients.length
             ? `
-                <div class="table-wrapper">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Paciente</th>
-                                <th>Correo</th>
-                                <th>Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${patients.map((patient) => `
-                                <tr>
-                                    <td>${escapeHtml(patient.name)}</td>
-                                    <td>${escapeHtml(patient.email)}</td>
-                                    <td>
-                                        <button class="btn btn-sm btn-danger" onclick="window.app.removeCareTeamPatient('${escapeHtml(team.id)}', '${escapeHtml(patient.patientId)}')">Quitar</button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
+                <div class="care-team-cards">
+                    ${patients.map((patient) => `
+                        <div class="care-team-card">
+                            <div class="care-team-card__header">
+                                <div class="care-team-card__avatar care-team-card__avatar--patient">${escapeHtml(patient.name.charAt(0).toUpperCase())}</div>
+                                <div class="care-team-card__info">
+                                    <h5>${escapeHtml(patient.name)}</h5>
+                                    <p class="muted card-email">${escapeHtml(patient.email || 'Sin correo electrónico')}</p>
+                                </div>
+                            </div>
+                            <div class="care-team-card__body">
+                                <p class="care-team-card__date">Paciente del equipo</p>
+                            </div>
+                            <div class="care-team-card__actions">
+                                <button class="btn btn-sm btn-danger" onclick="window.app.removeCareTeamPatient('${escapeHtml(team.id)}', '${escapeHtml(patient.patientId)}')">Quitar del equipo</button>
+                            </div>
+                        </div>
+                    `).join('')}
                 </div>
             `
-            : '<p class="muted">No hay pacientes asignados.</p>';
+            : '<p class="muted">No hay pacientes asignados a este equipo.</p>';
 
         const memberForm = availableMemberOptions && roleOptions
             ? `
-                <form id="careTeamAddMemberForm" class="care-team-inline-form">
-                    <div class="form-group">
-                        <label for="careTeamMemberSelect">Selecciona un usuario</label>
-                        <select id="careTeamMemberSelect" name="user_id" required>
-                            <option value="">-- Selecciona un miembro --</option>
-                            ${availableMemberOptions}
-                        </select>
-                    </div>
-                    <div class="form-group">
-                        <label for="careTeamRoleSelect">Rol</label>
-                        <select id="careTeamRoleSelect" name="role_id" required>
-                            <option value="">-- Selecciona un rol --</option>
-                            ${roleOptions}
-                        </select>
-                    </div>
-                    <div class="form-error hidden" id="careTeamMemberFormError"></div>
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">Agregar miembro</button>
-                    </div>
-                </form>
+                <div class="care-team-add-form">
+                    <h5>Agregar nuevo miembro</h5>
+                    <form id="careTeamAddMemberForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="careTeamMemberSelect">Usuario</label>
+                                <select id="careTeamMemberSelect" name="user_id" required>
+                                    <option value="">-- Selecciona --</option>
+                                    ${availableMemberOptions}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="careTeamRoleSelect">Rol</label>
+                                <select id="careTeamRoleSelect" name="role_id" required>
+                                    <option value="">-- Selecciona --</option>
+                                    ${roleOptions}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>&nbsp;</label>
+                                <button type="submit" class="btn btn-primary">Agregar</button>
+                            </div>
+                        </div>
+                        <div class="form-error hidden" id="careTeamMemberFormError"></div>
+                    </form>
+                </div>
             `
-            : '<p class="muted">No hay usuarios disponibles para asignar o faltan roles configurados.</p>';
+            : '<div class="care-team-add-form"><p class="muted">No hay usuarios disponibles para asignar.</p></div>';
 
         const patientForm = availablePatientOptions
             ? `
-                <form id="careTeamAddPatientForm" class="care-team-inline-form">
-                    <div class="form-group">
-                        <label for="careTeamPatientSelect">Selecciona un paciente</label>
-                        <select id="careTeamPatientSelect" name="patient_id" required>
-                            <option value="">-- Selecciona un paciente --</option>
-                            ${availablePatientOptions}
-                        </select>
-                    </div>
-                    <div class="form-error hidden" id="careTeamPatientFormError"></div>
-                    <div class="form-actions">
-                        <button type="submit" class="btn btn-primary">Agregar paciente</button>
-                    </div>
-                </form>
+                <div class="care-team-add-form">
+                    <h5>Agregar nuevo paciente</h5>
+                    <form id="careTeamAddPatientForm">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="careTeamPatientSelect">Paciente</label>
+                                <select id="careTeamPatientSelect" name="patient_id" required>
+                                    <option value="">-- Selecciona --</option>
+                                    ${availablePatientOptions}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label>&nbsp;</label>
+                                <button type="submit" class="btn btn-primary">Agregar</button>
+                            </div>
+                        </div>
+                        <div class="form-error hidden" id="careTeamPatientFormError"></div>
+                    </form>
+                </div>
             `
-            : '<p class="muted">No hay pacientes disponibles para asignar.</p>';
+            : '<div class="care-team-add-form"><p class="muted">No hay pacientes disponibles para asignar.</p></div>';
 
         contentEl.innerHTML = `
-            <section class="care-team-summary">
-                <p><strong>Nombre:</strong> ${escapeHtml(team.name)}</p>
-                <p><strong>ID:</strong> <code>${escapeHtml(team.id)}</code></p>
-                <p><strong>Creado el:</strong> ${escapeHtml(formatDate(team.createdAt))}</p>
-                <p><strong>Miembros asignados:</strong> ${members.length}</p>
-                <p><strong>Pacientes asignados:</strong> ${patients.length}</p>
-            </section>
-            <section class="care-team-section">
-                <header class="care-team-section__header">
-                    <h4>Miembros del equipo</h4>
-                </header>
-                ${membersTable}
-                ${memberForm}
-            </section>
-            <section class="care-team-section">
-                <header class="care-team-section__header">
-                    <h4>Pacientes asignados</h4>
-                </header>
-                ${patientsTable}
-                ${patientForm}
-            </section>
+            <div class="care-team-detail">
+                <section class="care-team-summary">
+                    <div class="care-team-summary__header">
+                        <h3>${escapeHtml(team.name)}</h3>
+                        <div class="care-team-summary__stats">
+                            <div class="stat-badge">
+                                <span class="stat-badge__value">${members.length}</span>
+                                <span class="stat-badge__label">Miembros</span>
+                            </div>
+                            <div class="stat-badge">
+                                <span class="stat-badge__value">${patients.length}</span>
+                                <span class="stat-badge__label">Pacientes</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="care-team-summary__meta">
+                        <p><strong>ID:</strong> <code>${escapeHtml(team.id)}</code></p>
+                        <p><strong>Creado:</strong> ${escapeHtml(formatDate(team.createdAt))}</p>
+                    </div>
+                </section>
+
+                <section class="care-team-section">
+                    <div class="care-team-section__header">
+                        <h4>👥 Miembros del equipo</h4>
+                    </div>
+                    ${membersList}
+                    ${memberForm}
+                </section>
+
+                <section class="care-team-section">
+                    <div class="care-team-section__header">
+                        <h4>🏥 Pacientes asignados</h4>
+                    </div>
+                    ${patientsList}
+                    ${patientForm}
+                </section>
+            </div>
         `;
 
         const memberFormEl = contentEl.querySelector('#careTeamAddMemberForm');
@@ -1367,9 +1503,12 @@
 
         const modalHtml = `
             <div class="modal-overlay" id="${CARE_TEAM_DETAIL_OVERLAY_ID}">
-                <div class="modal-content modal-lg">
+                <div class="modal-content modal-xl">
                     <div class="modal-header">
-                        <h3>Equipo de cuidado</h3>
+                        <div>
+                            <h3 id="careTeamDetailTitle">💼 Equipo de cuidado</h3>
+                            <p class="muted" id="careTeamDetailId"></p>
+                        </div>
                         <button class="modal-close" type="button" id="careTeamDetailCloseBtn">&times;</button>
                     </div>
                     <div class="modal-body" id="careTeamDetailContent">
@@ -1377,6 +1516,7 @@
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-ghost" id="careTeamDetailCloseFooter">Cerrar</button>
+                        <button type="button" class="btn btn-danger" onclick="window.app.deleteCareTeam('${careTeamId}')">Eliminar equipo</button>
                     </div>
                 </div>
             </div>
@@ -1408,6 +1548,293 @@
                 contentEl.innerHTML = `<p class="form-error">${escapeHtml(error.message || 'No se pudo cargar el equipo')}</p>`;
             }
         }
+    };
+
+    // ============================================
+    // Alert Functions
+    // ============================================
+
+    const showAlertModal = async (alertId = null) => {
+        if (!state.selectedOrgId) {
+            showToast("Selecciona una organización para gestionar alertas", "warning");
+            return;
+        }
+
+        const isEdit = !!alertId;
+        const modalTitle = isEdit ? "Editar alerta" : "Nueva alerta";
+
+        try {
+            // Load support data from database
+            const [patients, alertTypes, alertLevels, alertStatuses, currentAlert] = await Promise.all([
+                Api.admin.listPatients(state.token, state.selectedOrgId),
+                Api.admin.listAlertTypes(state.token, state.selectedOrgId),
+                Api.admin.listAlertLevels(state.token, state.selectedOrgId),
+                Api.admin.listAlertStatuses(state.token, state.selectedOrgId),
+                isEdit ? Api.admin.getAlert(state.token, state.selectedOrgId, alertId) : Promise.resolve(null)
+            ]);
+
+            const patientOptions = patients
+                .map(p => `<option value="${escapeHtml(p.id)}" ${p.id === currentAlert?.patientId ? 'selected' : ''}>${escapeHtml(p.name)} (${escapeHtml(p.email || 'Sin correo')})</option>`)
+                .join('');
+
+            const typeOptions = alertTypes
+                .map(t => `<option value="${escapeHtml(t.code)}" ${t.code === currentAlert?.typeCode ? 'selected' : ''}>${escapeHtml(t.description)}</option>`)
+                .join('');
+
+            const levelOptions = alertLevels
+                .map(l => `<option value="${escapeHtml(l.code)}" ${l.code === currentAlert?.levelCode ? 'selected' : ''}>${escapeHtml(l.label)}</option>`)
+                .join('');
+
+            const statusOptions = alertStatuses
+                .map(s => `<option value="${escapeHtml(s.code)}" ${s.code === currentAlert?.statusCode ? 'selected' : ''}>${escapeHtml(s.description || s.code)}</option>`)
+                .join('');
+
+        const modalHtml = `
+            <div class="modal-overlay" id="alertModal">
+                <div class="modal-content modal-lg">
+                    <div class="modal-header">
+                        <h3>🚨 ${modalTitle}</h3>
+                        <button class="modal-close" type="button" onclick="document.getElementById('alertModal').remove()">&times;</button>
+                    </div>
+                    <form id="alertForm" class="modal-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="alertPatientId">Paciente *</label>
+                                <select id="alertPatientId" name="patient_id" required ${isEdit ? 'disabled' : ''}>
+                                    <option value="">-- Selecciona un paciente --</option>
+                                    ${patientOptions}
+                                </select>
+                                ${isEdit ? `<input type="hidden" name="patient_id" value="${escapeHtml(currentAlert.patientId)}">` : ''}
+                            </div>
+                            <div class="form-group">
+                                <label for="alertType">Tipo de alerta *</label>
+                                <select id="alertType" name="alert_type_code" required>
+                                    <option value="">-- Selecciona un tipo --</option>
+                                    ${typeOptions}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="alertLevel">Nivel de severidad *</label>
+                                <select id="alertLevel" name="alert_level_code" required>
+                                    <option value="">-- Selecciona un nivel --</option>
+                                    ${levelOptions}
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="alertStatus">Estado *</label>
+                                <select id="alertStatus" name="status_code" required>
+                                    <option value="">-- Selecciona un estado --</option>
+                                    ${statusOptions}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="alertDescription">Descripción</label>
+                            <textarea id="alertDescription" name="description" rows="3" maxlength="500">${escapeHtml(currentAlert?.description || '')}</textarea>
+                        </div>
+                        <div class="form-error hidden" id="alertError"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('alertModal').remove()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">${isEdit ? 'Actualizar' : 'Crear'}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+        const form = document.getElementById('alertForm');
+        const errorEl = document.getElementById('alertError');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const formData = new FormData(form);
+            const payload = {
+                patient_id: formData.get('patient_id'),
+                alert_type_code: formData.get('alert_type_code'),
+                alert_level_code: formData.get('alert_level_code'),
+                status_code: formData.get('status_code'),
+                description: formData.get('description') || null,
+            };
+
+            errorEl.classList.add('hidden');
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = isEdit ? 'Actualizando...' : 'Creando...';
+
+            try {
+                if (isEdit) {
+                    await Api.admin.updateAlert(state.token, state.selectedOrgId, alertId, payload);
+                    showToast('Alerta actualizada correctamente', 'success');
+                } else {
+                    await Api.admin.createAlert(state.token, state.selectedOrgId, payload);
+                    showToast('Alerta creada correctamente', 'success');
+                }
+                document.getElementById('alertModal').remove();
+                state.tabCache.delete('alerts');
+                await activateTab('alerts');
+            } catch (error) {
+                errorEl.textContent = error.message || 'No se pudo guardar la alerta';
+                errorEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? 'Actualizar' : 'Crear';
+            }
+        });
+        } catch (error) {
+            console.error('Error loading alert modal:', error);
+            showToast(`Error al cargar el formulario: ${error.message}`, 'error');
+        }
+    };
+
+    // ============================================
+    // Caregiver Assignment Functions
+    // ============================================
+
+    const showCaregiverAssignmentModal = async (patientId = null, caregiverId = null) => {
+        if (!state.selectedOrgId) {
+            showToast("Selecciona una organización para asignar cuidadores", "warning");
+            return;
+        }
+
+        const isEdit = patientId && caregiverId;
+        const modalTitle = isEdit ? "Editar asignación de cuidador" : "Asignar cuidador";
+
+        // Load support data
+        const [relationshipTypes, patients, staff] = await Promise.all([
+            Api.admin.listCaregiverRelationshipTypes(state.token, state.selectedOrgId),
+            Api.admin.listPatients(state.token, state.selectedOrgId),
+            Api.admin.listStaff(state.token, state.selectedOrgId),
+        ]);
+
+        // If editing, get current assignment
+        let currentAssignment = null;
+        if (isEdit) {
+            const assignments = await Api.admin.listCaregiverAssignments(state.token, state.selectedOrgId);
+            currentAssignment = assignments.find(a => a.patientId === patientId && a.caregiverId === caregiverId);
+        }
+
+        const patientOptions = patients
+            .map(p => `<option value="${escapeHtml(p.id)}" ${p.id === patientId ? 'selected' : ''}>${escapeHtml(p.name)} (${escapeHtml(p.email || 'Sin correo')})</option>`)
+            .join('');
+
+        const caregiverOptions = staff
+            .map(s => `<option value="${escapeHtml(s.userId)}" ${s.userId === caregiverId ? 'selected' : ''}>${escapeHtml(s.name)} (${escapeHtml(s.email)})</option>`)
+            .join('');
+
+        const relationshipOptions = relationshipTypes
+            .map(r => `<option value="${escapeHtml(r.id)}" ${currentAssignment?.relationshipTypeId === r.id ? 'selected' : ''}>${escapeHtml(r.label)}</option>`)
+            .join('');
+
+        const modalHtml = `
+            <div class="modal-overlay" id="caregiverAssignmentModal">
+                <div class="modal-content modal-lg">
+                    <div class="modal-header">
+                        <h3>👨‍⚕️ ${modalTitle}</h3>
+                        <button class="modal-close" type="button" onclick="document.getElementById('caregiverAssignmentModal').remove()">&times;</button>
+                    </div>
+                    <form id="caregiverAssignmentForm" class="modal-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="assignPatientId">Paciente *</label>
+                                <select id="assignPatientId" name="patient_id" required ${isEdit ? 'disabled' : ''}>
+                                    <option value="">-- Selecciona un paciente --</option>
+                                    ${patientOptions}
+                                </select>
+                                ${isEdit ? `<input type="hidden" name="patient_id" value="${escapeHtml(patientId)}">` : ''}
+                            </div>
+                            <div class="form-group">
+                                <label for="assignCaregiverId">Cuidador *</label>
+                                <select id="assignCaregiverId" name="caregiver_id" required ${isEdit ? 'disabled' : ''}>
+                                    <option value="">-- Selecciona un usuario --</option>
+                                    ${caregiverOptions}
+                                </select>
+                                ${isEdit ? `<input type="hidden" name="caregiver_id" value="${escapeHtml(caregiverId)}">` : ''}
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="assignRelationshipType">Tipo de relación</label>
+                                <select id="assignRelationshipType" name="relationship_type_id">
+                                    <option value="">-- Sin especificar --</option>
+                                    ${relationshipOptions}
+                                </select>
+                            </div>
+                            <div class="form-group form-group-checkbox">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="assignIsPrimary" name="is_primary" ${currentAssignment?.isPrimary ? 'checked' : ''}>
+                                    <span>Es cuidador principal</span>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="assignStartedAt">Fecha de inicio</label>
+                                <input type="date" id="assignStartedAt" name="started_at" value="${currentAssignment?.startedAt ? currentAssignment.startedAt.split('T')[0] : ''}">
+                            </div>
+                            <div class="form-group">
+                                <label for="assignEndedAt">Fecha de fin (opcional)</label>
+                                <input type="date" id="assignEndedAt" name="ended_at" value="${currentAssignment?.endedAt ? currentAssignment.endedAt.split('T')[0] : ''}">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="assignNote">Nota (opcional)</label>
+                            <textarea id="assignNote" name="note" rows="3" maxlength="500">${escapeHtml(currentAssignment?.note || '')}</textarea>
+                        </div>
+                        <div class="form-error hidden" id="caregiverAssignmentError"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('caregiverAssignmentModal').remove()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">${isEdit ? 'Actualizar' : 'Asignar'}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        `;
+
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+        const form = document.getElementById('caregiverAssignmentForm');
+        const errorEl = document.getElementById('caregiverAssignmentError');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            errorEl.classList.add('hidden');
+
+            const formData = new FormData(form);
+            const payload = {
+                patient_id: formData.get('patient_id'),
+                caregiver_id: formData.get('caregiver_id'),
+                relationship_type_id: formData.get('relationship_type_id') || null,
+                is_primary: formData.has('is_primary'),
+                started_at: formData.get('started_at') || null,
+                ended_at: formData.get('ended_at') || null,
+                note: formData.get('note') || null,
+            };
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = isEdit ? 'Actualizando...' : 'Asignando...';
+
+            try {
+                if (isEdit) {
+                    await Api.admin.updateCaregiverAssignment(state.token, state.selectedOrgId, patientId, caregiverId, payload);
+                    showToast('Asignación actualizada correctamente', 'success');
+                } else {
+                    await Api.admin.createCaregiverAssignment(state.token, state.selectedOrgId, payload);
+                    showToast('Cuidador asignado correctamente', 'success');
+                }
+                document.getElementById('caregiverAssignmentModal')?.remove();
+                state.tabCache.delete('caregivers');
+                await activateTab('caregivers');
+            } catch (error) {
+                errorEl.textContent = error.message || 'No se pudo completar la asignación';
+                errorEl.classList.remove('hidden');
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? 'Actualizar' : 'Asignar';
+            }
+        });
     };
 
     const bindEvents = () => {
@@ -1466,13 +1893,16 @@
             showCareTeamCreateModal();
         });
 
+        el.buttons.assignCaregiver?.addEventListener("click", () => {
+            showCaregiverAssignmentModal();
+        });
+
         el.buttons.createPatient?.addEventListener("click", () => {
             showPatientModal();
         });
 
         el.buttons.createAlert?.addEventListener("click", () => {
-            // TODO: Open modal form for creating alert
-            console.log("Create alert clicked");
+            showAlertModal();
         });
 
         el.buttons.createDevice?.addEventListener("click", () => {
@@ -1588,8 +2018,7 @@
             }
         },
         editAlert: async (alertId) => {
-            console.log("Edit alert:", alertId);
-            // TODO: Open modal form with alert data
+            await showAlertModal(alertId);
         },
         deleteAlert: async (alertId) => {
             if (!confirm("¿Está seguro de eliminar esta alerta?")) return;
@@ -1598,6 +2027,20 @@
                 // Limpiar caché para forzar recarga de datos
                 state.tabCache.delete('alerts');
                 await activateTab("alerts");
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
+        editCaregiverAssignment: async (patientId, caregiverId) => {
+            await showCaregiverAssignmentModal(patientId, caregiverId);
+        },
+        deleteCaregiverAssignment: async (patientId, caregiverId) => {
+            if (!confirm("¿Está seguro de eliminar esta asignación de cuidador?")) return;
+            try {
+                await Api.admin.deleteCaregiverAssignment(state.token, state.selectedOrgId, patientId, caregiverId);
+                showToast('Asignación eliminada correctamente', 'success');
+                state.tabCache.delete('caregivers');
+                await activateTab("caregivers");
             } catch (error) {
                 handleApiError(error);
             }

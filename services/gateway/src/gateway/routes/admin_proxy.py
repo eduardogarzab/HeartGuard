@@ -209,6 +209,24 @@ def alerts(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}/alerts/", request.method)
 
 
+@bp.route("/organizations/<org_id>/alerts/types", methods=["GET"])
+def alert_types(org_id: str):
+    """Obtiene catálogo de tipos de alerta."""
+    return _proxy_request(f"/admin/organizations/{org_id}/alerts/types", "GET")
+
+
+@bp.route("/organizations/<org_id>/alerts/levels", methods=["GET"])
+def alert_levels(org_id: str):
+    """Obtiene catálogo de niveles de alerta."""
+    return _proxy_request(f"/admin/organizations/{org_id}/alerts/levels", "GET")
+
+
+@bp.route("/organizations/<org_id>/alerts/statuses", methods=["GET"])
+def alert_statuses(org_id: str):
+    """Obtiene catálogo de estados de alerta."""
+    return _proxy_request(f"/admin/organizations/{org_id}/alerts/statuses", "GET")
+
+
 @bp.route("/organizations/<org_id>/alerts/<alert_id>", methods=["GET", "PATCH", "DELETE"])
 def alert_detail(org_id: str, alert_id: str):
     """Detalle de una alerta."""

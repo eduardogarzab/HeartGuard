@@ -22,6 +22,7 @@ class CaregiversRepository:
             SELECT
                 cp.patient_id,
                 p.person_name AS patient_name,
+                p.email AS patient_email,
                 cp.user_id AS caregiver_id,
                 u.name AS caregiver_name,
                 u.email AS caregiver_email,
@@ -31,11 +32,15 @@ class CaregiversRepository:
                 cp.is_primary,
                 cp.started_at,
                 cp.ended_at,
-                cp.note
+                cp.note,
+                pct.care_team_id,
+                ct.name AS care_team_name
             FROM caregiver_patient cp
             JOIN patients p ON p.id = cp.patient_id
             JOIN users u ON u.id = cp.user_id
             LEFT JOIN caregiver_relationship_types crt ON crt.id = cp.rel_type_id
+            LEFT JOIN patient_care_team pct ON pct.patient_id = p.id
+            LEFT JOIN care_teams ct ON ct.id = pct.care_team_id
             WHERE p.org_id = %s
             ORDER BY p.person_name ASC, u.name ASC
         """
@@ -82,6 +87,7 @@ class CaregiversRepository:
             SELECT
                 i.patient_id,
                 p.person_name AS patient_name,
+                p.email AS patient_email,
                 i.user_id AS caregiver_id,
                 u.name AS caregiver_name,
                 u.email AS caregiver_email,
@@ -91,11 +97,15 @@ class CaregiversRepository:
                 i.is_primary,
                 i.started_at,
                 i.ended_at,
-                i.note
+                i.note,
+                pct.care_team_id,
+                ct.name AS care_team_name
             FROM inserted i
             JOIN patients p ON p.id = i.patient_id
             JOIN users u ON u.id = i.user_id
             LEFT JOIN caregiver_relationship_types crt ON crt.id = i.rel_type_id
+            LEFT JOIN patient_care_team pct ON pct.patient_id = p.id
+            LEFT JOIN care_teams ct ON ct.id = pct.care_team_id
         """
         params = (
             patient_id,
@@ -147,6 +157,7 @@ class CaregiversRepository:
             SELECT
                 u.patient_id,
                 p.person_name AS patient_name,
+                p.email AS patient_email,
                 u.user_id AS caregiver_id,
                 usr.name AS caregiver_name,
                 usr.email AS caregiver_email,
@@ -156,11 +167,15 @@ class CaregiversRepository:
                 u.is_primary,
                 u.started_at,
                 u.ended_at,
-                u.note
+                u.note,
+                pct.care_team_id,
+                ct.name AS care_team_name
             FROM updated u
             JOIN patients p ON p.id = u.patient_id
             JOIN users usr ON usr.id = u.user_id
             LEFT JOIN caregiver_relationship_types crt ON crt.id = u.rel_type_id
+            LEFT JOIN patient_care_team pct ON pct.patient_id = p.id
+            LEFT JOIN care_teams ct ON ct.id = pct.care_team_id
         """
         params = {
             "rel_type_id": relationship_type_id,
