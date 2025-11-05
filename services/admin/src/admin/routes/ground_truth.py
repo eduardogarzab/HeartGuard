@@ -18,6 +18,12 @@ bp = Blueprint(
 _repo = GroundTruthRepository()
 _patients_repo = PatientsRepository()
 
+catalog_bp = Blueprint(
+    "ground_truth_catalogs",
+    __name__ + "_catalogs",
+    url_prefix="/admin/organizations/<org_id>/ground-truth",
+)
+
 
 def _auth_context(req: Request) -> AuthContext:
     ctx = getattr(req, "auth_context", None)
@@ -83,6 +89,18 @@ def list_ground_truth(org_id: str, patient_id: str):
     offset = _coerce_int(request.args.get("offset"), default=0, minimum=0)
     labels = _repo.list_for_patient(patient_id, limit=limit, offset=offset)
     return xml_response({"ground_truth_labels": labels})
+
+
+@bp.get("/<label_id>")
+@require_org_admin
+def get_ground_truth(org_id: str, patient_id: str, label_id: str):
+    error = _ensure_patient(org_id, patient_id)
+    if error:
+        return error
+    label = _repo.get(label_id)
+    if not label or str(label.get("patient_id")) != patient_id:
+        return xml_error_response("not_found", "Ground truth label not found", status=404)
+    return xml_response({"ground_truth_label": label})
 
 
 @bp.post("/")
@@ -187,3 +205,11 @@ def delete_ground_truth(org_id: str, patient_id: str, label_id: str):
     if not deleted:
         return xml_error_response("delete_failed", "Ground truth label could not be deleted", status=500)
     return xml_response({"deleted": True})
+
+
+@catalog_bp.get("/event-types")
+@require_org_admin
+def list_ground_truth_event_types(org_id: str):
+    """Return catalog of event types usable for ground truth annotations."""
+    event_types = _repo.list_event_types()
+    return xml_response({"event_types": event_types})

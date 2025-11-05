@@ -19,6 +19,8 @@
         activeCareTeamDetail: null,
         availableStaff: [],
         availablePatients: [],
+        groundTruthSelectedPatientId: null,
+        groundTruthEventTypes: [],
     };
 
     const el = {
@@ -53,6 +55,7 @@
             "care-teams": document.querySelector("#tab-care-teams"),
             caregivers: document.querySelector("#tab-caregivers"),
             alerts: document.querySelector("#tab-alerts"),
+            "ground-truth": document.querySelector("#tab-ground-truth"),
             devices: document.querySelector("#tab-devices"),
             "push-devices": document.querySelector("#tab-push-devices"),
         },
@@ -62,6 +65,7 @@
             "care-teams": document.querySelector("#careTeamsTable"),
             caregivers: document.querySelector("#caregiversTable"),
             alerts: document.querySelector("#alertsTable"),
+            "ground-truth": document.querySelector("#groundTruthTable"),
             devices: document.querySelector("#devicesTable"),
             "push-devices": document.querySelector("#pushDevicesTable"),
         },
@@ -73,9 +77,12 @@
             assignCaregiver: document.querySelector("#btnAssignCaregiver"),
             createAlert: document.querySelector("#btnCreateAlert"),
             refreshAlerts: document.querySelector("#btnRefreshAlerts"),
+            createGroundTruth: document.querySelector("#btnCreateGroundTruth"),
+            refreshGroundTruth: document.querySelector("#btnRefreshGroundTruth"),
             createDevice: document.querySelector("#btnCreateDevice"),
             refreshPushDevices: document.querySelector("#btnRefreshPushDevices"),
         },
+        groundTruthPatientFilter: document.querySelector("#groundTruthPatientFilter"),
         modal: {
             overlay: document.querySelector("#modalOverlay"),
             title: document.querySelector("#modalTitle"),
@@ -131,6 +138,38 @@
             });
         } catch (err) {
             return value;
+        }
+    };
+
+    const toDatetimeLocalValue = (value) => {
+        if (!value) return "";
+        try {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return "";
+            }
+            const pad = (num) => String(num).padStart(2, "0");
+            const year = date.getFullYear();
+            const month = pad(date.getMonth() + 1);
+            const day = pad(date.getDate());
+            const hours = pad(date.getHours());
+            const minutes = pad(date.getMinutes());
+            return `${year}-${month}-${day}T${hours}:${minutes}`;
+        } catch (err) {
+            return "";
+        }
+    };
+
+    const fromDatetimeLocalValue = (value) => {
+        if (!value) return null;
+        try {
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) {
+                return null;
+            }
+            return date.toISOString();
+        } catch (err) {
+            return null;
         }
     };
 
@@ -384,6 +423,10 @@
         state.orgDashboard = null;
         state.tabCache.clear();
         state.selectedOrgId = null;
+        state.availablePatients = [];
+        state.availableStaff = [];
+        state.groundTruthEventTypes = [];
+        state.groundTruthSelectedPatientId = null;
         if (el.overviewCards) {
             el.overviewCards.innerHTML = "";
         }
@@ -393,6 +436,16 @@
         el.orgDetailSection.classList.add("hidden");
         el.sessionOrgContext.textContent = "";
         el.sessionOrgContext.classList.add("hidden");
+        if (el.groundTruthPatientFilter) {
+            el.groundTruthPatientFilter.value = "";
+            el.groundTruthPatientFilter.disabled = true;
+        }
+        if (el.buttons.createGroundTruth) {
+            el.buttons.createGroundTruth.disabled = true;
+        }
+        if (el.buttons.refreshGroundTruth) {
+            el.buttons.refreshGroundTruth.disabled = true;
+        }
         persistState();
     };
 
@@ -742,20 +795,78 @@
         );
     };
 
+    const renderGroundTruth = (data) => {
+        const container = el.tabBodies["ground-truth"] || el.tabPanels["ground-truth"];
+        if (!container) return;
+
+        const labels = Array.isArray(data) ? data : data?.labels ?? [];
+
+        if (el.groundTruthPatientFilter) {
+            el.groundTruthPatientFilter.value = state.groundTruthSelectedPatientId || "";
+        }
+
+        if (!state.availablePatients.length) {
+            container.innerHTML = '<p class="muted">No hay pacientes registrados en la organización.</p>';
+            return;
+        }
+
+        if (!state.groundTruthSelectedPatientId) {
+            container.innerHTML = '<p class="muted">Selecciona un paciente para ver sus etiquetas.</p>';
+            return;
+        }
+
+        if (!labels.length) {
+            container.innerHTML = '<p class="muted">No se encontraron etiquetas ground truth para este paciente.</p>';
+            return;
+        }
+
+        renderTable(
+            container,
+            ["Evento", "Inicio", "Fin", "Anotado por", "Fuente", "Nota", "Acciones"],
+            labels,
+            (label) => {
+                const noteFull = label.note || "-";
+                const notePreview = noteFull.length > 80 ? `${noteFull.slice(0, 77)}...` : noteFull;
+                const annotatedBy = label.annotatedByName || label.annotatedByUserId || "No especificado";
+                const eventLabel = label.eventTypeLabel || label.eventTypeCode || "-";
+                const patientId = label.patientId || state.groundTruthSelectedPatientId || "";
+                const onset = label.onset ? formatDateTime(label.onset) : "-";
+                const offset = label.offsetAt ? formatDateTime(label.offsetAt) : "-";
+                const source = label.source || "-";
+
+                return `
+                    <tr>
+                        <td>${escapeHtml(eventLabel)}</td>
+                        <td>${escapeHtml(onset)}</td>
+                        <td>${escapeHtml(offset)}</td>
+                        <td>${escapeHtml(annotatedBy)}</td>
+                        <td>${escapeHtml(source)}</td>
+                        <td title="${escapeHtml(noteFull)}">${escapeHtml(notePreview)}</td>
+                        <td>
+                            <button class="btn btn-sm" onclick="window.app.editGroundTruth('${escapeHtml(patientId)}', '${escapeHtml(label.id)}')">Editar</button>
+                            <button class="btn btn-sm btn-danger" onclick="window.app.deleteGroundTruth('${escapeHtml(patientId)}', '${escapeHtml(label.id)}')">Eliminar</button>
+                        </td>
+                    </tr>`;
+            },
+            "No se encontraron etiquetas ground truth"
+        );
+    };
+
     const renderDevices = (devices) => {
         const container = el.tabBodies.devices || el.tabPanels.devices;
         renderTable(
             container,
-            ["Serial", "Tipo", "Paciente", "Estado", "Firmware", "Última conexión", "Acciones"],
+            ["Serial", "Tipo", "Marca", "Modelo", "Paciente asignado", "Estado", "Registrado", "Acciones"],
             devices,
             (device) => `
                 <tr>
-                    <td><code>${escapeHtml(device.serialNumber)}</code></td>
-                    <td>${escapeHtml(device.deviceTypeLabel || device.deviceTypeCode)}</td>
-                    <td>${escapeHtml(device.patientName || "-")}</td>
-                    <td><span class="status-badge ${device.statusCode === "ACTIVE" ? "success" : ""}">${escapeHtml(device.statusLabel || device.statusCode)}</span></td>
-                    <td>${escapeHtml(device.firmwareVersion || "-")}</td>
-                    <td>${escapeHtml(formatDateTime(device.lastSeen))}</td>
+                    <td><code>${escapeHtml(device.serial)}</code></td>
+                    <td>${escapeHtml(device.deviceTypeLabel || device.deviceTypeCode || "-")}</td>
+                    <td>${escapeHtml(device.brand || "-")}</td>
+                    <td>${escapeHtml(device.model || "-")}</td>
+                    <td>${escapeHtml(device.ownerPatientName || "-")}</td>
+                    <td><span class="status-badge ${device.active ? "success" : ""}">${device.active ? "Activo" : "Inactivo"}</span></td>
+                    <td>${escapeHtml(formatDateTime(device.registeredAt))}</td>
                     <td>
                         <button class="btn btn-sm" onclick="window.app.editDevice('${escapeHtml(device.id)}')">Editar</button>
                         <button class="btn btn-sm btn-danger" onclick="window.app.deleteDevice('${escapeHtml(device.id)}')">Eliminar</button>
@@ -769,20 +880,23 @@
         const container = el.tabBodies["push-devices"] || el.tabPanels["push-devices"];
         renderTable(
             container,
-            ["Usuario", "Plataforma", "Token", "Estado", "Última uso", "Acciones"],
+            ["Usuario", "Plataforma", "Token", "Estado", "Último uso", "Acciones"],
             pushDevices,
-            (pd) => `
+            (pd) => {
+                const tokenPreview = pd.pushToken ? `${escapeHtml(pd.pushToken.slice(0, 20))}…` : "-";
+                return `
                 <tr>
-                    <td>${escapeHtml(pd.userName)}</td>
-                    <td><span class="status-badge">${escapeHtml(pd.platform)}</span></td>
-                    <td><code>${escapeHtml(pd.deviceToken?.substring(0, 20))}...</code></td>
-                    <td><span class="status-badge ${pd.isActive ? "success" : ""}">${pd.isActive ? "Activo" : "Inactivo"}</span></td>
-                    <td>${escapeHtml(formatDateTime(pd.lastUsed))}</td>
+                    <td>${escapeHtml(pd.userName || pd.userEmail || "-")}</td>
+                    <td><span class="status-badge">${escapeHtml(pd.platformLabel || pd.platformCode || "-")}</span></td>
+                    <td><code title="${escapeHtml(pd.pushToken || "Sin token")}">${tokenPreview}</code></td>
+                    <td><span class="status-badge ${pd.active ? "success" : ""}">${pd.active ? "Activo" : "Inactivo"}</span></td>
+                    <td>${escapeHtml(formatDateTime(pd.lastSeenAt))}</td>
                     <td>
-                        <button class="btn btn-sm" onclick="window.app.togglePushDevice('${escapeHtml(pd.id)}', ${!pd.isActive})">${pd.isActive ? "Desactivar" : "Activar"}</button>
+                        <button class="btn btn-sm" onclick="window.app.togglePushDevice('${escapeHtml(pd.id)}', ${!pd.active})">${pd.active ? "Desactivar" : "Activar"}</button>
                         <button class="btn btn-sm btn-danger" onclick="window.app.deletePushDevice('${escapeHtml(pd.id)}')">Eliminar</button>
                     </td>
-                </tr>` ,
+                </tr>`;
+            },
             "No se encontraron push devices"
         );
     };
@@ -793,6 +907,7 @@
         "care-teams": renderCareTeams,
         caregivers: renderCaregivers,
         alerts: renderAlerts,
+        "ground-truth": renderGroundTruth,
         devices: renderDevices,
         "push-devices": renderPushDevices,
     };
@@ -807,6 +922,31 @@
 
         if (tabName === "overview") {
             renderOverview();
+            return;
+        }
+
+        if (tabName === "ground-truth") {
+            await ensureGroundTruthSupportData();
+            populateGroundTruthPatientFilter();
+
+            const selectValue = el.groundTruthPatientFilter ? el.groundTruthPatientFilter.value : "";
+            if (!state.groundTruthSelectedPatientId && selectValue) {
+                state.groundTruthSelectedPatientId = selectValue;
+            } else if (!state.groundTruthSelectedPatientId && state.availablePatients.length) {
+                state.groundTruthSelectedPatientId = state.availablePatients[0].id;
+                if (el.groundTruthPatientFilter) {
+                    el.groundTruthPatientFilter.value = state.groundTruthSelectedPatientId;
+                }
+            }
+
+            const activePatientId = state.groundTruthSelectedPatientId || selectValue || "";
+            const cached = state.tabCache.get("ground-truth");
+            if (cached && cached.patientId === activePatientId) {
+                renderGroundTruth(cached);
+                return;
+            }
+
+            await loadGroundTruthLabels(activePatientId, { showLoading: true });
             return;
         }
 
@@ -866,6 +1006,21 @@
         state.orgSummary = null;
         state.orgDashboard = null;
         state.tabCache.clear();
+        state.availablePatients = [];
+        state.availableStaff = [];
+        state.groundTruthEventTypes = [];
+        state.groundTruthSelectedPatientId = null;
+
+        if (el.groundTruthPatientFilter) {
+            el.groundTruthPatientFilter.value = "";
+            el.groundTruthPatientFilter.disabled = true;
+        }
+        if (el.buttons.createGroundTruth) {
+            el.buttons.createGroundTruth.disabled = true;
+        }
+        if (el.buttons.refreshGroundTruth) {
+            el.buttons.refreshGroundTruth.disabled = true;
+        }
 
         el.orgDetailSection.classList.remove("hidden");
         el.orgBreadcrumbName.textContent = org.name;
@@ -1038,6 +1193,8 @@
                 }
                 
                 document.getElementById('patientModalOverlay').remove();
+                state.availablePatients = [];
+                state.tabCache.delete('ground-truth');
                 // Limpiar caché para forzar recarga de datos
                 state.tabCache.delete('patients');
                 await activateTab('patients');
@@ -1689,6 +1846,477 @@
         }
     };
 
+    const showDeviceModal = async (deviceId = null) => {
+        if (!state.selectedOrgId) {
+            showToast("Selecciona una organización para gestionar dispositivos", "warning");
+            return;
+        }
+
+        const isEdit = !!deviceId;
+        const modalTitle = isEdit ? "Editar dispositivo" : "Registrar dispositivo";
+
+        try {
+            const [deviceTypes, patients, currentDevice] = await Promise.all([
+                Api.admin.listDeviceTypes(state.token, state.selectedOrgId),
+                Api.admin.listPatients(state.token, state.selectedOrgId),
+                isEdit ? Api.admin.getDevice(state.token, state.selectedOrgId, deviceId) : Promise.resolve(null)
+            ]);
+
+            if (isEdit && !currentDevice) {
+                showToast("No se encontró el dispositivo seleccionado", "warning");
+                return;
+            }
+
+            const allDeviceTypes = [...deviceTypes];
+            if (currentDevice?.deviceTypeCode && !allDeviceTypes.some((type) => type.code === currentDevice.deviceTypeCode)) {
+                allDeviceTypes.push({
+                    code: currentDevice.deviceTypeCode,
+                    label: currentDevice.deviceTypeLabel || currentDevice.deviceTypeCode,
+                });
+            }
+
+            if (!allDeviceTypes.length) {
+                showToast("No hay tipos de dispositivo configurados. Crea al menos uno antes de continuar.", "warning");
+                return;
+            }
+
+            const typeOptions = allDeviceTypes
+                .map((type) => `<option value="${escapeHtml(type.code)}" ${type.code === currentDevice?.deviceTypeCode ? "selected" : ""}>${escapeHtml(type.label || type.code)}</option>`)
+                .join("");
+
+            const patientOptions = patients
+                .map((patient) => `<option value="${escapeHtml(patient.id)}" ${patient.id === currentDevice?.ownerPatientId ? "selected" : ""}>${escapeHtml(patient.name)} (${escapeHtml(patient.email || "Sin correo")})</option>`)
+                .join("");
+
+            const modalHtml = `
+            <div class="modal-overlay" id="deviceModal">
+                <div class="modal-content modal-md">
+                    <div class="modal-header">
+                        <h3>🔧 ${modalTitle}</h3>
+                        <button class="modal-close" type="button" onclick="document.getElementById('deviceModal').remove()">&times;</button>
+                    </div>
+                    <form id="deviceForm" class="modal-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="deviceSerial">Número de serie *</label>
+                                <input id="deviceSerial" name="serial" type="text" required maxlength="80" value="${escapeHtml(currentDevice?.serial || "")}">
+                            </div>
+                            <div class="form-group">
+                                <label for="deviceType">Tipo de dispositivo *</label>
+                                <select id="deviceType" name="device_type_code" required>
+                                    <option value="">-- Selecciona un tipo --</option>
+                                    ${typeOptions}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="deviceBrand">Marca</label>
+                                <input id="deviceBrand" name="brand" type="text" maxlength="80" value="${escapeHtml(currentDevice?.brand || "")}">
+                            </div>
+                            <div class="form-group">
+                                <label for="deviceModel">Modelo</label>
+                                <input id="deviceModel" name="model" type="text" maxlength="80" value="${escapeHtml(currentDevice?.model || "")}">
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label for="deviceOwner">Paciente asignado</label>
+                            <select id="deviceOwner" name="owner_patient_id">
+                                <option value="">-- Sin asignar --</option>
+                                ${patientOptions}
+                            </select>
+                        </div>
+                        <div class="form-group form-check">
+                            <label class="checkbox">
+                                <input type="checkbox" id="deviceActive" name="active" ${currentDevice ? (currentDevice.active ? "checked" : "") : "checked"}>
+                                <span>Dispositivo activo</span>
+                            </label>
+                        </div>
+                        ${currentDevice?.registeredAt ? `<p class="text-muted">Registrado el ${escapeHtml(formatDateTime(currentDevice.registeredAt))}</p>` : ""}
+                        <div class="form-error hidden" id="deviceError"></div>
+                        <div class="modal-actions">
+                            <button type="button" class="btn btn-ghost" onclick="document.getElementById('deviceModal').remove()">Cancelar</button>
+                            <button type="submit" class="btn btn-primary">${isEdit ? "Actualizar" : "Registrar"}</button>
+                        </div>
+                    </form>
+                </div>
+            </div>`;
+
+            document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+            const modal = document.getElementById("deviceModal");
+            const form = document.getElementById("deviceForm");
+            const errorEl = document.getElementById("deviceError");
+
+            modal.addEventListener("click", (event) => {
+                if (event.target === modal) {
+                    modal.remove();
+                }
+            });
+
+            form.addEventListener("submit", async (event) => {
+                event.preventDefault();
+                errorEl.classList.add("hidden");
+                const submitBtn = form.querySelector('button[type="submit"]');
+                submitBtn.disabled = true;
+                submitBtn.textContent = isEdit ? "Actualizando..." : "Registrando...";
+
+                const serial = form.serial.value.trim();
+                const deviceTypeCode = form.device_type_code.value.trim();
+                const brand = form.brand.value.trim();
+                const model = form.model.value.trim();
+                const ownerPatientId = form.owner_patient_id.value.trim();
+                const active = form.active.checked;
+
+                const payload = {
+                    serial,
+                    device_type_code: deviceTypeCode,
+                    brand: brand || null,
+                    model: model || null,
+                    owner_patient_id: ownerPatientId || null,
+                    active,
+                };
+
+                try {
+                    if (isEdit) {
+                        await Api.admin.updateDevice(state.token, state.selectedOrgId, deviceId, payload);
+                        showToast("Dispositivo actualizado correctamente", "success");
+                    } else {
+                        await Api.admin.createDevice(state.token, state.selectedOrgId, payload);
+                        showToast("Dispositivo registrado correctamente", "success");
+                    }
+                    modal.remove();
+                    state.tabCache.delete("devices");
+                    await activateTab("devices");
+                } catch (error) {
+                    console.error("Error saving device:", error);
+                    errorEl.textContent = error.message || "No se pudo guardar el dispositivo";
+                    errorEl.classList.remove("hidden");
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = isEdit ? "Actualizar" : "Registrar";
+                }
+            });
+        } catch (error) {
+            console.error("Error loading device modal:", error);
+            showToast(`Error al cargar el formulario: ${error.message}`, "error");
+        }
+    };
+
+    const ensureGroundTruthSupportData = async () => {
+        if (!state.selectedOrgId) return;
+        const tasks = [];
+
+        if (!state.availablePatients.length) {
+            tasks.push(
+                Api.admin.listPatients(state.token, state.selectedOrgId)
+                    .then((patients) => {
+                        state.availablePatients = Array.isArray(patients) ? patients : [];
+                    })
+            );
+        }
+
+        if (!state.availableStaff.length) {
+            tasks.push(
+                Api.admin.listStaff(state.token, state.selectedOrgId)
+                    .then((staff) => {
+                        state.availableStaff = Array.isArray(staff) ? staff : [];
+                    })
+            );
+        }
+
+        if (!state.groundTruthEventTypes.length) {
+            tasks.push(
+                Api.admin.listGroundTruthEventTypes(state.token, state.selectedOrgId)
+                    .then((eventTypes) => {
+                        state.groundTruthEventTypes = Array.isArray(eventTypes) ? eventTypes : [];
+                    })
+            );
+        }
+
+        if (!tasks.length) {
+            return;
+        }
+
+        try {
+            await Promise.all(tasks);
+        } catch (error) {
+            handleApiError(error);
+        }
+    };
+
+    const populateGroundTruthPatientFilter = () => {
+        const select = el.groundTruthPatientFilter;
+        if (!select) return;
+
+        const patients = state.availablePatients || [];
+        const options = ['<option value="">-- Selecciona un paciente --</option>'];
+        patients.forEach((patient) => {
+            options.push(`<option value="${escapeHtml(patient.id)}">${escapeHtml(patient.name)} (${escapeHtml(patient.email || "Sin correo")})</option>`);
+        });
+
+        select.innerHTML = options.join("");
+
+        if (state.groundTruthSelectedPatientId && patients.some((patient) => patient.id === state.groundTruthSelectedPatientId)) {
+            select.value = state.groundTruthSelectedPatientId;
+        } else if (patients.length) {
+            state.groundTruthSelectedPatientId = patients[0].id;
+            select.value = state.groundTruthSelectedPatientId;
+        } else {
+            state.groundTruthSelectedPatientId = null;
+            select.value = "";
+        }
+
+        const disableActions = !patients.length;
+        select.disabled = disableActions;
+        if (el.buttons.createGroundTruth) {
+            el.buttons.createGroundTruth.disabled = disableActions;
+        }
+        if (el.buttons.refreshGroundTruth) {
+            el.buttons.refreshGroundTruth.disabled = disableActions;
+        }
+    };
+
+    const loadGroundTruthLabels = async (patientId, { showLoading = true } = {}) => {
+        const container = el.tabBodies["ground-truth"] || el.tabPanels["ground-truth"];
+        if (!container) return;
+
+        if (!patientId) {
+            state.groundTruthSelectedPatientId = null;
+            state.tabCache.set("ground-truth", { patientId: null, labels: [] });
+            renderGroundTruth([]);
+            return;
+        }
+
+        state.groundTruthSelectedPatientId = patientId;
+
+        if (showLoading) {
+            setLoadingContainer(container, "Cargando etiquetas...");
+        }
+
+        try {
+            const labels = await Api.admin.listGroundTruthLabels(state.token, state.selectedOrgId, patientId);
+            const payload = {
+                patientId,
+                labels: Array.isArray(labels) ? labels : [],
+            };
+            state.tabCache.set("ground-truth", payload);
+            renderGroundTruth(payload);
+        } catch (error) {
+            console.error("Error loading ground truth labels:", error);
+            handleApiError(error);
+            container.innerHTML = `<p class="form-error">${escapeHtml(error.message || "No se pudieron cargar las etiquetas")}</p>`;
+        }
+    };
+
+    const showGroundTruthModal = async (patientId = null, labelId = null) => {
+        if (!state.selectedOrgId) {
+            showToast("Selecciona una organización para gestionar etiquetas", "warning");
+            return;
+        }
+
+        await ensureGroundTruthSupportData();
+        const targetPatientId = patientId || state.groundTruthSelectedPatientId;
+        if (!targetPatientId) {
+            showToast("Selecciona un paciente para gestionar sus etiquetas", "warning");
+            return;
+        }
+
+        const patient = state.availablePatients.find((item) => item.id === targetPatientId);
+        if (!patient) {
+            showToast("No se encontró el paciente seleccionado", "error");
+            return;
+        }
+
+        if (!state.groundTruthEventTypes.length) {
+            showToast("No hay tipos de evento configurados para etiquetas ground truth", "warning");
+            return;
+        }
+
+        const isEdit = !!labelId;
+        let currentLabel = null;
+        if (isEdit) {
+            try {
+                currentLabel = await Api.admin.getGroundTruthLabel(state.token, state.selectedOrgId, targetPatientId, labelId);
+                if (!currentLabel) {
+                    showToast("No se encontró la etiqueta seleccionada", "warning");
+                    return;
+                }
+            } catch (error) {
+                handleApiError(error);
+                return;
+            }
+        }
+
+        let eventTypes = [...state.groundTruthEventTypes];
+        if (currentLabel?.eventTypeCode && !eventTypes.some((eventType) => eventType.code === currentLabel.eventTypeCode)) {
+            eventTypes.push({
+                code: currentLabel.eventTypeCode,
+                description: currentLabel.eventTypeLabel || currentLabel.eventTypeCode,
+            });
+        }
+        const eventTypeOptions = eventTypes
+            .map((eventType) => {
+                const selected = eventType.code === currentLabel?.eventTypeCode ? "selected" : "";
+                const label = eventType.description || eventType.code;
+                return `<option value="${escapeHtml(eventType.code)}" ${selected}>${escapeHtml(label)}</option>`;
+            })
+            .join("");
+
+        let staffMembers = [...state.availableStaff];
+        if (currentLabel?.annotatedByUserId && !staffMembers.some((staff) => staff.userId === currentLabel.annotatedByUserId)) {
+            staffMembers.push({
+                userId: currentLabel.annotatedByUserId,
+                name: currentLabel.annotatedByName || currentLabel.annotatedByUserId,
+                email: null,
+            });
+        }
+
+        const staffOptions = staffMembers
+            .map((staff) => {
+                const display = staff.name || staff.email || staff.userId;
+                const selected = staff.userId === currentLabel?.annotatedByUserId ? "selected" : "";
+                return `<option value="${escapeHtml(staff.userId)}" ${selected}>${escapeHtml(display)}</option>`;
+            })
+            .join("");
+
+        const onsetValue = toDatetimeLocalValue(currentLabel?.onset);
+        const offsetValue = toDatetimeLocalValue(currentLabel?.offsetAt);
+
+        const modalHtml = `
+        <div class="modal-overlay" id="groundTruthModal">
+            <div class="modal-content modal-md">
+                <div class="modal-header">
+                    <h3>${isEdit ? "Editar etiqueta ground truth" : "Nueva etiqueta ground truth"}</h3>
+                    <button class="modal-close" type="button" onclick="document.getElementById('groundTruthModal').remove()">&times;</button>
+                </div>
+                <form id="groundTruthForm" class="modal-form">
+                    <div class="form-group">
+                        <label>Paciente</label>
+                        <input type="text" value="${escapeHtml(patient.name)}" readonly>
+                    </div>
+                    <div class="form-group">
+                        <label for="groundTruthEventType">Tipo de evento *</label>
+                        <select id="groundTruthEventType" name="event_type_code" required>
+                            <option value="">-- Selecciona un tipo --</option>
+                            ${eventTypeOptions}
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="groundTruthOnset">Inicio *</label>
+                            <input id="groundTruthOnset" name="onset" type="datetime-local" required value="${escapeHtml(onsetValue)}">
+                        </div>
+                        <div class="form-group">
+                            <label for="groundTruthOffset">Fin</label>
+                            <input id="groundTruthOffset" name="offset_at" type="datetime-local" value="${escapeHtml(offsetValue)}">
+                        </div>
+                    </div>
+                    <div class="form-group">
+                        <label for="groundTruthAnnotatedBy">Anotado por</label>
+                        <select id="groundTruthAnnotatedBy" name="annotated_by_user_id">
+                            <option value="">-- Sin especificar --</option>
+                            ${staffOptions}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="groundTruthSource">Fuente</label>
+                        <input id="groundTruthSource" name="source" type="text" maxlength="120" value="${escapeHtml(currentLabel?.source || "")}">
+                    </div>
+                    <div class="form-group">
+                        <label for="groundTruthNote">Nota</label>
+                        <textarea id="groundTruthNote" name="note" rows="3" maxlength="500">${escapeHtml(currentLabel?.note || "")}</textarea>
+                    </div>
+                    <div class="form-error hidden" id="groundTruthError"></div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-ghost" onclick="document.getElementById('groundTruthModal').remove()">Cancelar</button>
+                        <button type="submit" class="btn btn-primary">${isEdit ? "Actualizar" : "Crear"}</button>
+                    </div>
+                </form>
+            </div>
+        </div>`;
+
+        document.body.insertAdjacentHTML("beforeend", modalHtml);
+
+        const modal = document.getElementById("groundTruthModal");
+        const form = document.getElementById("groundTruthForm");
+        const errorEl = document.getElementById("groundTruthError");
+
+        modal.addEventListener("click", (event) => {
+            if (event.target === modal) {
+                modal.remove();
+            }
+        });
+
+        form.addEventListener("submit", async (event) => {
+            event.preventDefault();
+            errorEl.classList.add("hidden");
+
+            const submitBtn = form.querySelector('button[type="submit"]');
+            submitBtn.disabled = true;
+            submitBtn.textContent = isEdit ? "Actualizando..." : "Creando...";
+
+            const eventTypeCode = form.event_type_code.value.trim();
+            const onsetIso = fromDatetimeLocalValue(form.onset.value);
+            const offsetIso = fromDatetimeLocalValue(form.offset_at.value);
+            const annotatedByUserId = form.annotated_by_user_id.value.trim();
+            const sourceValue = form.source.value.trim();
+            const noteValue = form.note.value.trim();
+
+            if (!eventTypeCode) {
+                errorEl.textContent = "Selecciona un tipo de evento";
+                errorEl.classList.remove("hidden");
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? "Actualizar" : "Crear";
+                return;
+            }
+
+            if (!onsetIso) {
+                errorEl.textContent = "Proporciona una fecha de inicio válida";
+                errorEl.classList.remove("hidden");
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? "Actualizar" : "Crear";
+                return;
+            }
+
+            const payload = {
+                event_type_code: eventTypeCode,
+                onset: onsetIso,
+            };
+
+            if (offsetIso || isEdit) {
+                payload.offset_at = offsetIso || null;
+            }
+            if (annotatedByUserId || isEdit) {
+                payload.annotated_by_user_id = annotatedByUserId || null;
+            }
+            if (sourceValue || isEdit) {
+                payload.source = sourceValue || null;
+            }
+            if (noteValue || isEdit) {
+                payload.note = noteValue || null;
+            }
+
+            try {
+                if (isEdit) {
+                    await Api.admin.updateGroundTruthLabel(state.token, state.selectedOrgId, targetPatientId, labelId, payload);
+                    showToast("Etiqueta actualizada correctamente", "success");
+                } else {
+                    await Api.admin.createGroundTruthLabel(state.token, state.selectedOrgId, targetPatientId, payload);
+                    showToast("Etiqueta creada correctamente", "success");
+                }
+                modal.remove();
+                state.tabCache.delete("ground-truth");
+                await loadGroundTruthLabels(targetPatientId, { showLoading: true });
+            } catch (error) {
+                handleApiError(error);
+                errorEl.textContent = error.message || "No se pudo guardar la etiqueta";
+                errorEl.classList.remove("hidden");
+                submitBtn.disabled = false;
+                submitBtn.textContent = isEdit ? "Actualizar" : "Crear";
+            }
+        });
+    };
+
     // ============================================
     // Caregiver Assignment Functions
     // ============================================
@@ -1838,6 +2466,16 @@
     };
 
     const bindEvents = () => {
+        if (el.buttons.createGroundTruth) {
+            el.buttons.createGroundTruth.disabled = true;
+        }
+        if (el.buttons.refreshGroundTruth) {
+            el.buttons.refreshGroundTruth.disabled = true;
+        }
+        if (el.groundTruthPatientFilter) {
+            el.groundTruthPatientFilter.disabled = true;
+        }
+
         el.loginForm?.addEventListener("submit", (event) => {
             event.preventDefault();
             const form = event.currentTarget;
@@ -1906,8 +2544,24 @@
         });
 
         el.buttons.createDevice?.addEventListener("click", () => {
-            // TODO: Open modal form for creating device
-            console.log("Create device clicked");
+            showDeviceModal();
+        });
+
+        el.buttons.createGroundTruth?.addEventListener("click", () => {
+            showGroundTruthModal();
+        });
+
+        el.buttons.refreshGroundTruth?.addEventListener("click", () => {
+            const patientId = state.groundTruthSelectedPatientId || el.groundTruthPatientFilter?.value || "";
+            state.tabCache.delete("ground-truth");
+            loadGroundTruthLabels(patientId, { showLoading: true });
+        });
+
+        el.groundTruthPatientFilter?.addEventListener("change", async (event) => {
+            const patientId = event.target.value || null;
+            state.groundTruthSelectedPatientId = patientId || null;
+            state.tabCache.delete("ground-truth");
+            await loadGroundTruthLabels(patientId, { showLoading: true });
         });
 
         el.buttons.refreshPushDevices?.addEventListener("click", () => {
@@ -1955,6 +2609,8 @@
             try {
                 await Api.admin.deletePatient(state.token, state.selectedOrgId, patientId);
                 // Limpiar caché para forzar recarga de datos
+                state.availablePatients = [];
+                state.tabCache.delete('ground-truth');
                 state.tabCache.delete('patients');
                 await activateTab("patients");
             } catch (error) {
@@ -2045,14 +2701,32 @@
                 handleApiError(error);
             }
         },
+        createGroundTruth: async () => {
+            await showGroundTruthModal();
+        },
+        editGroundTruth: async (patientId, labelId) => {
+            await showGroundTruthModal(patientId, labelId);
+        },
+        deleteGroundTruth: async (patientId, labelId) => {
+            if (!confirm("¿Eliminar esta etiqueta ground truth?")) return;
+            try {
+                await Api.admin.deleteGroundTruthLabel(state.token, state.selectedOrgId, patientId, labelId);
+                showToast('Etiqueta eliminada correctamente', 'success');
+                state.tabCache.delete('ground-truth');
+                const nextPatientId = patientId || state.groundTruthSelectedPatientId;
+                await loadGroundTruthLabels(nextPatientId, { showLoading: true });
+            } catch (error) {
+                handleApiError(error);
+            }
+        },
         editDevice: async (deviceId) => {
-            console.log("Edit device:", deviceId);
-            // TODO: Open modal form with device data
+            await showDeviceModal(deviceId);
         },
         deleteDevice: async (deviceId) => {
             if (!confirm("¿Está seguro de eliminar este dispositivo?")) return;
             try {
                 await Api.admin.deleteDevice(state.token, state.selectedOrgId, deviceId);
+                showToast('Dispositivo eliminado correctamente', 'success');
                 // Limpiar caché para forzar recarga de datos
                 state.tabCache.delete('devices');
                 await activateTab("devices");
@@ -2063,6 +2737,7 @@
         togglePushDevice: async (pushDeviceId, activate) => {
             try {
                 await Api.admin.togglePushDevice(state.token, state.selectedOrgId, pushDeviceId, activate);
+                showToast(`Dispositivo push ${activate ? "activado" : "desactivado"}`, "success");
                 // Limpiar caché para forzar recarga de datos
                 state.tabCache.delete('push-devices');
                 await activateTab("push-devices");
@@ -2074,6 +2749,7 @@
             if (!confirm("¿Está seguro de eliminar este push device?")) return;
             try {
                 await Api.admin.deletePushDevice(state.token, state.selectedOrgId, pushDeviceId);
+                showToast('Push device eliminado correctamente', 'success');
                 // Limpiar caché para forzar recarga de datos
                 state.tabCache.delete('push-devices');
                 await activateTab("push-devices");

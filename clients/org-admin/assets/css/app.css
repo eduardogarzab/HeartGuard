@@ -161,6 +161,34 @@ a {
     box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.1);
 }
 
+.form-select {
+    padding: 0.75rem 1rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid rgba(148, 163, 184, 0.6);
+    font-size: 0.95rem;
+    background-color: #fff;
+    min-width: 220px;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.form-select:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
 .btn {
     display: inline-flex;
     align-items: center;
@@ -412,6 +440,19 @@ a {
     gap: 0.75rem;
 }
 
+.tab-actions--wrap {
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.tab-actions__group {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
 .tab-body {
     min-height: 120px;
 }
@@ -595,6 +636,11 @@ table tbody tr:hover {
     padding: 1rem 1.5rem;
     border-radius: var(--radius-sm);
     border-left: 4px solid var(--primary);
+    z-index: 3000;
+    max-width: 360px;
+    width: max-content;
+    min-width: 240px;
+    word-break: break-word;
 }
 
 .toast[data-type="danger"] {
@@ -607,6 +653,16 @@ table tbody tr:hover {
 
 .toast.hidden {
     display: none;
+}
+
+@media (max-width: 640px) {
+    .toast {
+        left: 16px;
+        right: 16px;
+        bottom: 16px;
+        width: auto;
+        max-width: none;
+    }
 }
 
 .loader {

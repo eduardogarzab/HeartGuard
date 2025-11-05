@@ -252,6 +252,12 @@ def devices(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}/devices/", request.method)
 
 
+@bp.route("/organizations/<org_id>/devices/types", methods=["GET"])
+def device_types(org_id: str):
+    """Catálogo de tipos de dispositivo."""
+    return _proxy_request(f"/admin/organizations/{org_id}/devices/types", "GET")
+
+
 @bp.route("/organizations/<org_id>/devices/<device_id>", methods=["GET", "PATCH", "DELETE"])
 def device_detail(org_id: str, device_id: str):
     """Gestión de un dispositivo específico."""
@@ -265,6 +271,12 @@ def push_devices(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}/push-devices/", "GET")
 
 
+@bp.route("/organizations/<org_id>/push-devices/platforms", methods=["GET"])
+def push_device_platforms(org_id: str):
+    """Catálogo de plataformas de notificaciones push."""
+    return _proxy_request(f"/admin/organizations/{org_id}/push-devices/platforms", "GET")
+
+
 @bp.route("/organizations/<org_id>/push-devices/<push_device_id>", methods=["PATCH", "DELETE"])
 def push_device_detail(org_id: str, push_device_id: str):
     """Gestión de un push device específico."""
@@ -272,6 +284,12 @@ def push_device_detail(org_id: str, push_device_id: str):
 
 
 # Rutas de ground truth
+@bp.route("/organizations/<org_id>/ground-truth/event-types", methods=["GET"])
+def ground_truth_event_types(org_id: str):
+    """Catálogo de tipos de evento para anotaciones ground truth."""
+    return _proxy_request(f"/admin/organizations/{org_id}/ground-truth/event-types", "GET")
+
+
 @bp.route("/organizations/<org_id>/patients/<patient_id>/ground-truth", methods=["GET", "POST"])
 def patient_ground_truth(org_id: str, patient_id: str):
     """Gestión de ground truth labels de un paciente."""

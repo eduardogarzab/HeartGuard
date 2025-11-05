@@ -85,6 +85,7 @@
                     <button class="tab" data-tab="care-teams" type="button">Equipos de cuidado</button>
                     <button class="tab" data-tab="caregivers" type="button">Cuidadores</button>
                     <button class="tab" data-tab="alerts" type="button">Alertas</button>
+                    <button class="tab" data-tab="ground-truth" type="button">Ground Truth</button>
                     <button class="tab" data-tab="devices" type="button">Dispositivos</button>
                     <button class="tab" data-tab="push-devices" type="button">Push Devices</button>
                 </div>
@@ -124,6 +125,21 @@
                             <button id="btnRefreshAlerts" class="btn btn-ghost" type="button">Actualizar</button>
                         </div>
                         <div class="tab-body" id="alertsTable"></div>
+                    </div>
+                    <div id="tab-ground-truth" class="tab-panel">
+                        <div class="tab-actions tab-actions--wrap">
+                            <div class="tab-actions__group">
+                                <label class="sr-only" for="groundTruthPatientFilter">Paciente</label>
+                                <select id="groundTruthPatientFilter" class="form-select">
+                                    <option value="">-- Selecciona un paciente --</option>
+                                </select>
+                            </div>
+                            <div class="tab-actions__group">
+                                <button id="btnCreateGroundTruth" class="btn btn-primary" type="button">Nueva etiqueta</button>
+                                <button id="btnRefreshGroundTruth" class="btn btn-ghost" type="button">Actualizar</button>
+                            </div>
+                        </div>
+                        <div class="tab-body" id="groundTruthTable"></div>
                     </div>
                     <div id="tab-devices" class="tab-panel">
                         <div class="tab-actions">

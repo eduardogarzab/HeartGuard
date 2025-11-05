@@ -174,3 +174,11 @@ def delete_device(org_id: str, device_id: str):
     if not deleted:
         return xml_error_response("delete_failed", "Device could not be deleted", status=500)
     return xml_response({"deleted": True})
+
+
+@bp.get("/types")
+@require_org_admin
+def list_device_types(org_id: str):
+    """Return catalog of available device types."""
+    types = _repo.list_device_types()
+    return xml_response({"device_types": types})

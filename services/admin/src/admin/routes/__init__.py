@@ -14,7 +14,7 @@ from .alerts import bp as alerts_bp
 from .devices import bp as devices_bp
 from .push_devices import bp as push_devices_bp
 from .patient_locations import bp as patient_locations_bp
-from .ground_truth import bp as ground_truth_bp
+from .ground_truth import bp as ground_truth_bp, catalog_bp as ground_truth_catalog_bp
 
 
 def register_blueprints(app: Flask) -> None:
@@ -29,4 +29,5 @@ def register_blueprints(app: Flask) -> None:
     app.register_blueprint(devices_bp)
     app.register_blueprint(push_devices_bp)
     app.register_blueprint(patient_locations_bp)
+    app.register_blueprint(ground_truth_catalog_bp)
     app.register_blueprint(ground_truth_bp)

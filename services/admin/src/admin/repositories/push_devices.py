@@ -32,8 +32,8 @@ class PushDevicesRepository:
             SELECT
                 pd.id,
                 pd.user_id,
-                u.name,
-                u.email,
+                u.name AS user_name,
+                u.email AS user_email,
                 pd.platform_id,
                 pl.code AS platform_code,
                 pl.label AS platform_label,
@@ -55,8 +55,8 @@ class PushDevicesRepository:
             SELECT
                 pd.id,
                 pd.user_id,
-                u.name,
-                u.email,
+                u.name AS user_name,
+                u.email AS user_email,
                 pd.platform_id,
                 pl.code AS platform_code,
                 pl.label AS platform_label,

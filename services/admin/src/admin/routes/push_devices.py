@@ -96,7 +96,10 @@ def update_push_device(org_id: str, device_id: str):
     if not existing:
         return xml_error_response("not_found", "Push device not found", status=404)
     payload = parse_payload(request)
-    active = _coerce_bool(payload.get("active"), default=bool(existing.get("active")))
+    raw_active = payload.get("active")
+    if raw_active is None and "is_active" in payload:
+        raw_active = payload.get("is_active")
+    active = _coerce_bool(raw_active, default=bool(existing.get("active")))
     updated = _repo.update_active(device_id, active)
     if not updated:
         return xml_error_response("update_failed", "Push device could not be updated", status=500)
@@ -115,3 +118,11 @@ def delete_push_device(org_id: str, device_id: str):
     if not deleted:
         return xml_error_response("delete_failed", "Push device could not be deleted", status=500)
     return xml_response({"deleted": True})
+
+
+@bp.get("/platforms")
+@require_org_admin
+def list_push_platforms(org_id: str):
+    """Return the catalog of push notification platforms."""
+    platforms = _repo.list_platforms()
+    return xml_response({"platforms": platforms})
