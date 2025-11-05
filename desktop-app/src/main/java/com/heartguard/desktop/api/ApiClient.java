@@ -302,7 +302,44 @@ public class ApiClient {
             throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
         }
     }
-    
+
+    /**
+     * Obtiene todas las alertas del paciente con paginación
+     * 
+     * @param token Token de acceso del paciente
+     * @param limit Cantidad máxima de alertas a retornar
+     * @return JsonObject con las alertas del paciente
+     * @throws ApiException si hay error en la petición
+     */
+    public JsonObject getPatientAlerts(String token, int limit) throws ApiException {
+        if (token == null || token.isEmpty()) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        String url = gatewayUrl + "/patient/alerts?limit=" + limit + "&offset=0";
+        
+        Request request = new Request.Builder()
+                .url(url)
+                .addHeader("Authorization", "Bearer " + token)
+                .get()
+                .build();
+
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
+                String errorMessage = errorObj.has("message") ? errorObj.get("message").getAsString() : "Error al obtener alertas";
+                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+            }
+
+            return gson.fromJson(responseBody, JsonObject.class);
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el servicio de pacientes: " + e.getMessage(), e);
+        }
+    }
+
     /**
      * Obtiene la última ubicación del paciente
      */
