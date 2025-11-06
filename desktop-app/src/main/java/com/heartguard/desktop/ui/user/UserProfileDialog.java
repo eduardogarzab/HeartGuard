@@ -7,19 +7,39 @@ import com.heartguard.desktop.models.user.UserProfile;
 import com.heartguard.desktop.util.JsonUtils;
 
 import javax.swing.*;
+import javax.swing.border.CompoundBorder;
+import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Consumer;
 
 /**
- * Modal que permite visualizar y editar información básica del perfil.
+ * Modal profesional para visualizar y editar información de perfil.
+ * Bordes redondeados 12px, sombras sutiles, tipografía clara 14-16px.
  */
 public class UserProfileDialog extends JDialog {
+    // Paleta médica profesional
+    private static final Color GLOBAL_BG = new Color(247, 249, 251);
+    private static final Color CARD_BG = Color.WHITE;
+    private static final Color PRIMARY_BLUE = new Color(0, 120, 215);
+    private static final Color TEXT_PRIMARY = new Color(46, 58, 89);
+    private static final Color TEXT_SECONDARY = new Color(96, 103, 112);
+    private static final Color BORDER_LIGHT = new Color(223, 227, 230);
+    private static final Color SUCCESS_GREEN = new Color(40, 167, 69);
+    private static final Color DANGER_RED = new Color(220, 53, 69);
+    
+    private static final Font TITLE_FONT = new Font("Inter", Font.BOLD, 20);
+    private static final Font BODY_FONT = new Font("Inter", Font.PLAIN, 14);
+    private static final Font BODY_BOLD = new Font("Inter", Font.BOLD, 14);
+    private static final Font CAPTION_FONT = new Font("Inter", Font.PLAIN, 13);
+    
     private final ApiClient apiClient;
     private final String token;
     private final Consumer<UserProfile> onProfileUpdated;
 
+    private final JLabel emailLabel = new JLabel("-");
     private final JTextField nameField = new JTextField(28);
     private final JTextField photoField = new JTextField(28);
     private final JCheckBox twoFactorCheck = new JCheckBox("Habilitar segundo factor de autenticación");
@@ -39,66 +59,145 @@ public class UserProfileDialog extends JDialog {
     }
 
     private void initComponents() {
-        setSize(520, 360);
+        setSize(600, 480);
         setLocationRelativeTo(getOwner());
-        setLayout(new BorderLayout(0, 12));
+        setLayout(new BorderLayout(0, 0));
+        getContentPane().setBackground(GLOBAL_BG);
 
+        // Encabezado estilizado
         JPanel header = new JPanel(new BorderLayout());
-        header.setBorder(BorderFactory.createEmptyBorder(16, 20, 0, 20));
-        JLabel title = new JLabel("Mi información de perfil");
-        title.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        header.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1, false),
+            new EmptyBorder(24, 24, 16, 24)
+        ));
+        header.setBackground(CARD_BG);
+        
+        JLabel title = new JLabel("Mi Perfil");
+        title.setFont(TITLE_FONT);
+        title.setForeground(TEXT_PRIMARY);
         header.add(title, BorderLayout.WEST);
         add(header, BorderLayout.NORTH);
 
+        // Formulario con grilla
         JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(BorderFactory.createEmptyBorder(8, 24, 8, 24));
+        formPanel.setBorder(new EmptyBorder(24, 24, 24, 24));
+        formPanel.setBackground(CARD_BG);
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(8, 8, 8, 8);
+        gbc.insets = new Insets(12, 12, 12, 12);
         gbc.anchor = GridBagConstraints.WEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.gridx = 0;
         gbc.gridy = 0;
 
+        // Campo Email (read-only)
+        JLabel emailFieldLabel = new JLabel("Correo electrónico");
+        emailFieldLabel.setFont(BODY_BOLD);
+        emailFieldLabel.setForeground(TEXT_PRIMARY);
+        formPanel.add(emailFieldLabel, gbc);
+
+        gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        emailLabel.setFont(BODY_FONT);
+        emailLabel.setForeground(TEXT_SECONDARY);
+        formPanel.add(emailLabel, gbc);
+
+        // Campo Nombre
+        gbc.gridx = 0;
+        gbc.gridy++;
+        gbc.weightx = 0;
         JLabel nameLabel = new JLabel("Nombre completo");
-        nameLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        nameLabel.setFont(BODY_BOLD);
+        nameLabel.setForeground(TEXT_PRIMARY);
         formPanel.add(nameLabel, gbc);
 
         gbc.gridx = 1;
-        nameField.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        gbc.weightx = 1.0;
+        nameField.setFont(BODY_FONT);
+        nameField.setPreferredSize(new Dimension(300, 36));
+        nameField.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1),
+            new EmptyBorder(8, 12, 8, 12)
+        ));
         formPanel.add(nameField, gbc);
 
         gbc.gridx = 0;
         gbc.gridy++;
-        JLabel photoLabel = new JLabel("Foto (URL opcional)");
-        photoLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        gbc.weightx = 0;
+        JLabel photoLabel = new JLabel("Foto de perfil (URL)");
+        photoLabel.setFont(BODY_BOLD);
+        photoLabel.setForeground(TEXT_PRIMARY);
         formPanel.add(photoLabel, gbc);
 
         gbc.gridx = 1;
+        gbc.weightx = 1.0;
+        photoField.setFont(BODY_FONT);
+        photoField.setPreferredSize(new Dimension(300, 36));
+        photoField.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1),
+            new EmptyBorder(8, 12, 8, 12)
+        ));
         formPanel.add(photoField, gbc);
 
         gbc.gridx = 0;
         gbc.gridy++;
         gbc.gridwidth = 2;
+        twoFactorCheck.setFont(BODY_FONT);
+        twoFactorCheck.setForeground(TEXT_PRIMARY);
+        twoFactorCheck.setBackground(CARD_BG);
         formPanel.add(twoFactorCheck, gbc);
 
-        add(formPanel, BorderLayout.CENTER);
+        JPanel formWrapper = new JPanel(new BorderLayout());
+        formWrapper.setBorder(new EmptyBorder(0, 16, 16, 16));
+        formWrapper.setOpaque(false);
+        formWrapper.add(formPanel, BorderLayout.CENTER);
+        add(formWrapper, BorderLayout.CENTER);
 
+        // Footer con estado y botones
         JPanel footer = new JPanel(new BorderLayout());
-        footer.setBorder(BorderFactory.createEmptyBorder(0, 24, 16, 24));
-        statusLabel.setForeground(new Color(100, 110, 120));
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        footer.add(statusLabel, BorderLayout.NORTH);
+        footer.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1, false),
+            new EmptyBorder(16, 24, 16, 24)
+        ));
+        footer.setBackground(CARD_BG);
+        
+        JPanel statusPanel = new JPanel(new BorderLayout());
+        statusPanel.setOpaque(false);
+        statusLabel.setForeground(TEXT_SECONDARY);
+        statusLabel.setFont(CAPTION_FONT);
+        statusPanel.add(statusLabel, BorderLayout.NORTH);
+        footer.add(statusPanel, BorderLayout.CENTER);
 
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton cancelButton = new JButton("Cerrar");
+        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        buttons.setOpaque(false);
+        
+        JButton cancelButton = new JButton("Cancelar");
+        cancelButton.setFont(BODY_FONT);
+        cancelButton.setForeground(TEXT_PRIMARY);
+        cancelButton.setBackground(CARD_BG);
+        cancelButton.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1),
+            new EmptyBorder(10, 20, 10, 20)
+        ));
+        cancelButton.setFocusPainted(false);
+        cancelButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        cancelButton.addActionListener(e -> dispose());
+        
         JButton saveButton = new JButton("Guardar cambios");
+        saveButton.setFont(BODY_BOLD);
+        saveButton.setForeground(Color.WHITE);
+        saveButton.setBackground(PRIMARY_BLUE);
+        saveButton.setBorder(new CompoundBorder(
+            new LineBorder(PRIMARY_BLUE, 1),
+            new EmptyBorder(10, 20, 10, 20)
+        ));
+        saveButton.setFocusPainted(false);
+        saveButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        saveButton.addActionListener(e -> saveChanges(saveButton));
+        
         buttons.add(cancelButton);
         buttons.add(saveButton);
         footer.add(buttons, BorderLayout.SOUTH);
         add(footer, BorderLayout.SOUTH);
-
-        cancelButton.addActionListener(e -> dispose());
-        saveButton.addActionListener(e -> saveChanges(saveButton));
     }
 
     private void loadProfile() {
@@ -134,17 +233,18 @@ public class UserProfileDialog extends JDialog {
     }
 
     private void fillForm(UserProfile profile) {
+        emailLabel.setText(profile.getEmail() != null ? profile.getEmail() : "-");
         nameField.setText(profile.getName());
         photoField.setText(profile.getProfilePhotoUrl() != null ? profile.getProfilePhotoUrl() : "");
         twoFactorCheck.setSelected(profile.isTwoFactorEnabled());
-        statusLabel.setForeground(new Color(100, 110, 120));
+        statusLabel.setForeground(TEXT_SECONDARY);
         statusLabel.setText("Última actualización: " + (profile.getUpdatedAt() != null ? profile.getUpdatedAt() : "n/d"));
     }
 
     private void saveChanges(JButton saveButton) {
         String name = nameField.getText().trim();
         if (name.isEmpty()) {
-            statusLabel.setForeground(Color.RED.darker());
+            statusLabel.setForeground(DANGER_RED);
             statusLabel.setText("El nombre no puede estar vacío");
             return;
         }
@@ -158,14 +258,14 @@ public class UserProfileDialog extends JDialog {
         updates.put("two_factor_enabled", twoFactorCheck.isSelected());
 
         if (updates.isEmpty()) {
-            statusLabel.setForeground(new Color(76, 175, 80));
+            statusLabel.setForeground(SUCCESS_GREEN);
             statusLabel.setText("No hay cambios para guardar");
             return;
         }
 
         saveButton.setEnabled(false);
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
-        statusLabel.setForeground(new Color(33, 150, 243));
+        statusLabel.setForeground(PRIMARY_BLUE);
         statusLabel.setText("Guardando cambios...");
 
         SwingWorker<UserProfile, Void> worker = new SwingWorker<>() {
@@ -183,15 +283,15 @@ public class UserProfileDialog extends JDialog {
                 try {
                     profile = get();
                     fillForm(profile);
-                    statusLabel.setForeground(new Color(76, 175, 80));
+                    statusLabel.setForeground(SUCCESS_GREEN);
                     statusLabel.setText("Perfil actualizado correctamente");
                     if (onProfileUpdated != null) {
                         onProfileUpdated.accept(profile);
                     }
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();
-                    statusLabel.setForeground(Color.RED.darker());
-                    statusLabel.setText(cause instanceof ApiException ? cause.getMessage() : ex.getMessage());
+                    statusLabel.setForeground(DANGER_RED);
+                    statusLabel.setText((cause instanceof ApiException ? cause.getMessage() : ex.getMessage()));
                 }
             }
         };

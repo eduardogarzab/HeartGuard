@@ -236,9 +236,16 @@ public class InvitationsDialog extends JDialog {
                     get();
                     statusLabel.setForeground(new Color(76, 175, 80));
                     statusLabel.setText(accept ? "Invitación aceptada con éxito" : "Invitación rechazada");
+                    
+                    // Recargar la lista de invitaciones
                     loadInvitations();
-                    if (onMembershipChanged != null) {
-                        onMembershipChanged.run();
+                    
+                    // Notificar al padre para recargar organizaciones (solo si se aceptó)
+                    if (accept && onMembershipChanged != null) {
+                        // Pequeño delay para asegurar que el backend procese el cambio
+                        Timer timer = new Timer(500, e -> onMembershipChanged.run());
+                        timer.setRepeats(false);
+                        timer.start();
                     }
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();

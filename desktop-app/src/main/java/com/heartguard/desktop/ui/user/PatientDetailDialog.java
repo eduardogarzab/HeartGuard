@@ -7,15 +7,32 @@ import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
 
 import javax.swing.*;
+import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
+import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Ventana modal con pestañas para mostrar detalles de un paciente desde perspectiva organizacional.
+ * Ventana modal con diseño profesional para mostrar detalles clínicos de un paciente.
+ * Bordes redondeados 12px, sombra difusa, paleta médica, tipografía 14-16px.
  */
 public class PatientDetailDialog extends JDialog {
+    // Paleta médica profesional
+    private static final Color GLOBAL_BG = new Color(247, 249, 251);
+    private static final Color CARD_BG = Color.WHITE;
+    private static final Color PRIMARY_BLUE = new Color(0, 120, 215);
+    private static final Color TEXT_PRIMARY = new Color(46, 58, 89);
+    private static final Color TEXT_SECONDARY = new Color(96, 103, 112);
+    private static final Color BORDER_LIGHT = new Color(223, 227, 230);
+    private static final Color SUCCESS_GREEN = new Color(40, 167, 69);
+    private static final Color DANGER_RED = new Color(220, 53, 69);
+    
+    private static final Font TITLE_FONT = new Font("Inter", Font.BOLD, 20);
+    private static final Font BODY_FONT = new Font("Inter", Font.PLAIN, 14);
+    private static final Font CAPTION_FONT = new Font("Inter", Font.PLAIN, 13);
+    
     private final ApiClient apiClient;
     private final String token;
     private final String orgId;
@@ -39,56 +56,103 @@ public class PatientDetailDialog extends JDialog {
     }
 
     private void initComponents() {
-        setSize(680, 520);
+        setSize(820, 680);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout());
+        getContentPane().setBackground(GLOBAL_BG);
 
+        // Encabezado con título y separador
         JPanel header = new JPanel(new BorderLayout());
-        header.setBorder(new EmptyBorder(18, 24, 0, 24));
-        JLabel title = new JLabel("Resumen clínico de " + patientName);
-        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        header.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1, false),
+            new EmptyBorder(24, 24, 16, 24)
+        ));
+        header.setBackground(CARD_BG);
+        
+        JLabel title = new JLabel("Resumen Clínico");
+        title.setFont(TITLE_FONT);
+        title.setForeground(TEXT_PRIMARY);
         header.add(title, BorderLayout.WEST);
+        
+        JLabel patientNameLabel = new JLabel(patientName);
+        patientNameLabel.setFont(new Font("Inter", Font.BOLD, 16));
+        patientNameLabel.setForeground(PRIMARY_BLUE);
+        header.add(patientNameLabel, BorderLayout.EAST);
+        
         add(header, BorderLayout.NORTH);
 
+        // Tabs estilizados
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        tabs.setFont(new Font("Inter", Font.PLAIN, 15));
+        tabs.setBackground(new Color(240, 242, 245));
+        tabs.setForeground(TEXT_PRIMARY);
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
         infoArea.setWrapStyleWord(true);
-        infoArea.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        infoArea.setMargin(new Insets(12, 12, 12, 12));
+        infoArea.setFont(BODY_FONT);
+        infoArea.setMargin(new Insets(16, 16, 16, 16));
+        infoArea.setBackground(CARD_BG);
+        infoArea.setBorder(new EmptyBorder(8, 8, 8, 8));
         JScrollPane infoScroll = new JScrollPane(infoArea);
-        infoScroll.setBorder(new EmptyBorder(0, 0, 0, 0));
-        tabs.addTab("Métricas", infoScroll);
+        infoScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
+        tabs.addTab("MÉTRICAS", infoScroll);
 
         JList<String> alertsList = new JList<>(alertsModel);
-        alertsList.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        alertsList.setFont(BODY_FONT);
+        alertsList.setBackground(CARD_BG);
+        alertsList.setBorder(new EmptyBorder(8, 8, 8, 8));
+        alertsList.setFixedCellHeight(50);
         JScrollPane alertsScroll = new JScrollPane(alertsList);
-        alertsScroll.setBorder(new EmptyBorder(0, 0, 0, 0));
-        tabs.addTab("Alertas", alertsScroll);
+        alertsScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
+        alertsScroll.setPreferredSize(new Dimension(0, 400));
+        tabs.addTab("ALERTAS", alertsScroll);
 
         JList<String> notesList = new JList<>(notesModel);
-        notesList.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        notesList.setFont(BODY_FONT);
+        notesList.setBackground(CARD_BG);
+        notesList.setBorder(new EmptyBorder(8, 8, 8, 8));
         JScrollPane notesScroll = new JScrollPane(notesList);
-        notesScroll.setBorder(new EmptyBorder(0, 0, 0, 0));
-        tabs.addTab("Notas", notesScroll);
+        notesScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
+        tabs.addTab("NOTAS", notesScroll);
 
-        add(tabs, BorderLayout.CENTER);
+        JPanel tabsWrapper = new JPanel(new BorderLayout());
+        tabsWrapper.setBorder(new EmptyBorder(0, 16, 16, 16));
+        tabsWrapper.setOpaque(false);
+        tabsWrapper.add(tabs, BorderLayout.CENTER);
+        add(tabsWrapper, BorderLayout.CENTER);
 
+        // Footer con estado y botón cerrar
         JPanel footer = new JPanel(new BorderLayout());
-        footer.setBorder(new EmptyBorder(8, 24, 16, 24));
-        statusLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-        statusLabel.setForeground(new Color(120, 130, 140));
+        footer.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1, false),
+            new EmptyBorder(16, 24, 16, 24)
+        ));
+        footer.setBackground(CARD_BG);
+        
+        statusLabel.setFont(CAPTION_FONT);
+        statusLabel.setForeground(TEXT_SECONDARY);
         footer.add(statusLabel, BorderLayout.WEST);
+        
         JButton closeButton = new JButton("Cerrar");
+        closeButton.setFont(new Font("Inter", Font.BOLD, 14));
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setBackground(PRIMARY_BLUE);
+        closeButton.setBorder(new CompoundBorder(
+            new LineBorder(PRIMARY_BLUE, 1, true),
+            new EmptyBorder(10, 24, 10, 24)
+        ));
+        closeButton.setFocusPainted(false);
+        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         closeButton.addActionListener(e -> dispose());
         footer.add(closeButton, BorderLayout.EAST);
+        
         add(footer, BorderLayout.SOUTH);
     }
 
     private void loadData() {
         statusLabel.setText("Recuperando información clínica...");
+        statusLabel.setForeground(TEXT_SECONDARY);
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
 
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
@@ -114,12 +178,12 @@ public class PatientDetailDialog extends JDialog {
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     get();
-                    statusLabel.setForeground(new Color(76, 175, 80));
+                    statusLabel.setForeground(SUCCESS_GREEN);
                     statusLabel.setText("Información actualizada");
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();
-                    statusLabel.setForeground(Color.RED.darker());
-                    statusLabel.setText(cause != null ? cause.getMessage() : ex.getMessage());
+                    statusLabel.setForeground(DANGER_RED);
+                    statusLabel.setText((cause != null ? cause.getMessage() : ex.getMessage()));
                 }
             }
         };
@@ -160,16 +224,28 @@ public class PatientDetailDialog extends JDialog {
             for (JsonElement element : alerts) {
                 if (!element.isJsonObject()) continue;
                 JsonObject alert = element.getAsJsonObject();
-                JsonObject event = alert.has("event") && alert.get("event").isJsonObject()
-                        ? alert.getAsJsonObject("event")
+                
+                // Extraer campos correctos: type, level, status, description
+                JsonObject typeObj = alert.has("type") && alert.get("type").isJsonObject()
+                        ? alert.getAsJsonObject("type")
                         : null;
                 JsonObject levelObj = alert.has("level") && alert.get("level").isJsonObject()
                         ? alert.getAsJsonObject("level")
                         : null;
-                String label = event != null ? safe(event.get("label")) : safe(alert.get("label"));
+                JsonObject statusObj = alert.has("status") && alert.get("status").isJsonObject()
+                        ? alert.getAsJsonObject("status")
+                        : null;
+                
+                String typeLabel = typeObj != null ? safe(typeObj.get("label")) : "-";
+                String description = safe(alert.get("description"));
+                String levelLabel = levelObj != null ? safe(levelObj.get("label")) : "-";
+                String statusLabel = statusObj != null ? safe(statusObj.get("label")) : "-";
                 String created = safe(alert.get("created_at"));
-                String level = levelObj != null ? safe(levelObj.get("label")) : "-";
-                alertsModel.addElement(String.format("[%s] %s · %s", created, label, level));
+                
+                // Formato mejorado: [fecha] Tipo: descripción | Nivel: X | Estado: Y
+                String displayText = String.format("[%s] %s: %s | Nivel: %s | Estado: %s", 
+                    created, typeLabel, description, levelLabel, statusLabel);
+                alertsModel.addElement(displayText);
             }
         });
     }

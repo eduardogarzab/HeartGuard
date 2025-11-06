@@ -756,7 +756,9 @@ public class LoginFrame extends JFrame {
     }
 
     private void openUserDashboard(LoginResponse loginResponse) {
-        UserDashboardFrame frame = new UserDashboardFrame(apiClient, loginResponse);
+        // Crear un nuevo ApiClient para cada sesión para evitar contaminación de datos
+        ApiClient newApiClient = new ApiClient();
+        UserDashboardFrame frame = new UserDashboardFrame(newApiClient, loginResponse);
         frame.setVisible(true);
         this.dispose();
     }

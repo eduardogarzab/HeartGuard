@@ -3,6 +3,7 @@ package com.heartguard.desktop.models.user;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.google.gson.annotations.SerializedName;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,11 +12,22 @@ import java.util.List;
  * Representa la membresía de un usuario en una organización.
  */
 public class OrgMembership {
+    @SerializedName("org_id")
     private String orgId;
+    
+    @SerializedName("org_code")
     private String orgCode;
+    
+    @SerializedName("org_name")
     private String orgName;
+    
+    @SerializedName("role_code")
     private String roleCode;
+    
+    @SerializedName("role_label")
     private String roleLabel;
+    
+    @SerializedName("joined_at")
     private String joinedAt;
 
     public static List<OrgMembership> listFrom(JsonArray array) {

@@ -3,6 +3,7 @@ package com.heartguard.desktop.api;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.models.LoginResponse;
@@ -506,10 +507,28 @@ public class ApiClient {
 
         if (errorPayload != null) {
             if (errorPayload.has("error") && !errorPayload.get("error").isJsonNull()) {
-                errorCode = errorPayload.get("error").getAsString();
+                JsonElement errorElement = errorPayload.get("error");
+                // El campo "error" puede ser String o JsonObject
+                if (errorElement.isJsonPrimitive()) {
+                    errorCode = errorElement.getAsString();
+                } else if (errorElement.isJsonObject()) {
+                    // Si es objeto, intentar extraer un código o convertir a string
+                    JsonObject errorObj = errorElement.getAsJsonObject();
+                    if (errorObj.has("code")) {
+                        errorCode = errorObj.get("code").getAsString();
+                    } else {
+                        errorCode = errorObj.toString();
+                    }
+                }
             }
             if (errorPayload.has("message") && !errorPayload.get("message").isJsonNull()) {
-                errorMessage = errorPayload.get("message").getAsString();
+                JsonElement messageElement = errorPayload.get("message");
+                // El campo "message" también puede ser String o JsonObject
+                if (messageElement.isJsonPrimitive()) {
+                    errorMessage = messageElement.getAsString();
+                } else if (messageElement.isJsonObject()) {
+                    errorMessage = messageElement.toString();
+                }
             }
         }
 
@@ -523,6 +542,7 @@ public class ApiClient {
     }
 
     public JsonArray getCurrentUserMemberships(String token) throws ApiException {
+        System.out.println("[DEBUG] ApiClient.getCurrentUserMemberships() - Llamando endpoint /users/me/org-memberships");
         JsonObject response = executeGatewayGet(
                 "/users/me/org-memberships",
                 null,
@@ -530,9 +550,38 @@ public class ApiClient {
                 true,
                 "Error al obtener organizaciones"
         );
-        return response.has("data") && response.get("data").isJsonArray()
-                ? response.getAsJsonArray("data")
-                : new JsonArray();
+        System.out.println("[DEBUG] Respuesta completa del endpoint: " + response.toString());
+        
+        if (response.has("data")) {
+            System.out.println("[DEBUG] Campo 'data' encontrado");
+            
+            // La estructura es: {"data": {"memberships": [...]}}
+            if (response.get("data").isJsonObject()) {
+                JsonObject dataObj = response.getAsJsonObject("data");
+                System.out.println("[DEBUG] 'data' es un JsonObject");
+                
+                if (dataObj.has("memberships") && dataObj.get("memberships").isJsonArray()) {
+                    JsonArray membershipsArray = dataObj.getAsJsonArray("memberships");
+                    System.out.println("[DEBUG] Campo 'memberships' encontrado con " + membershipsArray.size() + " elementos");
+                    return membershipsArray;
+                } else {
+                    System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'memberships' o no es un array");
+                    System.out.println("[DEBUG] Campos disponibles en 'data': " + dataObj.keySet());
+                }
+            } else if (response.get("data").isJsonArray()) {
+                // Por si acaso el formato cambia en el futuro
+                JsonArray dataArray = response.getAsJsonArray("data");
+                System.out.println("[DEBUG] 'data' es un JsonArray con " + dataArray.size() + " elementos (formato alternativo)");
+                return dataArray;
+            } else {
+                System.out.println("[DEBUG] ADVERTENCIA: 'data' NO es ni JsonObject ni JsonArray, es: " + response.get("data").getClass().getSimpleName());
+            }
+        } else {
+            System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'data' en la respuesta");
+            System.out.println("[DEBUG] Campos disponibles: " + response.keySet());
+        }
+        
+        return new JsonArray();
     }
 
     public JsonArray getPendingInvitations(String token) throws ApiException {
@@ -543,9 +592,14 @@ public class ApiClient {
                 true,
                 "Error al obtener invitaciones"
         );
-        return response.has("data") && response.get("data").isJsonArray()
-                ? response.getAsJsonArray("data")
-                : new JsonArray();
+        // El backend devuelve: { data: { invitations: [...] } }
+        if (response.has("data") && response.get("data").isJsonObject()) {
+            JsonObject data = response.getAsJsonObject("data");
+            if (data.has("invitations") && data.get("invitations").isJsonArray()) {
+                return data.getAsJsonArray("invitations");
+            }
+        }
+        return new JsonArray();
     }
 
     public JsonObject updateCurrentUserProfile(String token, Map<String, Object> updates) throws ApiException {

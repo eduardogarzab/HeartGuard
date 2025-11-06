@@ -9,14 +9,18 @@ import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
 
 import javax.swing.*;
+import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 
 /**
- * Panel que encapsula un mapa Leaflet con clustering para ubicaciones de pacientes y equipos.
+ * Panel que encapsula un mapa Leaflet con clustering para ubicaciones.
+ * Altura máxima 320px, borde gris claro #dfe3e6, redimensionable con WebView en ScrollPane.
  */
 public class UserMapPanel extends JPanel {
+    private static final Color BORDER_MAP = new Color(223, 227, 230);
+    
     private final JFXPanel fxPanel;
     private WebEngine webEngine;
     private boolean mapReady = false;
@@ -26,6 +30,8 @@ public class UserMapPanel extends JPanel {
     public UserMapPanel() {
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
+        setBorder(new LineBorder(BORDER_MAP, 1));
+        
         fxPanel = new JFXPanel();
         add(fxPanel, BorderLayout.CENTER);
 
