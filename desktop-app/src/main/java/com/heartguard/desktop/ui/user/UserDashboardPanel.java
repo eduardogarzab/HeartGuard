@@ -15,10 +15,12 @@ import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -493,92 +495,55 @@ public class UserDashboardPanel extends JPanel {
         if (currentOrg == null) {
             return;
         }
-        SwingWorker<DashboardBundle, Void> worker = new SwingWorker<>() {
-            @Override
-            protected DashboardBundle doInBackground() throws Exception {
-                DashboardBundle bundle = new DashboardBundle();
-                bundle.dashboard = apiClient.getOrganizationDashboard(token, currentOrg.getOrgId());
-                bundle.metrics = apiClient.getOrganizationMetrics(token, currentOrg.getOrgId());
-                bundle.careTeams = apiClient.getOrganizationCareTeams(token, currentOrg.getOrgId());
-                
-                // Intentar cargar pacientes de equipos - puede fallar con 403 si el usuario no está en ningún equipo
-                try {
-                    bundle.careTeamPatients = apiClient.getOrganizationCareTeamPatients(token, currentOrg.getOrgId());
-                } catch (ApiException e) {
-                    if (e.getStatusCode() == 403) {
-                        // Usuario no está en ningún equipo, usar respuesta vacía
-                        System.out.println("[INFO] Usuario no pertenece a ningún equipo de cuidado en esta organización");
-                        bundle.careTeamPatients = createEmptyResponse();
-                    } else {
-                        throw e;
-                    }
-                }
-                
-                bundle.caregiverPatients = apiClient.getCaregiverPatients(token);
+        String orgId = currentOrg.getOrgId();
 
-                // DEBUG: Logging detallado para diagnosticar datos
-                System.out.println("\n=== DEBUG: DATOS CARGADOS PARA ORG: " + currentOrg.getOrgName() + " (ID: " + currentOrg.getOrgId() + ") ===");
-                try {
-                    JsonObject careTeamData = getData(bundle.careTeamPatients);
-                    JsonArray careTeams = careTeamData != null && careTeamData.has("care_teams") 
-                        ? careTeamData.getAsJsonArray("care_teams") : new JsonArray();
-                    System.out.println("1. Care Team Patients:");
-                    System.out.println("   - Total equipos devueltos: " + careTeams.size());
-                    for (int i = 0; i < careTeams.size(); i++) {
-                        JsonObject team = careTeams.get(i).getAsJsonObject();
-                        String teamName = team.has("name") ? team.get("name").getAsString() : "Sin nombre";
-                        JsonArray patients = team.has("patients") ? team.getAsJsonArray("patients") : new JsonArray();
-                        System.out.println("   - Equipo " + (i+1) + ": " + teamName + " (" + patients.size() + " pacientes)");
-                    }
-                    
-                    JsonObject caregiverData = getData(bundle.caregiverPatients);
-                    JsonArray caregiverPts = caregiverData != null && caregiverData.has("patients")
-                        ? caregiverData.getAsJsonArray("patients") : new JsonArray();
-                    System.out.println("2. Caregiver Patients:");
-                    System.out.println("   - Total pacientes como cuidador: " + caregiverPts.size());
-                    for (int i = 0; i < caregiverPts.size(); i++) {
-                        JsonObject patient = caregiverPts.get(i).getAsJsonObject();
-                        String patientName = patient.has("name") ? patient.get("name").getAsString() : "Sin nombre";
-                        System.out.println("   - Paciente " + (i+1) + ": " + patientName);
-                    }
-                    System.out.println("=== FIN DEBUG ===\n");
-                } catch (Exception e) {
-                    System.out.println("ERROR en logging debug: " + e.getMessage());
-                    e.printStackTrace();
-                }
+        CompletableFuture<JsonObject> dashboardFuture = apiClient.getOrganizationDashboardAsync(token, orgId);
+        CompletableFuture<JsonObject> metricsFuture = apiClient.getOrganizationMetricsAsync(token, orgId);
+        CompletableFuture<JsonObject> careTeamsFuture = apiClient.getOrganizationCareTeamsAsync(token, orgId);
+        CompletableFuture<JsonObject> careTeamPatientsFuture = apiClient.getOrganizationCareTeamPatientsAsync(token, orgId)
+                .exceptionally(this::handleCareTeamPatientsFallback);
+        CompletableFuture<JsonObject> caregiverPatientsFuture = apiClient.getCaregiverPatientsAsync(token);
 
-                Map<String, String> mapParams = new HashMap<>();
-                mapParams.put("org_id", currentOrg.getOrgId());
-                bundle.careTeamLocations = apiClient.getCareTeamLocations(token, mapParams);
+        Map<String, String> locationParams = Map.of("org_id", orgId);
+        CompletableFuture<JsonObject> careTeamLocationsFuture = apiClient.getCareTeamLocationsAsync(token, locationParams);
+        CompletableFuture<JsonObject> caregiverLocationsFuture = apiClient.getCaregiverPatientLocationsAsync(token, locationParams);
 
-                Map<String, String> caregiverParams = new HashMap<>();
-                caregiverParams.put("org_id", currentOrg.getOrgId());
-                bundle.caregiverLocations = apiClient.getCaregiverPatientLocations(token, caregiverParams);
-                return bundle;
-            }
+        CompletableFuture<DashboardBundle> bundleFuture = CompletableFuture.allOf(
+                        dashboardFuture,
+                        metricsFuture,
+                        careTeamsFuture,
+                        careTeamPatientsFuture,
+                        caregiverPatientsFuture,
+                        careTeamLocationsFuture,
+                        caregiverLocationsFuture
+                )
+                .thenApplyAsync(ignored -> {
+                    DashboardBundle bundle = new DashboardBundle();
+                    bundle.dashboard = dashboardFuture.join();
+                    bundle.metrics = metricsFuture.join();
+                    bundle.careTeams = careTeamsFuture.join();
+                    bundle.careTeamPatients = careTeamPatientsFuture.join();
+                    bundle.caregiverPatients = caregiverPatientsFuture.join();
+                    bundle.careTeamLocations = careTeamLocationsFuture.join();
+                    bundle.caregiverLocations = caregiverLocationsFuture.join();
+                    return bundle;
+                });
 
-            @Override
-            protected void done() {
-                try {
-                    DashboardBundle bundle = get();
-                    renderDashboard(bundle);
-                } catch (Exception ex) {
-                    System.err.println("ERROR en done(): " + ex.getClass().getName() + " - " + ex.getMessage());
-                    ex.printStackTrace();
-                    if (ex.getCause() != null) {
-                        System.err.println("CAUSA: " + ex.getCause().getClass().getName() + " - " + ex.getCause().getMessage());
-                        ex.getCause().printStackTrace();
-                    }
-                    
-                    if (ex.getCause() instanceof ApiException apiException) {
-                        apiErrorHandler.accept(apiException);
-                    } else {
-                        snackbar.accept(ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName(), false);
-                    }
-                }
-            }
-        };
-        worker.execute();
+        bundleFuture.thenAccept(bundle ->
+                SwingUtilities.invokeLater(() -> renderDashboard(bundle))
+        ).exceptionally(ex -> {
+            handleAsyncException(ex, "Error al actualizar dashboard");
+            return null;
+        });
+    }
+
+    private JsonObject handleCareTeamPatientsFallback(Throwable throwable) {
+        Throwable cause = unwrapCompletionException(throwable);
+        if (cause instanceof ApiException apiException && apiException.getStatusCode() == 403) {
+            System.out.println("[INFO] Usuario no pertenece a ningún equipo de cuidado en esta organización");
+            return createEmptyResponse();
+        }
+        throw new CompletionException(cause);
     }
 
     private void renderDashboard(DashboardBundle bundle) {
@@ -1050,154 +1015,144 @@ public class UserDashboardPanel extends JPanel {
     }
 
     private void reloadDevices(TeamOption option) {
-        SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
-            @Override
-            protected JsonArray doInBackground() throws Exception {
-                JsonObject response = apiClient.getCareTeamDevices(token, currentOrg.getOrgId(), option.id);
-                JsonArray devices = getArray(getData(response), "devices");
-                devicesCache.put(option.id, devices);
-                JsonObject disconnectedResponse = apiClient.getCareTeamDisconnectedDevices(token, currentOrg.getOrgId(), option.id);
-                JsonArray disconnected = getArray(getData(disconnectedResponse), "devices");
-                disconnectedDevicesCache.put(option.id, disconnected);
-                return devices;
-            }
+        if (currentOrg == null) {
+            return;
+        }
 
-            @Override
-            protected void done() {
-                try {
-                    JsonArray devices = get();
-                    fillDevicePanel(activeDevicesPanel, devices, true, option);
-                    fillDevicePanel(disconnectedDevicesPanel, disconnectedDevicesCache.get(option.id), false, option);
-                } catch (Exception ex) {
-                    if (ex.getCause() instanceof ApiException apiException) {
-                        apiErrorHandler.accept(apiException);
-                    }
-                }
-            }
-        };
-        worker.execute();
+        CompletableFuture<JsonObject> devicesFuture = apiClient.getCareTeamDevicesAsync(token, currentOrg.getOrgId(), option.id);
+        CompletableFuture<JsonObject> disconnectedFuture = apiClient.getCareTeamDisconnectedDevicesAsync(token, currentOrg.getOrgId(), option.id);
+
+        CompletableFuture.allOf(devicesFuture, disconnectedFuture)
+                .thenApplyAsync(ignored -> {
+                    JsonArray devices = getArray(getData(devicesFuture.join()), "devices");
+                    JsonArray disconnected = getArray(getData(disconnectedFuture.join()), "devices");
+                    devicesCache.put(option.id, devices);
+                    disconnectedDevicesCache.put(option.id, disconnected);
+                    return new DeviceReloadResult(devices, disconnected);
+                })
+                .thenAccept(result -> SwingUtilities.invokeLater(() -> {
+                    fillDevicePanel(activeDevicesPanel, result.activeDevices, true, option);
+                    fillDevicePanel(disconnectedDevicesPanel, result.disconnectedDevices, false, option);
+                }))
+                .exceptionally(ex -> {
+                    handleAsyncException(ex, "Error al recargar dispositivos");
+                    return null;
+                });
     }
 
     private void openDeviceStreams(TeamOption option, JsonObject device) {
-        SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
-            @Override
-            protected JsonArray doInBackground() throws Exception {
-                JsonObject response = apiClient.getCareTeamDeviceStreams(token, currentOrg.getOrgId(), option.id, device.get("id").getAsString());
-                return getArray(getData(response), "streams");
-            }
+        if (currentOrg == null) {
+            return;
+        }
 
-            @Override
-            protected void done() {
-                try {
-                    JsonArray streams = get();
-                    String deviceSerial = device.get("serial").getAsString();
-                    
-                    JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(UserDashboardPanel.this), "Streams · " + deviceSerial, true);
-                    dialog.setSize(600, 450);
-                    dialog.setLocationRelativeTo(UserDashboardPanel.this);
-                    dialog.setLayout(new BorderLayout());
-                    dialog.getContentPane().setBackground(BACKGROUND_COLOR);
-                    
-                    // Encabezado
-                    JPanel header = new JPanel(new BorderLayout());
-                    header.setBackground(Color.WHITE);
-                    header.setBorder(new EmptyBorder(20, 24, 16, 24));
-                    
-                    JLabel title = new JLabel("Historial de Streams");
-                    title.setFont(new Font("Segoe UI", Font.BOLD, 18));
-                    title.setForeground(TEXT_PRIMARY_COLOR);
-                    
-                    JLabel subtitle = new JLabel("Dispositivo: " + deviceSerial);
-                    subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-                    subtitle.setForeground(TEXT_SECONDARY_COLOR);
-                    
-                    JPanel headerText = new JPanel();
-                    headerText.setOpaque(false);
-                    headerText.setLayout(new BoxLayout(headerText, BoxLayout.Y_AXIS));
-                    headerText.add(title);
-                    headerText.add(Box.createVerticalStrut(4));
-                    headerText.add(subtitle);
-                    
-                    header.add(headerText, BorderLayout.WEST);
-                    dialog.add(header, BorderLayout.NORTH);
-                    
-                    // Panel de streams
-                    JPanel streamsPanel = new JPanel();
-                    streamsPanel.setLayout(new BoxLayout(streamsPanel, BoxLayout.Y_AXIS));
-                    streamsPanel.setOpaque(false);
-                    streamsPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
-                    
-                    if (streams == null || streams.size() == 0) {
-                        JLabel empty = new JLabel("No hay streams registrados para este dispositivo");
-                        empty.setFont(new Font("Segoe UI", Font.PLAIN, 14));
-                        empty.setForeground(TEXT_SECONDARY_COLOR);
-                        empty.setBorder(new EmptyBorder(40, 20, 40, 20));
-                        streamsPanel.add(empty);
-                    } else {
-                        for (JsonElement element : streams) {
-                            if (!element.isJsonObject()) continue;
-                            JsonObject stream = element.getAsJsonObject();
-                            
-                            JPanel streamCard = new JPanel(new BorderLayout(10, 6));
-                            streamCard.setBackground(Color.WHITE);
-                            streamCard.setBorder(BorderFactory.createCompoundBorder(
-                                BorderFactory.createLineBorder(new Color(229, 234, 243)),
-                                new EmptyBorder(12, 14, 12, 14)
-                            ));
-                            
-                            JLabel startLabel = new JLabel("Inicio: " + safe(stream, "started_at"));
-                            startLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-                            startLabel.setForeground(TEXT_PRIMARY_COLOR);
-                            
-                            JLabel endLabel = new JLabel("Fin: " + safe(stream, "ended_at"));
-                            endLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-                            endLabel.setForeground(TEXT_SECONDARY_COLOR);
-                            
-                            JPanel info = new JPanel();
-                            info.setOpaque(false);
-                            info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
-                            info.add(startLabel);
-                            info.add(Box.createVerticalStrut(4));
-                            info.add(endLabel);
-                            
-                            streamCard.add(info, BorderLayout.CENTER);
-                            streamsPanel.add(streamCard);
-                            streamsPanel.add(Box.createVerticalStrut(8));
-                        }
-                    }
-                    
-                    JScrollPane scrollPane = new JScrollPane(streamsPanel);
-                    configureStyledScroll(scrollPane);
-                    scrollPane.setBorder(null);
-                    dialog.add(scrollPane, BorderLayout.CENTER);
-                    
-                    // Footer con botón cerrar
-                    JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-                    footer.setBackground(Color.WHITE);
-                    footer.setBorder(new EmptyBorder(12, 24, 16, 24));
-                    
-                    JButton closeButton = new JButton("Cerrar");
-                    closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
-                    closeButton.setForeground(Color.WHITE);
-                    closeButton.setBackground(PRIMARY_COLOR);
-                    closeButton.setBorderPainted(false);
-                    closeButton.setFocusPainted(false);
-                    closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-                    closeButton.setPreferredSize(new Dimension(100, 36));
-                    closeButton.addActionListener(e -> dialog.dispose());
-                    
-                    footer.add(closeButton);
-                    dialog.add(footer, BorderLayout.SOUTH);
-                    
-                    dialog.setVisible(true);
-                } catch (Exception ex) {
-                    if (ex.getCause() instanceof ApiException apiException) {
-                        apiErrorHandler.accept(apiException);
-                    }
-                }
+        String deviceId = device.get("id").getAsString();
+        apiClient.getCareTeamDeviceStreamsAsync(token, currentOrg.getOrgId(), option.id, deviceId)
+                .thenApplyAsync(response -> getArray(getData(response), "streams"))
+                .thenAccept(streams -> SwingUtilities.invokeLater(() -> showStreamsDialog(device, streams)))
+                .exceptionally(ex -> {
+                    handleAsyncException(ex, "Error al cargar streams");
+                    return null;
+                });
+    }
+
+    private void showStreamsDialog(JsonObject device, JsonArray streams) {
+        String deviceSerial = device.get("serial").getAsString();
+
+        JDialog dialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(UserDashboardPanel.this), "Streams · " + deviceSerial, true);
+        dialog.setSize(600, 450);
+        dialog.setLocationRelativeTo(UserDashboardPanel.this);
+        dialog.setLayout(new BorderLayout());
+        dialog.getContentPane().setBackground(BACKGROUND_COLOR);
+
+        JPanel header = new JPanel(new BorderLayout());
+        header.setBackground(Color.WHITE);
+        header.setBorder(new EmptyBorder(20, 24, 16, 24));
+
+        JLabel title = new JLabel("Historial de Streams");
+        title.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        title.setForeground(TEXT_PRIMARY_COLOR);
+
+        JLabel subtitle = new JLabel("Dispositivo: " + deviceSerial);
+        subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        subtitle.setForeground(TEXT_SECONDARY_COLOR);
+
+        JPanel headerText = new JPanel();
+        headerText.setOpaque(false);
+        headerText.setLayout(new BoxLayout(headerText, BoxLayout.Y_AXIS));
+        headerText.add(title);
+        headerText.add(Box.createVerticalStrut(4));
+        headerText.add(subtitle);
+
+        header.add(headerText, BorderLayout.WEST);
+        dialog.add(header, BorderLayout.NORTH);
+
+        JPanel streamsPanel = new JPanel();
+        streamsPanel.setLayout(new BoxLayout(streamsPanel, BoxLayout.Y_AXIS));
+        streamsPanel.setOpaque(false);
+        streamsPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
+
+        if (streams == null || streams.size() == 0) {
+            JLabel empty = new JLabel("No hay streams registrados para este dispositivo");
+            empty.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            empty.setForeground(TEXT_SECONDARY_COLOR);
+            empty.setBorder(new EmptyBorder(40, 20, 40, 20));
+            streamsPanel.add(empty);
+        } else {
+            for (JsonElement element : streams) {
+                if (!element.isJsonObject()) continue;
+                JsonObject stream = element.getAsJsonObject();
+
+                JPanel streamCard = new JPanel(new BorderLayout(10, 6));
+                streamCard.setBackground(Color.WHITE);
+                streamCard.setBorder(BorderFactory.createCompoundBorder(
+                        BorderFactory.createLineBorder(new Color(229, 234, 243)),
+                        new EmptyBorder(12, 14, 12, 14)
+                ));
+
+                JLabel startLabel = new JLabel("Inicio: " + safe(stream, "started_at"));
+                startLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                startLabel.setForeground(TEXT_PRIMARY_COLOR);
+
+                JLabel endLabel = new JLabel("Fin: " + safe(stream, "ended_at"));
+                endLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+                endLabel.setForeground(TEXT_SECONDARY_COLOR);
+
+                JPanel info = new JPanel();
+                info.setOpaque(false);
+                info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
+                info.add(startLabel);
+                info.add(Box.createVerticalStrut(4));
+                info.add(endLabel);
+
+                streamCard.add(info, BorderLayout.CENTER);
+                streamsPanel.add(streamCard);
+                streamsPanel.add(Box.createVerticalStrut(8));
             }
-        };
-        worker.execute();
+        }
+
+        JScrollPane scrollPane = new JScrollPane(streamsPanel);
+        configureStyledScroll(scrollPane);
+        scrollPane.setBorder(null);
+        dialog.add(scrollPane, BorderLayout.CENTER);
+
+        JPanel footer = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        footer.setBackground(Color.WHITE);
+        footer.setBorder(new EmptyBorder(12, 24, 16, 24));
+
+        JButton closeButton = new JButton("Cerrar");
+        closeButton.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        closeButton.setForeground(Color.WHITE);
+        closeButton.setBackground(PRIMARY_COLOR);
+        closeButton.setBorderPainted(false);
+        closeButton.setFocusPainted(false);
+        closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        closeButton.setPreferredSize(new Dimension(100, 36));
+        closeButton.addActionListener(e -> dialog.dispose());
+
+        footer.add(closeButton);
+        dialog.add(footer, BorderLayout.SOUTH);
+
+        dialog.setVisible(true);
     }
 
     private void updateMetrics(JsonObject overview, JsonObject metrics) {
@@ -1251,39 +1206,51 @@ public class UserDashboardPanel extends JPanel {
     private void fetchMapData() {
         if (currentOrg == null) return;
         mapStatusLabel.setText("Recargando ubicaciones...");
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            JsonArray patients;
-            JsonArray members;
 
-            @Override
-            protected Void doInBackground() throws Exception {
-                Map<String, String> params = new HashMap<>();
-                params.put("org_id", currentOrg.getOrgId());
-                JsonObject caregiver = apiClient.getCaregiverPatientLocations(token, params);
-                patients = getArray(getData(caregiver), "patients");
-                JsonObject careTeam = apiClient.getCareTeamLocations(token, params);
-                members = getArray(getData(careTeam), "members");
-                return null;
-            }
+        Map<String, String> params = Map.of("org_id", currentOrg.getOrgId());
+        CompletableFuture<JsonObject> caregiverFuture = apiClient.getCaregiverPatientLocationsAsync(token, params);
+        CompletableFuture<JsonObject> careTeamFuture = apiClient.getCareTeamLocationsAsync(token, params);
 
-            @Override
-            protected void done() {
-                try {
-                    get();
-                    mapPatientsData = patients != null ? patients : new JsonArray();
-                    mapMembersData = members != null ? members : new JsonArray();
+        CompletableFuture.allOf(caregiverFuture, careTeamFuture)
+                .thenApplyAsync(ignored -> {
+                    JsonArray patients = getArray(getData(caregiverFuture.join()), "patients");
+                    JsonArray members = getArray(getData(careTeamFuture.join()), "members");
+                    return new MapPayload(patients, members);
+                })
+                .thenAccept(payload -> SwingUtilities.invokeLater(() -> {
+                    mapPatientsData = payload.patients != null ? payload.patients : new JsonArray();
+                    mapMembersData = payload.members != null ? payload.members : new JsonArray();
                     applyMapFilter();
                     snackbar.accept("Mapa actualizado", true);
                     mapStatusLabel.setText("Datos sincronizados");
-                } catch (Exception ex) {
-                    mapStatusLabel.setText("Error al recargar");
-                    if (ex.getCause() instanceof ApiException apiException) {
-                        apiErrorHandler.accept(apiException);
-                    }
-                }
-            }
-        };
-        worker.execute();
+                }))
+                .exceptionally(ex -> {
+                    SwingUtilities.invokeLater(() -> mapStatusLabel.setText("Error al recargar"));
+                    handleAsyncException(ex, "Error al recargar mapa");
+                    return null;
+                });
+    }
+
+    private void handleAsyncException(Throwable throwable, String fallbackMessage) {
+        Throwable cause = unwrapCompletionException(throwable);
+        if (cause instanceof ApiException apiException) {
+            SwingUtilities.invokeLater(() -> apiErrorHandler.accept(apiException));
+            return;
+        }
+        String message = (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank())
+                ? cause.getMessage()
+                : fallbackMessage;
+        SwingUtilities.invokeLater(() -> snackbar.accept(message, false));
+    }
+
+    private Throwable unwrapCompletionException(Throwable throwable) {
+        if (throwable instanceof CompletionException completion && completion.getCause() != null) {
+            return completion.getCause();
+        }
+        if (throwable instanceof ExecutionException execution && execution.getCause() != null) {
+            return execution.getCause();
+        }
+        return throwable;
     }
 
     private JPanel createEmptyState(String message, String actionLabel, Runnable action) {
@@ -1347,6 +1314,26 @@ public class UserDashboardPanel extends JPanel {
         }
         JsonElement element = object.get(property);
         return element != null && element.isJsonArray() ? element.getAsJsonArray() : new JsonArray();
+    }
+
+    private static class MapPayload {
+        final JsonArray patients;
+        final JsonArray members;
+
+        MapPayload(JsonArray patients, JsonArray members) {
+            this.patients = patients;
+            this.members = members;
+        }
+    }
+
+    private static class DeviceReloadResult {
+        final JsonArray activeDevices;
+        final JsonArray disconnectedDevices;
+
+        DeviceReloadResult(JsonArray activeDevices, JsonArray disconnectedDevices) {
+            this.activeDevices = activeDevices;
+            this.disconnectedDevices = disconnectedDevices;
+        }
     }
 
     private static class TeamOption {

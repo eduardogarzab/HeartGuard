@@ -14,6 +14,7 @@ import okhttp3.*;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -420,6 +421,72 @@ public class ApiClient {
         }
     }
 
+    private CompletableFuture<JsonObject> executeGatewayGetAsync(
+            String path,
+            Map<String, String> queryParams,
+            String token,
+            boolean requiresToken,
+            String defaultErrorMessage
+    ) {
+        CompletableFuture<JsonObject> future = new CompletableFuture<>();
+
+        String authToken = resolveToken(token);
+        if (requiresToken && (authToken == null || authToken.isEmpty())) {
+            future.completeExceptionally(new ApiException("Token de acceso no proporcionado"));
+            return future;
+        }
+
+        HttpUrl baseUrl = HttpUrl.parse(gatewayUrl + path);
+        if (baseUrl == null) {
+            future.completeExceptionally(new ApiException("URL inválida del gateway: " + gatewayUrl + path));
+            return future;
+        }
+
+        HttpUrl.Builder urlBuilder = baseUrl.newBuilder();
+        if (queryParams != null) {
+            for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                if (entry.getValue() != null) {
+                    urlBuilder.addQueryParameter(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(urlBuilder.build())
+                .get();
+
+        if (authToken != null && !authToken.isEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer " + authToken);
+        }
+
+        httpClient.newCall(requestBuilder.build()).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(new ApiException("Error de conexión con el gateway: " + e.getMessage(), e));
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    String responseBody = response.body() != null ? response.body().string() : "";
+                    handleErrorIfNeeded(response, responseBody, defaultErrorMessage);
+                    if (responseBody.isEmpty()) {
+                        future.complete(new JsonObject());
+                        return;
+                    }
+                    JsonObject payload = gson.fromJson(responseBody, JsonObject.class);
+                    future.complete(payload != null ? payload : new JsonObject());
+                } catch (ApiException e) {
+                    future.completeExceptionally(e);
+                } catch (Exception e) {
+                    future.completeExceptionally(new ApiException("Error procesando respuesta: " + e.getMessage(), e));
+                }
+            }
+        });
+
+        return future;
+    }
+
     private JsonObject executeGatewayRequest(
             String method,
             String path,
@@ -809,6 +876,185 @@ public class ApiClient {
                 token,
                 true,
                 "Error al obtener streams del dispositivo"
+        );
+    }
+
+    // --------------------------- Variantes asíncronas ------------------------------
+
+    public CompletableFuture<JsonObject> getOrganizationDashboardAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/dashboard",
+                null,
+                token,
+                true,
+                "Error al obtener dashboard organizacional"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationMetricsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/metrics",
+                null,
+                token,
+                true,
+                "Error al obtener métricas de organización"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationCareTeamsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams",
+                null,
+                token,
+                true,
+                "Error al obtener equipos de cuidado"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationCareTeamPatientsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-team-patients",
+                null,
+                token,
+                true,
+                "Error al obtener pacientes por equipo"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCaregiverPatientsAsync(String token) {
+        return executeGatewayGetAsync(
+                "/caregiver/patients",
+                null,
+                token,
+                true,
+                "Error al obtener pacientes asignados"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamLocationsAsync(String token, Map<String, String> params) {
+        return executeGatewayGetAsync(
+                "/care-team/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones de equipos"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCaregiverPatientLocationsAsync(String token, Map<String, String> params) {
+        return executeGatewayGetAsync(
+                "/caregiver/patients/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones de pacientes"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamDevicesAsync(String token, String orgId, String teamId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos del equipo"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamDisconnectedDevicesAsync(String token, String orgId, String teamId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos desconectados"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamDeviceStreamsAsync(String token, String orgId, String teamId, String deviceId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
+                null,
+                token,
+                true,
+                "Error al obtener streams del dispositivo"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientDashboardAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/dashboard",
+                null,
+                token,
+                true,
+                "Error al obtener dashboard"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientAlertsAsync(String token, int limit) {
+        return getPatientAlertsAsync(token, limit, 0, null);
+    }
+
+    public CompletableFuture<JsonObject> getPatientAlertsAsync(String token, int limit, int offset, String status) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        if (status != null && !status.trim().isEmpty()) {
+            params.put("status", status);
+        }
+        return executeGatewayGetAsync(
+                "/patient/alerts",
+                params,
+                token,
+                true,
+                "Error al obtener alertas"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientDevicesAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientLocationsAsync(String token, int limit) {
+        return getPatientLocationsAsync(token, limit, 0);
+    }
+
+    public CompletableFuture<JsonObject> getPatientLocationsAsync(String token, int limit, int offset) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        return executeGatewayGetAsync(
+                "/patient/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientCaregiversAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/caregivers",
+                null,
+                token,
+                true,
+                "Error al obtener cuidadores"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientCareTeamAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/care-team",
+                null,
+                token,
+                true,
+                "Error al obtener equipo de cuidado"
         );
     }
 }

@@ -21,6 +21,9 @@ import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
 import java.text.SimpleDateFormat;
 import java.util.Date;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 import netscape.javascript.JSObject;
 
 /**
@@ -362,149 +365,112 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private void loadDashboardData() {
-        // Usar SwingWorker para operaciones en segundo plano
-        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
-            private JsonObject dashboard;
-            private JsonObject locationsResponse;
-            private JsonObject caregiversResponse;
-            private JsonObject careTeamResponse;
-            private Exception dashboardError;
-            private Exception locationsError;
-            private Exception caregiversError;
-            private Exception careTeamError;
+        CompletableFuture<JsonObject> dashboardFuture = apiClient.getPatientDashboardAsync(accessToken);
+        CompletableFuture<JsonObject> locationsFuture = apiClient.getPatientLocationsAsync(accessToken, 6);
+        CompletableFuture<JsonObject> caregiversFuture = apiClient.getPatientCaregiversAsync(accessToken);
+        CompletableFuture<JsonObject> careTeamFuture = apiClient.getPatientCareTeamAsync(accessToken);
 
-            @Override
-            protected Void doInBackground() {
-                try {
-                    dashboard = apiClient.getPatientDashboard(accessToken);
-                } catch (Exception e) {
-                    dashboardError = e;
-                    System.err.println("Error al cargar dashboard: " + e.getMessage());
+        CompletableFuture<PatientDashboardData> dataFuture = CompletableFuture.allOf(
+                        dashboardFuture,
+                        locationsFuture,
+                        caregiversFuture,
+                        careTeamFuture
+                )
+                .thenApplyAsync(ignored -> {
+                    PatientDashboardData data = new PatientDashboardData();
+                    data.dashboard = dashboardFuture.join();
+                    data.locations = locationsFuture.join();
+                    data.caregivers = caregiversFuture.join();
+                    data.careTeam = careTeamFuture.join();
+                    return data;
+                });
+
+        dataFuture.thenAccept(data -> SwingUtilities.invokeLater(() -> renderDashboardData(data)))
+                .exceptionally(ex -> {
+                    handleAsyncError(ex, "Error al cargar dashboard");
+                    return null;
+                });
+    }
+
+    private void renderDashboardData(PatientDashboardData data) {
+        try {
+            JsonArray careTeamArray = null;
+            JsonArray caregiversArray = null;
+
+            JsonObject dashboard = data.dashboard;
+            JsonObject locationsResponse = data.locations;
+            JsonObject caregiversResponse = data.caregivers;
+            JsonObject careTeamResponse = data.careTeam;
+
+            if (dashboard != null) {
+                JsonObject patientObj = dashboard.has("patient") && dashboard.get("patient").isJsonObject()
+                        ? dashboard.getAsJsonObject("patient") : null;
+                if (patientObj != null) {
+                    updateProfileSection(patientObj);
                 }
 
-                try {
-                    locationsResponse = apiClient.getPatientLocations(accessToken, 6);
-                    System.out.println("DEBUG: Ubicaciones cargadas exitosamente");
-                    if (locationsResponse != null) {
-                        System.out.println("DEBUG: Respuesta de ubicaciones: " + locationsResponse.toString());
+                JsonObject statsObj = dashboard.has("stats") && dashboard.get("stats").isJsonObject()
+                        ? dashboard.getAsJsonObject("stats") : null;
+                if (statsObj != null) {
+                    updateStatsSection(statsObj);
+                }
+
+                JsonArray alertsArray = dashboard.has("recent_alerts") && dashboard.get("recent_alerts").isJsonArray()
+                        ? dashboard.getAsJsonArray("recent_alerts") : null;
+                updateAlertsSection(alertsArray);
+
+                if (dashboard.has("care_team")) {
+                    JsonElement careTeamElement = dashboard.get("care_team");
+                    if (careTeamElement.isJsonArray()) {
+                        careTeamArray = careTeamElement.getAsJsonArray();
+                    } else if (careTeamElement.isJsonObject()) {
+                        JsonObject careTeamObj = careTeamElement.getAsJsonObject();
+                        if (careTeamObj.has("teams") && careTeamObj.get("teams").isJsonArray()) {
+                            careTeamArray = careTeamObj.getAsJsonArray("teams");
+                        }
                     }
-                } catch (Exception e) {
-                    locationsError = e;
-                    System.err.println("Error al cargar ubicaciones: " + e.getMessage());
-                    e.printStackTrace();
                 }
 
-                try {
-                    caregiversResponse = apiClient.getPatientCaregivers(accessToken);
-                } catch (Exception e) {
-                    caregiversError = e;
-                    System.err.println("Error al cargar cuidadores: " + e.getMessage());
+                if (dashboard.has("caregivers")) {
+                    JsonElement caregiversElement = dashboard.get("caregivers");
+                    if (caregiversElement.isJsonArray()) {
+                        caregiversArray = caregiversElement.getAsJsonArray();
+                    } else if (caregiversElement.isJsonObject()) {
+                        JsonObject caregiversObj = caregiversElement.getAsJsonObject();
+                        if (caregiversObj.has("caregivers") && caregiversObj.get("caregivers").isJsonArray()) {
+                            caregiversArray = caregiversObj.getAsJsonArray("caregivers");
+                        }
+                    }
                 }
-
-                try {
-                    careTeamResponse = apiClient.getPatientCareTeam(accessToken);
-                } catch (Exception e) {
-                    careTeamError = e;
-                    System.err.println("Error al cargar equipo de cuidado: " + e.getMessage());
-                }
-
-                return null;
+            } else {
+                updateAlertsSection(null);
             }
 
-            @Override
-            protected void done() {
-                try {
-                    JsonArray careTeamArray = null;
-                    JsonArray caregiversArray = null;
-
-                    if (dashboard != null) {
-                        JsonObject patientObj = dashboard.has("patient") && dashboard.get("patient").isJsonObject()
-                                ? dashboard.getAsJsonObject("patient") : null;
-                        if (patientObj != null) {
-                            updateProfileSection(patientObj);
-                        }
-
-                        JsonObject statsObj = dashboard.has("stats") && dashboard.get("stats").isJsonObject()
-                                ? dashboard.getAsJsonObject("stats") : null;
-                        if (statsObj != null) {
-                            updateStatsSection(statsObj);
-                        }
-
-                        JsonArray alertsArray = dashboard.has("recent_alerts") && dashboard.get("recent_alerts").isJsonArray()
-                                ? dashboard.getAsJsonArray("recent_alerts") : null;
-                        updateAlertsSection(alertsArray);
-
-                        if (dashboard.has("care_team")) {
-                            JsonElement careTeamElement = dashboard.get("care_team");
-                            if (careTeamElement.isJsonArray()) {
-                                careTeamArray = careTeamElement.getAsJsonArray();
-                            } else if (careTeamElement.isJsonObject()) {
-                                JsonObject careTeamObj = careTeamElement.getAsJsonObject();
-                                if (careTeamObj.has("teams") && careTeamObj.get("teams").isJsonArray()) {
-                                    careTeamArray = careTeamObj.getAsJsonArray("teams");
-                                }
-                            }
-                        }
-
-                        if (dashboard.has("caregivers")) {
-                            JsonElement caregiversElement = dashboard.get("caregivers");
-                            if (caregiversElement.isJsonArray()) {
-                                caregiversArray = caregiversElement.getAsJsonArray();
-                            } else if (caregiversElement.isJsonObject()) {
-                                JsonObject caregiversObj = caregiversElement.getAsJsonObject();
-                                if (caregiversObj.has("caregivers") && caregiversObj.get("caregivers").isJsonArray()) {
-                                    caregiversArray = caregiversObj.getAsJsonArray("caregivers");
-                                }
-                            }
-                        }
-                    } else if (dashboardError != null) {
-                        JOptionPane.showMessageDialog(
-                                PatientDashboardPanel.this,
-                                "Error al cargar dashboard: " + dashboardError.getMessage(),
-                                "Error",
-                                JOptionPane.ERROR_MESSAGE
-                        );
-                        updateAlertsSection(null);
-                    } else {
-                        updateAlertsSection(null);
-                    }
-
-                    if (careTeamResponse != null && careTeamResponse.has("teams") && careTeamResponse.get("teams").isJsonArray()) {
-                        careTeamArray = careTeamResponse.getAsJsonArray("teams");
-                    } else if (careTeamError != null) {
-                        System.err.println("Error al cargar equipo de cuidado: " + careTeamError.getMessage());
-                    }
-
-                    if (caregiversResponse != null && caregiversResponse.has("caregivers") && caregiversResponse.get("caregivers").isJsonArray()) {
-                        caregiversArray = caregiversResponse.getAsJsonArray("caregivers");
-                    } else if (caregiversError != null) {
-                        System.err.println("Error al cargar cuidadores: " + caregiversError.getMessage());
-                    }
-
-                    updateCareTeamSection(careTeamArray);
-                    updateCaregiversSection(caregiversArray);
-
-                    if (locationsResponse != null) {
-                        updateLocationsSection(locationsResponse);
-                    } else if (locationsError != null) {
-                        System.err.println("No se pudieron cargar las ubicaciones: " + locationsError.getMessage());
-                        updateLocationsSection(null);
-                    } else {
-                        updateLocationsSection(null);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    JOptionPane.showMessageDialog(
-                            PatientDashboardPanel.this,
-                            "Error al actualizar la interfaz: " + e.getMessage(),
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                }
+            if (careTeamResponse != null && careTeamResponse.has("teams") && careTeamResponse.get("teams").isJsonArray()) {
+                careTeamArray = careTeamResponse.getAsJsonArray("teams");
             }
-        };
 
-        worker.execute();
+            if (caregiversResponse != null && caregiversResponse.has("caregivers") && caregiversResponse.get("caregivers").isJsonArray()) {
+                caregiversArray = caregiversResponse.getAsJsonArray("caregivers");
+            }
+
+            updateCareTeamSection(careTeamArray);
+            updateCaregiversSection(caregiversArray);
+
+            if (locationsResponse != null) {
+                updateLocationsSection(locationsResponse);
+            } else {
+                updateLocationsSection(null);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(
+                    PatientDashboardPanel.this,
+                    "Error al actualizar la interfaz: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
     }
 
     private void updateLocationsSection(JsonObject locationsResponse) {
@@ -996,51 +962,26 @@ public class PatientDashboardPanel extends JPanel {
         }
     }
 
-    private void viewAllAlerts() {
-        SwingWorker<JsonArray, Void> worker = new SwingWorker<JsonArray, Void>() {
-            private Exception error;
+    private static class PatientDashboardData {
+        JsonObject dashboard;
+        JsonObject locations;
+        JsonObject caregivers;
+        JsonObject careTeam;
+    }
 
-            @Override
-            protected JsonArray doInBackground() throws Exception {
-                try {
-                    JsonObject response = apiClient.getPatientAlerts(accessToken, 100);
+    private void viewAllAlerts() {
+        apiClient.getPatientAlertsAsync(accessToken, 100)
+                .thenApplyAsync(response -> {
                     if (response != null && response.has("alerts")) {
                         return response.getAsJsonArray("alerts");
                     }
                     return new JsonArray();
-                } catch (Exception e) {
-                    error = e;
-                    System.err.println("Error al cargar todas las alertas: " + e.getMessage());
-                    return new JsonArray();
-                }
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    JsonArray allAlerts = get();
-                    if (error != null) {
-                        JOptionPane.showMessageDialog(
-                                PatientDashboardPanel.this,
-                                "Error al cargar las alertas: " + error.getMessage(),
-                                "Error",
-                                JOptionPane.ERROR_MESSAGE
-                        );
-                        return;
-                    }
-                    showAllAlertsDialog(allAlerts);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    JOptionPane.showMessageDialog(
-                            PatientDashboardPanel.this,
-                            "Error inesperado al mostrar alertas",
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                }
-            }
-        };
-        worker.execute();
+                })
+                .thenAccept(alerts -> SwingUtilities.invokeLater(() -> showAllAlertsDialog(alerts)))
+                .exceptionally(ex -> {
+                    handleAsyncError(ex, "Error al cargar las alertas");
+                    return null;
+                });
     }
 
     private void showAllAlertsDialog(JsonArray alerts) {
@@ -1104,37 +1045,50 @@ public class PatientDashboardPanel extends JPanel {
 
     private void viewDevices() {
         // Obtener dispositivos en background
-        SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
-            @Override
-            protected JsonArray doInBackground() throws Exception {
-                try {
-                    JsonObject response = apiClient.getPatientDevices(accessToken);
+        apiClient.getPatientDevicesAsync(accessToken)
+                .thenApplyAsync(response -> {
                     if (response != null && response.has("devices")) {
                         return response.getAsJsonArray("devices");
                     }
                     return new JsonArray();
-                } catch (ApiException e) {
-                    e.printStackTrace();
-                    throw new Exception("Error al cargar dispositivos: " + e.getMessage());
-                }
-            }
+                })
+                .thenAccept(devices -> SwingUtilities.invokeLater(() -> showAllDevicesDialog(devices)))
+                .exceptionally(ex -> {
+                    handleAsyncError(ex, "No se pudieron cargar los dispositivos");
+                    return null;
+                });
+    }
 
-            @Override
-            protected void done() {
-                try {
-                    JsonArray devices = get();
-                    showAllDevicesDialog(devices);
-                } catch (Exception e) {
-                    JOptionPane.showMessageDialog(
-                            PatientDashboardPanel.this,
-                            "No se pudieron cargar los dispositivos: " + e.getMessage(),
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                }
-            }
-        };
-        worker.execute();
+    private void handleAsyncError(Throwable throwable, String fallbackMessage) {
+        Throwable cause = unwrapCompletionException(throwable);
+        if (cause instanceof ApiException apiException) {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                    PatientDashboardPanel.this,
+                    apiException.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            ));
+            return;
+        }
+        String message = (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank())
+                ? cause.getMessage()
+                : fallbackMessage;
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                PatientDashboardPanel.this,
+                message,
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+        ));
+    }
+
+    private Throwable unwrapCompletionException(Throwable throwable) {
+        if (throwable instanceof CompletionException completion && completion.getCause() != null) {
+            return completion.getCause();
+        }
+        if (throwable instanceof ExecutionException execution && execution.getCause() != null) {
+            return execution.getCause();
+        }
+        return throwable;
     }
 
     private void showAllDevicesDialog(JsonArray devices) {
