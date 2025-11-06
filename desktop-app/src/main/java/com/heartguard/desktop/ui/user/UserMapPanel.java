@@ -115,39 +115,67 @@ public class UserMapPanel extends JPanel {
     }
 
     private void initializeMapOnFxThread() {
-        WebView webView = new WebView();
-        webEngine = webView.getEngine();
-        webEngine.setJavaScriptEnabled(true);
-        
-        // Listener para detectar errores de carga
-        webEngine.getLoadWorker().exceptionProperty().addListener((obs, oldEx, newEx) -> {
-            if (newEx != null) {
-                System.err.println("[UserMapPanel] Error al cargar el contenido del mapa: " + newEx.getMessage());
-                newEx.printStackTrace();
-            }
-        });
-        
-        webEngine.loadContent(buildHtml());
-        webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-            switch (newState) {
-                case SUCCEEDED -> {
-                    mapReady = true;
-                    System.out.println("[UserMapPanel] Mapa cargado exitosamente");
-                    if (pendingPatients != null || pendingMembers != null) {
-                        updateLocations(pendingPatients, pendingMembers);
+        try {
+            WebView webView = new WebView();
+            webView.setContextMenuEnabled(false); // Desactivar menú contextual
+            
+            webEngine = webView.getEngine();
+            webEngine.setJavaScriptEnabled(true);
+            webEngine.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+            
+            // Listener para detectar errores de carga
+            webEngine.getLoadWorker().exceptionProperty().addListener((obs, oldEx, newEx) -> {
+                if (newEx != null) {
+                    System.err.println("[UserMapPanel] Error al cargar el contenido del mapa: " + newEx.getMessage());
+                }
+            });
+            
+            webEngine.loadContent(buildHtml());
+            webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+                switch (newState) {
+                    case SUCCEEDED -> {
+                        System.out.println("[UserMapPanel] Mapa cargado exitosamente");
+                        // Esperar a que el DOM esté completamente listo
+                        Platform.runLater(() -> {
+                            try {
+                                // Verificar que Leaflet esté cargado
+                                Object leafletCheck = webEngine.executeScript("typeof L !== 'undefined'");
+                                if (Boolean.TRUE.equals(leafletCheck)) {
+                                    mapReady = true;
+                                    System.out.println("[UserMapPanel] Leaflet verificado y listo");
+                                    if (pendingPatients != null || pendingMembers != null) {
+                                        updateLocations(pendingPatients, pendingMembers);
+                                    }
+                                    // Forzar redimensión inicial
+                                    SwingUtilities.invokeLater(() -> {
+                                        requestResize();
+                                    });
+                                } else {
+                                    System.err.println("[UserMapPanel] Leaflet no está disponible");
+                                }
+                            } catch (Exception e) {
+                                System.err.println("[UserMapPanel] Error verificando Leaflet: " + e.getMessage());
+                            }
+                        });
                     }
-                    requestResize();
+                    case FAILED -> {
+                        mapReady = false;
+                        System.err.println("[UserMapPanel] Falló la carga del mapa");
+                    }
+                    case CANCELLED -> {
+                        System.err.println("[UserMapPanel] Carga del mapa cancelada");
+                    }
                 }
-                case FAILED -> {
-                    mapReady = false;
-                    System.err.println("[UserMapPanel] Falló la carga del mapa");
-                }
-                case CANCELLED -> {
-                    System.err.println("[UserMapPanel] Carga del mapa cancelada");
-                }
-            }
-        });
-        fxPanel.setScene(new Scene(webView));
+            });
+            
+            Scene scene = new Scene(webView);
+            fxPanel.setScene(scene);
+            
+        } catch (Exception e) {
+            System.err.println("[UserMapPanel] Error en initializeMapOnFxThread: " + e.getMessage());
+            e.printStackTrace();
+            mapInitialized = false;
+        }
     }
 
     public void updateLocations(JsonArray patients, JsonArray members) {
@@ -211,43 +239,72 @@ public class UserMapPanel extends JPanel {
                 <html lang=\"es\">
                 <head>
                     <meta charset=\"UTF-8\" />
-                    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
-                    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\" />
+                    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\" />
+                    <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\" />
+                    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\" crossorigin=\"anonymous\" />
                     <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css\" />
                     <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css\" />
                     <style>
-                        html, body { height: 100%; margin: 0; }
-                        #map { width: 100%; height: 100%; }
+                        * { margin: 0; padding: 0; box-sizing: border-box; }
+                        html, body { 
+                            height: 100%; 
+                            width: 100%;
+                            overflow: hidden;
+                            background: #fff;
+                        }
+                        #map { 
+                            width: 100%; 
+                            height: 100%;
+                            background: #e5e7eb;
+                        }
+                        .leaflet-container {
+                            background: #e5e7eb;
+                        }
                         .marker-patient { border-radius: 50%; width: 18px; height: 18px; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.2); }
                         .marker-member { width: 20px; height: 20px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.2); }
                     </style>
                 </head>
                 <body>
                     <div id=\"map\"></div>
-                    <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\"></script>
+                    <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\" crossorigin=\"anonymous\"></script>
                     <script src=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js\"></script>
                     <script>
+                        console.log('[MAP] Inicializando Leaflet...');
+                        
                         const map = L.map('map', {
                             zoomAnimation: false,
                             fadeAnimation: false,
+                            markerZoomAnimation: false,
                             zoomSnap: 1,
+                            zoomDelta: 1,
+                            trackResize: true,
                             minZoom: 2,
                             maxZoom: 18,
                             worldCopyJump: true,
-                            preferCanvas: true
+                            preferCanvas: false,
+                            renderer: L.svg()
                         }).setView([20, -30], 3);
 
+                        console.log('[MAP] Mapa creado');
+
+                        let resizeTimeout = null;
                         const resizeMap = () => {
                             if (!map) return;
-                            setTimeout(() => {
-                                map.invalidateSize({ animate: false, pan: false });
-                            }, 50);
+                            if (resizeTimeout) clearTimeout(resizeTimeout);
+                            resizeTimeout = setTimeout(() => {
+                                try {
+                                    map.invalidateSize({ animate: false, pan: false, debounceMoveend: true });
+                                    console.log('[MAP] Redimensionado');
+                                } catch (e) {
+                                    console.error('[MAP] Error resize:', e);
+                                }
+                            }, 100);
                         };
                         window.resizeMap = resizeMap;
                         
                         const fitMapToBounds = () => {
                             if (!map) return;
-                            if (currentPatients.length > 0 || currentMembers.length > 0) {
+                            try {
                                 const allBounds = [];
                                 currentPatients.forEach(p => {
                                     if (p.location && p.location.latitude !== null && p.location.longitude !== null) {
@@ -259,35 +316,53 @@ public class UserMapPanel extends JPanel {
                                         allBounds.push([m.location.latitude, m.location.longitude]);
                                     }
                                 });
+                                
                                 if (allBounds.length > 0) {
                                     map.fitBounds(allBounds, { 
                                         padding: [50, 50], 
                                         maxZoom: 12,
                                         animate: false 
                                     });
+                                } else {
+                                    map.setView([20, -30], 3, { animate: false });
                                 }
-                            } else {
-                                // Si no hay datos, resetear a vista por defecto
-                                map.setView([20, -30], 3, { animate: false });
+                            } catch (e) {
+                                console.error('[MAP] Error fitBounds:', e);
                             }
                         };
 
-                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            attribution: '© OpenStreetMap contributors',
+                        const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '© OpenStreetMap',
                             maxZoom: 18,
-                            keepBuffer: 2,
-                            updateWhenIdle: true,
-                            updateWhenZooming: false
-                        }).addTo(map);
+                            minZoom: 2,
+                            tileSize: 256,
+                            keepBuffer: 4,
+                            updateWhenIdle: false,
+                            updateWhenZooming: false,
+                            updateInterval: 200,
+                            crossOrigin: true,
+                            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mN8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=='
+                        });
+                        
+                        tileLayer.on('tileerror', (err) => {
+                            console.warn('[MAP] Tile error:', err);
+                        });
+                        
+                        tileLayer.addTo(map);
+                        console.log('[MAP] Tile layer añadido');
 
                         const patientCluster = L.markerClusterGroup({
                             showCoverageOnHover: false,
                             spiderfyDistanceMultiplier: 1.4,
-                            maxClusterRadius: 48
+                            maxClusterRadius: 48,
+                            animate: false,
+                            chunkedLoading: true
                         });
                         const memberCluster = L.markerClusterGroup({
                             showCoverageOnHover: false,
                             maxClusterRadius: 50,
+                            animate: false,
+                            chunkedLoading: true,
                             iconCreateFunction: (cluster) => {
                                 const count = cluster.getChildCount();
                                 return L.divIcon({
@@ -319,59 +394,69 @@ public class UserMapPanel extends JPanel {
                         let currentMembers = [];
 
                         const renderPatients = () => {
-                            patientCluster.clearLayers();
-                            currentPatients.forEach(p => {
-                                if (!p.location || p.location.latitude === null || p.location.longitude === null) {
-                                    return;
-                                }
-                                const color = getRiskColor(p.risk_level);
-                                const el = document.createElement('div');
-                                el.className = 'marker-patient';
-                                el.style.background = color;
-                                const marker = L.marker([p.location.latitude, p.location.longitude], {
-                                    icon: L.divIcon({
-                                        html: el.outerHTML,
-                                        className: '',
-                                        iconSize: [20, 20]
-                                    })
+                            try {
+                                patientCluster.clearLayers();
+                                currentPatients.forEach(p => {
+                                    if (!p.location || p.location.latitude === null || p.location.longitude === null) {
+                                        return;
+                                    }
+                                    const color = getRiskColor(p.risk_level);
+                                    const el = document.createElement('div');
+                                    el.className = 'marker-patient';
+                                    el.style.background = color;
+                                    const marker = L.marker([p.location.latitude, p.location.longitude], {
+                                        icon: L.divIcon({
+                                            html: el.outerHTML,
+                                            className: '',
+                                            iconSize: [20, 20]
+                                        })
+                                    });
+                                    marker.on('click', () => {
+                                        const alertSection = p.alert ? `<div style=\"margin-top:6px;font-size:12px;color:#e74c3c;\">⚠️ ${p.alert.label || 'Alerta'} · ${p.alert.level?.label || ''}</div>` : '';
+                                        const html = `
+                                            <div style=\"font-family:'Segoe UI',sans-serif;\">
+                                                <div style=\"font-weight:600;color:#1b2733;font-size:14px;\">${p.name || 'Paciente'}</div>
+                                                <div style=\"font-size:12px;color:#607489;margin-top:4px;\">${p.organization?.name || ''}</div>
+                                                <div style=\"font-size:12px;color:#607489;margin-top:4px;\">Equipo: ${p.care_team?.name || '-'}</div>
+                                                ${alertSection}
+                                            </div>`;
+                                        sidePanel.show(html);
+                                    });
+                                    patientCluster.addLayer(marker);
                                 });
-                                marker.on('click', () => {
-                                    const alertSection = p.alert ? `<div style=\"margin-top:6px;font-size:12px;color:#e74c3c;\">⚠️ ${p.alert.label || 'Alerta'} · ${p.alert.level?.label || ''}</div>` : '';
-                                    const html = `
-                                        <div style=\"font-family:'Segoe UI',sans-serif;\">
-                                            <div style=\"font-weight:600;color:#1b2733;font-size:14px;\">${p.name || 'Paciente'}</div>
-                                            <div style=\"font-size:12px;color:#607489;margin-top:4px;\">${p.organization?.name || ''}</div>
-                                            <div style=\"font-size:12px;color:#607489;margin-top:4px;\">Equipo: ${p.care_team?.name || '-'}</div>
-                                            ${alertSection}
-                                        </div>`;
-                                    sidePanel.show(html);
-                                });
-                                patientCluster.addLayer(marker);
-                            });
+                                console.log('[MAP] Renderizados', currentPatients.length, 'pacientes');
+                            } catch (e) {
+                                console.error('[MAP] Error renderizando pacientes:', e);
+                            }
                         };
 
                         const renderMembers = () => {
-                            memberCluster.clearLayers();
-                            currentMembers.forEach(m => {
-                                if (!m.location) return;
-                                const marker = L.marker([m.location.latitude, m.location.longitude], {
-                                    icon: L.divIcon({
-                                        html: `<div class=\"marker-member\" style=\"background:#42a5f5\"></div>`,
-                                        className: '',
-                                        iconSize: [22, 22]
-                                    })
+                            try {
+                                memberCluster.clearLayers();
+                                currentMembers.forEach(m => {
+                                    if (!m.location) return;
+                                    const marker = L.marker([m.location.latitude, m.location.longitude], {
+                                        icon: L.divIcon({
+                                            html: `<div class=\"marker-member\" style=\"background:#42a5f5\"></div>`,
+                                            className: '',
+                                            iconSize: [22, 22]
+                                        })
+                                    });
+                                    marker.on('click', () => {
+                                        const html = `
+                                            <div style=\"font-family:'Segoe UI',sans-serif;\">
+                                                <div style=\"font-weight:600;color:#1b2733;font-size:14px;\">${m.name || 'Miembro de equipo'}</div>
+                                                <div style=\"font-size:12px;color:#607489;margin-top:4px;\">${m.organization?.name || ''}</div>
+                                                <div style=\"font-size:12px;color:#607489;margin-top:4px;\">Rol: ${m.role?.label || m.role?.code || '-'}</div>
+                                            </div>`;
+                                        sidePanel.show(html);
+                                    });
+                                    memberCluster.addLayer(marker);
                                 });
-                                marker.on('click', () => {
-                                    const html = `
-                                        <div style=\"font-family:'Segoe UI',sans-serif;\">
-                                            <div style=\"font-weight:600;color:#1b2733;font-size:14px;\">${m.name || 'Miembro de equipo'}</div>
-                                            <div style=\"font-size:12px;color:#607489;margin-top:4px;\">${m.organization?.name || ''}</div>
-                                            <div style=\"font-size:12px;color:#607489;margin-top:4px;\">Rol: ${m.role?.label || m.role?.code || '-'}</div>
-                                        </div>`;
-                                    sidePanel.show(html);
-                                });
-                                memberCluster.addLayer(marker);
-                            });
+                                console.log('[MAP] Renderizados', currentMembers.length, 'miembros');
+                            } catch (e) {
+                                console.error('[MAP] Error renderizando miembros:', e);
+                            }
                         };
 
                         const sidePanel = (() => {
@@ -404,15 +489,19 @@ public class UserMapPanel extends JPanel {
                         map.on('click', () => sidePanel.hide());
 
                         window.updateEntities = (patients, members) => {
-                            currentPatients = Array.isArray(patients) ? patients : [];
-                            currentMembers = Array.isArray(members) ? members : [];
-                            renderPatients();
-                            renderMembers();
-                            // Solo ajustar el zoom si es la primera carga de datos o si no hay zoom manual
-                            setTimeout(() => {
-                                fitMapToBounds();
-                                resizeMap();
-                            }, 100);
+                            try {
+                                currentPatients = Array.isArray(patients) ? patients : [];
+                                currentMembers = Array.isArray(members) ? members : [];
+                                console.log('[MAP] updateEntities:', currentPatients.length, 'pacientes,', currentMembers.length, 'miembros');
+                                renderPatients();
+                                renderMembers();
+                                setTimeout(() => {
+                                    fitMapToBounds();
+                                    resizeMap();
+                                }, 150);
+                            } catch (e) {
+                                console.error('[MAP] Error en updateEntities:', e);
+                            }
                         };
 
                         window.updateEntitiesFromJava = (patientsJson, membersJson) => {
@@ -421,19 +510,27 @@ public class UserMapPanel extends JPanel {
                                 const members = JSON.parse(membersJson || '[]');
                                 window.updateEntities(patients, members);
                             } catch (err) {
-                                console.error('[MAP] Error parseando datos recibidos', err);
+                                console.error('[MAP] Error parseando:', err);
                             }
                         };
 
                         window.clearEntities = () => {
-                            currentPatients = [];
-                            currentMembers = [];
-                            patientCluster.clearLayers();
-                            memberCluster.clearLayers();
-                            sidePanel.hide();
+                            try {
+                                currentPatients = [];
+                                currentMembers = [];
+                                patientCluster.clearLayers();
+                                memberCluster.clearLayers();
+                                sidePanel.hide();
+                                console.log('[MAP] Entidades limpiadas');
+                            } catch (e) {
+                                console.error('[MAP] Error limpiando:', e);
+                            }
                         };
 
-                        setTimeout(resizeMap, 100);
+                        setTimeout(() => {
+                            resizeMap();
+                            console.log('[MAP] Inicialización completada');
+                        }, 200);
                     </script>
                 </body>
                 </html>

@@ -6,6 +6,7 @@ import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
 
 import javax.swing.*;
+import java.util.concurrent.CountDownLatch;
 
 /**
  * Clase principal de la aplicación HeartGuard Desktop
@@ -14,14 +15,10 @@ public class Main {
     
     public static void main(String[] args) {
         // Configurar propiedades del sistema para JavaFX WebView en Java 21
-        // Estas propiedades deben establecerse ANTES de inicializar JavaFX
-        System.setProperty("prism.order", "sw");
-        System.setProperty("prism.verbose", "false");
-        System.setProperty("javafx.animation.fullspeed", "true");
-        System.setProperty("prism.lcdtext", "false");
-        System.setProperty("prism.subpixeltext", "false");
+        // Estas propiedades deben establecerse ANTES de cualquier inicialización de JavaFX
+        configureJavaFXProperties();
         
-        // Inicializar el toolkit de JavaFX de forma explícita
+        // Inicializar el toolkit de JavaFX de forma explícita y ESPERAR a que esté listo
         // Esto es crítico para Java 17+ con JFXPanel
         initializeJavaFX();
         
@@ -47,29 +44,58 @@ public class Main {
     }
     
     /**
-     * Inicializa el toolkit de JavaFX de forma explícita.
+     * Configura las propiedades del sistema para JavaFX.
+     * DEBE llamarse antes de inicializar JavaFX.
+     */
+    private static void configureJavaFXProperties() {
+        // Usar software rendering para máxima estabilidad con WebView
+        System.setProperty("prism.order", "sw");
+        System.setProperty("prism.text", "t2k");
+        System.setProperty("prism.verbose", "false");
+        System.setProperty("javafx.animation.fullspeed", "false");
+        System.setProperty("prism.lcdtext", "false");
+        System.setProperty("prism.subpixeltext", "false");
+        
+        // Configuración específica para WebView
+        System.setProperty("prism.allowhidpi", "false");
+        System.setProperty("prism.vsync", "false");
+        
+        System.out.println("[Main] Propiedades de JavaFX configuradas");
+    }
+    
+    /**
+     * Inicializa el toolkit de JavaFX de forma explícita y ESPERA a que esté completamente listo.
      * Esto asegura que el toolkit esté listo antes de crear cualquier JFXPanel.
      */
     private static void initializeJavaFX() {
-        // Crear un JFXPanel dummy para forzar la inicialización del toolkit de JavaFX
-        // Este panel no se usa, solo dispara la inicialización
+        final CountDownLatch latch = new CountDownLatch(1);
+        
         SwingUtilities.invokeLater(() -> {
             try {
-                new JFXPanel(); // Esto inicializa implícitamente Platform.startup()
-                Platform.setImplicitExit(false); // Importante: evitar que JavaFX cierre la aplicación
+                // Crear un JFXPanel dummy para forzar la inicialización del toolkit de JavaFX
+                new JFXPanel();
                 
-                // En Java 21, forzar que el renderizador use software en lugar de hardware
-                // Esto previene problemas de renderizado de tiles en WebView
+                // Configurar JavaFX para que no cierre la aplicación automáticamente
+                Platform.setImplicitExit(false);
+                
+                // Esperar a que el toolkit esté completamente inicializado
                 Platform.runLater(() -> {
-                    System.setProperty("prism.order", "sw");
-                    System.setProperty("prism.text", "t2k");
+                    System.out.println("[Main] JavaFX toolkit inicializado correctamente");
+                    latch.countDown();
                 });
-                
-                System.out.println("[Main] JavaFX toolkit inicializado correctamente para Java 21");
             } catch (Exception e) {
                 System.err.println("[Main] Error al inicializar JavaFX: " + e.getMessage());
                 e.printStackTrace();
+                latch.countDown();
             }
         });
+        
+        // Esperar a que JavaFX esté listo
+        try {
+            latch.await();
+            Thread.sleep(200); // Pequeña pausa adicional para asegurar estabilidad
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
     }
 }
