@@ -187,41 +187,54 @@ public class UserMapPanel extends JPanel {
                         const map = L.map('map', {
                             zoomAnimation: false,
                             fadeAnimation: false,
-                            zoomSnap: 0.25,
+                            zoomSnap: 1,
                             minZoom: 2,
-                            maxZoom: 19,
-                            worldCopyJump: true
+                            maxZoom: 18,
+                            worldCopyJump: true,
+                            preferCanvas: true
                         }).setView([20, -30], 3);
 
                         const resizeMap = () => {
                             if (!map) return;
                             setTimeout(() => {
                                 map.invalidateSize({ animate: false, pan: false });
-                                if (currentPatients.length > 0 || currentMembers.length > 0) {
-                                    const allBounds = [];
-                                    currentPatients.forEach(p => {
-                                        if (p.location && p.location.latitude !== null && p.location.longitude !== null) {
-                                            allBounds.push([p.location.latitude, p.location.longitude]);
-                                        }
-                                    });
-                                    currentMembers.forEach(m => {
-                                        if (m.location && m.location.latitude !== null && m.location.longitude !== null) {
-                                            allBounds.push([m.location.latitude, m.location.longitude]);
-                                        }
-                                    });
-                                    if (allBounds.length > 0) {
-                                        map.fitBounds(allBounds, { padding: [40, 40], maxZoom: 16, animate: false });
-                                    }
-                                } else {
-                                    // Si no hay datos, resetear a vista por defecto
-                                    map.setView([20, -30], 3);
-                                }
                             }, 50);
                         };
                         window.resizeMap = resizeMap;
+                        
+                        const fitMapToBounds = () => {
+                            if (!map) return;
+                            if (currentPatients.length > 0 || currentMembers.length > 0) {
+                                const allBounds = [];
+                                currentPatients.forEach(p => {
+                                    if (p.location && p.location.latitude !== null && p.location.longitude !== null) {
+                                        allBounds.push([p.location.latitude, p.location.longitude]);
+                                    }
+                                });
+                                currentMembers.forEach(m => {
+                                    if (m.location && m.location.latitude !== null && m.location.longitude !== null) {
+                                        allBounds.push([m.location.latitude, m.location.longitude]);
+                                    }
+                                });
+                                if (allBounds.length > 0) {
+                                    map.fitBounds(allBounds, { 
+                                        padding: [50, 50], 
+                                        maxZoom: 12,
+                                        animate: false 
+                                    });
+                                }
+                            } else {
+                                // Si no hay datos, resetear a vista por defecto
+                                map.setView([20, -30], 3, { animate: false });
+                            }
+                        };
 
                         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            attribution: '© OpenStreetMap contributors'
+                            attribution: '© OpenStreetMap contributors',
+                            maxZoom: 18,
+                            keepBuffer: 2,
+                            updateWhenIdle: true,
+                            updateWhenZooming: false
                         }).addTo(map);
 
                         const patientCluster = L.markerClusterGroup({
@@ -352,8 +365,11 @@ public class UserMapPanel extends JPanel {
                             currentMembers = Array.isArray(members) ? members : [];
                             renderPatients();
                             renderMembers();
-                            // Forzar redimensión después de renderizar
-                            setTimeout(() => resizeMap(), 100);
+                            // Solo ajustar el zoom si es la primera carga de datos o si no hay zoom manual
+                            setTimeout(() => {
+                                fitMapToBounds();
+                                resizeMap();
+                            }, 100);
                         };
 
                         window.updateEntitiesFromJava = (patientsJson, membersJson) => {
