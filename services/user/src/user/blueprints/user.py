@@ -99,6 +99,83 @@ def list_memberships(current_user_id: str):
         return error_response(message='Error interno al obtener membresías', error_code='internal_error', status_code=500)
 
 
+@user_bp.route('/users/me/invitations', methods=['GET'])
+@require_user_token
+def list_user_invitations(current_user_id: str):
+    try:
+        invitations = user_service.list_pending_invitations(current_user_id)
+        current_app.logger.info(
+            'Invitaciones pendientes consultadas',
+            extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'count': len(invitations)},
+        )
+        return success_response(data={'invitations': invitations}, message='Invitaciones pendientes recuperadas correctamente')
+    except ValueError as exc:
+        message = str(exc)
+        lower = message.lower()
+        if 'no encontrado' in lower:
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        return fail_response(message=message, error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al listar invitaciones', extra={'trace_id': g.trace_id, 'user_id': current_user_id})
+        return error_response(message='Error interno al listar invitaciones', error_code='internal_error', status_code=500)
+
+
+@user_bp.route('/users/me/invitations/<string:invite_id>/accept', methods=['POST'])
+@require_user_token
+def accept_invitation(invite_id: str, current_user_id: str):
+    try:
+        result = user_service.accept_invitation(current_user_id, invite_id)
+        org_id = (result.get('invitation') or {}).get('organization', {}).get('id')
+        current_app.logger.info(
+            'Invitación aceptada',
+            extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'invitation_id': invite_id, 'org_id': org_id},
+        )
+        return success_response(data=result, message='Invitación aceptada correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        message = str(exc)
+        lower = message.lower()
+        if 'usuario' in lower and 'no encontrado' in lower:
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        if 'invitación' in lower and 'no encontrada' in lower:
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        if 'no pertenece' in lower or 'no corresponde' in lower:
+            return fail_response(message=message, error_code='forbidden', status_code=403)
+        return fail_response(message=message, error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al aceptar invitación', extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'invitation_id': invite_id})
+        return error_response(message='Error interno al aceptar invitación', error_code='internal_error', status_code=500)
+
+
+@user_bp.route('/users/me/invitations/<string:invite_id>/reject', methods=['POST'])
+@require_user_token
+def reject_invitation(invite_id: str, current_user_id: str):
+    try:
+        result = user_service.reject_invitation(current_user_id, invite_id)
+        org_id = (result.get('invitation') or {}).get('organization', {}).get('id')
+        current_app.logger.info(
+            'Invitación rechazada',
+            extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'invitation_id': invite_id, 'org_id': org_id},
+        )
+        return success_response(data=result, message='Invitación rechazada correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        message = str(exc)
+        lower = message.lower()
+        if 'usuario' in lower and 'no encontrado' in lower:
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        if 'invitación' in lower and 'no encontrada' in lower:
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        if 'no pertenece' in lower or 'no corresponde' in lower:
+            return fail_response(message=message, error_code='forbidden', status_code=403)
+        return fail_response(message=message, error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al rechazar invitación', extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'invitation_id': invite_id})
+        return error_response(message='Error interno al rechazar invitación', error_code='internal_error', status_code=500)
+
+
 @user_bp.route('/orgs/<string:org_id>/members/<string:user_id>', methods=['GET'])
 @require_user_token
 def membership_detail(org_id: str, user_id: str, current_user_id: str):

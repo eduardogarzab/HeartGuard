@@ -80,6 +80,21 @@ def users_memberships() -> Response:
 	return _proxy_user("/users/me/org-memberships")
 
 
+@bp.route("/users/me/invitations", methods=["GET"])
+def users_invitations() -> Response:
+	return _proxy_user("/users/me/invitations")
+
+
+@bp.route("/users/me/invitations/<string:invitation_id>/accept", methods=["POST"])
+def users_invitation_accept(invitation_id: str) -> Response:
+	return _proxy_user(f"/users/me/invitations/{invitation_id}/accept")
+
+
+@bp.route("/users/me/invitations/<string:invitation_id>/reject", methods=["POST"])
+def users_invitation_reject(invitation_id: str) -> Response:
+	return _proxy_user(f"/users/me/invitations/{invitation_id}/reject")
+
+
 @bp.route("/users/me/push-devices", methods=["GET", "POST"])
 def users_push_devices() -> Response:
 	return _proxy_user("/users/me/push-devices")

@@ -21,7 +21,7 @@ def create_app() -> Flask:
     CORS(app, resources={
         r"/users/*": {
             "origins": config.CORS_ORIGINS,
-            "methods": ["GET", "PATCH", "OPTIONS"],
+            "methods": ["GET", "PATCH", "POST", "OPTIONS"],
             "allow_headers": ["Content-Type", "Authorization", "X-Trace-ID"],
         },
         r"/orgs/*": {

@@ -6,6 +6,7 @@ from decimal import Decimal
 from typing import Any, Dict, List, Mapping, Optional, Tuple
 from uuid import UUID
 
+from ..extensions import get_db_cursor
 from ..repositories.user_repo import UserRepository
 
 
@@ -66,6 +67,127 @@ class UserService:
         if not record:
             raise ValueError("Membresía no encontrada")
         return self._format_membership(record)
+
+    # ------------------------------------------------------------------
+    # Invitaciones
+    # ------------------------------------------------------------------
+    def list_pending_invitations(self, user_id: str) -> List[Dict[str, Any]]:
+        user_identity = self._get_user_identity(user_id)
+        normalized_email = self._normalize_email(user_identity.get('email'))
+        if not normalized_email:
+            return []
+
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                self._pending_invitations_query(),
+                (normalized_email,),
+            )
+            rows = cursor.fetchall() or []
+
+        return [self._format_invitation(row) for row in rows]
+
+    def accept_invitation(self, user_id: str, invite_id: str) -> Dict[str, Any]:
+        user_identity = self._get_user_identity(user_id)
+        normalized_email = self._normalize_email(user_identity.get('email'))
+        if not normalized_email:
+            raise ValueError("El usuario no tiene un correo asociado")
+
+        with get_db_cursor() as cursor:
+            invitation = self._fetch_invitation_for_user(cursor, invite_id, normalized_email, lock=True)
+            if not invitation:
+                raise ValueError("Invitación no encontrada")
+            self._ensure_invitation_pending(invitation)
+
+            cursor.execute(
+                """
+                    INSERT INTO user_org_membership (org_id, user_id, role_code)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (org_id, user_id)
+                    DO UPDATE SET role_code = EXCLUDED.role_code
+                    RETURNING org_id, user_id, role_code, joined_at
+                """,
+                (invitation['org_id'], user_id, invitation['role_code']),
+            )
+            membership_row = cursor.fetchone()
+            if not membership_row:
+                raise ValueError("No se pudo registrar la membresía")
+
+            cursor.execute(
+                """
+                    UPDATE org_invitations
+                    SET used_at = NOW(), revoked_at = NULL
+                    WHERE id = %s
+                    RETURNING used_at, revoked_at
+                """,
+                (invite_id,),
+            )
+            invite_status = cursor.fetchone()
+            if not invite_status:
+                raise ValueError("No se pudo actualizar la invitación")
+
+            updated_invitation = self._fetch_invitation_for_user(cursor, invite_id, normalized_email)
+            cursor.execute(
+                self._membership_lookup_query(),
+                (membership_row['org_id'], user_id),
+            )
+            membership_detail = cursor.fetchone()
+
+        formatted_membership = self._format_membership(membership_detail) if membership_detail else {
+            'org_id': str(membership_row['org_id']),
+            'role_code': membership_row['role_code'],
+            'org_code': None,
+            'org_name': None,
+            'role_label': None,
+            'joined_at': self._serialize_datetime(membership_row.get('joined_at')),
+        }
+
+        formatted_invitation = self._format_invitation(updated_invitation) if updated_invitation else self._format_invitation({
+            **invitation,
+            'used_at': invite_status.get('used_at'),
+            'revoked_at': invite_status.get('revoked_at'),
+        })
+
+        return {
+            'invitation': formatted_invitation,
+            'membership': formatted_membership,
+        }
+
+    def reject_invitation(self, user_id: str, invite_id: str) -> Dict[str, Any]:
+        user_identity = self._get_user_identity(user_id)
+        normalized_email = self._normalize_email(user_identity.get('email'))
+        if not normalized_email:
+            raise ValueError("El usuario no tiene un correo asociado")
+
+        with get_db_cursor() as cursor:
+            invitation = self._fetch_invitation_for_user(cursor, invite_id, normalized_email, lock=True)
+            if not invitation:
+                raise ValueError("Invitación no encontrada")
+            self._ensure_invitation_pending(invitation)
+
+            cursor.execute(
+                """
+                    UPDATE org_invitations
+                    SET revoked_at = NOW()
+                    WHERE id = %s
+                    RETURNING used_at, revoked_at
+                """,
+                (invite_id,),
+            )
+            invite_status = cursor.fetchone()
+            if not invite_status:
+                raise ValueError("No se pudo actualizar la invitación")
+
+            updated_invitation = self._fetch_invitation_for_user(cursor, invite_id, normalized_email)
+
+        formatted_invitation = self._format_invitation(updated_invitation) if updated_invitation else self._format_invitation({
+            **invitation,
+            'used_at': invite_status.get('used_at'),
+            'revoked_at': invite_status.get('revoked_at'),
+        })
+
+        return {
+            'invitation': formatted_invitation,
+        }
 
     # ------------------------------------------------------------------
     # Datos organizacionales
@@ -1065,6 +1187,183 @@ class UserService:
         except ValueError as exc:
             raise ValueError(str(exc)) from exc
         return parsed
+
+    def _get_user_identity(self, user_id: str) -> Dict[str, Any]:
+        with get_db_cursor() as cursor:
+            cursor.execute(
+                """
+                    SELECT id, email, name
+                    FROM users
+                    WHERE id = %s
+                """,
+                (user_id,),
+            )
+            record = cursor.fetchone()
+        if not record:
+            raise ValueError("Usuario no encontrado")
+        return record
+
+    @staticmethod
+    def _normalize_email(email: Any) -> Optional[str]:
+        if not email:
+            return None
+        return str(email).strip().lower() or None
+
+    def _pending_invitations_query(self) -> str:
+        return """
+            SELECT
+                inv.id,
+                inv.org_id,
+                inv.email,
+                inv.role_code,
+                inv.expires_at,
+                inv.used_at,
+                inv.revoked_at,
+                inv.created_at,
+                inv.created_by,
+                org.code AS org_code,
+                org.name AS org_name,
+                creator.name AS invited_by_name,
+                creator.email AS invited_by_email,
+                roles.label AS role_label
+            FROM org_invitations inv
+            JOIN organizations org ON org.id = inv.org_id
+            LEFT JOIN users creator ON creator.id = inv.created_by
+            LEFT JOIN roles roles ON roles.code = inv.role_code
+            WHERE lower(inv.email) = %s
+              AND inv.revoked_at IS NULL
+              AND inv.used_at IS NULL
+              AND (inv.expires_at IS NULL OR inv.expires_at > NOW())
+            ORDER BY inv.created_at DESC
+        """
+
+    def _invitation_lookup_query(self, lock: bool = False) -> str:
+        if lock:
+            # Para lock, usamos una subquery sin LEFT JOIN para evitar el error de PostgreSQL
+            return """
+                SELECT
+                    inv.id,
+                    inv.org_id,
+                    inv.email,
+                    inv.role_code,
+                    inv.expires_at,
+                    inv.used_at,
+                    inv.revoked_at,
+                    inv.created_at,
+                    inv.created_by,
+                    (SELECT code FROM organizations WHERE id = inv.org_id) AS org_code,
+                    (SELECT name FROM organizations WHERE id = inv.org_id) AS org_name,
+                    (SELECT name FROM users WHERE id = inv.created_by) AS invited_by_name,
+                    (SELECT email FROM users WHERE id = inv.created_by) AS invited_by_email,
+                    (SELECT label FROM roles WHERE code = inv.role_code) AS role_label
+                FROM org_invitations inv
+                WHERE inv.id = %s
+                  AND lower(inv.email) = %s
+                FOR UPDATE OF inv
+            """
+        return """
+            SELECT
+                inv.id,
+                inv.org_id,
+                inv.email,
+                inv.role_code,
+                inv.expires_at,
+                inv.used_at,
+                inv.revoked_at,
+                inv.created_at,
+                inv.created_by,
+                org.code AS org_code,
+                org.name AS org_name,
+                creator.name AS invited_by_name,
+                creator.email AS invited_by_email,
+                roles.label AS role_label
+            FROM org_invitations inv
+            JOIN organizations org ON org.id = inv.org_id
+            LEFT JOIN users creator ON creator.id = inv.created_by
+            LEFT JOIN roles roles ON roles.code = inv.role_code
+            WHERE inv.id = %s
+              AND lower(inv.email) = %s
+        """
+
+    def _membership_lookup_query(self) -> str:
+        return """
+            SELECT
+                m.org_id,
+                m.user_id,
+                m.role_code,
+                COALESCE(r.label, m.role_code) AS role_label,
+                m.joined_at,
+                o.code AS org_code,
+                o.name AS org_name
+            FROM user_org_membership m
+            JOIN organizations o ON o.id = m.org_id
+            LEFT JOIN roles r ON r.code = m.role_code
+            WHERE m.org_id = %s AND m.user_id = %s
+        """
+
+    def _fetch_invitation_for_user(self, cursor, invite_id: str, normalized_email: Optional[str], lock: bool = False) -> Optional[Dict[str, Any]]:
+        if not normalized_email:
+            return None
+        cursor.execute(self._invitation_lookup_query(lock=lock), (invite_id, normalized_email))
+        return cursor.fetchone()
+
+    def _ensure_invitation_pending(self, invitation: Mapping[str, Any]) -> None:
+        if invitation.get('used_at') is not None:
+            raise ValueError("La invitación ya fue utilizada")
+        if invitation.get('revoked_at') is not None:
+            raise ValueError("La invitación ya fue revocada")
+        expires_at = invitation.get('expires_at')
+        if self._is_invitation_expired(expires_at):
+            raise ValueError("La invitación ha expirado")
+
+    def _format_invitation(self, record: Mapping[str, Any]) -> Dict[str, Any]:
+        used_at = record.get('used_at')
+        revoked_at = record.get('revoked_at')
+        expires_at = record.get('expires_at')
+        status = 'pending'
+        if used_at:
+            status = 'accepted'
+        elif revoked_at:
+            status = 'revoked'
+        elif self._is_invitation_expired(expires_at):
+            status = 'expired'
+
+        return {
+            'id': str(record['id']),
+            'email': self._normalize_email(record.get('email')),
+            'status': status,
+            'role': {
+                'code': record.get('role_code'),
+                'label': record.get('role_label'),
+            },
+            'organization': {
+                'id': str(record['org_id']) if record.get('org_id') else None,
+                'code': record.get('org_code'),
+                'name': record.get('org_name'),
+            },
+            'invited_by': {
+                'id': str(record['created_by']) if record.get('created_by') else None,
+                'name': record.get('invited_by_name'),
+                'email': self._normalize_email(record.get('invited_by_email')),
+            },
+            'expires_at': self._serialize_datetime(expires_at),
+            'used_at': self._serialize_datetime(used_at),
+            'revoked_at': self._serialize_datetime(revoked_at),
+            'created_at': self._serialize_datetime(record.get('created_at')),
+        }
+
+    def _is_invitation_expired(self, expires_at: Any) -> bool:
+        if not isinstance(expires_at, datetime):
+            return False
+        now = self._now()
+        if expires_at.tzinfo and now.tzinfo:
+            return expires_at <= now
+        if expires_at.tzinfo and not now.tzinfo:
+            return expires_at <= now.replace(tzinfo=expires_at.tzinfo)
+        if not expires_at.tzinfo and now.tzinfo:
+            comparable = expires_at.replace(tzinfo=now.tzinfo)
+            return comparable <= now
+        return expires_at <= now.replace(tzinfo=None)
 
     @staticmethod
     def _parse_limit(value: Any, *, default: int, maximum: int, field: str) -> int:
