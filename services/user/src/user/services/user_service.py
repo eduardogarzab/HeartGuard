@@ -194,8 +194,8 @@ class UserService:
     # ------------------------------------------------------------------
     def get_org_dashboard(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
-        overview = self.repo.get_org_overview(org_id)
-        metrics = self.repo.get_org_metrics(org_id)
+        overview = self.repo.get_org_overview(org_id, user_id)
+        metrics = self.repo.get_org_metrics(org_id, user_id)
         return {
             'organization': membership,
             'overview': self._format_org_overview(overview),
@@ -204,7 +204,7 @@ class UserService:
 
     def list_org_care_teams(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
-        rows = self.repo.list_org_care_teams(org_id)
+        rows = self.repo.list_org_care_teams(org_id, user_id)
         teams: Dict[str, Dict[str, Any]] = {}
         for row in rows:
             team_id = str(row['care_team_id'])
@@ -235,7 +235,7 @@ class UserService:
 
     def list_org_care_team_patients(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
-        rows = self.repo.list_org_care_team_patients(org_id)
+        rows = self.repo.list_org_care_team_patients(org_id, user_id)
         teams: Dict[str, Dict[str, Any]] = {}
         for row in rows:
             team_id = str(row['care_team_id'])
@@ -245,17 +245,35 @@ class UserService:
                     'id': team_id,
                     'name': row.get('care_team_name'),
                     'patients': [],
+                    'members': [],
                 },
             )
-            team['patients'].append({
-                'id': str(row['patient_id']),
-                'name': row.get('patient_name'),
-                'email': row.get('patient_email'),
-                'risk_level': {
-                    'code': row.get('risk_level_code'),
-                    'label': row.get('risk_level_label'),
-                },
-            })
+            # Solo agregar pacientes si patient_id no es NULL
+            if row.get('patient_id') is not None:
+                team['patients'].append({
+                    'id': str(row['patient_id']),
+                    'name': row.get('patient_name'),
+                    'email': row.get('patient_email'),
+                    'risk_level': {
+                        'code': row.get('risk_level_code'),
+                        'label': row.get('risk_level_label'),
+                    },
+                })
+
+        # Agregar miembros a los equipos
+        member_rows = self.repo.list_org_care_teams(org_id, user_id)
+        for row in member_rows:
+            team_id = str(row['care_team_id'])
+            if team_id in teams and row.get('member_user_id'):
+                teams[team_id]['members'].append({
+                    'user_id': str(row['member_user_id']),
+                    'name': row.get('member_name'),
+                    'email': row.get('member_email'),
+                    'role': {
+                        'code': row.get('member_role_code'),
+                        'label': row.get('member_role_label'),
+                    },
+                })
 
         return {
             'organization': membership,
@@ -318,8 +336,8 @@ class UserService:
 
     def get_org_metrics(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
-        overview = self.repo.get_org_overview(org_id)
-        metrics = self.repo.get_org_metrics(org_id)
+        overview = self.repo.get_org_overview(org_id, user_id)
+        metrics = self.repo.get_org_metrics(org_id, user_id)
         return {
             'organization': membership,
             'overview': self._format_org_overview(overview),

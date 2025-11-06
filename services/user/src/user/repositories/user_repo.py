@@ -104,46 +104,55 @@ class UserRepository:
             return cursor.fetchone()
 
     @staticmethod
-    def get_org_overview(org_id: str) -> Dict[str, Any]:
+    def get_org_overview(org_id: str, user_id: str) -> Dict[str, Any]:
+        """
+        Retorna métricas de la organización filtradas por los equipos
+        a los que el usuario pertenece.
+        """
         query = """
             WITH
+            user_teams AS (
+                SELECT ct.id AS care_team_id
+                FROM care_team_member ctm
+                JOIN care_teams ct ON ct.id = ctm.care_team_id
+                WHERE ct.org_id = %s AND ctm.user_id = %s
+            ),
+            team_patients AS (
+                SELECT DISTINCT pct.patient_id
+                FROM patient_care_team pct
+                JOIN user_teams ut ON ut.care_team_id = pct.care_team_id
+            ),
             patients_count AS (
                 SELECT COUNT(*)::int AS total_patients
-                FROM patients
-                WHERE org_id = %s
+                FROM team_patients
             ),
             care_team_count AS (
                 SELECT COUNT(*)::int AS total_care_teams
-                FROM care_teams
-                WHERE org_id = %s
+                FROM user_teams
             ),
             caregiver_count AS (
                 SELECT COUNT(DISTINCT cp.user_id)::int AS total_caregivers
                 FROM caregiver_patient cp
-                JOIN patients p ON p.id = cp.patient_id
-                WHERE p.org_id = %s
-                  AND (cp.ended_at IS NULL OR cp.ended_at > NOW())
+                JOIN team_patients tp ON tp.patient_id = cp.patient_id
+                WHERE (cp.ended_at IS NULL OR cp.ended_at > NOW())
             ),
             alerts_last_7d AS (
                 SELECT COUNT(*)::int AS total_alerts_7d
                 FROM alerts a
-                JOIN patients p ON p.id = a.patient_id
-                WHERE p.org_id = %s
-                  AND a.created_at >= NOW() - INTERVAL '7 days'
+                JOIN team_patients tp ON tp.patient_id = a.patient_id
+                WHERE a.created_at >= NOW() - INTERVAL '7 days'
             ),
             alerts_open AS (
                 SELECT COUNT(*)::int AS total_open_alerts
                 FROM alerts a
-                JOIN patients p ON p.id = a.patient_id
+                JOIN team_patients tp ON tp.patient_id = a.patient_id
                 JOIN alert_status ast ON ast.id = a.status_id
-                WHERE p.org_id = %s
-                  AND lower(ast.code) IN ('created', 'notified')
+                WHERE lower(ast.code) IN ('created', 'notified')
             ),
             latest_alert AS (
                 SELECT MAX(a.created_at) AS latest_alert_at
                 FROM alerts a
-                JOIN patients p ON p.id = a.patient_id
-                WHERE p.org_id = %s
+                JOIN team_patients tp ON tp.patient_id = a.patient_id
             )
             SELECT
                 COALESCE((SELECT total_patients FROM patients_count), 0) AS total_patients,
@@ -153,14 +162,18 @@ class UserRepository:
                 COALESCE((SELECT total_open_alerts FROM alerts_open), 0) AS open_alerts,
                 (SELECT latest_alert_at FROM latest_alert) AS latest_alert_at
         """
-        params = (org_id, org_id, org_id, org_id, org_id, org_id)
+        params = (org_id, user_id)
         with get_db_cursor() as cursor:
             cursor.execute(query, params)
             row = cursor.fetchone() or {}
             return dict(row)
 
     @staticmethod
-    def list_org_care_teams(org_id: str) -> List[Dict]:
+    def list_org_care_teams(org_id: str, user_id: str) -> List[Dict]:
+        """
+        Lista equipos de cuidado con sus miembros.
+        SOLO devuelve equipos donde el usuario actual es miembro.
+        """
         query = """
             SELECT
                 ct.id AS care_team_id,
@@ -172,6 +185,7 @@ class UserRepository:
                 tm.code AS member_role_code,
                 tm.label AS member_role_label
             FROM care_teams ct
+            JOIN care_team_member user_membership ON user_membership.care_team_id = ct.id AND user_membership.user_id = %s
             LEFT JOIN care_team_member ctm ON ctm.care_team_id = ct.id
             LEFT JOIN users u ON u.id = ctm.user_id
             LEFT JOIN team_member_roles tm ON tm.id = ctm.role_id
@@ -179,12 +193,17 @@ class UserRepository:
             ORDER BY ct.name ASC, member_name ASC NULLS LAST
         """
         with get_db_cursor() as cursor:
-            cursor.execute(query, (org_id,))
+            cursor.execute(query, (user_id, org_id))
             rows = cursor.fetchall() or []
             return list(rows)
 
     @staticmethod
-    def list_org_care_team_patients(org_id: str) -> List[Dict]:
+    def list_org_care_team_patients(org_id: str, user_id: str) -> List[Dict]:
+        """
+        Lista pacientes agrupados por equipos de cuidado.
+        SOLO devuelve equipos donde el usuario actual es miembro.
+        Incluye equipos sin pacientes (con patient_id NULL).
+        """
         query = """
             SELECT
                 ct.id AS care_team_id,
@@ -195,14 +214,15 @@ class UserRepository:
                 rl.code AS risk_level_code,
                 rl.label AS risk_level_label
             FROM care_teams ct
-            JOIN patient_care_team pct ON pct.care_team_id = ct.id
-            JOIN patients p ON p.id = pct.patient_id
+            JOIN care_team_member ctm ON ctm.care_team_id = ct.id
+            LEFT JOIN patient_care_team pct ON pct.care_team_id = ct.id
+            LEFT JOIN patients p ON p.id = pct.patient_id
             LEFT JOIN risk_levels rl ON rl.id = p.risk_level_id
-            WHERE ct.org_id = %s
-            ORDER BY ct.name ASC, patient_name ASC
+            WHERE ct.org_id = %s AND ctm.user_id = %s
+            ORDER BY ct.name ASC, patient_name ASC NULLS LAST
         """
         with get_db_cursor() as cursor:
-            cursor.execute(query, (org_id,))
+            cursor.execute(query, (org_id, user_id))
             rows = cursor.fetchall() or []
             return list(rows)
 
@@ -902,16 +922,30 @@ class UserRepository:
             return list(rows)
 
     @staticmethod
-    def get_org_metrics(org_id: str) -> Dict[str, Any]:
+    def get_org_metrics(org_id: str, user_id: str) -> Dict[str, Any]:
+        """
+        Retorna métricas de alertas filtradas por los pacientes de los equipos
+        a los que el usuario pertenece.
+        """
         query = """
-            WITH patient_alerts AS (
+            WITH user_teams AS (
+                SELECT ct.id AS care_team_id
+                FROM care_team_member ctm
+                JOIN care_teams ct ON ct.id = ctm.care_team_id
+                WHERE ct.org_id = %s AND ctm.user_id = %s
+            ),
+            team_patients AS (
+                SELECT DISTINCT pct.patient_id
+                FROM patient_care_team pct
+                JOIN user_teams ut ON ut.care_team_id = pct.care_team_id
+            ),
+            patient_alerts AS (
                 SELECT
-                    p.id AS patient_id,
+                    tp.patient_id,
                     COUNT(a.*)::int AS alert_count
-                FROM patients p
-                LEFT JOIN alerts a ON a.patient_id = p.id
-                WHERE p.org_id = %s
-                GROUP BY p.id
+                FROM team_patients tp
+                LEFT JOIN alerts a ON a.patient_id = tp.patient_id
+                GROUP BY tp.patient_id
             )
             SELECT
                 COALESCE(SUM(alert_count), 0) AS total_alerts,
@@ -920,7 +954,7 @@ class UserRepository:
             FROM patient_alerts
         """
         with get_db_cursor() as cursor:
-            cursor.execute(query, (org_id,))
+            cursor.execute(query, (org_id, user_id))
             row = cursor.fetchone() or {}
             return dict(row)
 

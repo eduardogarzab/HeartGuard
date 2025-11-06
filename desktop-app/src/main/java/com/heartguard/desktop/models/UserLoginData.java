@@ -6,7 +6,7 @@ import com.google.gson.annotations.SerializedName;
  * DTO simplificado para la respuesta de usuario en login
  */
 public class UserLoginData {
-    private Long id;
+    private String id;  // Cambiado a String para manejar UUIDs y evitar NumberFormatException
     private String email;
     private String name;
     
@@ -14,17 +14,17 @@ public class UserLoginData {
     private String systemRole;
     
     @SerializedName("org_count")
-    private Integer orgCount;
+    private String orgCount;  // Cambiado a String para evitar NumberFormatException en parsing
 
     // Constructor
     public UserLoginData() {}
 
     // Getters y Setters
-    public Long getId() {
+    public String getId() {
         return id;
     }
 
-    public void setId(Long id) {
+    public void setId(String id) {
         this.id = id;
     }
 
@@ -52,12 +52,26 @@ public class UserLoginData {
         this.systemRole = systemRole;
     }
 
-    public Integer getOrgCount() {
+    public String getOrgCount() {
         return orgCount;
     }
 
-    public void setOrgCount(Integer orgCount) {
+    public void setOrgCount(String orgCount) {
         this.orgCount = orgCount;
+    }
+    
+    /**
+     * Obtiene orgCount como entero, manejando valores no numéricos
+     */
+    public int getOrgCountAsInt() {
+        if (orgCount == null || orgCount.isEmpty()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(orgCount);
+        } catch (NumberFormatException e) {
+            return 0;
+        }
     }
 
     @Override

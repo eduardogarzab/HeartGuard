@@ -2,6 +2,9 @@ package com.heartguard.desktop.api;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.models.LoginResponse;
 import com.heartguard.desktop.models.Patient;
@@ -360,6 +363,13 @@ public class ApiClient {
         return gatewayUrl;
     }
 
+    private String resolveToken(String token) {
+        if (token != null && !token.isEmpty()) {
+            return token;
+        }
+        return accessToken;
+    }
+
     private JsonObject executeGatewayGet(
             String path,
             Map<String, String> queryParams,
@@ -367,7 +377,8 @@ public class ApiClient {
             boolean requiresToken,
             String defaultErrorMessage
     ) throws ApiException {
-        if (requiresToken && (token == null || token.isEmpty())) {
+        String authToken = resolveToken(token);
+        if (requiresToken && (authToken == null || authToken.isEmpty())) {
             throw new ApiException("Token de acceso no proporcionado");
         }
 
@@ -389,37 +400,14 @@ public class ApiClient {
                 .url(urlBuilder.build())
                 .get();
 
-        if (token != null && !token.isEmpty()) {
-            requestBuilder.addHeader("Authorization", "Bearer " + token);
+        if (authToken != null && !authToken.isEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer " + authToken);
         }
 
         try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
 
-            if (!response.isSuccessful()) {
-                JsonObject errorPayload = null;
-                if (!responseBody.isEmpty()) {
-                    try {
-                        errorPayload = gson.fromJson(responseBody, JsonObject.class);
-                    } catch (Exception ignored) {
-                        errorPayload = null;
-                    }
-                }
-
-                String errorCode = "unknown_error";
-                String errorMessage = defaultErrorMessage;
-
-                if (errorPayload != null) {
-                    if (errorPayload.has("error") && !errorPayload.get("error").isJsonNull()) {
-                        errorCode = errorPayload.get("error").getAsString();
-                    }
-                    if (errorPayload.has("message") && !errorPayload.get("message").isJsonNull()) {
-                        errorMessage = errorPayload.get("message").getAsString();
-                    }
-                }
-
-                throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
-            }
+            handleErrorIfNeeded(response, responseBody, defaultErrorMessage);
 
             if (responseBody.isEmpty()) {
                 return new JsonObject();
@@ -430,5 +418,397 @@ public class ApiClient {
         } catch (IOException e) {
             throw new ApiException("Error de conexión con el gateway: " + e.getMessage(), e);
         }
+    }
+
+    private JsonObject executeGatewayRequest(
+            String method,
+            String path,
+            JsonObject payload,
+            Map<String, String> queryParams,
+            String token,
+            boolean requiresToken,
+            String defaultErrorMessage
+    ) throws ApiException {
+        String authToken = resolveToken(token);
+        if (requiresToken && (authToken == null || authToken.isEmpty())) {
+            throw new ApiException("Token de acceso no proporcionado");
+        }
+
+        HttpUrl baseUrl = HttpUrl.parse(gatewayUrl + path);
+        if (baseUrl == null) {
+            throw new ApiException("URL inválida del gateway: " + gatewayUrl + path);
+        }
+
+        HttpUrl.Builder urlBuilder = baseUrl.newBuilder();
+        if (queryParams != null) {
+            for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                if (entry.getValue() != null) {
+                    urlBuilder.addQueryParameter(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        RequestBody body = payload != null ? RequestBody.create(gson.toJson(payload), JSON) : RequestBody.create("", JSON);
+
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(urlBuilder.build());
+
+        if ("PATCH".equalsIgnoreCase(method)) {
+            requestBuilder.patch(body);
+        } else if ("POST".equalsIgnoreCase(method)) {
+            requestBuilder.post(body);
+        } else if ("DELETE".equalsIgnoreCase(method)) {
+            requestBuilder.delete(body);
+        } else {
+            throw new IllegalArgumentException("Método no soportado: " + method);
+        }
+
+        if (authToken != null && !authToken.isEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer " + authToken);
+        }
+
+        try (Response response = httpClient.newCall(requestBuilder.build()).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "";
+
+            handleErrorIfNeeded(response, responseBody, defaultErrorMessage);
+
+            if (responseBody.isEmpty()) {
+                return new JsonObject();
+            }
+
+            JsonObject payloadResponse = gson.fromJson(responseBody, JsonObject.class);
+            return payloadResponse != null ? payloadResponse : new JsonObject();
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión con el gateway: " + e.getMessage(), e);
+        }
+    }
+
+    private void handleErrorIfNeeded(Response response, String responseBody, String defaultErrorMessage) throws ApiException {
+        if (response.isSuccessful()) {
+            return;
+        }
+
+        JsonObject errorPayload = null;
+        if (responseBody != null && !responseBody.isEmpty()) {
+            try {
+                errorPayload = gson.fromJson(responseBody, JsonObject.class);
+            } catch (Exception ignored) {
+                errorPayload = null;
+            }
+        }
+
+        String errorCode = "unknown_error";
+        String errorMessage = defaultErrorMessage;
+
+        if (response.code() == 401) {
+            errorCode = "unauthorized";
+            errorMessage = "Sesión expirada. Por favor, vuelve a iniciar sesión.";
+        }
+
+        if (errorPayload != null) {
+            if (errorPayload.has("error") && !errorPayload.get("error").isJsonNull()) {
+                JsonElement errorElement = errorPayload.get("error");
+                // El campo "error" puede ser String o JsonObject
+                if (errorElement.isJsonPrimitive()) {
+                    errorCode = errorElement.getAsString();
+                } else if (errorElement.isJsonObject()) {
+                    // Si es objeto, intentar extraer un código o convertir a string
+                    JsonObject errorObj = errorElement.getAsJsonObject();
+                    if (errorObj.has("code")) {
+                        errorCode = errorObj.get("code").getAsString();
+                    } else {
+                        errorCode = errorObj.toString();
+                    }
+                }
+            }
+            if (errorPayload.has("message") && !errorPayload.get("message").isJsonNull()) {
+                JsonElement messageElement = errorPayload.get("message");
+                // El campo "message" también puede ser String o JsonObject
+                if (messageElement.isJsonPrimitive()) {
+                    errorMessage = messageElement.getAsString();
+                } else if (messageElement.isJsonObject()) {
+                    errorMessage = messageElement.toString();
+                }
+            }
+        }
+
+        throw new ApiException(errorMessage, response.code(), errorCode, responseBody);
+    }
+
+    // ---------------------------- Usuarios ---------------------------------
+
+    public JsonObject getCurrentUserProfile(String token) throws ApiException {
+        return executeGatewayGet("/users/me", null, token, true, "Error al obtener perfil de usuario");
+    }
+
+    public JsonArray getCurrentUserMemberships(String token) throws ApiException {
+        System.out.println("[DEBUG] ApiClient.getCurrentUserMemberships() - Llamando endpoint /users/me/org-memberships");
+        JsonObject response = executeGatewayGet(
+                "/users/me/org-memberships",
+                null,
+                token,
+                true,
+                "Error al obtener organizaciones"
+        );
+        System.out.println("[DEBUG] Respuesta completa del endpoint: " + response.toString());
+        
+        if (response.has("data")) {
+            System.out.println("[DEBUG] Campo 'data' encontrado");
+            
+            // La estructura es: {"data": {"memberships": [...]}}
+            if (response.get("data").isJsonObject()) {
+                JsonObject dataObj = response.getAsJsonObject("data");
+                System.out.println("[DEBUG] 'data' es un JsonObject");
+                
+                if (dataObj.has("memberships") && dataObj.get("memberships").isJsonArray()) {
+                    JsonArray membershipsArray = dataObj.getAsJsonArray("memberships");
+                    System.out.println("[DEBUG] Campo 'memberships' encontrado con " + membershipsArray.size() + " elementos");
+                    return membershipsArray;
+                } else {
+                    System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'memberships' o no es un array");
+                    System.out.println("[DEBUG] Campos disponibles en 'data': " + dataObj.keySet());
+                }
+            } else if (response.get("data").isJsonArray()) {
+                // Por si acaso el formato cambia en el futuro
+                JsonArray dataArray = response.getAsJsonArray("data");
+                System.out.println("[DEBUG] 'data' es un JsonArray con " + dataArray.size() + " elementos (formato alternativo)");
+                return dataArray;
+            } else {
+                System.out.println("[DEBUG] ADVERTENCIA: 'data' NO es ni JsonObject ni JsonArray, es: " + response.get("data").getClass().getSimpleName());
+            }
+        } else {
+            System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'data' en la respuesta");
+            System.out.println("[DEBUG] Campos disponibles: " + response.keySet());
+        }
+        
+        return new JsonArray();
+    }
+
+    public JsonArray getPendingInvitations(String token) throws ApiException {
+        JsonObject response = executeGatewayGet(
+                "/users/me/invitations",
+                null,
+                token,
+                true,
+                "Error al obtener invitaciones"
+        );
+        // El backend devuelve: { data: { invitations: [...] } }
+        if (response.has("data") && response.get("data").isJsonObject()) {
+            JsonObject data = response.getAsJsonObject("data");
+            if (data.has("invitations") && data.get("invitations").isJsonArray()) {
+                return data.getAsJsonArray("invitations");
+            }
+        }
+        return new JsonArray();
+    }
+
+    public JsonObject updateCurrentUserProfile(String token, Map<String, Object> updates) throws ApiException {
+        JsonObject payload = new JsonObject();
+        if (updates != null) {
+            for (Map.Entry<String, Object> entry : updates.entrySet()) {
+                if (entry.getValue() == null) {
+                    payload.add(entry.getKey(), JsonNull.INSTANCE);
+                } else {
+                    payload.add(entry.getKey(), gson.toJsonTree(entry.getValue()));
+                }
+            }
+        }
+        return executeGatewayRequest(
+                "PATCH",
+                "/users/me",
+                payload,
+                null,
+                token,
+                true,
+                "Error al actualizar perfil"
+        );
+    }
+
+    public JsonObject acceptInvitation(String token, String invitationId) throws ApiException {
+        return executeGatewayRequest(
+                "POST",
+                "/users/me/invitations/" + invitationId + "/accept",
+                new JsonObject(),
+                null,
+                token,
+                true,
+                "Error al aceptar invitación"
+        );
+    }
+
+    public JsonObject rejectInvitation(String token, String invitationId) throws ApiException {
+        return executeGatewayRequest(
+                "POST",
+                "/users/me/invitations/" + invitationId + "/reject",
+                new JsonObject(),
+                null,
+                token,
+                true,
+                "Error al rechazar invitación"
+        );
+    }
+
+    // ------------------------- Dashboard Organizacional --------------------
+
+    public JsonObject getOrganizationDashboard(String token, String orgId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/dashboard",
+                null,
+                token,
+                true,
+                "Error al obtener dashboard organizacional"
+        );
+    }
+
+    public JsonObject getOrganizationMetrics(String token, String orgId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/metrics",
+                null,
+                token,
+                true,
+                "Error al obtener métricas de organización"
+        );
+    }
+
+    public JsonObject getOrganizationCareTeams(String token, String orgId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-teams",
+                null,
+                token,
+                true,
+                "Error al obtener equipos de cuidado"
+        );
+    }
+
+    public JsonObject getOrganizationCareTeamPatients(String token, String orgId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-team-patients",
+                null,
+                token,
+                true,
+                "Error al obtener pacientes por equipo"
+        );
+    }
+
+    public JsonObject getOrganizationPatientDetail(String token, String orgId, String patientId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/patients/" + patientId,
+                null,
+                token,
+                true,
+                "Error al obtener detalle del paciente"
+        );
+    }
+
+    public JsonObject getOrganizationPatientAlerts(String token, String orgId, String patientId, int limit) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/patients/" + patientId + "/alerts",
+                params,
+                token,
+                true,
+                "Error al obtener alertas del paciente"
+        );
+    }
+
+    public JsonObject getOrganizationPatientNotes(String token, String orgId, String patientId, int limit) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/patients/" + patientId + "/notes",
+                params,
+                token,
+                true,
+                "Error al obtener notas del paciente"
+        );
+    }
+
+    // ------------------------- Pacientes y Cuidadores ----------------------
+
+    public JsonObject getCaregiverPatients(String token) throws ApiException {
+        return executeGatewayGet(
+                "/caregiver/patients",
+                null,
+                token,
+                true,
+                "Error al obtener pacientes asignados"
+        );
+    }
+
+    public JsonObject getCaregiverPatientAlerts(String token, String patientId, int limit) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        return executeGatewayGet(
+                "/caregiver/patients/" + patientId + "/alerts",
+                params,
+                token,
+                true,
+                "Error al obtener alertas del paciente"
+        );
+    }
+
+    public JsonObject getCaregiverPatientNotes(String token, String patientId) throws ApiException {
+        return executeGatewayGet(
+                "/caregiver/patients/" + patientId + "/notes",
+                null,
+                token,
+                true,
+                "Error al obtener notas del paciente"
+        );
+    }
+
+    // --------------------------- Mapa y ubicaciones -----------------------
+
+    public JsonObject getCareTeamLocations(String token, Map<String, String> params) throws ApiException {
+        return executeGatewayGet(
+                "/care-team/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones de equipos"
+        );
+    }
+
+    public JsonObject getCaregiverPatientLocations(String token, Map<String, String> params) throws ApiException {
+        return executeGatewayGet(
+                "/caregiver/patients/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones de pacientes"
+        );
+    }
+
+    // --------------------------- Dispositivos ------------------------------
+
+    public JsonObject getCareTeamDevices(String token, String orgId, String teamId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos del equipo"
+        );
+    }
+
+    public JsonObject getCareTeamDisconnectedDevices(String token, String orgId, String teamId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos desconectados"
+        );
+    }
+
+    public JsonObject getCareTeamDeviceStreams(String token, String orgId, String teamId, String deviceId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
+                null,
+                token,
+                true,
+                "Error al obtener streams del dispositivo"
+        );
     }
 }
