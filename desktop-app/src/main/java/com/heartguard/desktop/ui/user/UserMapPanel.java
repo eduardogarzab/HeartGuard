@@ -70,6 +70,23 @@ public class UserMapPanel extends JPanel {
         Platform.runLater(this::initializeMapOnFxThread);
     }
 
+    public void reset() {
+        mapReady = false;
+        pendingPatients = null;
+        pendingMembers = null;
+        if (webEngine != null) {
+            Platform.runLater(() -> {
+                try {
+                    JSObject window = getWindowObject();
+                    if (window != null) {
+                        window.call("clearEntities");
+                    }
+                } catch (Exception ignored) {
+                }
+            });
+        }
+    }
+
     private void initializeMapOnFxThread() {
         WebView webView = new WebView();
         webEngine = webView.getEngine();
@@ -91,9 +108,6 @@ public class UserMapPanel extends JPanel {
     }
 
     public void updateLocations(JsonArray patients, JsonArray members) {
-        if ((patients == null || patients.isEmpty()) && (members == null || members.isEmpty())) {
-            return;
-        }
         pendingPatients = patients;
         pendingMembers = members;
         if (!mapReady || webEngine == null) {
@@ -109,7 +123,6 @@ public class UserMapPanel extends JPanel {
                 }
             } catch (Exception ignored) {
             }
-            requestResize();
         });
     }
 
@@ -182,21 +195,28 @@ public class UserMapPanel extends JPanel {
 
                         const resizeMap = () => {
                             if (!map) return;
-                            requestAnimationFrame(() => {
+                            setTimeout(() => {
                                 map.invalidateSize({ animate: false, pan: false });
                                 if (currentPatients.length > 0 || currentMembers.length > 0) {
                                     const allBounds = [];
                                     currentPatients.forEach(p => {
-                                        if (p.location) allBounds.push([p.location.latitude, p.location.longitude]);
+                                        if (p.location && p.location.latitude !== null && p.location.longitude !== null) {
+                                            allBounds.push([p.location.latitude, p.location.longitude]);
+                                        }
                                     });
                                     currentMembers.forEach(m => {
-                                        if (m.location) allBounds.push([m.location.latitude, m.location.longitude]);
+                                        if (m.location && m.location.latitude !== null && m.location.longitude !== null) {
+                                            allBounds.push([m.location.latitude, m.location.longitude]);
+                                        }
                                     });
                                     if (allBounds.length > 0) {
                                         map.fitBounds(allBounds, { padding: [40, 40], maxZoom: 16, animate: false });
                                     }
+                                } else {
+                                    // Si no hay datos, resetear a vista por defecto
+                                    map.setView([20, -30], 3);
                                 }
-                            });
+                            }, 50);
                         };
                         window.resizeMap = resizeMap;
 
@@ -244,7 +264,6 @@ public class UserMapPanel extends JPanel {
 
                         const renderPatients = () => {
                             patientCluster.clearLayers();
-                            const bounds = [];
                             currentPatients.forEach(p => {
                                 if (!p.location || p.location.latitude === null || p.location.longitude === null) {
                                     return;
@@ -272,11 +291,7 @@ public class UserMapPanel extends JPanel {
                                     sidePanel.show(html);
                                 });
                                 patientCluster.addLayer(marker);
-                                bounds.push([p.location.latitude, p.location.longitude]);
                             });
-                            if (bounds.length) {
-                                map.fitBounds(bounds, { padding: [40, 40], maxZoom: 12 });
-                            }
                         };
 
                         const renderMembers = () => {
@@ -337,6 +352,8 @@ public class UserMapPanel extends JPanel {
                             currentMembers = Array.isArray(members) ? members : [];
                             renderPatients();
                             renderMembers();
+                            // Forzar redimensión después de renderizar
+                            setTimeout(() => resizeMap(), 100);
                         };
 
                         window.updateEntitiesFromJava = (patientsJson, membersJson) => {

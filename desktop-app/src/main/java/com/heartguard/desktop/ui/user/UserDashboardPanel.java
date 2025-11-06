@@ -477,7 +477,7 @@ public class UserDashboardPanel extends JPanel {
         myPatientsPanel.removeAll();
         teamPatientsPanel.removeAll();
         mapStatusLabel.setText("Actualizando mapa...");
-        // mapPanel.clear();
+        mapPanel.reset();
         teamFilter.removeAllItems();
         teamListModel.clear();
         membersListPanel.removeAll();
@@ -551,7 +551,6 @@ public class UserDashboardPanel extends JPanel {
         // Limpiar todos los datos de la organización anterior
         mapPatientsData = new JsonArray();
         mapMembersData = new JsonArray();
-        applyMapFilter();
         careTeamsArray = new JsonArray();
         devicesCache.clear();
         disconnectedDevicesCache.clear();
@@ -1186,7 +1185,7 @@ public class UserDashboardPanel extends JPanel {
             JsonObject patient = element.getAsJsonObject();
             if (patient.has("care_team") && patient.get("care_team").isJsonObject()) {
                 JsonObject team = patient.getAsJsonObject("care_team");
-                if (team.get("id").getAsString().equals(option.id)) {
+                if (team.has("id") && !team.get("id").isJsonNull() && team.get("id").getAsString().equals(option.id)) {
                     filteredPatients.add(patient);
                 }
             }
@@ -1197,7 +1196,7 @@ public class UserDashboardPanel extends JPanel {
             JsonObject member = element.getAsJsonObject();
             if (member.has("care_team") && member.get("care_team").isJsonObject()) {
                 JsonObject team = member.getAsJsonObject("care_team");
-                if (team.get("id").getAsString().equals(option.id)) {
+                if (team.has("id") && !team.get("id").isJsonNull() && team.get("id").getAsString().equals(option.id)) {
                     filteredMembers.add(member);
                 }
             }
