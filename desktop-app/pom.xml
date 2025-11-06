@@ -140,6 +140,14 @@
                         <option>javafx.web/com.sun.webkit=ALL-UNNAMED</option>
                         <option>--add-opens</option>
                         <option>javafx.web/com.sun.javafx.webkit=ALL-UNNAMED</option>
+                        <option>--add-opens</option>
+                        <option>javafx.graphics/com.sun.javafx.sg.prism=ALL-UNNAMED</option>
+                        <option>--add-opens</option>
+                        <option>javafx.graphics/com.sun.prism=ALL-UNNAMED</option>
+                        <option>--add-exports</option>
+                        <option>javafx.web/com.sun.webkit=ALL-UNNAMED</option>
+                        <option>--add-exports</option>
+                        <option>javafx.web/com.sun.javafx.webkit=ALL-UNNAMED</option>
                     </options>
                 </configuration>
             </plugin>

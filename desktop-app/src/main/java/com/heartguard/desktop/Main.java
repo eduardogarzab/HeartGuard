@@ -13,6 +13,14 @@ import javax.swing.*;
 public class Main {
     
     public static void main(String[] args) {
+        // Configurar propiedades del sistema para JavaFX WebView en Java 21
+        // Estas propiedades deben establecerse ANTES de inicializar JavaFX
+        System.setProperty("prism.order", "sw");
+        System.setProperty("prism.verbose", "false");
+        System.setProperty("javafx.animation.fullspeed", "true");
+        System.setProperty("prism.lcdtext", "false");
+        System.setProperty("prism.subpixeltext", "false");
+        
         // Inicializar el toolkit de JavaFX de forma explícita
         // Esto es crítico para Java 17+ con JFXPanel
         initializeJavaFX();
@@ -46,9 +54,22 @@ public class Main {
         // Crear un JFXPanel dummy para forzar la inicialización del toolkit de JavaFX
         // Este panel no se usa, solo dispara la inicialización
         SwingUtilities.invokeLater(() -> {
-            new JFXPanel(); // Esto inicializa implícitamente Platform.startup()
-            Platform.setImplicitExit(false); // Importante: evitar que JavaFX cierre la aplicación
-            System.out.println("[Main] JavaFX toolkit inicializado correctamente");
+            try {
+                new JFXPanel(); // Esto inicializa implícitamente Platform.startup()
+                Platform.setImplicitExit(false); // Importante: evitar que JavaFX cierre la aplicación
+                
+                // En Java 21, forzar que el renderizador use software en lugar de hardware
+                // Esto previene problemas de renderizado de tiles en WebView
+                Platform.runLater(() -> {
+                    System.setProperty("prism.order", "sw");
+                    System.setProperty("prism.text", "t2k");
+                });
+                
+                System.out.println("[Main] JavaFX toolkit inicializado correctamente para Java 21");
+            } catch (Exception e) {
+                System.err.println("[Main] Error al inicializar JavaFX: " + e.getMessage());
+                e.printStackTrace();
+            }
         });
     }
 }
