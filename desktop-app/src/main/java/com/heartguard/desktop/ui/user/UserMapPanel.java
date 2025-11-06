@@ -24,6 +24,7 @@ public class UserMapPanel extends JPanel {
     private final JFXPanel fxPanel;
     private WebEngine webEngine;
     private boolean mapReady = false;
+    private boolean mapInitialized = false;
     private JsonArray pendingPatients;
     private JsonArray pendingMembers;
 
@@ -36,7 +37,7 @@ public class UserMapPanel extends JPanel {
         add(fxPanel, BorderLayout.CENTER);
 
         addHierarchyListener(e -> {
-            if (isShowing() && !mapReady) {
+            if (isShowing()) {
                 initializeMap();
             }
         });
@@ -53,26 +54,40 @@ public class UserMapPanel extends JPanel {
                 }
             }
         });
+
+        // Inicializar de inmediato para evitar esperar eventos de jerarquía
+        initializeMap();
     }
 
     private void initializeMap() {
-        Platform.runLater(() -> {
-            WebView webView = new WebView();
-            webEngine = webView.getEngine();
-            webEngine.setJavaScriptEnabled(true);
-            webEngine.loadContent(buildHtml());
-            webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-                switch (newState) {
-                    case SUCCEEDED -> {
-                        mapReady = true;
-                        if (pendingPatients != null || pendingMembers != null) {
-                            updateLocations(pendingPatients, pendingMembers);
-                        }
+        if (mapInitialized) {
+            return;
+        }
+        mapInitialized = true;
+        Platform.runLater(this::initializeMapOnFxThread);
+    }
+
+    private void initializeMapOnFxThread() {
+        WebView webView = new WebView();
+        webEngine = webView.getEngine();
+        webEngine.setJavaScriptEnabled(true);
+        webEngine.loadContent(buildHtml());
+        webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
+            switch (newState) {
+                case SUCCEEDED -> {
+                    mapReady = true;
+                    if (pendingPatients != null || pendingMembers != null) {
+                        updateLocations(pendingPatients, pendingMembers);
+                    }
+                    try {
+                        webEngine.executeScript("if(window.resizeMap){window.resizeMap();}");
+                    } catch (Exception ignored) {
                     }
                 }
-            });
-            fxPanel.setScene(new Scene(webView));
+                case FAILED -> mapReady = false;
+            }
         });
+        fxPanel.setScene(new Scene(webView));
     }
 
     public void updateLocations(JsonArray patients, JsonArray members) {
