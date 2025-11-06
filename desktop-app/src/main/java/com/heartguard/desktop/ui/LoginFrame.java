@@ -3,6 +3,7 @@ package com.heartguard.desktop.ui;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
 import com.heartguard.desktop.models.LoginResponse;
+import com.heartguard.desktop.ui.user.UserDashboardFrame;
 
 import javax.swing.*;
 import java.awt.*;
@@ -219,19 +220,7 @@ public class LoginFrame extends JFrame {
                     if (accountType.equals("patient")) {
                         openPatientDashboard(response);
                     } else {
-                        // Si es usuario (staff), mostrar mensaje temporal
-                        String message = String.format(
-                            "Bienvenido, %s!\n\nTipo de cuenta: Usuario (Staff)\nEmail: %s\n\nDashboard de staff próximamente...",
-                            fullName,
-                            response.getEmail()
-                        );
-                        
-                        JOptionPane.showMessageDialog(
-                            LoginFrame.this,
-                            message,
-                            "Login Exitoso",
-                            JOptionPane.INFORMATION_MESSAGE
-                        );
+                        openUserDashboard(response);
                     }
                 } catch (Exception ex) {
                     Throwable cause = ex.getCause();
@@ -761,8 +750,14 @@ public class LoginFrame extends JFrame {
         
         dashboardFrame.add(dashboardPanel);
         dashboardFrame.setVisible(true);
-        
+
         // Cerrar la ventana de login
+        this.dispose();
+    }
+
+    private void openUserDashboard(LoginResponse loginResponse) {
+        UserDashboardFrame frame = new UserDashboardFrame(apiClient, loginResponse);
+        frame.setVisible(true);
         this.dispose();
     }
 }
