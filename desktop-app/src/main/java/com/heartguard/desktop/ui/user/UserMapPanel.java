@@ -7,6 +7,7 @@ import javafx.embed.swing.JFXPanel;
 import javafx.scene.Scene;
 import javafx.scene.web.WebEngine;
 import javafx.scene.web.WebView;
+import netscape.javascript.JSObject;
 
 import javax.swing.*;
 import javax.swing.border.LineBorder;
@@ -34,24 +35,25 @@ public class UserMapPanel extends JPanel {
         setBorder(new LineBorder(BORDER_MAP, 1));
         
         fxPanel = new JFXPanel();
+    fxPanel.setPreferredSize(new Dimension(800, 360));
+    fxPanel.setMinimumSize(new Dimension(320, 240));
         add(fxPanel, BorderLayout.CENTER);
 
         addHierarchyListener(e -> {
-            if (isShowing()) {
-                initializeMap();
+            if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && isShowing()) {
+                requestResize();
             }
         });
 
         addComponentListener(new ComponentAdapter() {
             @Override
+            public void componentShown(ComponentEvent e) {
+                requestResize();
+            }
+
+            @Override
             public void componentResized(ComponentEvent e) {
-                if (mapReady) {
-                    Platform.runLater(() -> {
-                        if (webEngine != null) {
-                            webEngine.executeScript("if(window.resizeMap){window.resizeMap();}");
-                        }
-                    });
-                }
+                requestResize();
             }
         });
 
@@ -79,10 +81,7 @@ public class UserMapPanel extends JPanel {
                     if (pendingPatients != null || pendingMembers != null) {
                         updateLocations(pendingPatients, pendingMembers);
                     }
-                    try {
-                        webEngine.executeScript("if(window.resizeMap){window.resizeMap();}");
-                    } catch (Exception ignored) {
-                    }
+                    requestResize();
                 }
                 case FAILED -> mapReady = false;
             }
@@ -99,7 +98,14 @@ public class UserMapPanel extends JPanel {
         Platform.runLater(() -> {
             String patientsJson = patients != null ? JsonUtils.GSON.toJson(patients) : "[]";
             String membersJson = members != null ? JsonUtils.GSON.toJson(members) : "[]";
-            webEngine.executeScript(String.format("window.updateEntities(%s, %s);", patientsJson, membersJson));
+            try {
+                JSObject window = getWindowObject();
+                if (window != null) {
+                    window.call("updateEntitiesFromJava", patientsJson, membersJson);
+                }
+            } catch (Exception ignored) {
+            }
+            requestResize();
         });
     }
 
@@ -107,8 +113,36 @@ public class UserMapPanel extends JPanel {
         pendingPatients = null;
         pendingMembers = null;
         if (mapReady && webEngine != null) {
-            Platform.runLater(() -> webEngine.executeScript("window.clearEntities();"));
+            Platform.runLater(() -> {
+                try {
+                    JSObject window = getWindowObject();
+                    if (window != null) {
+                        window.call("clearEntities");
+                    }
+                } catch (Exception ignored) {
+                }
+            });
         }
+    }
+
+    private JSObject getWindowObject() {
+        try {
+            return (JSObject) webEngine.executeScript("window");
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private void requestResize() {
+        if (!mapReady || webEngine == null) {
+            return;
+        }
+        Platform.runLater(() -> {
+            try {
+                webEngine.executeScript("setTimeout(function(){ if(window.resizeMap){ window.resizeMap(); } }, 50);");
+            } catch (Exception ignored) {
+            }
+        });
     }
 
     private String buildHtml() {
@@ -141,10 +175,20 @@ public class UserMapPanel extends JPanel {
                         }).setView([20, -30], 3);
 
                         const resizeMap = () => {
+                            if (!map) return;
                             requestAnimationFrame(() => {
-                                map.invalidateSize();
-                                if (map.resize) {
-                                    map.resize();
+                                map.invalidateSize({ animate: false, pan: false });
+                                if (currentPatients.length > 0 || currentMembers.length > 0) {
+                                    const allBounds = [];
+                                    currentPatients.forEach(p => {
+                                        if (p.location) allBounds.push([p.location.latitude, p.location.longitude]);
+                                    });
+                                    currentMembers.forEach(m => {
+                                        if (m.location) allBounds.push([m.location.latitude, m.location.longitude]);
+                                    });
+                                    if (allBounds.length > 0) {
+                                        map.fitBounds(allBounds, { padding: [40, 40], maxZoom: 16, animate: false });
+                                    }
                                 }
                             });
                         };
@@ -287,6 +331,16 @@ public class UserMapPanel extends JPanel {
                             currentMembers = Array.isArray(members) ? members : [];
                             renderPatients();
                             renderMembers();
+                        };
+
+                        window.updateEntitiesFromJava = (patientsJson, membersJson) => {
+                            try {
+                                const patients = JSON.parse(patientsJson || '[]');
+                                const members = JSON.parse(membersJson || '[]');
+                                window.updateEntities(patients, members);
+                            } catch (err) {
+                                console.error('[MAP] Error parseando datos recibidos', err);
+                            }
                         };
 
                         window.clearEntities = () => {
