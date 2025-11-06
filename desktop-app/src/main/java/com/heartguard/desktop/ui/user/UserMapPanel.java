@@ -36,12 +36,16 @@ public class UserMapPanel extends JPanel {
         setBorder(new LineBorder(BORDER_MAP, 1));
         
         fxPanel = new JFXPanel();
-    fxPanel.setPreferredSize(new Dimension(800, 360));
-    fxPanel.setMinimumSize(new Dimension(320, 240));
+        fxPanel.setPreferredSize(new Dimension(800, 360));
+        fxPanel.setMinimumSize(new Dimension(320, 240));
         add(fxPanel, BorderLayout.CENTER);
 
         addHierarchyListener(e -> {
             if ((e.getChangeFlags() & HierarchyEvent.SHOWING_CHANGED) != 0 && isShowing()) {
+                // Intentar inicializar el mapa cuando se muestra por primera vez
+                if (!mapInitialized) {
+                    initializeMap();
+                }
                 requestResize();
             }
         });
@@ -49,6 +53,10 @@ public class UserMapPanel extends JPanel {
         addComponentListener(new ComponentAdapter() {
             @Override
             public void componentShown(ComponentEvent e) {
+                // Intentar inicializar el mapa cuando se muestra por primera vez
+                if (!mapInitialized) {
+                    initializeMap();
+                }
                 requestResize();
             }
 
@@ -58,16 +66,35 @@ public class UserMapPanel extends JPanel {
             }
         });
 
-        // Inicializar de inmediato para evitar esperar eventos de jerarquía
-        initializeMap();
+        // Inicializar el mapa después de que el componente esté añadido
+        SwingUtilities.invokeLater(this::initializeMap);
     }
 
     private void initializeMap() {
         if (mapInitialized) {
+            System.out.println("[UserMapPanel] Mapa ya inicializado, omitiendo...");
             return;
         }
         mapInitialized = true;
-        Platform.runLater(this::initializeMapOnFxThread);
+        System.out.println("[UserMapPanel] Iniciando inicialización del mapa...");
+        
+        // Asegurar que Platform.runLater se ejecute incluso si el toolkit no está inicializado
+        try {
+            Platform.runLater(() -> {
+                try {
+                    initializeMapOnFxThread();
+                } catch (Exception e) {
+                    System.err.println("[UserMapPanel] Error al inicializar mapa en FX Thread: " + e.getMessage());
+                    e.printStackTrace();
+                    // Si falla, marcar como no inicializado para reintentar
+                    mapInitialized = false;
+                }
+            });
+        } catch (Exception e) {
+            System.err.println("[UserMapPanel] Error al programar inicialización: " + e.getMessage());
+            e.printStackTrace();
+            mapInitialized = false;
+        }
     }
 
     public void reset() {
@@ -91,17 +118,33 @@ public class UserMapPanel extends JPanel {
         WebView webView = new WebView();
         webEngine = webView.getEngine();
         webEngine.setJavaScriptEnabled(true);
+        
+        // Listener para detectar errores de carga
+        webEngine.getLoadWorker().exceptionProperty().addListener((obs, oldEx, newEx) -> {
+            if (newEx != null) {
+                System.err.println("[UserMapPanel] Error al cargar el contenido del mapa: " + newEx.getMessage());
+                newEx.printStackTrace();
+            }
+        });
+        
         webEngine.loadContent(buildHtml());
         webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
             switch (newState) {
                 case SUCCEEDED -> {
                     mapReady = true;
+                    System.out.println("[UserMapPanel] Mapa cargado exitosamente");
                     if (pendingPatients != null || pendingMembers != null) {
                         updateLocations(pendingPatients, pendingMembers);
                     }
                     requestResize();
                 }
-                case FAILED -> mapReady = false;
+                case FAILED -> {
+                    mapReady = false;
+                    System.err.println("[UserMapPanel] Falló la carga del mapa");
+                }
+                case CANCELLED -> {
+                    System.err.println("[UserMapPanel] Carga del mapa cancelada");
+                }
             }
         });
         fxPanel.setScene(new Scene(webView));

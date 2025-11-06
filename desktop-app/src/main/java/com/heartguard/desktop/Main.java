@@ -2,6 +2,8 @@ package com.heartguard.desktop;
 
 import com.formdev.flatlaf.FlatLightLaf;
 import com.heartguard.desktop.ui.LoginFrame;
+import javafx.application.Platform;
+import javafx.embed.swing.JFXPanel;
 
 import javax.swing.*;
 
@@ -11,6 +13,10 @@ import javax.swing.*;
 public class Main {
     
     public static void main(String[] args) {
+        // Inicializar el toolkit de JavaFX de forma explícita
+        // Esto es crítico para Java 17+ con JFXPanel
+        initializeJavaFX();
+        
         // Configurar Look and Feel moderno
         try {
             UIManager.setLookAndFeel(new FlatLightLaf());
@@ -29,6 +35,20 @@ public class Main {
         SwingUtilities.invokeLater(() -> {
             LoginFrame loginFrame = new LoginFrame();
             loginFrame.setVisible(true);
+        });
+    }
+    
+    /**
+     * Inicializa el toolkit de JavaFX de forma explícita.
+     * Esto asegura que el toolkit esté listo antes de crear cualquier JFXPanel.
+     */
+    private static void initializeJavaFX() {
+        // Crear un JFXPanel dummy para forzar la inicialización del toolkit de JavaFX
+        // Este panel no se usa, solo dispara la inicialización
+        SwingUtilities.invokeLater(() -> {
+            new JFXPanel(); // Esto inicializa implícitamente Platform.startup()
+            Platform.setImplicitExit(false); // Importante: evitar que JavaFX cierre la aplicación
+            System.out.println("[Main] JavaFX toolkit inicializado correctamente");
         });
     }
 }
