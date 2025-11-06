@@ -15,6 +15,7 @@ import java.awt.event.ActionListener;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -476,7 +477,7 @@ public class UserDashboardPanel extends JPanel {
         myPatientsPanel.removeAll();
         teamPatientsPanel.removeAll();
         mapStatusLabel.setText("Actualizando mapa...");
-        mapPanel.clear();
+        // mapPanel.clear();
         teamFilter.removeAllItems();
         teamListModel.clear();
         membersListPanel.removeAll();
@@ -550,6 +551,7 @@ public class UserDashboardPanel extends JPanel {
         // Limpiar todos los datos de la organización anterior
         mapPatientsData = new JsonArray();
         mapMembersData = new JsonArray();
+        applyMapFilter();
         careTeamsArray = new JsonArray();
         devicesCache.clear();
         disconnectedDevicesCache.clear();

@@ -14,6 +14,7 @@ import javax.swing.border.LineBorder;
 import java.awt.*;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.HierarchyEvent;
 
 /**
  * Panel que encapsula un mapa Leaflet con clustering para ubicaciones.
@@ -90,6 +91,9 @@ public class UserMapPanel extends JPanel {
     }
 
     public void updateLocations(JsonArray patients, JsonArray members) {
+        if ((patients == null || patients.isEmpty()) && (members == null || members.isEmpty())) {
+            return;
+        }
         pendingPatients = patients;
         pendingMembers = members;
         if (!mapReady || webEngine == null) {
@@ -168,6 +172,8 @@ public class UserMapPanel extends JPanel {
                     <script src=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js\"></script>
                     <script>
                         const map = L.map('map', {
+                            zoomAnimation: false,
+                            fadeAnimation: false,
                             zoomSnap: 0.25,
                             minZoom: 2,
                             maxZoom: 19,
