@@ -1,0 +1,6 @@
+requests
+cryptography
+matplotlib
+tkhtmlview
+folium
+Pillow
