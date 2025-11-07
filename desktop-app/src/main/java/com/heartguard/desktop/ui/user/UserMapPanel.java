@@ -266,9 +266,8 @@ public class UserMapPanel extends JPanel {
                         }
                         .leaflet-tile {
                             opacity: 1 !important;
-                            image-rendering: -webkit-optimize-contrast;
-                            image-rendering: crisp-edges;
-                            image-rendering: pixelated;
+                            image-rendering: optimizeQuality;
+                            transition: none !important;
                             will-change: transform;
                         }
                         .leaflet-tile-loaded {
@@ -295,12 +294,11 @@ public class UserMapPanel extends JPanel {
                             markerZoomAnimation: false,
                             zoomSnap: 1,
                             zoomDelta: 1,
-                            wheelPxPerZoomLevel: 120,
                             trackResize: true,
                             minZoom: 2,
-                            maxZoom: 18,
+                            maxZoom: 15,
                             worldCopyJump: true,
-                            preferCanvas: true,
+                            preferCanvas: false,
                             inertia: false,
                             zoomControl: true
                         }).setView([20, -30], 3);
@@ -310,6 +308,11 @@ public class UserMapPanel extends JPanel {
                         let resizeTimeout = null;
                         const resizeMap = () => {
                             if (!map) return;
+                            if (map._animatingZoom) {
+                                if (resizeTimeout) clearTimeout(resizeTimeout);
+                                resizeTimeout = setTimeout(resizeMap, 120);
+                                return;
+                            }
                             if (resizeTimeout) clearTimeout(resizeTimeout);
                             resizeTimeout = setTimeout(() => {
                                 try {
@@ -358,14 +361,15 @@ public class UserMapPanel extends JPanel {
                         const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                             attribution: '© OpenStreetMap contributors',
                             maxZoom: 18,
-                            maxNativeZoom: 18,
+                            maxNativeZoom: 17,
                             minZoom: 2,
                             tileSize: 256,
                             zoomOffset: 0,
-                            keepBuffer: 3,
+                            keepBuffer: 6,
                             updateWhenIdle: false,
                             updateWhenZooming: true,
-                            updateInterval: 100,
+                            updateInterval: 90,
+                            reuseTiles: true,
                             bounds: [[-90, -180], [90, 180]],
                             noWrap: false,
                             crossOrigin: 'anonymous',
@@ -397,7 +401,7 @@ public class UserMapPanel extends JPanel {
                             const count = tileRetry.get(url) || 0;
                             console.warn('[MAP] Tile error:', url, 'retry:', count);
                             if (count < 2) {
-                                const delay = count === 0 ? 800 : 2000;
+                                const delay = count === 0 ? 600 : 1600;
                                 setTimeout(() => {
                                     try {
                                         if (e.tile) {
@@ -428,8 +432,7 @@ public class UserMapPanel extends JPanel {
                             if (zoomDebounce) clearTimeout(zoomDebounce);
                             zoomDebounce = setTimeout(() => {
                                 console.log('[MAP] Zoom finalizado en nivel:', map.getZoom());
-                                map.invalidateSize({ animate: false, pan: false });
-                            }, 150);
+                            }, 120);
                         });
                         
                         map.on('moveend', () => {
@@ -477,6 +480,7 @@ public class UserMapPanel extends JPanel {
 
                         let currentPatients = [];
                         let currentMembers = [];
+                        let hasInitialBounds = false;
 
                         const renderPatients = () => {
                             try {
@@ -580,12 +584,15 @@ public class UserMapPanel extends JPanel {
                                 console.log('[MAP] updateEntities:', currentPatients.length, 'pacientes,', currentMembers.length, 'miembros');
                                 renderPatients();
                                 renderMembers();
-                                setTimeout(() => {
-                                    fitMapToBounds();
+                                if (!hasInitialBounds) {
                                     setTimeout(() => {
-                                        resizeMap();
-                                    }, 120);
-                                }, 80);
+                                        fitMapToBounds();
+                                        hasInitialBounds = true;
+                                        setTimeout(resizeMap, 150);
+                                    }, 80);
+                                } else {
+                                    setTimeout(resizeMap, 180);
+                                }
                             } catch (e) {
                                 console.error('[MAP] Error en updateEntities:', e);
                             }
@@ -608,6 +615,7 @@ public class UserMapPanel extends JPanel {
                                 patientCluster.clearLayers();
                                 memberCluster.clearLayers();
                                 sidePanel.hide();
+                                hasInitialBounds = false;
                                 console.log('[MAP] Entidades limpiadas');
                             } catch (e) {
                                 console.error('[MAP] Error limpiando:', e);
