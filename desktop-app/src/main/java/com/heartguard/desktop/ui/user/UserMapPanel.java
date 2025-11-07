@@ -98,7 +98,6 @@ public class UserMapPanel extends JPanel {
     }
 
     public void reset() {
-        mapReady = false;
         pendingPatients = null;
         pendingMembers = null;
         if (webEngine != null) {
@@ -178,7 +177,7 @@ public class UserMapPanel extends JPanel {
         }
     }
 
-    public void updateLocations(JsonArray patients, JsonArray members) {
+    public synchronized void updateLocations(JsonArray patients, JsonArray members) {
         pendingPatients = patients;
         pendingMembers = members;
         if (!mapReady || webEngine == null) {
@@ -277,6 +276,11 @@ public class UserMapPanel extends JPanel {
                         .leaflet-zoom-animated {
                             will-change: transform;
                         }
+                        .fallback-pane img {
+                            opacity: 0.55;
+                            filter: saturate(0.85) brightness(1.08);
+                            image-rendering: optimizeSpeed;
+                        }
                         .marker-patient { border-radius: 50%; width: 18px; height: 18px; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.2); }
                         .marker-member { width: 20px; height: 20px; border-radius: 6px; border: 2px solid #fff; box-shadow: 0 0 4px rgba(0,0,0,0.2); }
                     </style>
@@ -296,12 +300,17 @@ public class UserMapPanel extends JPanel {
                             zoomDelta: 1,
                             trackResize: true,
                             minZoom: 2,
-                            maxZoom: 15,
+                            maxZoom: 18,
                             worldCopyJump: true,
                             preferCanvas: false,
                             inertia: false,
                             zoomControl: true
                         }).setView([20, -30], 3);
+
+                        const fallbackPane = map.createPane('fallbackPane');
+                        fallbackPane.style.zIndex = '200';
+                        const primaryPane = map.getPane('tilePane');
+                        primaryPane.style.zIndex = '310';
 
                         console.log('[MAP] Mapa creado');
 
@@ -358,6 +367,26 @@ public class UserMapPanel extends JPanel {
                             }
                         };
 
+                        const fallbackLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                            attribution: '',
+                            pane: 'fallbackPane',
+                            maxZoom: 18,
+                            maxNativeZoom: 6,
+                            minZoom: 0,
+                            tileSize: 256,
+                            keepBuffer: 1,
+                            updateWhenIdle: true,
+                            updateWhenZooming: false,
+                            reuseTiles: true,
+                            detectRetina: false,
+                            opacity: 1,
+                            bounds: [[-90, -180], [90, 180]],
+                            noWrap: false,
+                            crossOrigin: 'anonymous'
+                        });
+                        fallbackLayer.addTo(map);
+                        console.log('[MAP] Capa fallback añadida');
+
                         const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
                             attribution: '© OpenStreetMap contributors',
                             maxZoom: 18,
@@ -391,8 +420,19 @@ public class UserMapPanel extends JPanel {
                             console.log('[MAP] Tiles cargados:', tileLoadCount, 'errores:', tileErrorCount);
                         });
                         
-                        tileLayer.on('tileload', () => {
+                        tileLayer.on('tileloadstart', (e) => {
+                            if (e.tile) {
+                                e.tile.style.opacity = '0';
+                            }
+                        });
+                        tileLayer.on('tileload', (e) => {
                             tileLoadCount++;
+                            if (e.tile) {
+                                requestAnimationFrame(() => {
+                                    e.tile.style.transition = 'opacity 90ms ease-out';
+                                    e.tile.style.opacity = '1';
+                                });
+                            }
                         });
                         
                         tileLayer.on('tileerror', (e) => {
@@ -409,6 +449,7 @@ public class UserMapPanel extends JPanel {
                                             const sep = base.includes('?') ? '&' : '?';
                                             const newUrl = base + sep + 'retry=' + (count + 1) + '&ts=' + Date.now();
                                             e.tile.src = newUrl;
+                                            tileRetry.set(url, count + 1);
                                             tileRetry.set(newUrl, count + 1);
                                         }
                                     } catch (ex) {
