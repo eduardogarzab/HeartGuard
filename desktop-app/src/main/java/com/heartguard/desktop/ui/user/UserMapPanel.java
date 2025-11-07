@@ -618,6 +618,24 @@ public class UserMapPanel extends JPanel {
 
                         map.on('click', () => sidePanel.hide());
 
+                        const pendingRedraws = [];
+                        const flushPendingRedraws = () => {
+                            while (pendingRedraws.length) {
+                                const fn = pendingRedraws.shift();
+                                try {
+                                    fn();
+                                } catch (err) {
+                                    console.error('[MAP] Error en flushPendingRedraws:', err);
+                                }
+                            }
+                        };
+
+                        const scheduleRedraw = (fn, delay = 120) => {
+                            if (typeof fn !== 'function') return;
+                            pendingRedraws.push(fn);
+                            setTimeout(flushPendingRedraws, delay);
+                        };
+
                         window.updateEntities = (patients, members) => {
                             try {
                                 currentPatients = Array.isArray(patients) ? patients : [];
@@ -627,12 +645,17 @@ public class UserMapPanel extends JPanel {
                                 renderMembers();
                                 if (!hasInitialBounds) {
                                     setTimeout(() => {
-                                        fitMapToBounds();
-                                        hasInitialBounds = true;
-                                        setTimeout(resizeMap, 150);
+                                        try {
+                                            fitMapToBounds();
+                                            hasInitialBounds = true;
+                                            scheduleRedraw(() => resizeMap(), 160);
+                                            scheduleRedraw(() => map.invalidateSize({ animate: false }), 220);
+                                        } catch (err) {
+                                            console.error('[MAP] Error ajustando bounds iniciales:', err);
+                                        }
                                     }, 80);
                                 } else {
-                                    setTimeout(resizeMap, 180);
+                                    scheduleRedraw(() => resizeMap(), 150);
                                 }
                             } catch (e) {
                                 console.error('[MAP] Error en updateEntities:', e);

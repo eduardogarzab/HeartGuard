@@ -1328,27 +1328,31 @@ public class PatientDashboardPanel extends JPanel {
 
         private void initializeWebView() {
             WebView webView = new WebView();
+            webView.setContextMenuEnabled(false);
+
             webEngine = webView.getEngine();
             webEngine.setJavaScriptEnabled(true);
+            webEngine.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
 
             webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-                if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
-                    mapReady = true;
-                    SwingUtilities.invokeLater(() -> statusLabel.setText("Mapa listo. Esperando datos..."));
-                    if (pendingLocationsJson != null) {
-                        String payload = pendingLocationsJson;
+                switch (newState) {
+                    case SUCCEEDED -> {
+                        mapReady = true;
+                        SwingUtilities.invokeLater(() -> statusLabel.setText("Mapa listo. Esperando datos..."));
+                        String payload = pendingLocationsJson != null ? pendingLocationsJson : "[]";
                         pendingLocationsJson = null;
                         sendLocationsJson(payload);
-                    } else {
-                        sendLocationsJson("[]");
                     }
-                } else if (newState == javafx.concurrent.Worker.State.FAILED) {
-                    Throwable exception = webEngine.getLoadWorker().getException();
-                    System.err.println("[MAP] Error al cargar el mapa" + (exception != null ? ": " + exception.getMessage() : ""));
-                    if (exception != null) {
-                        exception.printStackTrace();
+                    case FAILED -> {
+                        Throwable exception = webEngine.getLoadWorker().getException();
+                        System.err.println("[MAP] Error al cargar el mapa" + (exception != null ? ": " + exception.getMessage() : ""));
+                        if (exception != null) {
+                            exception.printStackTrace();
+                        }
+                        SwingUtilities.invokeLater(() -> statusLabel.setText("No se pudo cargar el mapa."));
                     }
-                    SwingUtilities.invokeLater(() -> statusLabel.setText("No se pudo cargar el mapa."));
+                    default -> {
+                    }
                 }
             });
 
@@ -1360,7 +1364,18 @@ public class PatientDashboardPanel extends JPanel {
 
         public void showNoDataMessage() {
             SwingUtilities.invokeLater(() -> statusLabel.setText("Sin ubicaciones recientes."));
-            sendLocationsJson("[]");
+            Platform.runLater(() -> {
+                try {
+                    if (webEngine != null) {
+                        JSObject windowObject = (JSObject) webEngine.executeScript("window");
+                        if (windowObject != null) {
+                            windowObject.call("clearLocations");
+                        }
+                    }
+                } catch (Exception ex) {
+                    System.err.println("[MAP] Error limpiando ubicaciones: " + ex.getMessage());
+                }
+            });
         }
 
         public void updateLocations(JsonArray locations) {
@@ -1394,56 +1409,286 @@ public class PatientDashboardPanel extends JPanel {
         }
 
         private String generateLeafletHtml() {
-            StringBuilder html = new StringBuilder();
-            html.append("<!DOCTYPE html>");
-            html.append("<html><head>");
-            html.append("<meta charset='utf-8'/>");
-            html.append("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
-            html.append("<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'");
-            html.append(" integrity='sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=' crossorigin='' />");
-            html.append("<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'");
-            html.append(" integrity='sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=' crossorigin=''></script>");
-            html.append("<style>");
-            html.append("html, body { height: 100%; width: 100%; margin: 0; font-family: Arial, sans-serif; }");
-            html.append("#map-container { position: relative; height: 100%; width: 100%; }");
-            html.append("#map { height: 100%; width: 100%; }");
-            html.append(".location-badge { pointer-events: none; }");
-            html.append(".location-badge .badge { border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }");
-            html.append(".location-badge .badge.latest { background: #2E7D32; border: 3px solid #fff; width: 30px; height: 30px; font-size: 16px; }");
-            html.append(".location-badge .badge.historic { background: #1565C0; border: 2px solid #fff; width: 26px; height: 26px; font-size: 13px; }");
-            html.append(".popup { font-size: 13px; min-width: 220px; }");
-            html.append(".popup table { width: 100%; border-collapse: collapse; }");
-            html.append(".popup td { padding: 3px 4px; vertical-align: top; }");
-            html.append(".popup tr td:first-child { font-weight: bold; color: #424242; }");
-            html.append("#no-data-banner { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,0.92); color: #455A64; font-size: 16px; font-weight: bold; z-index: 500; }");
-            html.append("</style></head><body>");
-            html.append("<div id='map-container'>");
-            html.append("<div id='map'></div>");
-            html.append("<div id='no-data-banner'>Sin ubicaciones para mostrar</div>");
-            html.append("</div>");
-            html.append("<script>");
-            html.append("(function(){");
-            html.append("const DEFAULT_CENTER = [19.4326, -99.1332];");
-            html.append("const DEFAULT_ZOOM = 12;");
-            html.append("const latestStyle = { radius: 14, fillColor: '#4CAF50', color: '#1B5E20', weight: 3, fillOpacity: 0.9 };");
-            html.append("const historyStyle = { radius: 10, fillColor: '#2196F3', color: '#0D47A1', weight: 2, fillOpacity: 0.7 };");
-            html.append("const map = L.map('map', { zoomControl: true, attributionControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);");
-            html.append("L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);");
-            html.append("const markersLayer = L.layerGroup().addTo(map);");
-            html.append("const pathLayer = L.polyline([], { color: '#1976D2', weight: 3, opacity: 0.6, dashArray: '8,4' }).addTo(map);");
-            html.append("const noDataBanner = document.getElementById('no-data-banner');");
-            html.append("function showNoData(show){ if (noDataBanner){ noDataBanner.style.display = show ? 'flex' : 'none'; } }");
-            html.append("function isValidNumber(value){ return typeof value === 'number' && !isNaN(value); }");
-            html.append("function formatTimestamp(value){ if(!value){ return 'N/A'; } const date = new Date(value); if(isNaN(date.getTime())){ return value; } return date.toLocaleString(); }");
-            html.append("function formatAccuracy(value){ return typeof value === 'number' ? value.toFixed(2) + ' m' : 'N/A'; }");
-            html.append("function buildPopupHtml(loc, isLatest, order){ const titleColor = isLatest ? '#2E7D32' : '#1565C0'; const title = isLatest ? 'Ubicación más reciente' : 'Ubicación #' + order; const rows = [ ['Latitud', loc.latitude.toFixed(6)], ['Longitud', loc.longitude.toFixed(6)], ['Fecha/Hora', formatTimestamp(loc.timestamp)], ['Fuente', loc.source || 'desconocida'], ['Precisión', formatAccuracy(loc.accuracy_meters)] ]; let html = '<div class=\'popup\'>' + '<h3 style=\'margin:0 0 8px 0; color:' + titleColor + '; font-size:15px;\'>' + title + '</h3>' + '<table>'; rows.forEach(function(row){ html += '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td></tr>'; }); html += '</table></div>'; return html; }");
-            html.append("function render(locations){ markersLayer.clearLayers(); pathLayer.setLatLngs([]); if(!Array.isArray(locations) || locations.length === 0){ showNoData(true); map.setView(DEFAULT_CENTER, DEFAULT_ZOOM); return; } const validLocations = locations.filter(function(loc){ return loc && isValidNumber(loc.latitude) && isValidNumber(loc.longitude); }); if(validLocations.length === 0){ showNoData(true); map.setView(DEFAULT_CENTER, DEFAULT_ZOOM); return; } showNoData(false); validLocations.sort(function(a, b){ return new Date(b.timestamp || 0) - new Date(a.timestamp || 0); }); const latLngs = []; validLocations.forEach(function(loc, index){ const latLng = [loc.latitude, loc.longitude]; latLngs.push(latLng); const isLatest = index === 0; const marker = L.circleMarker(latLng, isLatest ? latestStyle : historyStyle).addTo(markersLayer); marker.bindPopup(buildPopupHtml(loc, isLatest, index + 1)); const badgeHtml = isLatest ? '<div class=\"badge latest\">1</div>' : '<div class=\"badge historic\">' + (index + 1) + '</div>'; L.marker(latLng, { icon: L.divIcon({ className: 'location-badge', html: badgeHtml, iconSize: isLatest ? [30, 30] : [26, 26] }) }).addTo(markersLayer); }); if (latLngs.length > 1){ pathLayer.setLatLngs(latLngs); } if (latLngs.length === 1){ map.setView(latLngs[0], 15); } else { map.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40], maxZoom: 16 }); } setTimeout(function(){ map.invalidateSize(); }, 200); }");
-            html.append("window.renderLocationsFromJava = function(payload){ try { const data = JSON.parse(payload || '[]'); render(data); } catch (err) { console.error('[MAP] Error parseando ubicaciones', err); showNoData(true); } };");
-            html.append("window.forceResize = function(){ setTimeout(function(){ map.invalidateSize(); }, 100); };");
-            html.append("render([]);");
-            html.append("})();");
-            html.append("</script></body></html>");
-            return html.toString();
+            return """
+                    <!DOCTYPE html>
+                    <html lang=\"es\">
+                    <head>
+                        <meta charset=\"utf-8\" />
+                        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\" />
+                        <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\" />
+                        <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\" crossorigin=\"anonymous\" />
+                        <style>
+                            * { margin: 0; padding: 0; box-sizing: border-box; }
+                            html, body { height: 100%; width: 100%; background: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif; }
+                            #map-container { position: relative; height: 100%; width: 100%; }
+                            #map { height: 100%; width: 100%; background: #e5e7eb; }
+                            #no-data-banner { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,0.92); color: #455A64; font-size: 16px; font-weight: bold; z-index: 500; }
+                            .leaflet-container { background: #e5e7eb; }
+                            .leaflet-tile-container { opacity: 1; }
+                            .leaflet-tile { opacity: 1 !important; image-rendering: optimizeQuality; transition: opacity 0.25s ease-out; will-change: transform; }
+                            .leaflet-zoom-animated { will-change: transform; }
+                            .fallback-pane img { opacity: 0.55; filter: saturate(0.85) brightness(1.08); image-rendering: optimizeSpeed; }
+                            .location-badge { pointer-events: none; }
+                            .location-badge .badge { border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
+                            .location-badge .badge.latest { background: #2E7D32; border: 3px solid #fff; width: 30px; height: 30px; font-size: 16px; }
+                            .location-badge .badge.history { background: #1565C0; border: 2px solid #fff; width: 26px; height: 26px; font-size: 13px; }
+                            .popup { font-size: 13px; min-width: 230px; }
+                            .popup table { width: 100%; border-collapse: collapse; }
+                            .popup td { padding: 3px 4px; vertical-align: top; }
+                            .popup tr td:first-child { font-weight: 600; color: #424242; }
+                        </style>
+                    </head>
+                    <body>
+                        <div id=\"map-container\">
+                            <div id=\"map\"></div>
+                            <div id=\"no-data-banner\">Sin ubicaciones para mostrar</div>
+                        </div>
+                        <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\" crossorigin=\"anonymous\"></script>
+                        <script>
+                            (function(){
+                                const DEFAULT_CENTER = [19.4326, -99.1332];
+                                const DEFAULT_ZOOM = 12;
+                                const latestStyle = { radius: 14, fillColor: '#4CAF50', color: '#1B5E20', weight: 3, fillOpacity: 0.9 };
+                                const historyStyle = { radius: 10, fillColor: '#1E88E5', color: '#0D47A1', weight: 2, fillOpacity: 0.72 };
+
+                                const map = L.map('map', {
+                                    zoomAnimation: false,
+                                    fadeAnimation: false,
+                                    markerZoomAnimation: false,
+                                    zoomSnap: 1,
+                                    zoomDelta: 1,
+                                    trackResize: true,
+                                    minZoom: 2,
+                                    maxZoom: 18,
+                                    worldCopyJump: true,
+                                    preferCanvas: false,
+                                    inertia: false,
+                                    zoomControl: true
+                                }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+
+                                const fallbackPane = map.createPane('fallbackPane');
+                                fallbackPane.style.zIndex = '200';
+                                const primaryPane = map.getPane('tilePane');
+                                primaryPane.style.zIndex = '310';
+
+                                const fallbackLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                    attribution: '',
+                                    pane: 'fallbackPane',
+                                    maxZoom: 18,
+                                    maxNativeZoom: 6,
+                                    minZoom: 0,
+                                    tileSize: 256,
+                                    keepBuffer: 1,
+                                    updateWhenIdle: true,
+                                    updateWhenZooming: false,
+                                    reuseTiles: true,
+                                    detectRetina: false,
+                                    opacity: 1,
+                                    bounds: [[-90, -180], [90, 180]],
+                                    noWrap: false,
+                                    crossOrigin: 'anonymous'
+                                }).addTo(map);
+
+                                const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                                    attribution: '© OpenStreetMap contributors',
+                                    maxZoom: 18,
+                                    maxNativeZoom: 17,
+                                    minZoom: 2,
+                                    tileSize: 256,
+                                    zoomOffset: 0,
+                                    keepBuffer: 6,
+                                    updateWhenIdle: false,
+                                    updateWhenZooming: true,
+                                    updateInterval: 90,
+                                    reuseTiles: true,
+                                    bounds: [[-90, -180], [90, 180]],
+                                    noWrap: false,
+                                    crossOrigin: 'anonymous'
+                                }).addTo(map);
+
+                                const tileRetry = new Map();
+                                tileLayer.on('loading', () => tileRetry.clear());
+                                tileLayer.on('tileloadstart', e => { if (e.tile) { e.tile.style.opacity = '0'; } });
+                                tileLayer.on('tileload', e => {
+                                    if (e.tile) {
+                                        requestAnimationFrame(() => {
+                                            e.tile.style.transition = 'opacity 120ms ease-out';
+                        
+                                            e.tile.style.opacity = '1';
+                                        });
+                                    }
+                                });
+                                tileLayer.on('tileerror', (e) => {
+                                    const url = (e.tile && e.tile.src) ? e.tile.src : '';
+                                    const count = tileRetry.get(url) || 0;
+                                    if (count >= 2) {
+                                        console.warn('[MAP] Tile abandonado tras reintentos:', url);
+                                        return;
+                                    }
+                                    const delay = count === 0 ? 600 : 1600;
+                                    setTimeout(() => {
+                                        try {
+                                            if (e.tile) {
+                                                const base = url.split('#')[0];
+                                                const sep = base.includes('?') ? '&' : '?';
+                                                const newUrl = base + sep + 'retry=' + (count + 1) + '&ts=' + Date.now();
+                                                e.tile.src = newUrl;
+                                                tileRetry.set(url, count + 1);
+                                                tileRetry.set(newUrl, count + 1);
+                                            }
+                                        } catch (err) {
+                                            console.error('[MAP] Error reintentando tile:', err);
+                                        }
+                                    }, delay);
+                                });
+
+                                const noDataBanner = document.getElementById('no-data-banner');
+                                const markersLayer = L.layerGroup().addTo(map);
+                                const overlayLayer = L.layerGroup().addTo(map);
+                                const pathLayer = L.polyline([], { color: '#1976D2', weight: 3, opacity: 0.65, dashArray: '8,4' }).addTo(map);
+
+                                let hasInitialBounds = false;
+                                let resizeTimer = null;
+
+                                const showNoData = (show) => {
+                                    if (noDataBanner) {
+                                        noDataBanner.style.display = show ? 'flex' : 'none';
+                                    }
+                                };
+
+                                const scheduleResize = (delay = 150) => {
+                                    if (map._animatingZoom) {
+                                        if (resizeTimer) clearTimeout(resizeTimer);
+                                        resizeTimer = setTimeout(() => scheduleResize(delay), 140);
+                                        return;
+                                    }
+                                    if (resizeTimer) clearTimeout(resizeTimer);
+                                    resizeTimer = setTimeout(() => {
+                                        try {
+                                            map.invalidateSize({ animate: false, pan: false, debounceMoveend: true });
+                                        } catch (err) {
+                                            console.error('[MAP] Error en scheduleResize:', err);
+                                        }
+                                    }, delay);
+                                };
+
+                                map.on('zoomstart', () => {
+                                    if (resizeTimer) {
+                                        clearTimeout(resizeTimer);
+                                        resizeTimer = null;
+                                    }
+                                });
+                                map.on('zoomend', () => scheduleResize(160));
+                                map.on('moveend', () => scheduleResize(180));
+
+                                const isValidNumber = value => typeof value === 'number' && !Number.isNaN(value);
+                                const formatTimestamp = value => {
+                                    if (!value) return 'N/A';
+                                    const date = new Date(value);
+                                    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
+                                };
+                                const formatAccuracy = value => typeof value === 'number' ? value.toFixed(2) + ' m' : 'N/A';
+
+                                const buildPopupHtml = (loc, isLatest, order) => {
+                                    const titleColor = isLatest ? '#2E7D32' : '#1565C0';
+                                    const title = isLatest ? 'Ubicación más reciente' : 'Ubicación #' + order;
+                                    const rows = [
+                                        ['Latitud', loc.latitude.toFixed(6)],
+                                        ['Longitud', loc.longitude.toFixed(6)],
+                                        ['Fecha/Hora', formatTimestamp(loc.timestamp)],
+                                        ['Fuente', loc.source || 'desconocida'],
+                                        ['Precisión', formatAccuracy(loc.accuracy_meters)]
+                                    ];
+                                    let html = `<div class='popup'><h3 style='margin:0 0 8px 0; color:${titleColor}; font-size:15px;'>${title}</h3><table>`;
+                                    rows.forEach(row => { html += `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`; });
+                                    html += '</table></div>';
+                                    return html;
+                                };
+
+                                const render = (locations) => {
+                                    markersLayer.clearLayers();
+                                    overlayLayer.clearLayers();
+                                    pathLayer.setLatLngs([]);
+
+                                    if (!Array.isArray(locations) || locations.length === 0) {
+                                        showNoData(true);
+                                        hasInitialBounds = false;
+                                        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM, { animate: false });
+                                        scheduleResize(180);
+                                        return;
+                                    }
+
+                                    const validLocations = locations.filter(loc => loc && isValidNumber(loc.latitude) && isValidNumber(loc.longitude));
+                                    if (validLocations.length === 0) {
+                                        showNoData(true);
+                                        hasInitialBounds = false;
+                                        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM, { animate: false });
+                                        scheduleResize(180);
+                                        return;
+                                    }
+
+                                    showNoData(false);
+                                    validLocations.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
+
+                                    const latLngs = [];
+                                    validLocations.forEach((loc, index) => {
+                                        const latLng = [loc.latitude, loc.longitude];
+                                        latLngs.push(latLng);
+                                        const isLatest = index === 0;
+                                        const marker = L.circleMarker(latLng, isLatest ? latestStyle : historyStyle).addTo(markersLayer);
+                                        marker.bindPopup(buildPopupHtml(loc, isLatest, index + 1));
+
+                                        const badgeHtml = `<div class='badge ${isLatest ? "latest" : "history"}'>${index + 1}</div>`;
+                                        L.marker(latLng, {
+                                            icon: L.divIcon({ className: 'location-badge', html: badgeHtml, iconSize: isLatest ? [30, 30] : [26, 26] })
+                                        }).addTo(overlayLayer);
+                                    });
+
+                                    if (latLngs.length > 1) {
+                                        pathLayer.setLatLngs(latLngs);
+                                    }
+
+                                    if (!hasInitialBounds) {
+                                        hasInitialBounds = true;
+                                        if (latLngs.length === 1) {
+                                            map.setView(latLngs[0], 15, { animate: false });
+                                        } else {
+                                            const bounds = L.latLngBounds(latLngs);
+                                            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16, animate: false });
+                                        }
+                                        scheduleResize(200);
+                                    } else {
+                                        scheduleResize(160);
+                                    }
+                                };
+
+                                window.renderLocationsFromJava = payload => {
+                                    try {
+                                        const data = JSON.parse(payload || '[]');
+                                        render(data);
+                                    } catch (err) {
+                                        console.error('[MAP] Error parseando ubicaciones', err);
+                                        showNoData(true);
+                                    }
+                                };
+
+                                window.forceResize = () => scheduleResize(140);
+                                window.clearLocations = () => {
+                                    markersLayer.clearLayers();
+                                    overlayLayer.clearLayers();
+                                    pathLayer.setLatLngs([]);
+                                    showNoData(true);
+                                    hasInitialBounds = false;
+                                    map.setView(DEFAULT_CENTER, DEFAULT_ZOOM, { animate: false });
+                                    scheduleResize(180);
+                                };
+
+                                render([]);
+                            })();
+                        </script>
+                    </body>
+                    </html>
+                    """;
         }
     }
 }
