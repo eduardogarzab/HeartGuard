@@ -191,20 +191,6 @@ public class UserMapPanel extends JPanel {
                 JSObject window = getWindowObject();
                 if (window != null) {
                     window.call("updateEntitiesFromJava", patientsJson, membersJson);
-                    // Forzar refresh de tiles después de actualizar datos
-                    new Thread(() -> {
-                        try {
-                            Thread.sleep(500);
-                            Platform.runLater(() -> {
-                                try {
-                                    JSObject win = getWindowObject();
-                                    if (win != null) {
-                                        win.call("forceRefreshTiles");
-                                    }
-                                } catch (Exception ignored) {}
-                            });
-                        } catch (InterruptedException ignored) {}
-                    }).start();
                 }
             } catch (Exception ignored) {
             }
@@ -241,19 +227,7 @@ public class UserMapPanel extends JPanel {
         }
         Platform.runLater(() -> {
             try {
-                // Primero redimensionar
                 webEngine.executeScript("if(window.resizeMap){ window.resizeMap(); }");
-                // Luego forzar refresco de tiles después de un delay
-                new Thread(() -> {
-                    try {
-                        Thread.sleep(300);
-                        Platform.runLater(() -> {
-                            try {
-                                webEngine.executeScript("if(window.forceRefreshTiles){ window.forceRefreshTiles(); }");
-                            } catch (Exception ignored) {}
-                        });
-                    } catch (InterruptedException ignored) {}
-                }).start();
             } catch (Exception ignored) {
             }
         });
@@ -319,15 +293,14 @@ public class UserMapPanel extends JPanel {
                             zoomAnimation: false,
                             fadeAnimation: false,
                             markerZoomAnimation: false,
-                            zoomSnap: 0.5,
+                            zoomSnap: 1,
                             zoomDelta: 1,
                             wheelPxPerZoomLevel: 120,
                             trackResize: true,
                             minZoom: 2,
-                            maxZoom: 16,
+                            maxZoom: 18,
                             worldCopyJump: true,
-                            preferCanvas: false,
-                            renderer: L.svg(),
+                            preferCanvas: true,
                             inertia: false,
                             zoomControl: true
                         }).setView([20, -30], 3);
@@ -340,13 +313,12 @@ public class UserMapPanel extends JPanel {
                             if (resizeTimeout) clearTimeout(resizeTimeout);
                             resizeTimeout = setTimeout(() => {
                                 try {
-                                    map.invalidateSize({ 
-                                        animate: false, 
-                                        pan: false, 
-                                        debounceMoveend: true 
+                                    map.invalidateSize({
+                                        animate: false,
+                                        pan: false,
+                                        debounceMoveend: true
                                     });
-                                    tileLayer.redraw();
-                                    console.log('[MAP] Redimensionado y tiles redibujados');
+                                    console.log('[MAP] Redimensionado');
                                 } catch (e) {
                                     console.error('[MAP] Error resize:', e);
                                 }
@@ -384,29 +356,31 @@ public class UserMapPanel extends JPanel {
                         };
 
                         const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                            attribution: '© OpenStreetMap',
-                            maxZoom: 16,
-                            maxNativeZoom: 19,
+                            attribution: '© OpenStreetMap contributors',
+                            maxZoom: 18,
+                            maxNativeZoom: 18,
                             minZoom: 2,
                             tileSize: 256,
                             zoomOffset: 0,
-                            keepBuffer: 8,
-                            updateWhenIdle: true,
-                            updateWhenZooming: false,
-                            updateInterval: 150,
+                            keepBuffer: 3,
+                            updateWhenIdle: false,
+                            updateWhenZooming: true,
+                            updateInterval: 100,
                             bounds: [[-90, -180], [90, 180]],
                             noWrap: false,
                             crossOrigin: 'anonymous',
-                            className: 'leaflet-tile-loaded'
+                            errorTileUrl: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAH+wJ1qvH0LwAAAABJRU5ErkJggg=='
                         });
                         
                         let tileLoadCount = 0;
                         let tileErrorCount = 0;
+                        const tileRetry = new Map();
                         
                         tileLayer.on('loading', () => {
                             console.log('[MAP] Cargando tiles...');
                             tileLoadCount = 0;
                             tileErrorCount = 0;
+                            tileRetry.clear();
                         });
                         
                         tileLayer.on('load', () => {
@@ -417,14 +391,29 @@ public class UserMapPanel extends JPanel {
                             tileLoadCount++;
                         });
                         
-                        tileLayer.on('tileerror', (err) => {
+                        tileLayer.on('tileerror', (e) => {
                             tileErrorCount++;
-                            console.warn('[MAP] Tile error:', err.tile.src);
-                            setTimeout(() => {
-                                if (err.tile && !err.tile.complete) {
-                                    err.tile.src = err.tile.src;
-                                }
-                            }, 1000);
+                            const url = (e.tile && e.tile.src) ? e.tile.src : '';
+                            const count = tileRetry.get(url) || 0;
+                            console.warn('[MAP] Tile error:', url, 'retry:', count);
+                            if (count < 2) {
+                                const delay = count === 0 ? 800 : 2000;
+                                setTimeout(() => {
+                                    try {
+                                        if (e.tile) {
+                                            const base = url.split('#')[0];
+                                            const sep = base.includes('?') ? '&' : '?';
+                                            const newUrl = base + sep + 'retry=' + (count + 1) + '&ts=' + Date.now();
+                                            e.tile.src = newUrl;
+                                            tileRetry.set(newUrl, count + 1);
+                                        }
+                                    } catch (ex) {
+                                        console.error('[MAP] Error en retry de tile:', ex);
+                                    }
+                                }, delay);
+                            } else {
+                                console.warn('[MAP] Tile abandonado tras reintentos:', url);
+                            }
                         });
                         
                         tileLayer.addTo(map);
@@ -440,7 +429,7 @@ public class UserMapPanel extends JPanel {
                             zoomDebounce = setTimeout(() => {
                                 console.log('[MAP] Zoom finalizado en nivel:', map.getZoom());
                                 map.invalidateSize({ animate: false, pan: false });
-                            }, 200);
+                            }, 150);
                         });
                         
                         map.on('moveend', () => {
@@ -595,11 +584,8 @@ public class UserMapPanel extends JPanel {
                                     fitMapToBounds();
                                     setTimeout(() => {
                                         resizeMap();
-                                        if (tileLayer) {
-                                            tileLayer.redraw();
-                                        }
-                                    }, 150);
-                                }, 100);
+                                    }, 120);
+                                }, 80);
                             } catch (e) {
                                 console.error('[MAP] Error en updateEntities:', e);
                             }
