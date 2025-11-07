@@ -29,7 +29,8 @@ class BaseView(tk.Frame):
                 result = task()
             except Exception as exc:  # pragma: no cover - GUI path
                 if on_error:
-                    self.controller.call_soon(lambda: on_error(exc))
+                    # Capturar exc en el scope correcto usando un argumento por defecto
+                    self.controller.call_soon(lambda e=exc: on_error(e))
             else:
                 if on_success:
                     self.controller.call_soon(lambda: on_success(result))

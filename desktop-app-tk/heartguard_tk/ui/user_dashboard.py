@@ -27,6 +27,7 @@ class UserDashboardView(BaseView):
         self.token = login.access_token
         self.memberships: List[Dict[str, str]] = []
         self.selected_org: Optional[Dict[str, str]] = None
+        self.patients_data: List[Dict[str, Any]] = []  # Guardar datos completos de pacientes
 
         # Variables de estado
         self.user_name_var = tk.StringVar(value=login.full_name)
@@ -383,6 +384,8 @@ class UserDashboardView(BaseView):
                 "riesgo": "Riesgo",
             },
         )
+        # Agregar evento de doble clic para ver detalles del paciente
+        self.patients_tree.bind("<Double-1>", self._on_patient_double_click)
 
     def _create_modern_treeview(
         self, parent: tk.Frame, columns: tuple, headings: Dict[str, str]
@@ -443,13 +446,20 @@ class UserDashboardView(BaseView):
             }
 
         def handle_success(data: Dict[str, Any]) -> None:
+            print(f"DEBUG user_dashboard - _load_profile SUCCESS")
+            print(f"DEBUG user_dashboard - Profile keys: {data.get('profile', {}).keys() if isinstance(data.get('profile'), dict) else 'NOT_DICT'}")
+            print(f"DEBUG user_dashboard - Memberships keys: {data.get('memberships', {}).keys() if isinstance(data.get('memberships'), dict) else 'NOT_DICT'}")
+            
             self.status_var.set("✓ Perfil cargado")
             self._apply_profile(data.get("profile", {}))
             self._apply_memberships(data.get("memberships", {}))
             if self.memberships:
+                print(f"DEBUG user_dashboard - Found {len(self.memberships)} memberships, selecting first")
                 self.org_combo.set(self.memberships[0]["label"])
                 self.selected_org = self.memberships[0]
                 self._refresh_org()
+            else:
+                print("DEBUG user_dashboard - NO MEMBERSHIPS FOUND!")
 
         def handle_error(exc: Exception) -> None:
             if isinstance(exc, ApiError):
@@ -472,13 +482,25 @@ class UserDashboardView(BaseView):
 
     def _apply_memberships(self, memberships: Dict[str, Any]) -> None:
         """Aplica las membresías a la UI."""
+        print(f"DEBUG user_dashboard - _apply_memberships called with: {memberships}")
+        
         data = _dict_from(memberships, "data") or memberships
-        items = data.get("items", []) if isinstance(data, dict) else []
+        # El endpoint devuelve 'memberships' no 'items'
+        items = data.get("memberships", []) if isinstance(data, dict) else []
+        
+        print(f"DEBUG user_dashboard - Found {len(items)} memberships")
+        
+        # Los campos son org_id y org_name, no organization_id y organization_name
         self.memberships = [
-            {"id": m["organization_id"], "label": m["organization_name"]}
+            {"id": m["org_id"], "label": m["org_name"]}
             for m in items
-            if "organization_id" in m and "organization_name" in m
+            if "org_id" in m and "org_name" in m
         ]
+        
+        print(f"DEBUG user_dashboard - Processed {len(self.memberships)} valid memberships")
+        for m in self.memberships:
+            print(f"  - {m['label']} (ID: {m['id']})")
+        
         if self.org_combo:
             self.org_combo["values"] = [m["label"] for m in self.memberships]
 
@@ -511,6 +533,11 @@ class UserDashboardView(BaseView):
             }
 
         def handle_success(data: Dict[str, Any]) -> None:
+            print(f"DEBUG user_dashboard - _refresh_org SUCCESS")
+            print(f"DEBUG user_dashboard - Dashboard keys: {data.get('dashboard', {}).keys() if isinstance(data.get('dashboard'), dict) else 'NOT_DICT'}")
+            print(f"DEBUG user_dashboard - Metrics keys: {data.get('metrics', {}).keys() if isinstance(data.get('metrics'), dict) else 'NOT_DICT'}")
+            print(f"DEBUG user_dashboard - Teams keys: {data.get('teams', {}).keys() if isinstance(data.get('teams'), dict) else 'NOT_DICT'}")
+            
             self.status_var.set("✓ Datos actualizados")
             self._render_metrics(data.get("dashboard", {}), data.get("metrics", {}))
             self._render_care_teams(data.get("teams", {}))
@@ -549,19 +576,29 @@ class UserDashboardView(BaseView):
 
     def _render_care_teams(self, teams: Dict[str, Any]) -> None:
         """Renderiza los equipos de cuidado."""
+        print(f"DEBUG user_dashboard - _render_care_teams called with: {teams}")
+        
         if not self.team_tree:
+            print("DEBUG user_dashboard - team_tree is None!")
             return
 
         for row in self.team_tree.get_children():
             self.team_tree.delete(row)
 
         data = _dict_from(teams, "data") or teams
-        items = data.get("items", []) if isinstance(data, dict) else []
+        # El endpoint devuelve 'care_teams' no 'items'
+        items = data.get("care_teams", []) if isinstance(data, dict) else []
+        
+        print(f"DEBUG user_dashboard - Found {len(items)} teams")
 
         for team in items:
             name = team.get("name", "—")
-            role = team.get("my_role", "—")
-            members_count = team.get("member_count", 0)
+            # Contar miembros del array 'members'
+            members_list = team.get("members", [])
+            members_count = len(members_list) if isinstance(members_list, list) else 0
+            # Por ahora no tenemos 'my_role' en la respuesta, usar un placeholder
+            role = "Miembro"
+            print(f"DEBUG user_dashboard - Inserting team: {name}, role: {role}, members: {members_count}")
             self.team_tree.insert("", "end", values=(name, role, members_count))
 
         # Cargar pacientes de los equipos
@@ -569,39 +606,69 @@ class UserDashboardView(BaseView):
 
     def _load_team_patients(self, teams: List[Dict[str, Any]]) -> None:
         """Carga los pacientes de todos los equipos."""
+        print(f"DEBUG user_dashboard - _load_team_patients called with {len(teams)} teams")
+        
         if not self.selected_org or not self.patients_tree:
+            print(f"DEBUG user_dashboard - Cannot load patients: selected_org={self.selected_org}, patients_tree={self.patients_tree}")
             return
 
         for row in self.patients_tree.get_children():
             self.patients_tree.delete(row)
 
         org_id = self.selected_org["id"]
+        print(f"DEBUG user_dashboard - Loading patients for org_id: {org_id}")
 
         def task() -> List[Dict[str, Any]]:
             api = self.controller.api
-            all_patients = []
-            for team in teams:
-                team_id = team.get("id")
-                if team_id:
-                    resp = api.get_care_team_patients(
-                        org_id=org_id, care_team_id=team_id, token=self.token
-                    )
-                    patients_data = _dict_from(resp, "data") or resp
-                    patients = patients_data.get("patients", [])
-                    for patient in patients:
-                        patient["team_name"] = team.get("name", "—")
-                    all_patients.extend(patients)
-            return all_patients
+            # Usar el endpoint correcto: /orgs/{org_id}/care-team-patients
+            # Este endpoint devuelve TODOS los pacientes de la organización agrupados por equipo
+            try:
+                resp = api.get_organization_care_team_patients(org_id=org_id, token=self.token)
+                print(f"DEBUG user_dashboard - Response from get_organization_care_team_patients: {resp}")
+                
+                patients_data = _dict_from(resp, "data") or resp
+                all_patients = []
+                
+                # El endpoint puede devolver diferentes estructuras
+                # Opción 1: {patients: [...]}
+                if "patients" in patients_data:
+                    all_patients = patients_data["patients"]
+                # Opción 2: {care_teams: [{name: X, patients: [...]}]}
+                elif "care_teams" in patients_data:
+                    for team in patients_data["care_teams"]:
+                        team_name = team.get("name", "—")
+                        team_patients = team.get("patients", [])
+                        for patient in team_patients:
+                            patient["team_name"] = team_name
+                        all_patients.extend(team_patients)
+                # Opción 3: Lista directa
+                elif isinstance(patients_data, list):
+                    all_patients = patients_data
+                
+                print(f"DEBUG user_dashboard - Total patients loaded: {len(all_patients)}")
+                return all_patients
+            except Exception as e:
+                print(f"DEBUG user_dashboard - ERROR loading patients: {e}")
+                import traceback
+                traceback.print_exc()
+                return []
 
         def handle_success(patients: List[Dict[str, Any]]) -> None:
+            print(f"DEBUG user_dashboard - Loaded {len(patients)} patients from teams")
+            
+            # Guardar datos completos de pacientes
+            self.patients_data = patients
+            
             for patient in patients:
-                full_name = patient.get("full_name", "—")
+                # Los pacientes de org tienen 'name' no 'full_name'
+                full_name = patient.get("name") or patient.get("full_name", "—")
                 team_name = patient.get("team_name", "—")
                 risk = patient.get("risk_level", {})
                 if isinstance(risk, dict):
                     risk_label = risk.get("label", "—")
                 else:
                     risk_label = str(risk) if risk else "—"
+                print(f"DEBUG user_dashboard - Inserting patient: {full_name}, team: {team_name}, risk: {risk_label}")
                 self.patients_tree.insert("", "end", values=(full_name, team_name, risk_label))
 
         def handle_error(exc: Exception) -> None:
@@ -609,25 +676,135 @@ class UserDashboardView(BaseView):
 
         self.run_async(task, on_success=handle_success, on_error=handle_error)
 
+    def _load_patient_alerts(self) -> None:
+        """Carga las alertas recientes de los pacientes de la organización."""
+        if not self.selected_org:
+            return
+        
+        org_id = self.selected_org["id"]
+        print(f"DEBUG user_dashboard - Loading patient alerts for org: {org_id}")
+
+        def task() -> List[Dict[str, Any]]:
+            api = self.controller.api
+            all_alerts = []
+            
+            try:
+                # Primero obtener los pacientes
+                resp = api.get_organization_care_team_patients(org_id=org_id, token=self.token)
+                patients_data = _dict_from(resp, "data") or resp
+                
+                patients = []
+                if "patients" in patients_data:
+                    patients = patients_data["patients"]
+                elif "care_teams" in patients_data:
+                    for team in patients_data["care_teams"]:
+                        patients.extend(team.get("patients", []))
+                elif isinstance(patients_data, list):
+                    patients = patients_data
+                
+                print(f"DEBUG user_dashboard - Found {len(patients)} patients, loading alerts...")
+                
+                # Cargar alertas de cada paciente (máximo 5 por paciente, hasta 15 total)
+                max_alerts = 15
+                for patient in patients[:5]:  # Limitar a 5 pacientes
+                    if len(all_alerts) >= max_alerts:
+                        break
+                    
+                    patient_id = patient.get("patient_id") or patient.get("id")
+                    # El endpoint usa 'name' no 'full_name'
+                    patient_name = patient.get("name") or patient.get("full_name", "Desconocido")
+                    
+                    if not patient_id:
+                        continue
+                    
+                    try:
+                        alerts_resp = api.get_organization_patient_alerts(
+                            org_id=org_id,
+                            patient_id=patient_id,
+                            limit=3,
+                            token=self.token
+                        )
+                        alerts_data = _dict_from(alerts_resp, "data") or alerts_resp
+                        patient_alerts = alerts_data.get("alerts", [])
+                        
+                        # Agregar nombre del paciente a cada alerta
+                        for alert in patient_alerts:
+                            alert["patient_name"] = patient_name
+                        
+                        all_alerts.extend(patient_alerts)
+                        print(f"DEBUG user_dashboard - Loaded {len(patient_alerts)} alerts from {patient_name}")
+                    except Exception as e:
+                        print(f"DEBUG user_dashboard - Error loading alerts for patient {patient_name}: {e}")
+                
+                print(f"DEBUG user_dashboard - Total alerts loaded: {len(all_alerts)}")
+                return all_alerts
+            except Exception as e:
+                print(f"DEBUG user_dashboard - ERROR loading patient alerts: {e}")
+                import traceback
+                traceback.print_exc()
+                return []
+
+        def handle_success(alerts: List[Dict[str, Any]]) -> None:
+            if not self.alerts_tree:
+                return
+            
+            # Limpiar alertas actuales
+            for row in self.alerts_tree.get_children():
+                self.alerts_tree.delete(row)
+            
+            if not alerts:
+                self.alerts_tree.insert("", "end", values=("INFO", "Sin alertas recientes", "—", "—"))
+                return
+            
+            print(f"DEBUG user_dashboard - Rendering {len(alerts)} alerts")
+            for alert in alerts:
+                # El nivel puede ser un objeto {code, label} o un string
+                nivel_obj = alert.get("level") or alert.get("severity")
+                if isinstance(nivel_obj, dict):
+                    nivel = nivel_obj.get("label", nivel_obj.get("code", "—"))
+                else:
+                    nivel = str(nivel_obj) if nivel_obj else "—"
+                
+                patient_name = alert.get("patient_name", "—")
+                
+                # El tipo también puede ser un objeto {code, label} o un string
+                tipo_obj = alert.get("type") or alert.get("alert_type")
+                if isinstance(tipo_obj, dict):
+                    tipo = tipo_obj.get("label", tipo_obj.get("code", "—"))
+                else:
+                    tipo = str(tipo_obj) if tipo_obj else "—"
+                
+                # Usar 'created_at' o 'timestamp'
+                timestamp = alert.get("created_at") or alert.get("timestamp", "")
+                fecha = _format_datetime(timestamp) if timestamp else "—"
+                
+                print(f"DEBUG user_dashboard - Inserting alert: {nivel}, {patient_name}, {tipo}, {fecha}")
+                self.alerts_tree.insert("", "end", values=(nivel, patient_name, tipo, fecha))
+
+        def handle_error(exc: Exception) -> None:
+            print(f"DEBUG user_dashboard - Error in _load_patient_alerts: {exc}")
+            if self.alerts_tree:
+                self.alerts_tree.insert("", "end", values=("ERROR", "Error al cargar alertas", "—", "—"))
+
+        self.run_async(task, on_success=handle_success, on_error=handle_error)
+
     def _render_alerts(self, dashboard: Dict[str, Any]) -> None:
         """Renderiza las alertas en la tabla."""
+        print(f"DEBUG user_dashboard - _render_alerts called")
+        
         if not self.alerts_tree:
+            print("DEBUG user_dashboard - alerts_tree is None!")
             return
 
         for row in self.alerts_tree.get_children():
             self.alerts_tree.delete(row)
 
-        dashboard_data = _dict_from(dashboard, "data") or dashboard
-        recent = dashboard_data.get("recent_alerts", [])
-
-        for alert in recent:
-            nivel = alert.get("severity", "—")
-            patient_data = alert.get("patient", {})
-            patient_name = patient_data.get("full_name", "—") if isinstance(patient_data, dict) else "—"
-            tipo = alert.get("alert_type", "—")
-            timestamp = alert.get("timestamp", "")
-            fecha = _format_datetime(timestamp) if timestamp else "—"
-            self.alerts_tree.insert("", "end", values=(nivel, patient_name, tipo, fecha))
+        # El dashboard de organización NO incluye alertas individuales
+        # Necesitamos cargar las alertas de cada paciente de forma asíncrona
+        if not self.selected_org:
+            return
+        
+        self._load_patient_alerts()
 
     def _refresh_map(self) -> None:
         """Actualiza el mapa con ubicaciones."""

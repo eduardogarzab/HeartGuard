@@ -331,6 +331,41 @@ class ApiClient:
             error_message="No se pudieron obtener los pacientes asignados",
         )
 
+    def get_caregiver_patient_alerts(
+        self, 
+        patient_id: str, 
+        *, 
+        limit: int = 10,
+        token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Obtiene las alertas de un paciente específico (como caregiver)."""
+        return self._request_json(
+            "get",
+            f"/caregiver/patients/{patient_id}/alerts",
+            query={"limit": limit},
+            token=token,
+            require_auth=True,
+            error_message=f"No se pudieron obtener las alertas del paciente {patient_id}",
+        )
+
+    def get_organization_patient_alerts(
+        self,
+        org_id: str,
+        patient_id: str,
+        *,
+        limit: int = 10,
+        token: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Obtiene las alertas de un paciente específico (como admin de org)."""
+        return self._request_json(
+            "get",
+            f"/orgs/{org_id}/patients/{patient_id}/alerts",
+            query={"limit": limit},
+            token=token,
+            require_auth=True,
+            error_message=f"No se pudieron obtener las alertas del paciente {patient_id}",
+        )
+
     # ------------------------------------------------------------------
     # Map & locations
     # ------------------------------------------------------------------
