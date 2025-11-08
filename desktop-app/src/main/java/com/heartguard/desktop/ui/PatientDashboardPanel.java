@@ -6,25 +6,20 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import javafx.application.Platform;
-import javafx.embed.swing.JFXPanel;
-import javafx.scene.Scene;
-import javafx.scene.web.WebEngine;
-import javafx.scene.web.WebView;
-
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
 import java.awt.*;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
+import java.awt.Desktop;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ExecutionException;
-import netscape.javascript.JSObject;
 
 /**
  * Panel de dashboard para pacientes
@@ -74,7 +69,8 @@ public class PatientDashboardPanel extends JPanel {
     private JPanel alertsPanel;
     private JPanel careTeamPanel;
     private JPanel caregiversPanel;
-    private OpenStreetMapPanel mapPanel;
+    private JLabel mapStatusLabel;
+    private JsonArray cachedLocationsData = new JsonArray();
 
     public PatientDashboardPanel(ApiClient apiClient, String accessToken, String patientId) {
         this.apiClient = apiClient;
@@ -246,10 +242,79 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private JPanel createLocationSection() {
-        mapPanel = new OpenStreetMapPanel();
-        mapPanel.setPreferredSize(new Dimension(900, 500));
+        JPanel mapContainer = new JPanel(new BorderLayout());
+        mapContainer.setOpaque(false);
 
-        return createCardSection("🗺️ Ubicaciones del Paciente", mapPanel, mapPanel.getStatusDisplay());
+        // Panel para el contenido del mapa con mejor diseño
+        JPanel mapContent = new JPanel();
+        mapContent.setLayout(new BoxLayout(mapContent, BoxLayout.Y_AXIS));
+        mapContent.setOpaque(false);
+        mapContent.setBorder(new EmptyBorder(40, 20, 40, 20));
+
+        // Icono grande del mapa
+        JLabel mapIcon = new JLabel("🗺️");
+        mapIcon.setFont(new Font("Segoe UI", Font.PLAIN, 64));
+        mapIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapIcon);
+
+        mapContent.add(Box.createVerticalStrut(20));
+
+        // Título
+        JLabel mapTitle = new JLabel("Mapa de Ubicaciones");
+        mapTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        mapTitle.setForeground(PRIMARY_DARK);
+        mapTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapTitle);
+
+        mapContent.add(Box.createVerticalStrut(8));
+
+        // Descripción
+        JLabel mapDesc = new JLabel("Ver ubicaciones del paciente en mapa interactivo");
+        mapDesc.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        mapDesc.setForeground(TEXT_SECONDARY_COLOR);
+        mapDesc.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapDesc);
+
+        mapContent.add(Box.createVerticalStrut(24));
+
+        // Botón para abrir mapa
+        JButton openMapButton = new JButton("Abrir Mapa");
+        openMapButton.setFont(BUTTON_FONT);
+        openMapButton.setForeground(Color.WHITE);
+        openMapButton.setBackground(PRIMARY_COLOR);
+        openMapButton.setBorderPainted(false);
+        openMapButton.setFocusPainted(false);
+        openMapButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        openMapButton.setPreferredSize(new Dimension(180, 45));
+        openMapButton.setMaximumSize(new Dimension(180, 45));
+        openMapButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        // Efectos hover
+        openMapButton.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                openMapButton.setBackground(PRIMARY_DARK);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                openMapButton.setBackground(PRIMARY_COLOR);
+            }
+        });
+
+        openMapButton.addActionListener(e -> openPatientMapInBrowser());
+
+        mapContent.add(openMapButton);
+
+        mapContent.add(Box.createVerticalStrut(16));
+
+        // Estado del mapa
+        mapStatusLabel = new JLabel("Ubicaciones listas para visualizar");
+        mapStatusLabel.setFont(CAPTION_FONT);
+        mapStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
+        mapStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapStatusLabel);
+
+        mapContainer.add(mapContent, BorderLayout.CENTER);
+
+        return createCardSection("🗺️ Ubicaciones del Paciente", mapContainer);
     }
 
     private JPanel createActionsPanel() {
@@ -477,9 +542,10 @@ public class PatientDashboardPanel extends JPanel {
         System.out.println("DEBUG: updateLocationsSection llamado");
         if (locationsResponse == null || !locationsResponse.has("locations")) {
             System.out.println("DEBUG: locationsResponse es null o no tiene 'locations'");
-            // No hay ubicaciones disponibles - mostrar mensaje en el mapa
-            if (mapPanel != null) {
-                mapPanel.showNoDataMessage();
+            // No hay ubicaciones disponibles
+            cachedLocationsData = new JsonArray();
+            if (mapStatusLabel != null) {
+                mapStatusLabel.setText("Sin ubicaciones disponibles");
             }
             return;
         }
@@ -487,16 +553,17 @@ public class PatientDashboardPanel extends JPanel {
         JsonArray locations = locationsResponse.getAsJsonArray("locations");
         System.out.println("DEBUG: Cantidad de ubicaciones: " + locations.size());
 
-        if (locations.size() == 0) {
-            if (mapPanel != null) {
-                mapPanel.showNoDataMessage();
-            }
-            return;
-        }
+        // Guardar ubicaciones para el mapa
+        cachedLocationsData = locations;
 
-        // Actualizar el mapa con todas las ubicaciones
-        if (mapPanel != null) {
-            mapPanel.updateLocations(locations);
+        if (locations.size() == 0) {
+            if (mapStatusLabel != null) {
+                mapStatusLabel.setText("Sin ubicaciones registradas");
+            }
+        } else {
+            if (mapStatusLabel != null) {
+                mapStatusLabel.setText(locations.size() + " ubicación(es) disponible(s)");
+            }
         }
     }
 
@@ -628,11 +695,11 @@ public class PatientDashboardPanel extends JPanel {
         JPanel infoPanel = new JPanel();
         infoPanel.setOpaque(false);
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
-        
+
         typeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         metaRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        
+
         infoPanel.add(typeLabel);
         infoPanel.add(Box.createVerticalStrut(6));
         infoPanel.add(descLabel);
@@ -969,6 +1036,124 @@ public class PatientDashboardPanel extends JPanel {
         JsonObject careTeam;
     }
 
+    private void openPatientMapInBrowser() {
+        try {
+            // Crear archivo HTML temporal con el mapa
+            File tempFile = File.createTempFile("heartguard_patient_map_", ".html");
+            tempFile.deleteOnExit();
+
+            String htmlContent = generatePatientMapHtml();
+
+            try (FileWriter writer = new FileWriter(tempFile)) {
+                writer.write(htmlContent);
+            }
+
+            // Abrir en navegador
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(tempFile.toURI());
+            } else {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "No se puede abrir el navegador automáticamente",
+                    "Error",
+                    JOptionPane.WARNING_MESSAGE
+                );
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error al crear mapa temporal: " + e.getMessage());
+            JOptionPane.showMessageDialog(
+                this,
+                "Error al abrir el mapa: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    private String generatePatientMapHtml() {
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html>");
+        html.append("<html><head>");
+        html.append("<meta charset='utf-8'/>");
+        html.append("<title>Mapa de Ubicaciones - Paciente</title>");
+        html.append("<meta name='viewport' content='width=device-width, initial-scale=1.0'/>");
+        html.append("<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>");
+        html.append("<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>");
+        html.append("<style>");
+        html.append("body{margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;}");
+        html.append("#map{position:absolute;top:0;bottom:0;width:100%;height:100vh;}");
+        html.append(".leaflet-popup-content-wrapper{border-radius:8px;padding:0;}");
+        html.append(".leaflet-popup-content{margin:16px;font-size:14px;}");
+        html.append(".popup-title{font-size:16px;font-weight:bold;color:#1976D2;margin-bottom:8px;}");
+        html.append(".popup-info{margin:4px 0;color:#555;}");
+        html.append(".popup-label{font-weight:600;color:#333;}");
+        html.append("</style>");
+        html.append("</head><body>");
+        html.append("<div id='map'></div>");
+        html.append("<script>");
+
+        // Inicializar mapa
+        html.append("var map = L.map('map').setView([19.432608, -99.133209], 6);");
+        html.append("L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {");
+        html.append("  attribution: '&copy; OpenStreetMap contributors',");
+        html.append("  maxZoom: 19");
+        html.append("}).addTo(map);");
+
+        // Agregar marcadores de ubicaciones
+        if (cachedLocationsData != null && cachedLocationsData.size() > 0) {
+            html.append("var markers = [];");
+            for (JsonElement element : cachedLocationsData) {
+                if (!element.isJsonObject()) continue;
+                JsonObject location = element.getAsJsonObject();
+
+                double lat = location.has("latitude") && !location.get("latitude").isJsonNull()
+                    ? location.get("latitude").getAsDouble() : 0;
+                double lng = location.has("longitude") && !location.get("longitude").isJsonNull()
+                    ? location.get("longitude").getAsDouble() : 0;
+
+                if (lat == 0 && lng == 0) continue;
+
+                String timestamp = location.has("timestamp") && !location.get("timestamp").isJsonNull()
+                    ? location.get("timestamp").getAsString() : "Desconocido";
+                String accuracy = location.has("accuracy") && !location.get("accuracy").isJsonNull()
+                    ? String.format("%.2f m", location.get("accuracy").getAsDouble()) : "N/A";
+
+                html.append("var marker = L.marker([").append(lat).append(",").append(lng).append("]);");
+                html.append("marker.bindPopup('");
+                html.append("<div class=\"popup-title\">📍 Ubicación del Paciente</div>");
+                html.append("<div class=\"popup-info\"><span class=\"popup-label\">Fecha:</span> ").append(escapeHtml(timestamp)).append("</div>");
+                html.append("<div class=\"popup-info\"><span class=\"popup-label\">Precisión:</span> ").append(accuracy).append("</div>");
+                html.append("<div class=\"popup-info\"><span class=\"popup-label\">Coordenadas:</span> ").append(lat).append(", ").append(lng).append("</div>");
+                html.append("');");
+                html.append("marker.addTo(map);");
+                html.append("markers.push(marker);");
+            }
+
+            // Ajustar vista para mostrar todos los marcadores
+            html.append("if(markers.length > 0){");
+            html.append("  var group = new L.featureGroup(markers);");
+            html.append("  map.fitBounds(group.getBounds().pad(0.1));");
+            html.append("}");
+        } else {
+            html.append("alert('No hay ubicaciones disponibles para mostrar');");
+        }
+
+        html.append("</script>");
+        html.append("</body></html>");
+
+        return html.toString();
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
+    }
+
     private void viewAllAlerts() {
         apiClient.getPatientAlertsAsync(accessToken, 100)
                 .thenApplyAsync(response -> {
@@ -1127,12 +1312,12 @@ public class PatientDashboardPanel extends JPanel {
             JPanel emptyPanel = new JPanel(new GridBagLayout());
             emptyPanel.setBackground(BACKGROUND_COLOR);
             emptyPanel.setOpaque(false);
-            
+
             JLabel emptyLabel = new JLabel("No hay dispositivos registrados");
             emptyLabel.setFont(BODY_FONT);
             emptyLabel.setForeground(TEXT_SECONDARY_COLOR);
             emptyPanel.add(emptyLabel);
-            
+
             contentPanel.add(emptyPanel);
         } else {
             for (int i = 0; i < devices.size(); i++) {
@@ -1175,7 +1360,7 @@ public class PatientDashboardPanel extends JPanel {
         // Indicador de estado (izquierda)
         boolean isActive = device.has("active") && device.get("active").getAsBoolean();
         Color statusColor = isActive ? SUCCESS_COLOR : TEXT_SECONDARY_COLOR;
-        
+
         JPanel statusBar = new JPanel();
         statusBar.setPreferredSize(new Dimension(4, 100));
         statusBar.setBackground(statusColor);
@@ -1190,7 +1375,7 @@ public class PatientDashboardPanel extends JPanel {
         // Línea 1: Serial y tipo
         JPanel firstLine = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         firstLine.setOpaque(false);
-        
+
         String serial = device.has("serial") ? device.get("serial").getAsString() : "N/A";
         JLabel serialLabel = new JLabel("Serial: " + serial);
         serialLabel.setFont(SECTION_TITLE_FONT);
@@ -1211,11 +1396,11 @@ public class PatientDashboardPanel extends JPanel {
         contentPanel.add(Box.createVerticalStrut(6));
 
         // Línea 2: Marca y modelo
-        String brand = device.has("brand") && !device.get("brand").isJsonNull() 
+        String brand = device.has("brand") && !device.get("brand").isJsonNull()
             ? device.get("brand").getAsString() : "Sin marca";
         String model = device.has("model") && !device.get("model").isJsonNull()
             ? device.get("model").getAsString() : "Sin modelo";
-        
+
         JLabel brandModelLabel = new JLabel(brand + " - " + model);
         brandModelLabel.setFont(BODY_FONT);
         brandModelLabel.setForeground(TEXT_SECONDARY_COLOR);
@@ -1264,431 +1449,5 @@ public class PatientDashboardPanel extends JPanel {
             new LoginFrame().setVisible(true);
         }
     }
-
-    /**
-     * Panel con mapa usando JavaFX WebView y Leaflet.js
-     */
-    private static class OpenStreetMapPanel extends JPanel {
-        private static final Dimension DEFAULT_MAP_SIZE = new Dimension(900, 500);
-
-        private final JLabel statusLabel;
-        private final JFXPanel jfxPanel;
-
-        private WebEngine webEngine;
-        private volatile boolean mapReady = false;
-        private volatile String pendingLocationsJson = null;
-
-        OpenStreetMapPanel() {
-            setLayout(new BorderLayout());
-            setOpaque(false);
-
-            statusLabel = buildStatusLabel();
-
-            jfxPanel = new JFXPanel();
-            jfxPanel.setPreferredSize(DEFAULT_MAP_SIZE);
-            add(jfxPanel, BorderLayout.CENTER);
-
-            jfxPanel.addComponentListener(new ComponentAdapter() {
-                @Override
-                public void componentResized(ComponentEvent e) {
-                    if (!mapReady) {
-                        return;
-                    }
-                    Platform.runLater(() -> {
-                        try {
-                            if (webEngine != null) {
-                                webEngine.executeScript("if (window && typeof window.forceResize === 'function') { window.forceResize(); }");
-                            }
-                        } catch (Exception ex) {
-                            System.err.println("[MAP] Error forcing resize: " + ex.getMessage());
-                        }
-                    });
-                }
-            });
-
-            Platform.runLater(this::initializeWebView);
-        }
-
-        private JLabel buildStatusLabel() {
-            JLabel label = new JLabel("Cargando mapa...");
-            label.setFont(CAPTION_FONT);
-            label.setForeground(PRIMARY_DARK);
-            label.setBorder(new CompoundBorder(
-                    new MatteBorder(1, 1, 1, 1, NEUTRAL_BORDER_COLOR),
-                    new EmptyBorder(6, 12, 6, 12)
-            ));
-            label.setOpaque(true);
-            label.setBackground(new Color(235, 246, 255));
-            return label;
-        }
-
-        public JLabel getStatusDisplay() {
-            return statusLabel;
-        }
-
-        private void initializeWebView() {
-            WebView webView = new WebView();
-            webView.setContextMenuEnabled(false);
-
-            webEngine = webView.getEngine();
-            webEngine.setJavaScriptEnabled(true);
-            webEngine.setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
-
-            webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-                switch (newState) {
-                    case SUCCEEDED -> {
-                        mapReady = true;
-                        SwingUtilities.invokeLater(() -> statusLabel.setText("Mapa listo. Esperando datos..."));
-                        String payload = pendingLocationsJson != null ? pendingLocationsJson : "[]";
-                        pendingLocationsJson = null;
-                        sendLocationsJson(payload);
-                    }
-                    case FAILED -> {
-                        Throwable exception = webEngine.getLoadWorker().getException();
-                        System.err.println("[MAP] Error al cargar el mapa" + (exception != null ? ": " + exception.getMessage() : ""));
-                        if (exception != null) {
-                            exception.printStackTrace();
-                        }
-                        SwingUtilities.invokeLater(() -> statusLabel.setText("No se pudo cargar el mapa."));
-                    }
-                    default -> {
-                    }
-                }
-            });
-
-            webEngine.loadContent(generateLeafletHtml());
-
-            Scene scene = new Scene(webView);
-            jfxPanel.setScene(scene);
-        }
-
-        public void showNoDataMessage() {
-            SwingUtilities.invokeLater(() -> statusLabel.setText("Sin ubicaciones recientes."));
-            Platform.runLater(() -> {
-                try {
-                    if (webEngine != null) {
-                        JSObject windowObject = (JSObject) webEngine.executeScript("window");
-                        if (windowObject != null) {
-                            windowObject.call("clearLocations");
-                        }
-                    }
-                } catch (Exception ex) {
-                    System.err.println("[MAP] Error limpiando ubicaciones: " + ex.getMessage());
-                }
-            });
-        }
-
-        public void updateLocations(JsonArray locations) {
-            if (locations == null || locations.size() == 0) {
-                showNoDataMessage();
-                return;
-            }
-
-            SwingUtilities.invokeLater(() -> statusLabel.setText("Mostrando " + locations.size() + " ubicaciones."));
-            sendLocationsJson(locations.toString());
-        }
-
-        private void sendLocationsJson(String locationsJson) {
-            if (!mapReady || webEngine == null) {
-                pendingLocationsJson = locationsJson;
-                return;
-            }
-
-            final String payload = locationsJson == null ? "[]" : locationsJson;
-            Platform.runLater(() -> {
-                try {
-                    JSObject windowObject = (JSObject) webEngine.executeScript("window");
-                    if (windowObject != null) {
-                        windowObject.call("renderLocationsFromJava", payload);
-                    }
-                } catch (Exception ex) {
-                    System.err.println("[MAP] Error enviando ubicaciones: " + ex.getMessage());
-                    ex.printStackTrace();
-                }
-            });
-        }
-
-        private String generateLeafletHtml() {
-            return """
-                    <!DOCTYPE html>
-                    <html lang=\"es\">
-                    <head>
-                        <meta charset=\"utf-8\" />
-                        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0, user-scalable=no\" />
-                        <meta http-equiv=\"X-UA-Compatible\" content=\"IE=edge\" />
-                        <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\" crossorigin=\"anonymous\" />
-                        <style>
-                            * { margin: 0; padding: 0; box-sizing: border-box; }
-                            html, body { height: 100%; width: 100%; background: #f8fafc; font-family: 'Segoe UI', Arial, sans-serif; }
-                            #map-container { position: relative; height: 100%; width: 100%; }
-                            #map { height: 100%; width: 100%; background: #e5e7eb; }
-                            #no-data-banner { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,0.92); color: #455A64; font-size: 16px; font-weight: bold; z-index: 500; }
-                            .leaflet-container { background: #e5e7eb; }
-                            .leaflet-tile-container { opacity: 1; }
-                            .leaflet-tile { opacity: 1 !important; image-rendering: optimizeQuality; transition: opacity 0.25s ease-out; will-change: transform; }
-                            .leaflet-zoom-animated { will-change: transform; }
-                            .fallback-pane img { opacity: 0.55; filter: saturate(0.85) brightness(1.08); image-rendering: optimizeSpeed; }
-                            .location-badge { pointer-events: none; }
-                            .location-badge .badge { border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; box-shadow: 0 2px 6px rgba(0,0,0,0.25); }
-                            .location-badge .badge.latest { background: #2E7D32; border: 3px solid #fff; width: 30px; height: 30px; font-size: 16px; }
-                            .location-badge .badge.history { background: #1565C0; border: 2px solid #fff; width: 26px; height: 26px; font-size: 13px; }
-                            .popup { font-size: 13px; min-width: 230px; }
-                            .popup table { width: 100%; border-collapse: collapse; }
-                            .popup td { padding: 3px 4px; vertical-align: top; }
-                            .popup tr td:first-child { font-weight: 600; color: #424242; }
-                        </style>
-                    </head>
-                    <body>
-                        <div id=\"map-container\">
-                            <div id=\"map\"></div>
-                            <div id=\"no-data-banner\">Sin ubicaciones para mostrar</div>
-                        </div>
-                        <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\" crossorigin=\"anonymous\"></script>
-                        <script>
-                            (function(){
-                                const DEFAULT_CENTER = [19.4326, -99.1332];
-                                const DEFAULT_ZOOM = 12;
-                                const latestStyle = { radius: 14, fillColor: '#4CAF50', color: '#1B5E20', weight: 3, fillOpacity: 0.9 };
-                                const historyStyle = { radius: 10, fillColor: '#1E88E5', color: '#0D47A1', weight: 2, fillOpacity: 0.72 };
-
-                                const map = L.map('map', {
-                                    zoomAnimation: false,
-                                    fadeAnimation: false,
-                                    markerZoomAnimation: false,
-                                    zoomSnap: 1,
-                                    zoomDelta: 1,
-                                    trackResize: true,
-                                    minZoom: 2,
-                                    maxZoom: 18,
-                                    worldCopyJump: true,
-                                    preferCanvas: false,
-                                    inertia: false,
-                                    zoomControl: true
-                                }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);
-
-                                const fallbackPane = map.createPane('fallbackPane');
-                                fallbackPane.style.zIndex = '200';
-                                const primaryPane = map.getPane('tilePane');
-                                primaryPane.style.zIndex = '310';
-
-                                const fallbackLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                                    attribution: '',
-                                    pane: 'fallbackPane',
-                                    maxZoom: 18,
-                                    maxNativeZoom: 6,
-                                    minZoom: 0,
-                                    tileSize: 256,
-                                    keepBuffer: 1,
-                                    updateWhenIdle: true,
-                                    updateWhenZooming: false,
-                                    reuseTiles: true,
-                                    detectRetina: false,
-                                    opacity: 1,
-                                    bounds: [[-90, -180], [90, 180]],
-                                    noWrap: false,
-                                    crossOrigin: 'anonymous'
-                                }).addTo(map);
-
-                                const tileLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-                                    attribution: '© OpenStreetMap contributors',
-                                    maxZoom: 18,
-                                    maxNativeZoom: 17,
-                                    minZoom: 2,
-                                    tileSize: 256,
-                                    zoomOffset: 0,
-                                    keepBuffer: 6,
-                                    updateWhenIdle: false,
-                                    updateWhenZooming: true,
-                                    updateInterval: 90,
-                                    reuseTiles: true,
-                                    bounds: [[-90, -180], [90, 180]],
-                                    noWrap: false,
-                                    crossOrigin: 'anonymous'
-                                }).addTo(map);
-
-                                const tileRetry = new Map();
-                                tileLayer.on('loading', () => tileRetry.clear());
-                                tileLayer.on('tileloadstart', e => { if (e.tile) { e.tile.style.opacity = '0'; } });
-                                tileLayer.on('tileload', e => {
-                                    if (e.tile) {
-                                        requestAnimationFrame(() => {
-                                            e.tile.style.transition = 'opacity 120ms ease-out';
-                        
-                                            e.tile.style.opacity = '1';
-                                        });
-                                    }
-                                });
-                                tileLayer.on('tileerror', (e) => {
-                                    const url = (e.tile && e.tile.src) ? e.tile.src : '';
-                                    const count = tileRetry.get(url) || 0;
-                                    if (count >= 2) {
-                                        console.warn('[MAP] Tile abandonado tras reintentos:', url);
-                                        return;
-                                    }
-                                    const delay = count === 0 ? 600 : 1600;
-                                    setTimeout(() => {
-                                        try {
-                                            if (e.tile) {
-                                                const base = url.split('#')[0];
-                                                const sep = base.includes('?') ? '&' : '?';
-                                                const newUrl = base + sep + 'retry=' + (count + 1) + '&ts=' + Date.now();
-                                                e.tile.src = newUrl;
-                                                tileRetry.set(url, count + 1);
-                                                tileRetry.set(newUrl, count + 1);
-                                            }
-                                        } catch (err) {
-                                            console.error('[MAP] Error reintentando tile:', err);
-                                        }
-                                    }, delay);
-                                });
-
-                                const noDataBanner = document.getElementById('no-data-banner');
-                                const markersLayer = L.layerGroup().addTo(map);
-                                const overlayLayer = L.layerGroup().addTo(map);
-                                const pathLayer = L.polyline([], { color: '#1976D2', weight: 3, opacity: 0.65, dashArray: '8,4' }).addTo(map);
-
-                                let hasInitialBounds = false;
-                                let resizeTimer = null;
-
-                                const showNoData = (show) => {
-                                    if (noDataBanner) {
-                                        noDataBanner.style.display = show ? 'flex' : 'none';
-                                    }
-                                };
-
-                                const scheduleResize = (delay = 150) => {
-                                    if (map._animatingZoom) {
-                                        if (resizeTimer) clearTimeout(resizeTimer);
-                                        resizeTimer = setTimeout(() => scheduleResize(delay), 140);
-                                        return;
-                                    }
-                                    if (resizeTimer) clearTimeout(resizeTimer);
-                                    resizeTimer = setTimeout(() => {
-                                        try {
-                                            map.invalidateSize({ animate: false, pan: false, debounceMoveend: true });
-                                        } catch (err) {
-                                            console.error('[MAP] Error en scheduleResize:', err);
-                                        }
-                                    }, delay);
-                                };
-
-                                map.on('zoomstart', () => {
-                                    if (resizeTimer) {
-                                        clearTimeout(resizeTimer);
-                                        resizeTimer = null;
-                                    }
-                                });
-                                map.on('zoomend', () => scheduleResize(160));
-                                map.on('moveend', () => scheduleResize(180));
-
-                                const isValidNumber = value => typeof value === 'number' && !Number.isNaN(value);
-                                const formatTimestamp = value => {
-                                    if (!value) return 'N/A';
-                                    const date = new Date(value);
-                                    return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
-                                };
-                                const formatAccuracy = value => typeof value === 'number' ? value.toFixed(2) + ' m' : 'N/A';
-
-                                const buildPopupHtml = (loc, isLatest, order) => {
-                                    const titleColor = isLatest ? '#2E7D32' : '#1565C0';
-                                    const title = isLatest ? 'Ubicación más reciente' : 'Ubicación #' + order;
-                                    const rows = [
-                                        ['Latitud', loc.latitude.toFixed(6)],
-                                        ['Longitud', loc.longitude.toFixed(6)],
-                                        ['Fecha/Hora', formatTimestamp(loc.timestamp)],
-                                        ['Fuente', loc.source || 'desconocida'],
-                                        ['Precisión', formatAccuracy(loc.accuracy_meters)]
-                                    ];
-                                    let html = `<div class='popup'><h3 style='margin:0 0 8px 0; color:${titleColor}; font-size:15px;'>${title}</h3><table>`;
-                                    rows.forEach(row => { html += `<tr><td>${row[0]}</td><td>${row[1]}</td></tr>`; });
-                                    html += '</table></div>';
-                                    return html;
-                                };
-
-                                const render = (locations) => {
-                                    markersLayer.clearLayers();
-                                    overlayLayer.clearLayers();
-                                    pathLayer.setLatLngs([]);
-
-                                    if (!Array.isArray(locations) || locations.length === 0) {
-                                        showNoData(true);
-                                        hasInitialBounds = false;
-                                        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM, { animate: false });
-                                        scheduleResize(180);
-                                        return;
-                                    }
-
-                                    const validLocations = locations.filter(loc => loc && isValidNumber(loc.latitude) && isValidNumber(loc.longitude));
-                                    if (validLocations.length === 0) {
-                                        showNoData(true);
-                                        hasInitialBounds = false;
-                                        map.setView(DEFAULT_CENTER, DEFAULT_ZOOM, { animate: false });
-                                        scheduleResize(180);
-                                        return;
-                                    }
-
-                                    showNoData(false);
-                                    validLocations.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0));
-
-                                    const latLngs = [];
-                                    validLocations.forEach((loc, index) => {
-                                        const latLng = [loc.latitude, loc.longitude];
-                                        latLngs.push(latLng);
-                                        const isLatest = index === 0;
-                                        const marker = L.circleMarker(latLng, isLatest ? latestStyle : historyStyle).addTo(markersLayer);
-                                        marker.bindPopup(buildPopupHtml(loc, isLatest, index + 1));
-
-                                        const badgeHtml = `<div class='badge ${isLatest ? "latest" : "history"}'>${index + 1}</div>`;
-                                        L.marker(latLng, {
-                                            icon: L.divIcon({ className: 'location-badge', html: badgeHtml, iconSize: isLatest ? [30, 30] : [26, 26] })
-                                        }).addTo(overlayLayer);
-                                    });
-
-                                    if (latLngs.length > 1) {
-                                        pathLayer.setLatLngs(latLngs);
-                                    }
-
-                                    if (!hasInitialBounds) {
-                                        hasInitialBounds = true;
-                                        if (latLngs.length === 1) {
-                                            map.setView(latLngs[0], 15, { animate: false });
-                                        } else {
-                                            const bounds = L.latLngBounds(latLngs);
-                                            map.fitBounds(bounds, { padding: [40, 40], maxZoom: 16, animate: false });
-                                        }
-                                        scheduleResize(200);
-                                    } else {
-                                        scheduleResize(160);
-                                    }
-                                };
-
-                                window.renderLocationsFromJava = payload => {
-                                    try {
-                                        const data = JSON.parse(payload || '[]');
-                                        render(data);
-                                    } catch (err) {
-                                        console.error('[MAP] Error parseando ubicaciones', err);
-                                        showNoData(true);
-                                    }
-                                };
-
-                                window.forceResize = () => scheduleResize(140);
-                                window.clearLocations = () => {
-                                    markersLayer.clearLayers();
-                                    overlayLayer.clearLayers();
-                                    pathLayer.setLatLngs([]);
-                                    showNoData(true);
-                                    hasInitialBounds = false;
-                                    map.setView(DEFAULT_CENTER, DEFAULT_ZOOM, { animate: false });
-                                    scheduleResize(180);
-                                };
-
-                                render([]);
-                            })();
-                        </script>
-                    </body>
-                    </html>
-                    """;
-        }
-    }
 }
+

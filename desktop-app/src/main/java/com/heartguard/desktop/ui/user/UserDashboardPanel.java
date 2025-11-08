@@ -1,5 +1,7 @@
 package com.heartguard.desktop.ui.user;
 
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -10,8 +12,11 @@ import com.heartguard.desktop.models.user.OrgMembership;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.event.ActionEvent;
-import java.awt.event.ActionListener;
+import java.awt.Desktop;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -37,19 +42,23 @@ public class UserDashboardPanel extends JPanel {
     private static final Color ACCENT_COLOR = new Color(0, 188, 212);
     private static final Color TEXT_PRIMARY_COLOR = new Color(35, 52, 70);
     private static final Color TEXT_SECONDARY_COLOR = new Color(104, 120, 138);
+    private static final Color BORDER_COLOR = new Color(226, 232, 240);
     private static final Color NEUTRAL_BORDER_COLOR = new Color(225, 231, 238);
     private static final Color SUCCESS_COLOR = new Color(46, 204, 113);
     private static final Color WARNING_COLOR = new Color(255, 179, 0);
     private static final Color INFO_COLOR = new Color(155, 89, 182);
     private static final Color DANGER_COLOR = new Color(231, 76, 60);
-    
+
+    // Instancia de Gson para serialización JSON
+    private static final Gson GSON = new GsonBuilder().create();
+
     // Tipografía consistente
     private static final Font SECTION_TITLE_FONT = new Font("Segoe UI", Font.BOLD, 18);
     private static final Font BODY_FONT = new Font("Segoe UI", Font.PLAIN, 14);
     private static final Font CAPTION_FONT = new Font("Segoe UI", Font.PLAIN, 12);
     private static final Font METRIC_VALUE_FONT = new Font("Segoe UI", Font.BOLD, 28);
     private static final Font METRIC_DESC_FONT = new Font("Segoe UI", Font.PLAIN, 13);
-    
+
     private final ApiClient apiClient;
     private final String token;
     private final Consumer<ApiException> apiErrorHandler;
@@ -66,6 +75,7 @@ public class UserDashboardPanel extends JPanel {
     private final UserMapPanel mapPanel = new UserMapPanel();
     private final JComboBox<TeamOption> teamFilter = new JComboBox<>();
     private final JButton refreshMapButton = new JButton("Actualizar");
+    private final JButton viewMapButton = new JButton("Ver Mapa");
     private final JLabel mapStatusLabel = new JLabel(" ");
 
     private final JTabbedPane modulesTabs = new JTabbedPane();
@@ -107,100 +117,369 @@ public class UserDashboardPanel extends JPanel {
     }
 
     private void initUI() {
-        setLayout(new BorderLayout(0, 16));
+        setLayout(new BorderLayout(0, 24));
         setBackground(BACKGROUND_COLOR);
-        setBorder(new EmptyBorder(20, 24, 24, 24));
+        setBorder(new EmptyBorder(32, 32, 32, 32));
 
-        // Panel de métricas en la parte superior
-        metricsPanel.setOpaque(false);
-        metricsPanel.add(patientsCard);
-        metricsPanel.add(alertsCard);
-        metricsPanel.add(devicesCard);
-        metricsPanel.add(caregiversCard);
-        add(metricsPanel, BorderLayout.NORTH);
+        // Panel principal con ancho máximo y centrado
+        JPanel mainPanel = new JPanel();
+        mainPanel.setOpaque(false);
+        mainPanel.setLayout(new BoxLayout(mainPanel, BoxLayout.Y_AXIS));
+        mainPanel.setMaximumSize(new Dimension(1400, Integer.MAX_VALUE)); // Ancho máximo de 1400px
+        mainPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
 
-        // Panel central con mapa y módulos
-        JPanel centerPanel = new JPanel(new BorderLayout(0, 16));
-        centerPanel.setOpaque(false);
-        centerPanel.add(createMapSection(), BorderLayout.CENTER);
-        centerPanel.add(createModulesSection(), BorderLayout.SOUTH);
-        add(centerPanel, BorderLayout.CENTER);
+        // Panel de métricas superior con ancho máximo
+        JPanel metricsWrapper = new JPanel(new BorderLayout());
+        metricsWrapper.setOpaque(false);
+        metricsWrapper.setMaximumSize(new Dimension(1400, Integer.MAX_VALUE));
+        metricsWrapper.setAlignmentX(Component.CENTER_ALIGNMENT);
+        metricsWrapper.add(createMetricsPanel(), BorderLayout.CENTER);
+
+        mainPanel.add(metricsWrapper);
+        mainPanel.add(Box.createVerticalStrut(24));
+
+        // Panel central con mapa y módulos con ancho máximo
+        JPanel contentPanel = new JPanel();
+        contentPanel.setOpaque(false);
+        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
+        contentPanel.setMaximumSize(new Dimension(1400, Integer.MAX_VALUE));
+        contentPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        contentPanel.add(createMapSection());
+        contentPanel.add(Box.createVerticalStrut(20));
+        contentPanel.add(createModulesSection());
+
+        mainPanel.add(contentPanel);
+
+        // Wrapper para centrar el panel principal
+        JPanel centerWrapper = new JPanel(new GridBagLayout());
+        centerWrapper.setOpaque(false);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.NONE;
+        centerWrapper.add(mainPanel, gbc);
+
+        add(centerWrapper, BorderLayout.CENTER);
+    }
+
+    private JPanel createMetricsPanel() {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setOpaque(false);
+        wrapper.setBorder(new EmptyBorder(0, 0, 16, 0));
+        wrapper.setMaximumSize(new Dimension(1400, Integer.MAX_VALUE));
+
+        // Header de métricas
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(0, 0, 16, 0));
+
+        JLabel metricsTitle = new JLabel("Resumen General");
+        metricsTitle.setFont(new Font("Segoe UI", Font.BOLD, 20));
+        metricsTitle.setForeground(TEXT_PRIMARY_COLOR);
+        header.add(metricsTitle, BorderLayout.WEST);
+
+        wrapper.add(header, BorderLayout.NORTH);
+
+        // Panel de métricas con ancho máximo y centrado
+        JPanel metricsContainer = new JPanel();
+        metricsContainer.setOpaque(false);
+        metricsContainer.setLayout(new BoxLayout(metricsContainer, BoxLayout.X_AXIS));
+        metricsContainer.setMaximumSize(new Dimension(1400, Integer.MAX_VALUE));
+
+        // Crear tarjetas de métricas con mejor estilo
+        metricsContainer.add(createModernMetricCard("Pacientes activos", PRIMARY_COLOR, patientsCard));
+        metricsContainer.add(Box.createHorizontalStrut(20));
+        metricsContainer.add(createModernMetricCard("Alertas abiertas", DANGER_COLOR, alertsCard));
+        metricsContainer.add(Box.createHorizontalStrut(20));
+        metricsContainer.add(createModernMetricCard("Dispositivos activos", ACCENT_COLOR, devicesCard));
+        metricsContainer.add(Box.createHorizontalStrut(20));
+        metricsContainer.add(createModernMetricCard("Caregivers activos", SUCCESS_COLOR, caregiversCard));
+
+        // Wrapper para centrar las métricas
+        JPanel centerMetrics = new JPanel(new GridBagLayout());
+        centerMetrics.setOpaque(false);
+        GridBagConstraints gbc = new GridBagConstraints();
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        gbc.weightx = 1.0;
+        gbc.fill = GridBagConstraints.NONE;
+        centerMetrics.add(metricsContainer, gbc);
+
+        wrapper.add(centerMetrics, BorderLayout.CENTER);
+        return wrapper;
+    }
+
+    private JPanel createModernMetricCard(String title, Color accentColor, MetricCard metricCard) {
+        JPanel wrapper = new JPanel(new BorderLayout());
+        wrapper.setBackground(CARD_BACKGROUND);
+        wrapper.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR, 1),
+            new EmptyBorder(24, 24, 24, 24)
+        ));
+
+        // Título de la métrica
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        titleLabel.setForeground(TEXT_SECONDARY_COLOR);
+        wrapper.add(titleLabel, BorderLayout.NORTH);
+
+        // Valor principal
+        wrapper.add(metricCard, BorderLayout.CENTER);
+
+        return wrapper;
     }
 
     private JPanel createMapSection() {
-        JPanel wrapper = new JPanel(new BorderLayout(0, 12));
+        JPanel wrapper = new JPanel(new BorderLayout(0, 16));
         wrapper.setOpaque(false);
 
-        // Encabezado del mapa con filtros
-        JPanel header = new JPanel(new BorderLayout());
+        // Header moderno del mapa
+        JPanel header = new JPanel();
         header.setOpaque(false);
-        header.setBorder(new EmptyBorder(0, 0, 8, 0));
-        
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setBorder(new EmptyBorder(0, 0, 16, 0));
+
+        // Título del mapa
         JLabel mapTitle = new JLabel("Mapa de Ubicaciones en Tiempo Real");
-        mapTitle.setFont(SECTION_TITLE_FONT);
+        mapTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
         mapTitle.setForeground(TEXT_PRIMARY_COLOR);
-        header.add(mapTitle, BorderLayout.WEST);
+        mapTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        header.add(mapTitle);
+        header.add(Box.createVerticalStrut(12));
 
-        JPanel filters = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
-        filters.setOpaque(false);
-        
-        JLabel filterLabel = new JLabel("Filtrar por equipo:");
-        filterLabel.setFont(CAPTION_FONT);
-        filterLabel.setForeground(TEXT_SECONDARY_COLOR);
-        filters.add(filterLabel);
-        
-        teamFilter.setPreferredSize(new Dimension(220, 32));
-        teamFilter.setFont(BODY_FONT);
-        teamFilter.setBackground(CARD_BACKGROUND);
-        teamFilter.addActionListener(e -> applyMapFilter());
-        filters.add(teamFilter);
+        // Toolbar moderno con todos los controles
+        JPanel toolbar = createModernToolbar();
+        toolbar.setAlignmentX(Component.CENTER_ALIGNMENT);
+        header.add(toolbar);
 
-        styleButton(refreshMapButton, ACCENT_COLOR);
-        refreshMapButton.setToolTipText("Recargar ubicaciones");
-        refreshMapButton.setPreferredSize(new Dimension(44, 32));
-        refreshMapButton.addActionListener(e -> fetchMapData());
-        filters.add(refreshMapButton);
-        
-        mapStatusLabel.setFont(CAPTION_FONT);
-        mapStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
-        filters.add(mapStatusLabel);
-
-        header.add(filters, BorderLayout.EAST);
         wrapper.add(header, BorderLayout.NORTH);
 
-        // Contenedor del mapa con sombra
+        // Contenedor del mapa con mejor diseño
         JPanel mapContainer = createStyledCard();
         mapContainer.setLayout(new BorderLayout());
-        mapContainer.add(mapPanel, BorderLayout.CENTER);
-        mapContainer.setPreferredSize(new Dimension(0, 400));
+        mapContainer.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR, 1),
+            new EmptyBorder(32, 32, 32, 32)
+        ));
+
+        // Panel del botón del mapa con mejor diseño
+        JPanel mapButtonPanel = new JPanel(new BorderLayout());
+        mapButtonPanel.setOpaque(false);
+
+        // Icono y texto del mapa
+        JPanel mapContent = new JPanel();
+        mapContent.setOpaque(false);
+        mapContent.setLayout(new BoxLayout(mapContent, BoxLayout.Y_AXIS));
+
+        // Icono del mapa
+        JLabel mapIcon = new JLabel("🗺️");
+        mapIcon.setFont(new Font("Segoe UI", Font.PLAIN, 48));
+        mapIcon.setForeground(TEXT_SECONDARY_COLOR);
+        mapIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapIcon);
+        mapContent.add(Box.createVerticalStrut(12));
+
+        // Texto descriptivo
+        JPanel textPanel = new JPanel();
+        textPanel.setOpaque(false);
+        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
+
+        JLabel mapLabel = new JLabel("Visualizar Ubicaciones");
+        mapLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        mapLabel.setForeground(TEXT_PRIMARY_COLOR);
+        mapLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        textPanel.add(mapLabel);
+        textPanel.add(Box.createVerticalStrut(4));
+
+        JLabel mapDesc = new JLabel("Ver mapa interactivo con pacientes y miembros del equipo");
+        mapDesc.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        mapDesc.setForeground(TEXT_SECONDARY_COLOR);
+        mapDesc.setAlignmentX(Component.CENTER_ALIGNMENT);
+        textPanel.add(mapDesc);
+
+        mapContent.add(textPanel);
+        mapContent.add(Box.createVerticalStrut(16));
+
+        // Botón moderno del mapa centrado
+        JButton viewMapButton = createModernPrimaryButton("Abrir Mapa", "Abrir mapa de ubicaciones");
+        viewMapButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+        viewMapButton.addActionListener(e -> openMapDialog());
+
+        mapContent.add(viewMapButton);
+        mapButtonPanel.add(mapContent, BorderLayout.CENTER);
+
+        mapContainer.add(mapButtonPanel, BorderLayout.CENTER);
+        mapContainer.setPreferredSize(new Dimension(0, 280)); // Altura aumentada para que quepa todo cómodamente
+
         wrapper.add(mapContainer, BorderLayout.CENTER);
 
         return wrapper;
     }
 
+    private JPanel createModernToolbar() {
+        JPanel toolbar = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 0));
+        toolbar.setOpaque(false);
+
+        // Etiqueta del filtro
+        JLabel filterLabel = new JLabel("Equipo:");
+        filterLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        filterLabel.setForeground(TEXT_SECONDARY_COLOR);
+        toolbar.add(filterLabel);
+
+        // ComboBox del filtro con mejor estilo
+        teamFilter.setPreferredSize(new Dimension(200, 36));
+        teamFilter.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        teamFilter.setBackground(CARD_BACKGROUND);
+        teamFilter.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR, 1),
+            new EmptyBorder(6, 12, 6, 12)
+        ));
+        teamFilter.addActionListener(e -> applyMapFilter());
+        toolbar.add(teamFilter);
+
+        // Botón de actualizar con mejor estilo
+        JButton refreshButton = createModernSecondaryButton("↻", "Recargar ubicaciones");
+        refreshButton.addActionListener(e -> fetchMapData());
+        toolbar.add(refreshButton);
+
+        // Label de estado
+        mapStatusLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+        mapStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
+        toolbar.add(mapStatusLabel);
+
+        return toolbar;
+    }
+
+    private JButton createModernPrimaryButton(String text, String tooltip) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setForeground(Color.WHITE);
+        button.setBackground(PRIMARY_COLOR);
+        button.setBorderPainted(false);
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(new EmptyBorder(12, 24, 12, 24));
+        button.setPreferredSize(new Dimension(140, 44));
+
+        // Efectos hover
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(PRIMARY_DARK);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(PRIMARY_COLOR);
+            }
+        });
+
+        if (tooltip != null) {
+            button.setToolTipText(tooltip);
+        }
+
+        return button;
+    }
+
+    private JButton createModernSecondaryButton(String text, String tooltip) {
+        JButton button = new JButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        button.setForeground(PRIMARY_COLOR);
+        button.setBackground(CARD_BACKGROUND);
+        button.setBorderPainted(true);
+        button.setBorder(BorderFactory.createLineBorder(PRIMARY_COLOR, 1));
+        button.setFocusPainted(false);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setPreferredSize(new Dimension(44, 36));
+
+        // Efectos hover
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                button.setBackground(new Color(239, 246, 255));
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                button.setBackground(CARD_BACKGROUND);
+            }
+        });
+
+        if (tooltip != null) {
+            button.setToolTipText(tooltip);
+        }
+
+        return button;
+    }
+
     private JPanel createModulesSection() {
         JPanel wrapper = new JPanel(new BorderLayout());
         wrapper.setOpaque(false);
-        
-        // Estilizar las tabs
-        modulesTabs.setFont(BODY_FONT);
+        wrapper.setMaximumSize(new Dimension(1400, Integer.MAX_VALUE));
+
+        // Header de módulos
+        JPanel header = new JPanel(new BorderLayout());
+        header.setOpaque(false);
+        header.setBorder(new EmptyBorder(0, 0, 16, 0));
+
+        JLabel modulesTitle = new JLabel("Gestión de Datos");
+        modulesTitle.setFont(new Font("Segoe UI", Font.BOLD, 18));
+        modulesTitle.setForeground(TEXT_PRIMARY_COLOR);
+        header.add(modulesTitle, BorderLayout.WEST);
+
+        wrapper.add(header, BorderLayout.NORTH);
+
+        // Tabs con mejor estilo
+        modulesTabs.setFont(new Font("Segoe UI", Font.BOLD, 13));
         modulesTabs.setBackground(CARD_BACKGROUND);
         modulesTabs.setForeground(TEXT_PRIMARY_COLOR);
-        
-        modulesTabs.addTab("Pacientes", createPatientsTab());
-        modulesTabs.addTab("Care-teams", createCareTeamsTab());
-        modulesTabs.addTab("Dispositivos", createDevicesTab());
-        modulesTabs.addTab("Alertas", createAlertsTab());
+        modulesTabs.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+
+        // Personalizar apariencia de las tabs
+        modulesTabs.setUI(new javax.swing.plaf.basic.BasicTabbedPaneUI() {
+            @Override
+            protected void paintTabBackground(Graphics g, int tabPlacement, int tabIndex, int x, int y, int w, int h, boolean isSelected) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+                if (isSelected) {
+                    g2.setColor(PRIMARY_COLOR);
+                    g2.fillRoundRect(x, y, w, h, 8, 8);
+                } else {
+                    g2.setColor(CARD_BACKGROUND);
+                    g2.fillRoundRect(x, y, w, h, 8, 8);
+                    g2.setColor(BORDER_COLOR);
+                    g2.drawRoundRect(x, y, w, h, 8, 8);
+                }
+                g2.dispose();
+            }
+
+            @Override
+            protected void paintTabBorder(Graphics g, int tabPlacement, int tabIndex, int x, int y, int w, int h, boolean isSelected) {
+                // No pintar borde adicional
+            }
+
+            @Override
+            protected void paintContentBorder(Graphics g, int tabPlacement, int selectedIndex) {
+                // No pintar borde del contenido
+            }
+        });
+
+        modulesTabs.addTab("👥 Pacientes", createPatientsTab());
+        modulesTabs.addTab("🏥 Care-teams", createCareTeamsTab());
+        modulesTabs.addTab("📱 Dispositivos", createDevicesTab());
+        modulesTabs.addTab("🚨 Alertas", createAlertsTab());
 
         JPanel tabsCard = createStyledCard();
         tabsCard.setLayout(new BorderLayout());
+        tabsCard.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR, 1),
+            new EmptyBorder(24, 24, 24, 24)
+        ));
         tabsCard.add(modulesTabs, BorderLayout.CENTER);
-        tabsCard.setPreferredSize(new Dimension(0, 500));
-        
+        tabsCard.setPreferredSize(new Dimension(0, 550));
+
         wrapper.add(tabsCard, BorderLayout.CENTER);
         return wrapper;
     }
-    
+
     /**
      * Crea un panel con estilo de tarjeta moderna (sombra y bordes redondeados)
      */
@@ -213,7 +492,7 @@ public class UserDashboardPanel extends JPanel {
         ));
         return card;
     }
-    
+
     /**
      * Aplica estilo moderno a un botón
      */
@@ -226,7 +505,7 @@ public class UserDashboardPanel extends JPanel {
         button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         button.setBorder(new EmptyBorder(8, 16, 8, 16));
     }
-    
+
     /**
      * Aplica estilo moderno a un toggle button
      */
@@ -237,7 +516,7 @@ public class UserDashboardPanel extends JPanel {
         button.setBorder(new EmptyBorder(8, 16, 8, 16));
         button.setBackground(CARD_BACKGROUND);
         button.setForeground(TEXT_PRIMARY_COLOR);
-        
+
         // Cambiar estilo cuando esté seleccionado
         button.addItemListener(e -> {
             if (button.isSelected()) {
@@ -250,49 +529,74 @@ public class UserDashboardPanel extends JPanel {
         });
     }
 
-    private JPanel createPatientsTab() {
-        JPanel container = new JPanel(new BorderLayout(0, 12));
-        container.setOpaque(false);
-        container.setBorder(new EmptyBorder(12, 12, 12, 12));
-
-        // Header con toggles estilizados
-        JPanel header = new JPanel(new BorderLayout());
+    /**
+     * Crea un header consistente para las tabs de gestión de datos
+     * siguiendo principios de usabilidad: agrupación lógica, jerarquía visual y consistencia
+     */
+    private JPanel createDataTabHeader(String title, JComponent[] controls, JLabel statusLabel) {
+        JPanel header = new JPanel();
         header.setOpaque(false);
-        
-        JLabel title = new JLabel("Pacientes en Seguimiento");
-        title.setFont(SECTION_TITLE_FONT);
-        title.setForeground(TEXT_PRIMARY_COLOR);
-        header.add(title, BorderLayout.WEST);
-        
-        JPanel togglePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
-        togglePanel.setOpaque(false);
-        
-        JToggleButton myPatientsToggle = new JToggleButton("Mis pacientes");
-        JToggleButton teamPatientsToggle = new JToggleButton("Por equipos");
-        styleToggleButton(myPatientsToggle);
-        styleToggleButton(teamPatientsToggle);
-        
+        header.setLayout(new BoxLayout(header, BoxLayout.Y_AXIS));
+        header.setBorder(new EmptyBorder(0, 0, 16, 0)); // Espacio inferior para separación
+
+        // Título a la izquierda con jerarquía visual clara
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
+        titleLabel.setForeground(TEXT_PRIMARY_COLOR);
+        titleLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        header.add(titleLabel);
+        header.add(Box.createVerticalStrut(12));
+
+        // Panel de controles agrupados centrados
+        JPanel controlsPanel = new JPanel();
+        controlsPanel.setOpaque(false);
+        controlsPanel.setLayout(new BoxLayout(controlsPanel, BoxLayout.X_AXIS));
+        controlsPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        // Agregar controles principales (botones, toggles)
+        for (JComponent control : controls) {
+            controlsPanel.add(control);
+            controlsPanel.add(Box.createHorizontalStrut(8)); // Espacio entre controles
+        }
+
+        // Agregar status label integrado si existe
+        if (statusLabel != null) {
+            statusLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+            statusLabel.setForeground(TEXT_SECONDARY_COLOR);
+            controlsPanel.add(Box.createHorizontalStrut(16)); // Más espacio antes del status
+            controlsPanel.add(statusLabel);
+        }
+
+        header.add(controlsPanel);
+        return header;
+    }
+
+    private JPanel createPatientsTab() {
+        JPanel container = new JPanel(new BorderLayout(0, 20));
+        container.setOpaque(false);
+        container.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        // Crear header consistente con controles agrupados
+        JToggleButton myPatientsToggle = createModernToggleButton("👥 Míos", true);
+        JToggleButton teamPatientsToggle = createModernToggleButton("🏥 Equipos", false);
+
         myPatientsToggle.setSelected(true);
         patientsToggleGroup.add(myPatientsToggle);
         patientsToggleGroup.add(teamPatientsToggle);
         myPatientsToggle.addActionListener(e -> patientsCardLayout.show(patientsContainer, "mine"));
         teamPatientsToggle.addActionListener(e -> patientsCardLayout.show(patientsContainer, "teams"));
-        
-        togglePanel.add(myPatientsToggle);
-        togglePanel.add(teamPatientsToggle);
-        
-        patientsStatusLabel.setFont(CAPTION_FONT);
-        patientsStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
-        togglePanel.add(patientsStatusLabel);
-        
-        header.add(togglePanel, BorderLayout.EAST);
+
+        // Usar header consistente con controles agrupados
+        JPanel header = createDataTabHeader("Pacientes en Seguimiento",
+                                          new JComponent[]{myPatientsToggle, teamPatientsToggle},
+                                          patientsStatusLabel);
         container.add(header, BorderLayout.NORTH);
 
-        // Paneles de pacientes con fondo y scroll
+        // Paneles de pacientes con mejor organización
         myPatientsPanel.setLayout(new BoxLayout(myPatientsPanel, BoxLayout.Y_AXIS));
         myPatientsPanel.setOpaque(false);
         myPatientsPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
-        
+
         teamPatientsPanel.setLayout(new BoxLayout(teamPatientsPanel, BoxLayout.Y_AXIS));
         teamPatientsPanel.setOpaque(false);
         teamPatientsPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
@@ -309,26 +613,90 @@ public class UserDashboardPanel extends JPanel {
         return container;
     }
 
-    private JPanel createCareTeamsTab() {
-        JPanel container = new JPanel(new BorderLayout(12, 0));
-        container.setOpaque(false);
-        container.setBorder(new EmptyBorder(12, 12, 12, 12));
+    private JToggleButton createModernToggleButton(String text, boolean isPrimary) {
+        JToggleButton button = new JToggleButton(text);
+        button.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        button.setFocusPainted(false);
+        button.setBorderPainted(true);
+        button.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        button.setBorder(new EmptyBorder(10, 12, 10, 12)); // Padding reducido
+        button.setPreferredSize(new Dimension(110, 36)); // Ancho reducido de 130 a 110
 
-        // Lista de equipos con estilo
-        JPanel listPanel = new JPanel(new BorderLayout(0, 8));
+        // Estilo inicial
+        if (isPrimary) {
+            button.setBackground(PRIMARY_COLOR);
+            button.setForeground(Color.WHITE);
+            button.setBorder(BorderFactory.createLineBorder(PRIMARY_COLOR, 1));
+        } else {
+            button.setBackground(CARD_BACKGROUND);
+            button.setForeground(TEXT_SECONDARY_COLOR);
+            button.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+        }
+
+        // Cambiar estilo cuando esté seleccionado
+        button.addItemListener(e -> {
+            if (button.isSelected()) {
+                button.setBackground(PRIMARY_COLOR);
+                button.setForeground(Color.WHITE);
+                button.setBorder(BorderFactory.createLineBorder(PRIMARY_COLOR, 1));
+            } else {
+                button.setBackground(CARD_BACKGROUND);
+                button.setForeground(TEXT_SECONDARY_COLOR);
+                button.setBorder(BorderFactory.createLineBorder(BORDER_COLOR, 1));
+            }
+        });
+
+        // Efectos hover
+        button.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                if (!button.isSelected()) {
+                    button.setBackground(new Color(249, 250, 252));
+                    button.setForeground(TEXT_PRIMARY_COLOR);
+                }
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                if (!button.isSelected()) {
+                    button.setBackground(CARD_BACKGROUND);
+                    button.setForeground(TEXT_SECONDARY_COLOR);
+                }
+            }
+        });
+
+        return button;
+    }
+
+    private JPanel createCareTeamsTab() {
+        JPanel container = new JPanel(new BorderLayout(0, 20));
+        container.setOpaque(false);
+        container.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        // Header consistente con información de estado
+        JPanel header = createDataTabHeader("Equipos de Cuidado", new JComponent[]{}, careTeamStatusLabel);
+        container.add(header, BorderLayout.NORTH);
+
+        // Panel de lista de equipos mejorado
+        JPanel listPanel = new JPanel(new BorderLayout(0, 12));
         listPanel.setOpaque(false);
-        listPanel.setPreferredSize(new Dimension(280, 0));
-        
-        JLabel listTitle = new JLabel("Equipos de Cuidado");
-        listTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        listPanel.setPreferredSize(new Dimension(300, 0)); // Ancho más generoso para mejor usabilidad
+        listPanel.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(BORDER_COLOR, 1),
+            new EmptyBorder(16, 16, 16, 16)
+        ));
+        listPanel.setBackground(CARD_BACKGROUND);
+
+        // Título de la lista
+        JLabel listTitle = new JLabel("Seleccionar Equipo");
+        listTitle.setFont(new Font("Segoe UI", Font.BOLD, 14));
         listTitle.setForeground(TEXT_PRIMARY_COLOR);
-        listTitle.setBorder(new EmptyBorder(0, 8, 0, 0));
+        listTitle.setBorder(new EmptyBorder(0, 0, 8, 0));
         listPanel.add(listTitle, BorderLayout.NORTH);
-        
+
+        // Lista con mejor configuración
         careTeamList.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         careTeamList.setFont(BODY_FONT);
         careTeamList.setBackground(CARD_BACKGROUND);
-        careTeamList.setBorder(new EmptyBorder(8, 8, 8, 8));
+        careTeamList.setBorder(new EmptyBorder(4, 4, 4, 4));
+        careTeamList.setFixedCellHeight(40); // Altura consistente para mejor usabilidad
         careTeamList.addListSelectionListener(e -> {
             if (!e.getValueIsAdjusting()) {
                 TeamOption option = careTeamList.getSelectedValue();
@@ -337,117 +705,121 @@ public class UserDashboardPanel extends JPanel {
                 }
             }
         });
-        
+
         JScrollPane listScroll = new JScrollPane(careTeamList);
         configureStyledScroll(listScroll);
+        listScroll.setBorder(null); // Remover borde para mejor integración
         listPanel.add(listScroll, BorderLayout.CENTER);
 
-        // Panel de detalles con estilo
+        // Panel de detalles mejorado
         careTeamDetailPanel.setOpaque(false);
-        careTeamDetailPanel.setBorder(new EmptyBorder(0, 12, 0, 0));
-        
-        JPanel detailHeader = new JPanel(new BorderLayout());
-        detailHeader.setOpaque(false);
-        detailHeader.setBorder(new EmptyBorder(0, 0, 12, 0));
-        
-        careTeamStatusLabel.setFont(SECTION_TITLE_FONT);
-        careTeamStatusLabel.setForeground(TEXT_PRIMARY_COLOR);
-        detailHeader.add(careTeamStatusLabel, BorderLayout.WEST);
-        careTeamDetailPanel.add(detailHeader, BorderLayout.NORTH);
+        careTeamDetailPanel.setBorder(new EmptyBorder(0, 20, 0, 0));
 
-        // Contenido de detalles
-        JPanel detailBody = new JPanel();
-        detailBody.setLayout(new BoxLayout(detailBody, BoxLayout.Y_AXIS));
-        detailBody.setOpaque(false);
-        
-        // Panel de miembros
+        // Layout más organizado para detalles
+        careTeamDetailPanel.setLayout(new BoxLayout(careTeamDetailPanel, BoxLayout.Y_AXIS));
+
+        // Panel de miembros con mejor diseño
         JPanel membersCard = createStyledCard();
-        membersCard.setLayout(new BorderLayout(0, 8));
-        JLabel membersTitle = new JLabel("Miembros del Equipo");
-        membersTitle.setFont(new Font("Segoe UI", Font.BOLD, 14));
+        membersCard.setLayout(new BorderLayout(0, 12));
+        membersCard.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        JLabel membersTitle = new JLabel("👥 Miembros del Equipo");
+        membersTitle.setFont(new Font("Segoe UI", Font.BOLD, 15));
         membersTitle.setForeground(TEXT_PRIMARY_COLOR);
         membersCard.add(membersTitle, BorderLayout.NORTH);
-        
+
         membersListPanel.setLayout(new BoxLayout(membersListPanel, BoxLayout.Y_AXIS));
         membersListPanel.setOpaque(false);
+
         JScrollPane membersScroll = new JScrollPane(membersListPanel);
         configureStyledScroll(membersScroll);
         membersScroll.setPreferredSize(new Dimension(0, 200));
         membersCard.add(membersScroll, BorderLayout.CENTER);
-        
-        detailBody.add(membersCard);
-        detailBody.add(Box.createVerticalStrut(12));
 
-        // Tabs de dispositivos con estilo
+        careTeamDetailPanel.add(membersCard);
+        careTeamDetailPanel.add(Box.createVerticalStrut(16));
+
+        // Tabs de dispositivos con mejor organización
         JTabbedPane deviceTabs = new JTabbedPane();
         deviceTabs.setFont(BODY_FONT);
-        
+        deviceTabs.setBorder(new EmptyBorder(8, 0, 0, 0));
+
         activeDevicesPanel.setLayout(new BoxLayout(activeDevicesPanel, BoxLayout.Y_AXIS));
         activeDevicesPanel.setOpaque(false);
-        activeDevicesPanel.setBorder(new EmptyBorder(8, 8, 8, 8));
-        
+        activeDevicesPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
+
         disconnectedDevicesPanel.setLayout(new BoxLayout(disconnectedDevicesPanel, BoxLayout.Y_AXIS));
         disconnectedDevicesPanel.setOpaque(false);
-        disconnectedDevicesPanel.setBorder(new EmptyBorder(8, 8, 8, 8));
-        
+        disconnectedDevicesPanel.setBorder(new EmptyBorder(12, 12, 12, 12));
+
         JScrollPane activeScroll = new JScrollPane(activeDevicesPanel);
         JScrollPane disconnectedScroll = new JScrollPane(disconnectedDevicesPanel);
         configureStyledScroll(activeScroll);
         configureStyledScroll(disconnectedScroll);
-        
-        deviceTabs.addTab("Activos", activeScroll);
-        deviceTabs.addTab("Desconectados", disconnectedScroll);
-        
+        activeScroll.setBorder(null);
+        disconnectedScroll.setBorder(null);
+
+        deviceTabs.addTab("🟢 Activos", activeScroll);
+        deviceTabs.addTab("🔴 Desconectados", disconnectedScroll);
+
         JPanel devicesCard = createStyledCard();
         devicesCard.setLayout(new BorderLayout());
+        devicesCard.setBorder(new EmptyBorder(16, 16, 16, 16));
         devicesCard.add(deviceTabs, BorderLayout.CENTER);
-        devicesCard.setPreferredSize(new Dimension(0, 300));
-        
-        detailBody.add(devicesCard);
-        careTeamDetailPanel.add(detailBody, BorderLayout.CENTER);
+        devicesCard.setPreferredSize(new Dimension(0, 350));
 
-        // Split pane
+        careTeamDetailPanel.add(devicesCard);
+
+        // Split pane mejorado con proporciones más usables
         JSplitPane splitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT, listPanel, careTeamDetailPanel);
-        splitPane.setDividerLocation(280);
+        splitPane.setDividerLocation(320); // Posición más generosa
+        splitPane.setDividerSize(8); // Divider más grueso para mejor agarre
         splitPane.setOpaque(false);
         splitPane.setBorder(null);
+        splitPane.setResizeWeight(0.35); // Permitir redimensionamiento manteniendo proporción
+
         container.add(splitPane, BorderLayout.CENTER);
         return container;
     }
 
     private JPanel createDevicesTab() {
-        JPanel container = new JPanel(new BorderLayout());
+        JPanel container = new JPanel(new BorderLayout(0, 20));
         container.setOpaque(false);
-        container.setBorder(new EmptyBorder(12, 12, 12, 12));
-        
+        container.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        // Header consistente con información de resumen
+        JPanel header = createDataTabHeader("Dispositivos", new JComponent[]{}, devicesSummaryLabel);
+        container.add(header, BorderLayout.NORTH);
+
+        // Panel de resumen mejorado con mejor organización
         devicesSummaryPanel.setLayout(new BoxLayout(devicesSummaryPanel, BoxLayout.Y_AXIS));
         devicesSummaryPanel.setOpaque(false);
-        
-        devicesSummaryLabel.setFont(BODY_FONT);
-        devicesSummaryLabel.setForeground(TEXT_SECONDARY_COLOR);
-        devicesSummaryPanel.add(devicesSummaryLabel);
-        
+        devicesSummaryPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
+
         JScrollPane scroll = new JScrollPane(devicesSummaryPanel);
         configureStyledScroll(scroll);
+        scroll.setBorder(null); // Mejor integración visual
         container.add(scroll, BorderLayout.CENTER);
         return container;
     }
 
     private JPanel createAlertsTab() {
-        JPanel container = new JPanel(new BorderLayout(0, 12));
+        JPanel container = new JPanel(new BorderLayout(0, 20));
         container.setOpaque(false);
-        container.setBorder(new EmptyBorder(12, 12, 12, 12));
-        
-        alertsStatusLabel.setFont(CAPTION_FONT);
-        alertsStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
-        container.add(alertsStatusLabel, BorderLayout.NORTH);
-        
+        container.setBorder(new EmptyBorder(16, 16, 16, 16));
+
+        // Header consistente con información de estado
+        JPanel header = createDataTabHeader("Alertas Activas", new JComponent[]{}, alertsStatusLabel);
+        container.add(header, BorderLayout.NORTH);
+
+        // Panel de alertas con mejor organización
         alertsPanel.setLayout(new BoxLayout(alertsPanel, BoxLayout.Y_AXIS));
         alertsPanel.setOpaque(false);
         alertsPanel.setBorder(new EmptyBorder(8, 0, 8, 0));
-        
+
         JScrollPane scrollPane = new JScrollPane(alertsPanel);
         configureStyledScroll(scrollPane);
+        scrollPane.setBorder(null); // Mejor integración visual
         container.add(scrollPane, BorderLayout.CENTER);
         return container;
     }
@@ -460,7 +832,7 @@ public class UserDashboardPanel extends JPanel {
         scrollPane.getViewport().setBackground(CARD_BACKGROUND);
         scrollPane.setBackground(CARD_BACKGROUND);
     }
-    
+
     // Mantener el método antiguo para compatibilidad
     private void configureScroll(JScrollPane scrollPane) {
         configureStyledScroll(scrollPane);
@@ -554,7 +926,7 @@ public class UserDashboardPanel extends JPanel {
         careTeamsArray = new JsonArray();
         devicesCache.clear();
         disconnectedDevicesCache.clear();
-        
+
         JsonObject dashboardData = getData(bundle.dashboard);
         JsonObject metricsData = getData(bundle.metrics);
         JsonObject overview = dashboardData.has("overview") && dashboardData.get("overview").isJsonObject()
@@ -570,12 +942,12 @@ public class UserDashboardPanel extends JPanel {
         List<TeamOption> teamOptions = new ArrayList<>();
         TeamOption all = new TeamOption("all", "Todos los equipos");
         teamFilter.addItem(all);
-        
+
         // Usar care_team_patients en lugar de care_teams para filtrar por membresía
         JsonObject careTeamPatientsData = getData(bundle.careTeamPatients);
         careTeamsArray = getArray(careTeamPatientsData, "care_teams");
         JsonArray careTeams = careTeamsArray;
-        
+
         if (careTeams != null) {
             Set<String> addedTeamIds = new HashSet<>();
             for (JsonElement element : careTeams) {
@@ -661,29 +1033,50 @@ public class UserDashboardPanel extends JPanel {
     }
 
     private JPanel createPatientCard(JsonObject patient, boolean caregiverContext) {
-        JPanel card = new JPanel(new BorderLayout(12, 0));
-        card.setBackground(Color.WHITE);
+        JPanel card = new JPanel();
+        card.setBackground(CARD_BACKGROUND);
         card.setBorder(BorderFactory.createCompoundBorder(
-                BorderFactory.createLineBorder(new Color(229, 234, 243)),
-                new EmptyBorder(16, 16, 16, 16)
+                BorderFactory.createLineBorder(BORDER_COLOR, 1),
+                new EmptyBorder(20, 20, 20, 20)
         ));
+        card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
 
-        // Información del paciente
+        // Fila superior: Nombre y Organización en línea horizontal
+        JPanel headerRow = new JPanel();
+        headerRow.setOpaque(false);
+        headerRow.setLayout(new BoxLayout(headerRow, BoxLayout.X_AXIS));
+
+        // Nombre del paciente
         JLabel name = new JLabel(patient.get("name").getAsString());
-        name.setFont(new Font("Segoe UI", Font.BOLD, 15));
+        name.setFont(new Font("Segoe UI", Font.BOLD, 16));
         name.setForeground(TEXT_PRIMARY_COLOR);
-        
-        JLabel org = new JLabel("Organización: " + safe(patient.get("organization"), "name"));
+        headerRow.add(name);
+
+        headerRow.add(Box.createHorizontalStrut(16));
+
+        // Organización
+        JLabel org = new JLabel("🏥 " + safe(patient.get("organization"), "name"));
         org.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         org.setForeground(TEXT_SECONDARY_COLOR);
-        
-        // Badge de riesgo con color
+        headerRow.add(org);
+
+        headerRow.add(Box.createHorizontalGlue()); // Empujar contenido a la izquierda
+
+        card.add(headerRow);
+        card.add(Box.createVerticalStrut(12));
+
+        // Fila inferior: Badge de riesgo y botón de detalles
+        JPanel actionRow = new JPanel();
+        actionRow.setOpaque(false);
+        actionRow.setLayout(new BoxLayout(actionRow, BoxLayout.X_AXIS));
+
+        // Badge de riesgo con mejor diseño
         String riskLabel = safe(patient.get("risk_level"), "label");
-        JLabel risk = new JLabel(riskLabel);
+        JLabel risk = new JLabel("⚠️ " + riskLabel);
         risk.setFont(new Font("Segoe UI", Font.BOLD, 12));
         risk.setOpaque(true);
-        risk.setBorder(new EmptyBorder(4, 10, 4, 10));
-        
+        risk.setBorder(new EmptyBorder(6, 12, 6, 12));
+
         // Colorear badge según nivel de riesgo
         if (riskLabel.toLowerCase().contains("alto") || riskLabel.toLowerCase().contains("high")) {
             risk.setBackground(new Color(254, 226, 226));
@@ -696,42 +1089,66 @@ public class UserDashboardPanel extends JPanel {
             risk.setForeground(new Color(22, 101, 52));
         }
 
-        JPanel info = new JPanel();
-        info.setOpaque(false);
-        info.setLayout(new BoxLayout(info, BoxLayout.Y_AXIS));
-        info.add(name);
-        info.add(Box.createVerticalStrut(6));
-        info.add(org);
-        info.add(Box.createVerticalStrut(8));
-        info.add(risk);
+        actionRow.add(risk);
+        actionRow.add(Box.createHorizontalStrut(16)); // Espaciado entre badge y botón
 
-        // Botón con mejor estilo
-        JButton details = new JButton("Ver detalle");
+        // Botón de detalles con tamaño fijo y compacto
+        JButton details = new JButton("👁️ Ver detalles");
         details.setFont(new Font("Segoe UI", Font.BOLD, 13));
-        details.setForeground(Color.WHITE);
-        details.setBackground(PRIMARY_COLOR);
-        details.setBorderPainted(false);
+        details.setForeground(PRIMARY_COLOR);
+        details.setBackground(new Color(239, 246, 255));
+        details.setBorderPainted(true);
+        details.setBorder(BorderFactory.createCompoundBorder(
+            BorderFactory.createLineBorder(PRIMARY_COLOR, 1),
+            new EmptyBorder(8, 16, 8, 16)
+        ));
         details.setFocusPainted(false);
         details.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        details.setPreferredSize(new Dimension(120, 36));
-        details.addActionListener(e -> openPatientDetail(patient));
+        details.setMaximumSize(new Dimension(150, 36)); // Tamaño máximo fijo
+        details.setPreferredSize(new Dimension(150, 36));
+        details.setToolTipText("Ver detalles del paciente");
 
-        card.add(info, BorderLayout.CENTER);
-        card.add(details, BorderLayout.EAST);
+        // Efectos hover
+        details.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                details.setBackground(PRIMARY_COLOR);
+                details.setForeground(Color.WHITE);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                details.setBackground(new Color(239, 246, 255));
+                details.setForeground(PRIMARY_COLOR);
+            }
+        });
+
+        details.addActionListener(e -> openPatientDetail(patient, caregiverContext));
+
+        actionRow.add(details);
+        actionRow.add(Box.createHorizontalGlue()); // Mantener el botón cerca del badge
+
+        card.add(actionRow);
+
+        // Establecer altura máxima para evitar que las tarjetas se estiren
+        card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 120));
+
         return card;
     }
 
-    private void openPatientDetail(JsonObject patient) {
-        if (currentOrg == null) return;
+    private void openPatientDetail(JsonObject patient, boolean isCaregiverPatient) {
         String patientId = patient.get("id").getAsString();
         String name = patient.get("name").getAsString();
+
+        // Determinar el orgId basado en el contexto:
+        // - Si es paciente de caregiver (mis pacientes propios): orgId = null (usar endpoints de caregiver)
+        // - Si es paciente de care-team (organización): usar currentOrg.getOrgId() (usar endpoints de organización)
+        String orgId = isCaregiverPatient ? null : (currentOrg != null ? currentOrg.getOrgId() : null);
+
         Window window = SwingUtilities.getWindowAncestor(this);
         Frame frame = window instanceof Frame ? (Frame) window : null;
         PatientDetailDialog dialog = new PatientDetailDialog(
                 frame,
                 apiClient,
                 token,
-                currentOrg.getOrgId(),
+                orgId,  // null para caregiver, orgId para care-team
                 patientId,
                 name
         );
@@ -908,19 +1325,29 @@ public class UserDashboardPanel extends JPanel {
             for (JsonElement element : members) {
                 if (!element.isJsonObject()) continue;
                 JsonObject member = element.getAsJsonObject();
-                
+
                 // Crear tarjeta de miembro con mejor diseño
-                JPanel memberCard = new JPanel(new BorderLayout(10, 0));
+                JPanel memberCard = new JPanel();
                 memberCard.setBackground(new Color(249, 250, 251));
                 memberCard.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(new Color(229, 234, 243)),
                     new EmptyBorder(10, 12, 10, 12)
                 ));
-                
+                memberCard.setLayout(new BoxLayout(memberCard, BoxLayout.Y_AXIS));
+
+                // Fila superior: Nombre y badge de rol
+                JPanel headerRow = new JPanel();
+                headerRow.setOpaque(false);
+                headerRow.setLayout(new BoxLayout(headerRow, BoxLayout.X_AXIS));
+
+                // Nombre del miembro
                 JLabel nameLabel = new JLabel(member.get("name").getAsString());
                 nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
                 nameLabel.setForeground(TEXT_PRIMARY_COLOR);
-                
+                headerRow.add(nameLabel);
+
+                headerRow.add(Box.createHorizontalStrut(12));
+
                 // Badge de rol
                 String roleLabel = safe(member.get("role"), "label");
                 JLabel roleBadge = new JLabel(roleLabel);
@@ -929,10 +1356,12 @@ public class UserDashboardPanel extends JPanel {
                 roleBadge.setOpaque(true);
                 roleBadge.setBackground(new Color(219, 234, 254));
                 roleBadge.setBorder(new EmptyBorder(3, 8, 3, 8));
-                
-                memberCard.add(nameLabel, BorderLayout.CENTER);
-                memberCard.add(roleBadge, BorderLayout.EAST);
-                
+                headerRow.add(roleBadge);
+
+                headerRow.add(Box.createHorizontalGlue()); // Mantener elementos a la izquierda
+
+                memberCard.add(headerRow);
+
                 membersListPanel.add(memberCard);
                 membersListPanel.add(Box.createVerticalStrut(6));
             }
@@ -958,37 +1387,38 @@ public class UserDashboardPanel extends JPanel {
         for (JsonElement element : devices) {
             if (!element.isJsonObject()) continue;
             JsonObject device = element.getAsJsonObject();
-            
+
             // Card con mejor diseño
-            JPanel card = new JPanel(new BorderLayout(12, 8));
+            JPanel card = new JPanel();
             card.setBackground(Color.WHITE);
             card.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createLineBorder(active ? new Color(209, 231, 221) : new Color(252, 213, 207)),
                 new EmptyBorder(14, 14, 14, 14)
             ));
-            
+            card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
+
             // Información del dispositivo
             JPanel infoPanel = new JPanel();
             infoPanel.setOpaque(false);
             infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
-            
+
             JLabel title = new JLabel(device.get("serial").getAsString());
             title.setFont(new Font("Segoe UI", Font.BOLD, 14));
             title.setForeground(TEXT_PRIMARY_COLOR);
-            
+
             JLabel typeLabel = new JLabel("Tipo: " + safe(device.get("type"), "label"));
             typeLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             typeLabel.setForeground(TEXT_SECONDARY_COLOR);
-            
+
             JLabel subtitle = new JLabel("Paciente: " + safe(device.get("owner"), "name"));
             subtitle.setFont(new Font("Segoe UI", Font.PLAIN, 12));
             subtitle.setForeground(TEXT_SECONDARY_COLOR);
-            
+
             // Badge de estado
             JLabel status = new JLabel(active ? "● Activo" : "● Desconectado");
             status.setFont(new Font("Segoe UI", Font.BOLD, 12));
             status.setForeground(active ? new Color(40, 167, 69) : new Color(220, 53, 69));
-            
+
             infoPanel.add(title);
             infoPanel.add(Box.createVerticalStrut(4));
             infoPanel.add(typeLabel);
@@ -996,8 +1426,11 @@ public class UserDashboardPanel extends JPanel {
             infoPanel.add(subtitle);
             infoPanel.add(Box.createVerticalStrut(6));
             infoPanel.add(status);
-            
-            // Botón mejorado
+
+            card.add(infoPanel);
+            card.add(Box.createVerticalStrut(12));
+
+            // Botón mejorado con tamaño fijo
             JButton streamsButton = new JButton("Ver streams");
             streamsButton.setFont(new Font("Segoe UI", Font.BOLD, 12));
             streamsButton.setForeground(PRIMARY_COLOR);
@@ -1005,11 +1438,13 @@ public class UserDashboardPanel extends JPanel {
             streamsButton.setBorderPainted(false);
             streamsButton.setFocusPainted(false);
             streamsButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-            streamsButton.setPreferredSize(new Dimension(110, 32));
+            streamsButton.setMaximumSize(new Dimension(120, 32));
+            streamsButton.setPreferredSize(new Dimension(120, 32));
+            streamsButton.setAlignmentX(Component.LEFT_ALIGNMENT);
             streamsButton.addActionListener(e -> openDeviceStreams(option, device));
-            
-            card.add(infoPanel, BorderLayout.CENTER);
-            card.add(streamsButton, BorderLayout.EAST);
+
+            card.add(streamsButton);
+
             panel.add(card);
             panel.add(Box.createVerticalStrut(10));
         }
@@ -1232,6 +1667,223 @@ public class UserDashboardPanel extends JPanel {
                 });
     }
 
+    private void openMapDialog() {
+        try {
+            // Crear archivo HTML temporal con el mapa
+            File tempFile = File.createTempFile("heartguard_map_", ".html");
+            tempFile.deleteOnExit();
+
+            String htmlContent = generateMapHtml();
+
+            try (FileWriter writer = new FileWriter(tempFile)) {
+                writer.write(htmlContent);
+            }
+
+            // Abrir en navegador
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(tempFile.toURI());
+            } else {
+                snackbar.accept("No se puede abrir el navegador automáticamente", false);
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error al crear mapa temporal: " + e.getMessage());
+            snackbar.accept("Error al abrir el mapa", false);
+        }
+    }
+
+    private String generateMapHtml() {
+        // Obtener datos filtrados según la selección actual
+        TeamOption selectedOption = (TeamOption) teamFilter.getSelectedItem();
+        JsonArray patients = new JsonArray();
+        JsonArray members = new JsonArray();
+
+        if (selectedOption == null || "all".equals(selectedOption.id)) {
+            patients = mapPatientsData;
+            members = mapMembersData;
+        } else {
+            // Filtrar por equipo
+            for (JsonElement element : mapPatientsData) {
+                if (!element.isJsonObject()) continue;
+                JsonObject patient = element.getAsJsonObject();
+                if (patient.has("care_team") && patient.get("care_team").isJsonObject()) {
+                    JsonObject team = patient.getAsJsonObject("care_team");
+                    if (team.has("id") && !team.get("id").isJsonNull() && selectedOption.id.equals(team.get("id").getAsString())) {
+                        patients.add(patient);
+                    }
+                }
+            }
+            for (JsonElement element : mapMembersData) {
+                if (!element.isJsonObject()) continue;
+                JsonObject member = element.getAsJsonObject();
+                if (member.has("care_team") && member.get("care_team").isJsonObject()) {
+                    JsonObject team = member.getAsJsonObject("care_team");
+                    if (team.has("id") && !team.get("id").isJsonNull() && selectedOption.id.equals(team.get("id").getAsString())) {
+                        members.add(member);
+                    }
+                }
+            }
+        }
+
+        String patientsJson = patients != null ? GSON.toJson(patients) : "[]";
+        String membersJson = members != null ? GSON.toJson(members) : "[]";
+
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html>\n");
+        html.append("<html lang=\"es\">\n");
+        html.append("<head>\n");
+        html.append("    <meta charset=\"UTF-8\">\n");
+        html.append("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
+        html.append("    <title>Mapa de Ubicaciones - HeartGuard</title>\n");
+        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\">\n");
+        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css\">\n");
+        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css\">\n");
+        html.append("    <style>\n");
+        html.append("        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }\n");
+        html.append("        h1 { color: #333; text-align: center; margin-bottom: 20px; }\n");
+        html.append("        #map { height: 600px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n");
+        html.append("        .info-panel { \n");
+        html.append("            position: absolute; \n");
+        html.append("            top: 20px; \n");
+        html.append("            right: 20px; \n");
+        html.append("            background: white; \n");
+        html.append("            padding: 15px; \n");
+        html.append("            border-radius: 8px; \n");
+        html.append("            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n");
+        html.append("            max-width: 300px;\n");
+        html.append("            z-index: 1000;\n");
+        html.append("        }\n");
+        html.append("        .info-panel h3 { margin: 0 0 10px 0; color: #333; }\n");
+        html.append("        .info-panel p { margin: 5px 0; font-size: 14px; }\n");
+        html.append("    </style>\n");
+        html.append("</head>\n");
+        html.append("<body>\n");
+        html.append("    <h1>Mapa de Ubicaciones en Tiempo Real</h1>\n");
+        html.append("    <div id=\"map\"></div>\n");
+        html.append("    \n");
+        html.append("    <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\"></script>\n");
+        html.append("    <script src=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js\"></script>\n");
+        html.append("    <script>\n");
+        html.append("        const map = L.map('map').setView([20, -30], 3);\n");
+        html.append("        \n");
+        html.append("        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {\n");
+        html.append("            attribution: '© OpenStreetMap contributors'\n");
+        html.append("        }).addTo(map);\n");
+        html.append("        \n");
+        html.append("        const patientCluster = L.markerClusterGroup();\n");
+        html.append("        const memberCluster = L.markerClusterGroup({\n");
+        html.append("            iconCreateFunction: function(cluster) {\n");
+        html.append("                return L.divIcon({\n");
+        html.append("                    html: '<div style=\"background:#1e88e5;color:white;border-radius:18px;padding:6px 10px;font-weight:600;\">' + cluster.getChildCount() + '</div>',\n");
+        html.append("                    className: 'member-cluster-icon',\n");
+        html.append("                    iconSize: L.point(30, 30)\n");
+        html.append("                });\n");
+        html.append("            }\n");
+        html.append("        });\n");
+        html.append("        \n");
+        html.append("        map.addLayer(patientCluster);\n");
+        html.append("        map.addLayer(memberCluster);\n");
+        html.append("        \n");
+        html.append("        const patients = ").append(patientsJson).append(";\n");
+        html.append("        const members = ").append(membersJson).append(";\n");
+        html.append("        \n");
+        html.append("        // Colores de riesgo\n");
+        html.append("        const riskColors = {\n");
+        html.append("            low: '#2ecc71',\n");
+        html.append("            medium: '#f1c40f', \n");
+        html.append("            high: '#e74c3c'\n");
+        html.append("        };\n");
+        html.append("        \n");
+        html.append("        const getRiskColor = (risk) => {\n");
+        html.append("            if (!risk) return '#2c98f0';\n");
+        html.append("            const code = (risk.code || '').toLowerCase();\n");
+        html.append("            if (code.includes('high') || code.includes('alto')) return riskColors.high;\n");
+        html.append("            if (code.includes('medium') || code.includes('moder')) return riskColors.medium;\n");
+        html.append("            return riskColors.low;\n");
+        html.append("        };\n");
+        html.append("        \n");
+        html.append("        // Renderizar pacientes\n");
+        html.append("        patients.forEach(p => {\n");
+        html.append("            if (!p.location || p.location.latitude === null || p.location.longitude === null) return;\n");
+        html.append("            \n");
+        html.append("            const color = getRiskColor(p.risk_level);\n");
+        html.append("            const marker = L.marker([p.location.latitude, p.location.longitude], {\n");
+        html.append("                icon: L.divIcon({\n");
+        html.append("                    html: `<div style=\"border-radius:50%;width:18px;height:18px;border:2px solid white;background:${color};box-shadow:0 0 4px rgba(0,0,0,0.2);\"></div>`,\n");
+        html.append("                    className: '',\n");
+        html.append("                    iconSize: [20, 20]\n");
+        html.append("                })\n");
+        html.append("            });\n");
+        html.append("            \n");
+        html.append("            const alertInfo = p.alert ? `<br><strong>Alerta:</strong> ${p.alert.label || 'Alerta activa'}` : '';\n");
+        html.append("            marker.bindPopup(`\n");
+        html.append("                <strong>${p.name || 'Paciente'}</strong><br>\n");
+        html.append("                <strong>Organización:</strong> ${p.organization?.name || 'N/A'}<br>\n");
+        html.append("                <strong>Equipo:</strong> ${p.care_team?.name || 'N/A'}\n");
+        html.append("                ${alertInfo}\n");
+        html.append("            `);\n");
+        html.append("            \n");
+        html.append("            patientCluster.addLayer(marker);\n");
+        html.append("        });\n");
+        html.append("        \n");
+        html.append("        // Renderizar miembros\n");
+        html.append("        members.forEach(m => {\n");
+        html.append("            if (!m.location) return;\n");
+        html.append("            \n");
+        html.append("            const marker = L.marker([m.location.latitude, m.location.longitude], {\n");
+        html.append("                icon: L.divIcon({\n");
+        html.append("                    html: '<div style=\"width:20px;height:20px;border-radius:6px;border:2px solid white;background:#42a5f5;box-shadow:0 0 4px rgba(0,0,0,0.2);\"></div>',\n");
+        html.append("                    className: '',\n");
+        html.append("                    iconSize: [22, 22]\n");
+        html.append("                })\n");
+        html.append("            });\n");
+        html.append("            \n");
+        html.append("            marker.bindPopup(`\n");
+        html.append("                <strong>${m.name || 'Miembro de equipo'}</strong><br>\n");
+        html.append("                <strong>Organización:</strong> ${m.organization?.name || 'N/A'}<br>\n");
+        html.append("                <strong>Rol:</strong> ${m.role?.label || m.role?.code || 'N/A'}\n");
+        html.append("            `);\n");
+        html.append("            \n");
+        html.append("            memberCluster.addLayer(marker);\n");
+        html.append("        });\n");
+        html.append("        \n");
+        html.append("        // Ajustar vista para mostrar todos los marcadores\n");
+        html.append("        const allBounds = [];\n");
+        html.append("        patients.forEach(p => {\n");
+        html.append("            if (p.location && p.location.latitude !== null && p.location.longitude !== null) {\n");
+        html.append("                allBounds.push([p.location.latitude, p.location.longitude]);\n");
+        html.append("            }\n");
+        html.append("        });\n");
+        html.append("        members.forEach(m => {\n");
+        html.append("            if (m.location && m.location.latitude !== null && m.location.longitude !== null) {\n");
+        html.append("                allBounds.push([m.location.latitude, m.location.longitude]);\n");
+        html.append("            }\n");
+        html.append("        });\n");
+        html.append("        \n");
+        html.append("        if (allBounds.length > 0) {\n");
+        html.append("            map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 12 });\n");
+        html.append("        }\n");
+        html.append("        \n");
+        html.append("        // Panel de información\n");
+        html.append("        const infoPanel = L.control({position: 'topright'});\n");
+        html.append("        infoPanel.onAdd = function(map) {\n");
+        html.append("            const div = L.DomUtil.create('div', 'info-panel');\n");
+        html.append("            div.innerHTML = `\n");
+        html.append("                <h3>Información</h3>\n");
+        html.append("                <p><strong>Pacientes:</strong> ${patients.length}</p>\n");
+        html.append("                <p><strong>Miembros:</strong> ${members.length}</p>\n");
+        html.append("                <p><em>Haz clic en los marcadores para ver detalles</em></p>\n");
+        html.append("            `;\n");
+        html.append("            return div;\n");
+        html.append("        };\n");
+        html.append("        infoPanel.addTo(map);\n");
+        html.append("    </script>\n");
+        html.append("</body>\n");
+        html.append("</html>\n");
+
+        return html.toString();
+    }
+
     private void handleAsyncException(Throwable throwable, String fallbackMessage) {
         Throwable cause = unwrapCompletionException(throwable);
         if (cause instanceof ApiException apiException) {
@@ -1290,7 +1942,7 @@ public class UserDashboardPanel extends JPanel {
         JsonElement data = response.get("data");
         return data != null && data.isJsonObject() ? data.getAsJsonObject() : new JsonObject();
     }
-    
+
     private JsonObject createEmptyResponse() {
         JsonObject response = new JsonObject();
         JsonObject data = new JsonObject();
@@ -1393,7 +2045,7 @@ public class UserDashboardPanel extends JPanel {
                 new EmptyBorder(16, 20, 16, 20)
             ));
             setBackground(CARD_BACKGROUND);
-            
+
             // Título de la métrica
             JLabel titleLabel = new JLabel(title);
             titleLabel.setFont(METRIC_DESC_FONT);
@@ -1405,18 +2057,24 @@ public class UserDashboardPanel extends JPanel {
             valueLabel.setForeground(accent);
             add(valueLabel, BorderLayout.CENTER);
 
-            // Panel inferior con subtítulo y sparkline
-            JPanel bottomPanel = new JPanel(new BorderLayout());
+            // Panel inferior con subtítulo y sparkline agrupados
+            JPanel bottomPanel = new JPanel();
             bottomPanel.setOpaque(false);
-            
+            bottomPanel.setLayout(new BoxLayout(bottomPanel, BoxLayout.X_AXIS));
+            bottomPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
+
             subtitleLabel.setFont(CAPTION_FONT);
             subtitleLabel.setForeground(TEXT_SECONDARY_COLOR);
-            bottomPanel.add(subtitleLabel, BorderLayout.WEST);
-            
+            bottomPanel.add(subtitleLabel);
+
+            // Espacio flexible entre subtítulo y sparkline
+            bottomPanel.add(Box.createHorizontalGlue());
+
             sparklinePanel.setPreferredSize(new Dimension(100, 40));
+            sparklinePanel.setMaximumSize(new Dimension(100, 40));
             sparklinePanel.setOpaque(false);
-            bottomPanel.add(sparklinePanel, BorderLayout.EAST);
-            
+            bottomPanel.add(sparklinePanel);
+
             add(bottomPanel, BorderLayout.SOUTH);
         }
 
@@ -1436,13 +2094,13 @@ public class UserDashboardPanel extends JPanel {
             if (values.length < 2) {
                 return;
             }
-            
+
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            
+
             int width = getWidth();
             int height = getHeight();
-            
+
             // Calcular min/max para normalización
             double max = Double.MIN_VALUE;
             double min = Double.MAX_VALUE;
@@ -1451,12 +2109,12 @@ public class UserDashboardPanel extends JPanel {
                 min = Math.min(min, v);
             }
             double diff = Math.max(1, max - min);
-            
+
             int padding = 2;
             int graphWidth = width - padding * 2;
             int graphHeight = height - padding * 2;
             int points = values.length;
-            
+
             // Calcular puntos
             int[] xPoints = new int[points];
             int[] yPoints = new int[points];
@@ -1477,20 +2135,20 @@ public class UserDashboardPanel extends JPanel {
             areaYPoints[points] = height - padding;
             areaYPoints[points + 1] = height - padding;
             g2.fillPolygon(areaXPoints, areaYPoints, points + 2);
-            
+
             // Línea de tendencia
             g2.setStroke(new BasicStroke(2.5f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
             g2.setColor(PRIMARY_COLOR);
             for (int i = 0; i < points - 1; i++) {
                 g2.drawLine(xPoints[i], yPoints[i], xPoints[i + 1], yPoints[i + 1]);
             }
-            
+
             // Puntos en la línea
             g2.setColor(PRIMARY_COLOR);
             for (int i = 0; i < points; i++) {
                 g2.fillOval(xPoints[i] - 3, yPoints[i] - 3, 6, 6);
             }
-            
+
             g2.dispose();
         }
 
