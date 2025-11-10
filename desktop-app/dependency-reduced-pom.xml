@@ -10,9 +10,12 @@
     <plugins>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
-        <version>3.11.0</version>
+        <version>3.12.1</version>
         <configuration>
           <release>${maven.compiler.release}</release>
+          <compilerArgs>
+            <arg>-parameters</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <plugin>
@@ -22,13 +25,17 @@
           <archive>
             <manifest>
               <mainClass>com.heartguard.desktop.Main</mainClass>
+              <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
             </manifest>
+            <manifestEntries>
+              <Add-Opens>javafx.web/com.sun.webkit javafx.web/com.sun.javafx.webkit</Add-Opens>
+            </manifestEntries>
           </archive>
         </configuration>
       </plugin>
       <plugin>
         <artifactId>maven-shade-plugin</artifactId>
-        <version>3.5.0</version>
+        <version>3.5.1</version>
         <executions>
           <execution>
             <phase>package</phase>
@@ -39,18 +46,53 @@
               <transformers>
                 <transformer>
                   <mainClass>com.heartguard.desktop.Main</mainClass>
+                  <manifestEntries>
+                    <Add-Opens>javafx.web/com.sun.webkit javafx.web/com.sun.javafx.webkit</Add-Opens>
+                  </manifestEntries>
                 </transformer>
               </transformers>
+              <filters>
+                <filter>
+                  <artifact>*:*</artifact>
+                  <excludes>
+                    <exclude>META-INF/*.SF</exclude>
+                    <exclude>META-INF/*.DSA</exclude>
+                    <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+              </filters>
             </configuration>
           </execution>
         </executions>
       </plugin>
+      <plugin>
+        <groupId>org.openjfx</groupId>
+        <artifactId>javafx-maven-plugin</artifactId>
+        <version>0.0.8</version>
+        <configuration>
+          <mainClass>com.heartguard.desktop.Main</mainClass>
+          <options>
+            <option>--add-opens</option>
+            <option>javafx.web/com.sun.webkit=ALL-UNNAMED</option>
+            <option>--add-opens</option>
+            <option>javafx.web/com.sun.javafx.webkit=ALL-UNNAMED</option>
+            <option>--add-opens</option>
+            <option>javafx.graphics/com.sun.javafx.sg.prism=ALL-UNNAMED</option>
+            <option>--add-opens</option>
+            <option>javafx.graphics/com.sun.prism=ALL-UNNAMED</option>
+            <option>--add-exports</option>
+            <option>javafx.web/com.sun.webkit=ALL-UNNAMED</option>
+            <option>--add-exports</option>
+            <option>javafx.web/com.sun.javafx.webkit=ALL-UNNAMED</option>
+          </options>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
   <properties>
-    <maven.compiler.release>17</maven.compiler.release>
-    <maven.compiler.target>17</maven.compiler.target>
-    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.release>21</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.target>21</maven.compiler.target>
+    <maven.compiler.source>21</maven.compiler.source>
   </properties>
 </project>

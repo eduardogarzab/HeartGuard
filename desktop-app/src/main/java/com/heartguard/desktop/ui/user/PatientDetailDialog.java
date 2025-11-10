@@ -28,11 +28,11 @@ public class PatientDetailDialog extends JDialog {
     private static final Color BORDER_LIGHT = new Color(223, 227, 230);
     private static final Color SUCCESS_GREEN = new Color(40, 167, 69);
     private static final Color DANGER_RED = new Color(220, 53, 69);
-    
+
     private static final Font TITLE_FONT = new Font("Inter", Font.BOLD, 20);
     private static final Font BODY_FONT = new Font("Inter", Font.PLAIN, 14);
     private static final Font CAPTION_FONT = new Font("Inter", Font.PLAIN, 13);
-    
+
     private final ApiClient apiClient;
     private final String token;
     private final String orgId;
@@ -68,17 +68,17 @@ public class PatientDetailDialog extends JDialog {
             new EmptyBorder(24, 24, 16, 24)
         ));
         header.setBackground(CARD_BG);
-        
+
         JLabel title = new JLabel("Resumen Clínico");
         title.setFont(TITLE_FONT);
         title.setForeground(TEXT_PRIMARY);
         header.add(title, BorderLayout.WEST);
-        
+
         JLabel patientNameLabel = new JLabel(patientName);
         patientNameLabel.setFont(new Font("Inter", Font.BOLD, 16));
         patientNameLabel.setForeground(PRIMARY_BLUE);
         header.add(patientNameLabel, BorderLayout.EAST);
-        
+
         add(header, BorderLayout.NORTH);
 
         // Tabs estilizados
@@ -129,11 +129,11 @@ public class PatientDetailDialog extends JDialog {
             new EmptyBorder(16, 24, 16, 24)
         ));
         footer.setBackground(CARD_BG);
-        
+
         statusLabel.setFont(CAPTION_FONT);
         statusLabel.setForeground(TEXT_SECONDARY);
         footer.add(statusLabel, BorderLayout.WEST);
-        
+
         JButton closeButton = new JButton("Cerrar");
         closeButton.setFont(new Font("Inter", Font.BOLD, 14));
         closeButton.setForeground(Color.WHITE);
@@ -146,7 +146,7 @@ public class PatientDetailDialog extends JDialog {
         closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         closeButton.addActionListener(e -> dispose());
         footer.add(closeButton, BorderLayout.EAST);
-        
+
         add(footer, BorderLayout.SOUTH);
     }
 
@@ -158,18 +158,37 @@ public class PatientDetailDialog extends JDialog {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                JsonObject detailResponse = apiClient.getOrganizationPatientDetail(token, orgId, patientId);
-                JsonObject detailData = detailResponse.getAsJsonObject("data");
-                JsonObject patient = detailData.getAsJsonObject("patient");
-                updateInfoArea(patient);
+                // Si orgId es null, el paciente es del caregiver (sin organización)
+                // Usar endpoints de caregiver en lugar de endpoints de organización
+                if (orgId == null) {
+                    // Endpoints para pacientes del caregiver
+                    JsonObject detailResponse = apiClient.getCaregiverPatientDetail(token, patientId);
+                    JsonObject detailData = detailResponse.getAsJsonObject("data");
+                    JsonObject patient = detailData.getAsJsonObject("patient");
+                    updateInfoArea(patient);
 
-                JsonObject alertsResponse = apiClient.getOrganizationPatientAlerts(token, orgId, patientId, 20);
-                JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
-                updateAlerts(alerts);
+                    JsonObject alertsResponse = apiClient.getCaregiverPatientAlerts(token, patientId, 20);
+                    JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
+                    updateAlerts(alerts);
 
-                JsonObject notesResponse = apiClient.getOrganizationPatientNotes(token, orgId, patientId, 20);
-                JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
-                updateNotes(notes);
+                    JsonObject notesResponse = apiClient.getCaregiverPatientNotes(token, patientId, 20);
+                    JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
+                    updateNotes(notes);
+                } else {
+                    // Endpoints para pacientes de organización
+                    JsonObject detailResponse = apiClient.getOrganizationPatientDetail(token, orgId, patientId);
+                    JsonObject detailData = detailResponse.getAsJsonObject("data");
+                    JsonObject patient = detailData.getAsJsonObject("patient");
+                    updateInfoArea(patient);
+
+                    JsonObject alertsResponse = apiClient.getOrganizationPatientAlerts(token, orgId, patientId, 20);
+                    JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
+                    updateAlerts(alerts);
+
+                    JsonObject notesResponse = apiClient.getOrganizationPatientNotes(token, orgId, patientId, 20);
+                    JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
+                    updateNotes(notes);
+                }
                 return null;
             }
 
@@ -224,7 +243,7 @@ public class PatientDetailDialog extends JDialog {
             for (JsonElement element : alerts) {
                 if (!element.isJsonObject()) continue;
                 JsonObject alert = element.getAsJsonObject();
-                
+
                 // Extraer campos correctos: type, level, status, description
                 JsonObject typeObj = alert.has("type") && alert.get("type").isJsonObject()
                         ? alert.getAsJsonObject("type")
@@ -235,15 +254,15 @@ public class PatientDetailDialog extends JDialog {
                 JsonObject statusObj = alert.has("status") && alert.get("status").isJsonObject()
                         ? alert.getAsJsonObject("status")
                         : null;
-                
+
                 String typeLabel = typeObj != null ? safe(typeObj.get("label")) : "-";
                 String description = safe(alert.get("description"));
                 String levelLabel = levelObj != null ? safe(levelObj.get("label")) : "-";
                 String statusLabel = statusObj != null ? safe(statusObj.get("label")) : "-";
                 String created = safe(alert.get("created_at"));
-                
+
                 // Formato mejorado: [fecha] Tipo: descripción | Nivel: X | Estado: Y
-                String displayText = String.format("[%s] %s: %s | Nivel: %s | Estado: %s", 
+                String displayText = String.format("[%s] %s: %s | Nivel: %s | Estado: %s",
                     created, typeLabel, description, levelLabel, statusLabel);
                 alertsModel.addElement(displayText);
             }

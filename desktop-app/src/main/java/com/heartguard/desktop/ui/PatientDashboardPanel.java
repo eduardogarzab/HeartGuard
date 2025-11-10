@@ -6,22 +6,20 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 
-import javafx.application.Platform;
-import javafx.embed.swing.JFXPanel;
-import javafx.scene.Scene;
-import javafx.scene.web.WebEngine;
-import javafx.scene.web.WebView;
-
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.MatteBorder;
 import java.awt.*;
-import java.awt.event.ComponentAdapter;
-import java.awt.event.ComponentEvent;
+import java.awt.Desktop;
+import java.io.File;
+import java.io.FileWriter;
+import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import netscape.javascript.JSObject;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
+import java.util.concurrent.ExecutionException;
 
 /**
  * Panel de dashboard para pacientes
@@ -71,7 +69,8 @@ public class PatientDashboardPanel extends JPanel {
     private JPanel alertsPanel;
     private JPanel careTeamPanel;
     private JPanel caregiversPanel;
-    private OpenStreetMapPanel mapPanel;
+    private JLabel mapStatusLabel;
+    private JsonArray cachedLocationsData = new JsonArray();
 
     public PatientDashboardPanel(ApiClient apiClient, String accessToken, String patientId) {
         this.apiClient = apiClient;
@@ -243,10 +242,79 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private JPanel createLocationSection() {
-        mapPanel = new OpenStreetMapPanel();
-        mapPanel.setPreferredSize(new Dimension(900, 500));
+        JPanel mapContainer = new JPanel(new BorderLayout());
+        mapContainer.setOpaque(false);
 
-        return createCardSection("🗺️ Ubicaciones del Paciente", mapPanel, mapPanel.getStatusDisplay());
+        // Panel para el contenido del mapa con mejor diseño
+        JPanel mapContent = new JPanel();
+        mapContent.setLayout(new BoxLayout(mapContent, BoxLayout.Y_AXIS));
+        mapContent.setOpaque(false);
+        mapContent.setBorder(new EmptyBorder(40, 20, 40, 20));
+
+        // Icono grande del mapa
+        JLabel mapIcon = new JLabel("🗺️");
+        mapIcon.setFont(new Font("Segoe UI", Font.PLAIN, 64));
+        mapIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapIcon);
+
+        mapContent.add(Box.createVerticalStrut(20));
+
+        // Título
+        JLabel mapTitle = new JLabel("Mapa de Ubicaciones");
+        mapTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
+        mapTitle.setForeground(PRIMARY_DARK);
+        mapTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapTitle);
+
+        mapContent.add(Box.createVerticalStrut(8));
+
+        // Descripción
+        JLabel mapDesc = new JLabel("Ver ubicaciones del paciente en mapa interactivo");
+        mapDesc.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        mapDesc.setForeground(TEXT_SECONDARY_COLOR);
+        mapDesc.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapDesc);
+
+        mapContent.add(Box.createVerticalStrut(24));
+
+        // Botón para abrir mapa
+        JButton openMapButton = new JButton("Abrir Mapa");
+        openMapButton.setFont(BUTTON_FONT);
+        openMapButton.setForeground(Color.WHITE);
+        openMapButton.setBackground(PRIMARY_COLOR);
+        openMapButton.setBorderPainted(false);
+        openMapButton.setFocusPainted(false);
+        openMapButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        openMapButton.setPreferredSize(new Dimension(180, 45));
+        openMapButton.setMaximumSize(new Dimension(180, 45));
+        openMapButton.setAlignmentX(Component.CENTER_ALIGNMENT);
+
+        // Efectos hover
+        openMapButton.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseEntered(java.awt.event.MouseEvent evt) {
+                openMapButton.setBackground(PRIMARY_DARK);
+            }
+            public void mouseExited(java.awt.event.MouseEvent evt) {
+                openMapButton.setBackground(PRIMARY_COLOR);
+            }
+        });
+
+        openMapButton.addActionListener(e -> openPatientMapInBrowser());
+
+        mapContent.add(openMapButton);
+
+        mapContent.add(Box.createVerticalStrut(16));
+
+        // Estado del mapa
+        mapStatusLabel = new JLabel("Ubicaciones listas para visualizar");
+        mapStatusLabel.setFont(CAPTION_FONT);
+        mapStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
+        mapStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
+        mapContent.add(mapStatusLabel);
+
+        mapContainer.add(mapContent, BorderLayout.CENTER);
+
+        return createCardSection("🗺️ Ubicaciones del Paciente", mapContainer);
     }
 
     private JPanel createActionsPanel() {
@@ -362,158 +430,122 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private void loadDashboardData() {
-        // Usar SwingWorker para operaciones en segundo plano
-        SwingWorker<Void, Void> worker = new SwingWorker<Void, Void>() {
-            private JsonObject dashboard;
-            private JsonObject locationsResponse;
-            private JsonObject caregiversResponse;
-            private JsonObject careTeamResponse;
-            private Exception dashboardError;
-            private Exception locationsError;
-            private Exception caregiversError;
-            private Exception careTeamError;
+        CompletableFuture<JsonObject> dashboardFuture = apiClient.getPatientDashboardAsync(accessToken);
+        CompletableFuture<JsonObject> locationsFuture = apiClient.getPatientLocationsAsync(accessToken, 6);
+        CompletableFuture<JsonObject> caregiversFuture = apiClient.getPatientCaregiversAsync(accessToken);
+        CompletableFuture<JsonObject> careTeamFuture = apiClient.getPatientCareTeamAsync(accessToken);
 
-            @Override
-            protected Void doInBackground() {
-                try {
-                    dashboard = apiClient.getPatientDashboard(accessToken);
-                } catch (Exception e) {
-                    dashboardError = e;
-                    System.err.println("Error al cargar dashboard: " + e.getMessage());
+        CompletableFuture<PatientDashboardData> dataFuture = CompletableFuture.allOf(
+                        dashboardFuture,
+                        locationsFuture,
+                        caregiversFuture,
+                        careTeamFuture
+                )
+                .thenApplyAsync(ignored -> {
+                    PatientDashboardData data = new PatientDashboardData();
+                    data.dashboard = dashboardFuture.join();
+                    data.locations = locationsFuture.join();
+                    data.caregivers = caregiversFuture.join();
+                    data.careTeam = careTeamFuture.join();
+                    return data;
+                });
+
+        dataFuture.thenAccept(data -> SwingUtilities.invokeLater(() -> renderDashboardData(data)))
+                .exceptionally(ex -> {
+                    handleAsyncError(ex, "Error al cargar dashboard");
+                    return null;
+                });
+    }
+
+    private void renderDashboardData(PatientDashboardData data) {
+        try {
+            JsonArray careTeamArray = null;
+            JsonArray caregiversArray = null;
+
+            JsonObject dashboard = data.dashboard;
+            JsonObject locationsResponse = data.locations;
+            JsonObject caregiversResponse = data.caregivers;
+            JsonObject careTeamResponse = data.careTeam;
+
+            if (dashboard != null) {
+                JsonObject patientObj = dashboard.has("patient") && dashboard.get("patient").isJsonObject()
+                        ? dashboard.getAsJsonObject("patient") : null;
+                if (patientObj != null) {
+                    updateProfileSection(patientObj);
                 }
 
-                try {
-                    locationsResponse = apiClient.getPatientLocations(accessToken, 6);
-                    System.out.println("DEBUG: Ubicaciones cargadas exitosamente");
-                    if (locationsResponse != null) {
-                        System.out.println("DEBUG: Respuesta de ubicaciones: " + locationsResponse.toString());
+                JsonObject statsObj = dashboard.has("stats") && dashboard.get("stats").isJsonObject()
+                        ? dashboard.getAsJsonObject("stats") : null;
+                if (statsObj != null) {
+                    updateStatsSection(statsObj);
+                }
+
+                JsonArray alertsArray = dashboard.has("recent_alerts") && dashboard.get("recent_alerts").isJsonArray()
+                        ? dashboard.getAsJsonArray("recent_alerts") : null;
+                updateAlertsSection(alertsArray);
+
+                if (dashboard.has("care_team")) {
+                    JsonElement careTeamElement = dashboard.get("care_team");
+                    if (careTeamElement.isJsonArray()) {
+                        careTeamArray = careTeamElement.getAsJsonArray();
+                    } else if (careTeamElement.isJsonObject()) {
+                        JsonObject careTeamObj = careTeamElement.getAsJsonObject();
+                        if (careTeamObj.has("teams") && careTeamObj.get("teams").isJsonArray()) {
+                            careTeamArray = careTeamObj.getAsJsonArray("teams");
+                        }
                     }
-                } catch (Exception e) {
-                    locationsError = e;
-                    System.err.println("Error al cargar ubicaciones: " + e.getMessage());
-                    e.printStackTrace();
                 }
 
-                try {
-                    caregiversResponse = apiClient.getPatientCaregivers(accessToken);
-                } catch (Exception e) {
-                    caregiversError = e;
-                    System.err.println("Error al cargar cuidadores: " + e.getMessage());
+                if (dashboard.has("caregivers")) {
+                    JsonElement caregiversElement = dashboard.get("caregivers");
+                    if (caregiversElement.isJsonArray()) {
+                        caregiversArray = caregiversElement.getAsJsonArray();
+                    } else if (caregiversElement.isJsonObject()) {
+                        JsonObject caregiversObj = caregiversElement.getAsJsonObject();
+                        if (caregiversObj.has("caregivers") && caregiversObj.get("caregivers").isJsonArray()) {
+                            caregiversArray = caregiversObj.getAsJsonArray("caregivers");
+                        }
+                    }
                 }
-
-                try {
-                    careTeamResponse = apiClient.getPatientCareTeam(accessToken);
-                } catch (Exception e) {
-                    careTeamError = e;
-                    System.err.println("Error al cargar equipo de cuidado: " + e.getMessage());
-                }
-
-                return null;
+            } else {
+                updateAlertsSection(null);
             }
 
-            @Override
-            protected void done() {
-                try {
-                    JsonArray careTeamArray = null;
-                    JsonArray caregiversArray = null;
-
-                    if (dashboard != null) {
-                        JsonObject patientObj = dashboard.has("patient") && dashboard.get("patient").isJsonObject()
-                                ? dashboard.getAsJsonObject("patient") : null;
-                        if (patientObj != null) {
-                            updateProfileSection(patientObj);
-                        }
-
-                        JsonObject statsObj = dashboard.has("stats") && dashboard.get("stats").isJsonObject()
-                                ? dashboard.getAsJsonObject("stats") : null;
-                        if (statsObj != null) {
-                            updateStatsSection(statsObj);
-                        }
-
-                        JsonArray alertsArray = dashboard.has("recent_alerts") && dashboard.get("recent_alerts").isJsonArray()
-                                ? dashboard.getAsJsonArray("recent_alerts") : null;
-                        updateAlertsSection(alertsArray);
-
-                        if (dashboard.has("care_team")) {
-                            JsonElement careTeamElement = dashboard.get("care_team");
-                            if (careTeamElement.isJsonArray()) {
-                                careTeamArray = careTeamElement.getAsJsonArray();
-                            } else if (careTeamElement.isJsonObject()) {
-                                JsonObject careTeamObj = careTeamElement.getAsJsonObject();
-                                if (careTeamObj.has("teams") && careTeamObj.get("teams").isJsonArray()) {
-                                    careTeamArray = careTeamObj.getAsJsonArray("teams");
-                                }
-                            }
-                        }
-
-                        if (dashboard.has("caregivers")) {
-                            JsonElement caregiversElement = dashboard.get("caregivers");
-                            if (caregiversElement.isJsonArray()) {
-                                caregiversArray = caregiversElement.getAsJsonArray();
-                            } else if (caregiversElement.isJsonObject()) {
-                                JsonObject caregiversObj = caregiversElement.getAsJsonObject();
-                                if (caregiversObj.has("caregivers") && caregiversObj.get("caregivers").isJsonArray()) {
-                                    caregiversArray = caregiversObj.getAsJsonArray("caregivers");
-                                }
-                            }
-                        }
-                    } else if (dashboardError != null) {
-                        JOptionPane.showMessageDialog(
-                                PatientDashboardPanel.this,
-                                "Error al cargar dashboard: " + dashboardError.getMessage(),
-                                "Error",
-                                JOptionPane.ERROR_MESSAGE
-                        );
-                        updateAlertsSection(null);
-                    } else {
-                        updateAlertsSection(null);
-                    }
-
-                    if (careTeamResponse != null && careTeamResponse.has("teams") && careTeamResponse.get("teams").isJsonArray()) {
-                        careTeamArray = careTeamResponse.getAsJsonArray("teams");
-                    } else if (careTeamError != null) {
-                        System.err.println("Error al cargar equipo de cuidado: " + careTeamError.getMessage());
-                    }
-
-                    if (caregiversResponse != null && caregiversResponse.has("caregivers") && caregiversResponse.get("caregivers").isJsonArray()) {
-                        caregiversArray = caregiversResponse.getAsJsonArray("caregivers");
-                    } else if (caregiversError != null) {
-                        System.err.println("Error al cargar cuidadores: " + caregiversError.getMessage());
-                    }
-
-                    updateCareTeamSection(careTeamArray);
-                    updateCaregiversSection(caregiversArray);
-
-                    if (locationsResponse != null) {
-                        updateLocationsSection(locationsResponse);
-                    } else if (locationsError != null) {
-                        System.err.println("No se pudieron cargar las ubicaciones: " + locationsError.getMessage());
-                        updateLocationsSection(null);
-                    } else {
-                        updateLocationsSection(null);
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    JOptionPane.showMessageDialog(
-                            PatientDashboardPanel.this,
-                            "Error al actualizar la interfaz: " + e.getMessage(),
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                }
+            if (careTeamResponse != null && careTeamResponse.has("teams") && careTeamResponse.get("teams").isJsonArray()) {
+                careTeamArray = careTeamResponse.getAsJsonArray("teams");
             }
-        };
 
-        worker.execute();
+            if (caregiversResponse != null && caregiversResponse.has("caregivers") && caregiversResponse.get("caregivers").isJsonArray()) {
+                caregiversArray = caregiversResponse.getAsJsonArray("caregivers");
+            }
+
+            updateCareTeamSection(careTeamArray);
+            updateCaregiversSection(caregiversArray);
+
+            if (locationsResponse != null) {
+                updateLocationsSection(locationsResponse);
+            } else {
+                updateLocationsSection(null);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+            JOptionPane.showMessageDialog(
+                    PatientDashboardPanel.this,
+                    "Error al actualizar la interfaz: " + e.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            );
+        }
     }
 
     private void updateLocationsSection(JsonObject locationsResponse) {
         System.out.println("DEBUG: updateLocationsSection llamado");
         if (locationsResponse == null || !locationsResponse.has("locations")) {
             System.out.println("DEBUG: locationsResponse es null o no tiene 'locations'");
-            // No hay ubicaciones disponibles - mostrar mensaje en el mapa
-            if (mapPanel != null) {
-                mapPanel.showNoDataMessage();
+            // No hay ubicaciones disponibles
+            cachedLocationsData = new JsonArray();
+            if (mapStatusLabel != null) {
+                mapStatusLabel.setText("Sin ubicaciones disponibles");
             }
             return;
         }
@@ -521,16 +553,17 @@ public class PatientDashboardPanel extends JPanel {
         JsonArray locations = locationsResponse.getAsJsonArray("locations");
         System.out.println("DEBUG: Cantidad de ubicaciones: " + locations.size());
 
-        if (locations.size() == 0) {
-            if (mapPanel != null) {
-                mapPanel.showNoDataMessage();
-            }
-            return;
-        }
+        // Guardar ubicaciones para el mapa
+        cachedLocationsData = locations;
 
-        // Actualizar el mapa con todas las ubicaciones
-        if (mapPanel != null) {
-            mapPanel.updateLocations(locations);
+        if (locations.size() == 0) {
+            if (mapStatusLabel != null) {
+                mapStatusLabel.setText("Sin ubicaciones registradas");
+            }
+        } else {
+            if (mapStatusLabel != null) {
+                mapStatusLabel.setText(locations.size() + " ubicación(es) disponible(s)");
+            }
         }
     }
 
@@ -662,11 +695,11 @@ public class PatientDashboardPanel extends JPanel {
         JPanel infoPanel = new JPanel();
         infoPanel.setOpaque(false);
         infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
-        
+
         typeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         metaRow.setAlignmentX(Component.LEFT_ALIGNMENT);
-        
+
         infoPanel.add(typeLabel);
         infoPanel.add(Box.createVerticalStrut(6));
         infoPanel.add(descLabel);
@@ -996,51 +1029,144 @@ public class PatientDashboardPanel extends JPanel {
         }
     }
 
-    private void viewAllAlerts() {
-        SwingWorker<JsonArray, Void> worker = new SwingWorker<JsonArray, Void>() {
-            private Exception error;
+    private static class PatientDashboardData {
+        JsonObject dashboard;
+        JsonObject locations;
+        JsonObject caregivers;
+        JsonObject careTeam;
+    }
 
-            @Override
-            protected JsonArray doInBackground() throws Exception {
-                try {
-                    JsonObject response = apiClient.getPatientAlerts(accessToken, 100);
+    private void openPatientMapInBrowser() {
+        try {
+            // Crear archivo HTML temporal con el mapa
+            File tempFile = File.createTempFile("heartguard_patient_map_", ".html");
+            tempFile.deleteOnExit();
+
+            String htmlContent = generatePatientMapHtml();
+
+            try (FileWriter writer = new FileWriter(tempFile)) {
+                writer.write(htmlContent);
+            }
+
+            // Abrir en navegador
+            if (Desktop.isDesktopSupported()) {
+                Desktop.getDesktop().browse(tempFile.toURI());
+            } else {
+                JOptionPane.showMessageDialog(
+                    this,
+                    "No se puede abrir el navegador automáticamente",
+                    "Error",
+                    JOptionPane.WARNING_MESSAGE
+                );
+            }
+
+        } catch (IOException e) {
+            System.err.println("Error al crear mapa temporal: " + e.getMessage());
+            JOptionPane.showMessageDialog(
+                this,
+                "Error al abrir el mapa: " + e.getMessage(),
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+            );
+        }
+    }
+
+    private String generatePatientMapHtml() {
+        StringBuilder html = new StringBuilder();
+        html.append("<!DOCTYPE html>");
+        html.append("<html><head>");
+        html.append("<meta charset='utf-8'/>");
+        html.append("<title>Mapa de Ubicaciones - Paciente</title>");
+        html.append("<meta name='viewport' content='width=device-width, initial-scale=1.0'/>");
+        html.append("<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'/>");
+        html.append("<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'></script>");
+        html.append("<style>");
+        html.append("body{margin:0;padding:0;font-family:'Segoe UI',Arial,sans-serif;}");
+        html.append("#map{position:absolute;top:0;bottom:0;width:100%;height:100vh;}");
+        html.append(".leaflet-popup-content-wrapper{border-radius:8px;padding:0;}");
+        html.append(".leaflet-popup-content{margin:16px;font-size:14px;}");
+        html.append(".popup-title{font-size:16px;font-weight:bold;color:#1976D2;margin-bottom:8px;}");
+        html.append(".popup-info{margin:4px 0;color:#555;}");
+        html.append(".popup-label{font-weight:600;color:#333;}");
+        html.append("</style>");
+        html.append("</head><body>");
+        html.append("<div id='map'></div>");
+        html.append("<script>");
+
+        // Inicializar mapa
+        html.append("var map = L.map('map').setView([19.432608, -99.133209], 6);");
+        html.append("L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {");
+        html.append("  attribution: '&copy; OpenStreetMap contributors',");
+        html.append("  maxZoom: 19");
+        html.append("}).addTo(map);");
+
+        // Agregar marcadores de ubicaciones
+        if (cachedLocationsData != null && cachedLocationsData.size() > 0) {
+            html.append("var markers = [];");
+            for (JsonElement element : cachedLocationsData) {
+                if (!element.isJsonObject()) continue;
+                JsonObject location = element.getAsJsonObject();
+
+                double lat = location.has("latitude") && !location.get("latitude").isJsonNull()
+                    ? location.get("latitude").getAsDouble() : 0;
+                double lng = location.has("longitude") && !location.get("longitude").isJsonNull()
+                    ? location.get("longitude").getAsDouble() : 0;
+
+                if (lat == 0 && lng == 0) continue;
+
+                String timestamp = location.has("timestamp") && !location.get("timestamp").isJsonNull()
+                    ? location.get("timestamp").getAsString() : "Desconocido";
+                String accuracy = location.has("accuracy") && !location.get("accuracy").isJsonNull()
+                    ? String.format("%.2f m", location.get("accuracy").getAsDouble()) : "N/A";
+
+                html.append("var marker = L.marker([").append(lat).append(",").append(lng).append("]);");
+                html.append("marker.bindPopup('");
+                html.append("<div class=\"popup-title\">📍 Ubicación del Paciente</div>");
+                html.append("<div class=\"popup-info\"><span class=\"popup-label\">Fecha:</span> ").append(escapeHtml(timestamp)).append("</div>");
+                html.append("<div class=\"popup-info\"><span class=\"popup-label\">Precisión:</span> ").append(accuracy).append("</div>");
+                html.append("<div class=\"popup-info\"><span class=\"popup-label\">Coordenadas:</span> ").append(lat).append(", ").append(lng).append("</div>");
+                html.append("');");
+                html.append("marker.addTo(map);");
+                html.append("markers.push(marker);");
+            }
+
+            // Ajustar vista para mostrar todos los marcadores
+            html.append("if(markers.length > 0){");
+            html.append("  var group = new L.featureGroup(markers);");
+            html.append("  map.fitBounds(group.getBounds().pad(0.1));");
+            html.append("}");
+        } else {
+            html.append("alert('No hay ubicaciones disponibles para mostrar');");
+        }
+
+        html.append("</script>");
+        html.append("</body></html>");
+
+        return html.toString();
+    }
+
+    private String escapeHtml(String text) {
+        if (text == null) return "";
+        return text.replace("&", "&amp;")
+                   .replace("<", "&lt;")
+                   .replace(">", "&gt;")
+                   .replace("\"", "&quot;")
+                   .replace("'", "&#39;");
+    }
+
+    private void viewAllAlerts() {
+        apiClient.getPatientAlertsAsync(accessToken, 100)
+                .thenApplyAsync(response -> {
                     if (response != null && response.has("alerts")) {
                         return response.getAsJsonArray("alerts");
                     }
                     return new JsonArray();
-                } catch (Exception e) {
-                    error = e;
-                    System.err.println("Error al cargar todas las alertas: " + e.getMessage());
-                    return new JsonArray();
-                }
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    JsonArray allAlerts = get();
-                    if (error != null) {
-                        JOptionPane.showMessageDialog(
-                                PatientDashboardPanel.this,
-                                "Error al cargar las alertas: " + error.getMessage(),
-                                "Error",
-                                JOptionPane.ERROR_MESSAGE
-                        );
-                        return;
-                    }
-                    showAllAlertsDialog(allAlerts);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    JOptionPane.showMessageDialog(
-                            PatientDashboardPanel.this,
-                            "Error inesperado al mostrar alertas",
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                }
-            }
-        };
-        worker.execute();
+                })
+                .thenAccept(alerts -> SwingUtilities.invokeLater(() -> showAllAlertsDialog(alerts)))
+                .exceptionally(ex -> {
+                    handleAsyncError(ex, "Error al cargar las alertas");
+                    return null;
+                });
     }
 
     private void showAllAlertsDialog(JsonArray alerts) {
@@ -1104,37 +1230,50 @@ public class PatientDashboardPanel extends JPanel {
 
     private void viewDevices() {
         // Obtener dispositivos en background
-        SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
-            @Override
-            protected JsonArray doInBackground() throws Exception {
-                try {
-                    JsonObject response = apiClient.getPatientDevices(accessToken);
+        apiClient.getPatientDevicesAsync(accessToken)
+                .thenApplyAsync(response -> {
                     if (response != null && response.has("devices")) {
                         return response.getAsJsonArray("devices");
                     }
                     return new JsonArray();
-                } catch (ApiException e) {
-                    e.printStackTrace();
-                    throw new Exception("Error al cargar dispositivos: " + e.getMessage());
-                }
-            }
+                })
+                .thenAccept(devices -> SwingUtilities.invokeLater(() -> showAllDevicesDialog(devices)))
+                .exceptionally(ex -> {
+                    handleAsyncError(ex, "No se pudieron cargar los dispositivos");
+                    return null;
+                });
+    }
 
-            @Override
-            protected void done() {
-                try {
-                    JsonArray devices = get();
-                    showAllDevicesDialog(devices);
-                } catch (Exception e) {
-                    JOptionPane.showMessageDialog(
-                            PatientDashboardPanel.this,
-                            "No se pudieron cargar los dispositivos: " + e.getMessage(),
-                            "Error",
-                            JOptionPane.ERROR_MESSAGE
-                    );
-                }
-            }
-        };
-        worker.execute();
+    private void handleAsyncError(Throwable throwable, String fallbackMessage) {
+        Throwable cause = unwrapCompletionException(throwable);
+        if (cause instanceof ApiException apiException) {
+            SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                    PatientDashboardPanel.this,
+                    apiException.getMessage(),
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE
+            ));
+            return;
+        }
+        String message = (cause != null && cause.getMessage() != null && !cause.getMessage().isBlank())
+                ? cause.getMessage()
+                : fallbackMessage;
+        SwingUtilities.invokeLater(() -> JOptionPane.showMessageDialog(
+                PatientDashboardPanel.this,
+                message,
+                "Error",
+                JOptionPane.ERROR_MESSAGE
+        ));
+    }
+
+    private Throwable unwrapCompletionException(Throwable throwable) {
+        if (throwable instanceof CompletionException completion && completion.getCause() != null) {
+            return completion.getCause();
+        }
+        if (throwable instanceof ExecutionException execution && execution.getCause() != null) {
+            return execution.getCause();
+        }
+        return throwable;
     }
 
     private void showAllDevicesDialog(JsonArray devices) {
@@ -1173,12 +1312,12 @@ public class PatientDashboardPanel extends JPanel {
             JPanel emptyPanel = new JPanel(new GridBagLayout());
             emptyPanel.setBackground(BACKGROUND_COLOR);
             emptyPanel.setOpaque(false);
-            
+
             JLabel emptyLabel = new JLabel("No hay dispositivos registrados");
             emptyLabel.setFont(BODY_FONT);
             emptyLabel.setForeground(TEXT_SECONDARY_COLOR);
             emptyPanel.add(emptyLabel);
-            
+
             contentPanel.add(emptyPanel);
         } else {
             for (int i = 0; i < devices.size(); i++) {
@@ -1221,7 +1360,7 @@ public class PatientDashboardPanel extends JPanel {
         // Indicador de estado (izquierda)
         boolean isActive = device.has("active") && device.get("active").getAsBoolean();
         Color statusColor = isActive ? SUCCESS_COLOR : TEXT_SECONDARY_COLOR;
-        
+
         JPanel statusBar = new JPanel();
         statusBar.setPreferredSize(new Dimension(4, 100));
         statusBar.setBackground(statusColor);
@@ -1236,7 +1375,7 @@ public class PatientDashboardPanel extends JPanel {
         // Línea 1: Serial y tipo
         JPanel firstLine = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         firstLine.setOpaque(false);
-        
+
         String serial = device.has("serial") ? device.get("serial").getAsString() : "N/A";
         JLabel serialLabel = new JLabel("Serial: " + serial);
         serialLabel.setFont(SECTION_TITLE_FONT);
@@ -1257,11 +1396,11 @@ public class PatientDashboardPanel extends JPanel {
         contentPanel.add(Box.createVerticalStrut(6));
 
         // Línea 2: Marca y modelo
-        String brand = device.has("brand") && !device.get("brand").isJsonNull() 
+        String brand = device.has("brand") && !device.get("brand").isJsonNull()
             ? device.get("brand").getAsString() : "Sin marca";
         String model = device.has("model") && !device.get("model").isJsonNull()
             ? device.get("model").getAsString() : "Sin modelo";
-        
+
         JLabel brandModelLabel = new JLabel(brand + " - " + model);
         brandModelLabel.setFont(BODY_FONT);
         brandModelLabel.setForeground(TEXT_SECONDARY_COLOR);
@@ -1310,186 +1449,5 @@ public class PatientDashboardPanel extends JPanel {
             new LoginFrame().setVisible(true);
         }
     }
-
-    /**
-     * Panel con mapa usando JavaFX WebView y Leaflet.js
-     */
-    private static class OpenStreetMapPanel extends JPanel {
-        private static final Dimension DEFAULT_MAP_SIZE = new Dimension(900, 500);
-
-        private final JLabel statusLabel;
-        private final JFXPanel jfxPanel;
-
-        private WebEngine webEngine;
-        private volatile boolean mapReady = false;
-        private volatile String pendingLocationsJson = null;
-
-        OpenStreetMapPanel() {
-            setLayout(new BorderLayout());
-            setOpaque(false);
-
-            statusLabel = buildStatusLabel();
-
-            jfxPanel = new JFXPanel();
-            jfxPanel.setPreferredSize(DEFAULT_MAP_SIZE);
-            add(jfxPanel, BorderLayout.CENTER);
-
-            jfxPanel.addComponentListener(new ComponentAdapter() {
-                @Override
-                public void componentResized(ComponentEvent e) {
-                    if (!mapReady) {
-                        return;
-                    }
-                    Platform.runLater(() -> {
-                        try {
-                            if (webEngine != null) {
-                                webEngine.executeScript("if (window && typeof window.forceResize === 'function') { window.forceResize(); }");
-                            }
-                        } catch (Exception ex) {
-                            System.err.println("[MAP] Error forcing resize: " + ex.getMessage());
-                        }
-                    });
-                }
-            });
-
-            Platform.runLater(this::initializeWebView);
-        }
-
-        private JLabel buildStatusLabel() {
-            JLabel label = new JLabel("Cargando mapa...");
-            label.setFont(CAPTION_FONT);
-            label.setForeground(PRIMARY_DARK);
-            label.setBorder(new CompoundBorder(
-                    new MatteBorder(1, 1, 1, 1, NEUTRAL_BORDER_COLOR),
-                    new EmptyBorder(6, 12, 6, 12)
-            ));
-            label.setOpaque(true);
-            label.setBackground(new Color(235, 246, 255));
-            return label;
-        }
-
-        public JLabel getStatusDisplay() {
-            return statusLabel;
-        }
-
-        private void initializeWebView() {
-            WebView webView = new WebView();
-            webEngine = webView.getEngine();
-            webEngine.setJavaScriptEnabled(true);
-
-            webEngine.getLoadWorker().stateProperty().addListener((obs, oldState, newState) -> {
-                if (newState == javafx.concurrent.Worker.State.SUCCEEDED) {
-                    mapReady = true;
-                    SwingUtilities.invokeLater(() -> statusLabel.setText("Mapa listo. Esperando datos..."));
-                    if (pendingLocationsJson != null) {
-                        String payload = pendingLocationsJson;
-                        pendingLocationsJson = null;
-                        sendLocationsJson(payload);
-                    } else {
-                        sendLocationsJson("[]");
-                    }
-                } else if (newState == javafx.concurrent.Worker.State.FAILED) {
-                    Throwable exception = webEngine.getLoadWorker().getException();
-                    System.err.println("[MAP] Error al cargar el mapa" + (exception != null ? ": " + exception.getMessage() : ""));
-                    if (exception != null) {
-                        exception.printStackTrace();
-                    }
-                    SwingUtilities.invokeLater(() -> statusLabel.setText("No se pudo cargar el mapa."));
-                }
-            });
-
-            webEngine.loadContent(generateLeafletHtml());
-
-            Scene scene = new Scene(webView);
-            jfxPanel.setScene(scene);
-        }
-
-        public void showNoDataMessage() {
-            SwingUtilities.invokeLater(() -> statusLabel.setText("Sin ubicaciones recientes."));
-            sendLocationsJson("[]");
-        }
-
-        public void updateLocations(JsonArray locations) {
-            if (locations == null || locations.size() == 0) {
-                showNoDataMessage();
-                return;
-            }
-
-            SwingUtilities.invokeLater(() -> statusLabel.setText("Mostrando " + locations.size() + " ubicaciones."));
-            sendLocationsJson(locations.toString());
-        }
-
-        private void sendLocationsJson(String locationsJson) {
-            if (!mapReady || webEngine == null) {
-                pendingLocationsJson = locationsJson;
-                return;
-            }
-
-            final String payload = locationsJson == null ? "[]" : locationsJson;
-            Platform.runLater(() -> {
-                try {
-                    JSObject windowObject = (JSObject) webEngine.executeScript("window");
-                    if (windowObject != null) {
-                        windowObject.call("renderLocationsFromJava", payload);
-                    }
-                } catch (Exception ex) {
-                    System.err.println("[MAP] Error enviando ubicaciones: " + ex.getMessage());
-                    ex.printStackTrace();
-                }
-            });
-        }
-
-        private String generateLeafletHtml() {
-            StringBuilder html = new StringBuilder();
-            html.append("<!DOCTYPE html>");
-            html.append("<html><head>");
-            html.append("<meta charset='utf-8'/>");
-            html.append("<meta name='viewport' content='width=device-width, initial-scale=1.0'>");
-            html.append("<link rel='stylesheet' href='https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'");
-            html.append(" integrity='sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=' crossorigin='' />");
-            html.append("<script src='https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'");
-            html.append(" integrity='sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=' crossorigin=''></script>");
-            html.append("<style>");
-            html.append("html, body { height: 100%; width: 100%; margin: 0; font-family: Arial, sans-serif; }");
-            html.append("#map-container { position: relative; height: 100%; width: 100%; }");
-            html.append("#map { height: 100%; width: 100%; }");
-            html.append(".location-badge { pointer-events: none; }");
-            html.append(".location-badge .badge { border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: bold; box-shadow: 0 2px 4px rgba(0,0,0,0.3); }");
-            html.append(".location-badge .badge.latest { background: #2E7D32; border: 3px solid #fff; width: 30px; height: 30px; font-size: 16px; }");
-            html.append(".location-badge .badge.historic { background: #1565C0; border: 2px solid #fff; width: 26px; height: 26px; font-size: 13px; }");
-            html.append(".popup { font-size: 13px; min-width: 220px; }");
-            html.append(".popup table { width: 100%; border-collapse: collapse; }");
-            html.append(".popup td { padding: 3px 4px; vertical-align: top; }");
-            html.append(".popup tr td:first-child { font-weight: bold; color: #424242; }");
-            html.append("#no-data-banner { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; background: rgba(255,255,255,0.92); color: #455A64; font-size: 16px; font-weight: bold; z-index: 500; }");
-            html.append("</style></head><body>");
-            html.append("<div id='map-container'>");
-            html.append("<div id='map'></div>");
-            html.append("<div id='no-data-banner'>Sin ubicaciones para mostrar</div>");
-            html.append("</div>");
-            html.append("<script>");
-            html.append("(function(){");
-            html.append("const DEFAULT_CENTER = [19.4326, -99.1332];");
-            html.append("const DEFAULT_ZOOM = 12;");
-            html.append("const latestStyle = { radius: 14, fillColor: '#4CAF50', color: '#1B5E20', weight: 3, fillOpacity: 0.9 };");
-            html.append("const historyStyle = { radius: 10, fillColor: '#2196F3', color: '#0D47A1', weight: 2, fillOpacity: 0.7 };");
-            html.append("const map = L.map('map', { zoomControl: true, attributionControl: true }).setView(DEFAULT_CENTER, DEFAULT_ZOOM);");
-            html.append("L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map);");
-            html.append("const markersLayer = L.layerGroup().addTo(map);");
-            html.append("const pathLayer = L.polyline([], { color: '#1976D2', weight: 3, opacity: 0.6, dashArray: '8,4' }).addTo(map);");
-            html.append("const noDataBanner = document.getElementById('no-data-banner');");
-            html.append("function showNoData(show){ if (noDataBanner){ noDataBanner.style.display = show ? 'flex' : 'none'; } }");
-            html.append("function isValidNumber(value){ return typeof value === 'number' && !isNaN(value); }");
-            html.append("function formatTimestamp(value){ if(!value){ return 'N/A'; } const date = new Date(value); if(isNaN(date.getTime())){ return value; } return date.toLocaleString(); }");
-            html.append("function formatAccuracy(value){ return typeof value === 'number' ? value.toFixed(2) + ' m' : 'N/A'; }");
-            html.append("function buildPopupHtml(loc, isLatest, order){ const titleColor = isLatest ? '#2E7D32' : '#1565C0'; const title = isLatest ? 'Ubicación más reciente' : 'Ubicación #' + order; const rows = [ ['Latitud', loc.latitude.toFixed(6)], ['Longitud', loc.longitude.toFixed(6)], ['Fecha/Hora', formatTimestamp(loc.timestamp)], ['Fuente', loc.source || 'desconocida'], ['Precisión', formatAccuracy(loc.accuracy_meters)] ]; let html = '<div class=\'popup\'>' + '<h3 style=\'margin:0 0 8px 0; color:' + titleColor + '; font-size:15px;\'>' + title + '</h3>' + '<table>'; rows.forEach(function(row){ html += '<tr><td>' + row[0] + '</td><td>' + row[1] + '</td></tr>'; }); html += '</table></div>'; return html; }");
-            html.append("function render(locations){ markersLayer.clearLayers(); pathLayer.setLatLngs([]); if(!Array.isArray(locations) || locations.length === 0){ showNoData(true); map.setView(DEFAULT_CENTER, DEFAULT_ZOOM); return; } const validLocations = locations.filter(function(loc){ return loc && isValidNumber(loc.latitude) && isValidNumber(loc.longitude); }); if(validLocations.length === 0){ showNoData(true); map.setView(DEFAULT_CENTER, DEFAULT_ZOOM); return; } showNoData(false); validLocations.sort(function(a, b){ return new Date(b.timestamp || 0) - new Date(a.timestamp || 0); }); const latLngs = []; validLocations.forEach(function(loc, index){ const latLng = [loc.latitude, loc.longitude]; latLngs.push(latLng); const isLatest = index === 0; const marker = L.circleMarker(latLng, isLatest ? latestStyle : historyStyle).addTo(markersLayer); marker.bindPopup(buildPopupHtml(loc, isLatest, index + 1)); const badgeHtml = isLatest ? '<div class=\"badge latest\">1</div>' : '<div class=\"badge historic\">' + (index + 1) + '</div>'; L.marker(latLng, { icon: L.divIcon({ className: 'location-badge', html: badgeHtml, iconSize: isLatest ? [30, 30] : [26, 26] }) }).addTo(markersLayer); }); if (latLngs.length > 1){ pathLayer.setLatLngs(latLngs); } if (latLngs.length === 1){ map.setView(latLngs[0], 15); } else { map.fitBounds(L.latLngBounds(latLngs), { padding: [40, 40], maxZoom: 16 }); } setTimeout(function(){ map.invalidateSize(); }, 200); }");
-            html.append("window.renderLocationsFromJava = function(payload){ try { const data = JSON.parse(payload || '[]'); render(data); } catch (err) { console.error('[MAP] Error parseando ubicaciones', err); showNoData(true); } };");
-            html.append("window.forceResize = function(){ setTimeout(function(){ map.invalidateSize(); }, 100); };");
-            html.append("render([]);");
-            html.append("})();");
-            html.append("</script></body></html>");
-            return html.toString();
-        }
-    }
 }
+

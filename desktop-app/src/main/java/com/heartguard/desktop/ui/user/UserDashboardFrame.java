@@ -454,10 +454,9 @@ public class UserDashboardFrame extends JFrame {
                 snackbarTimer.stop();
             }
             
-            // Limpiar el panel del dashboard
-            if (dashboardPanel != null) {
-                dashboardPanel.removeAll();
-            }
+            // Nota: No llamamos a dashboardPanel.removeAll() porque puede causar
+            // problemas con componentes JavaFX embebidos. En su lugar, simplemente
+            // cerramos la ventana y creamos un nuevo LoginFrame limpio.
             
             // Cerrar ventana actual
             dispose();

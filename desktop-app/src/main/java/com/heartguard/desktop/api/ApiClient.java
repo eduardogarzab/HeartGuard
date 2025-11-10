@@ -14,6 +14,7 @@ import okhttp3.*;
 import java.io.IOException;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -24,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 public class ApiClient {
     private static final String DEFAULT_GATEWAY_URL = "http://136.115.53.140:8080"; // aqui tiene que cambiarse al correspondiente
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
-    
+
     private final String gatewayUrl;
     private final OkHttpClient httpClient;
     private final Gson gson;
@@ -92,7 +93,7 @@ public class ApiClient {
         payload.addProperty("password", password);
 
         String url = gatewayUrl + "/auth/register/user";
-        
+
         // El registro de usuario NO devuelve tokens, solo devuelve user_id y message
         RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
         Request request = new Request.Builder()
@@ -102,7 +103,7 @@ public class ApiClient {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
-            
+
             if (!response.isSuccessful()) {
                 JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
                 String errorMessage = errorObj.has("error") ? errorObj.get("error").getAsString() : "Error desconocido";
@@ -111,11 +112,11 @@ public class ApiClient {
 
             // Parsear la respuesta de registro
             JsonObject responseObj = gson.fromJson(responseBody, JsonObject.class);
-            
+
             // Crear una respuesta básica (el registro NO devuelve tokens)
             LoginResponse loginResponse = new LoginResponse();
             loginResponse.setAccountType("user");
-            
+
             return loginResponse;
         } catch (IOException e) {
             throw new ApiException("Error de conexión: " + e.getMessage(), e);
@@ -135,7 +136,7 @@ public class ApiClient {
         payload.addProperty("name", name);
         payload.addProperty("email", email);
         payload.addProperty("password", password);
-        
+
         // Detectar si es UUID o código de organización
         // UUID tiene formato: 8-4-4-4-12 caracteres hexadecimales con guiones
         if (orgIdOrCode.matches("[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")) {
@@ -143,17 +144,17 @@ public class ApiClient {
         } else {
             payload.addProperty("org_code", orgIdOrCode); // Es un código como CLIN-001
         }
-        
+
         payload.addProperty("birthdate", birthdate); // Formato: YYYY-MM-DD
         payload.addProperty("sex_code", sexCode); // M, F, O
-        
+
         // risk_level_code es opcional, pero lo incluimos si se proporciona
         if (riskLevelCode != null && !riskLevelCode.isEmpty()) {
             payload.addProperty("risk_level_code", riskLevelCode);
         }
 
         String url = gatewayUrl + "/auth/register/patient";
-        
+
         // El registro de paciente NO devuelve tokens, solo devuelve patient_id y message
         RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
         Request request = new Request.Builder()
@@ -163,7 +164,7 @@ public class ApiClient {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
-            
+
             if (!response.isSuccessful()) {
                 JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
                 String errorMessage = errorObj.has("error") ? errorObj.get("error").getAsString() : "Error desconocido";
@@ -172,11 +173,11 @@ public class ApiClient {
 
             // Parsear la respuesta de registro
             JsonObject responseObj = gson.fromJson(responseBody, JsonObject.class);
-            
+
             // Crear una respuesta básica (el registro NO devuelve tokens)
             LoginResponse loginResponse = new LoginResponse();
             loginResponse.setAccountType("patient");
-            
+
             return loginResponse;
         } catch (IOException e) {
             throw new ApiException("Error de conexión: " + e.getMessage(), e);
@@ -224,7 +225,7 @@ public class ApiClient {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
-            
+
             if (!response.isSuccessful()) {
                 JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
                 String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
@@ -250,7 +251,7 @@ public class ApiClient {
 
         try (Response response = httpClient.newCall(request).execute()) {
             String responseBody = response.body() != null ? response.body().string() : "";
-            
+
             if (!response.isSuccessful()) {
                 JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
                 String errorCode = errorObj.has("error") ? errorObj.get("error").getAsString() : "unknown_error";
@@ -259,12 +260,12 @@ public class ApiClient {
             }
 
             LoginResponse loginResponse = gson.fromJson(responseBody, LoginResponse.class);
-            
+
             // Establecer el token para futuras peticiones
             if (loginResponse.getAccessToken() != null) {
                 setAccessToken(loginResponse.getAccessToken());
             }
-            
+
             return loginResponse;
         } catch (IOException e) {
             throw new ApiException("Error de conexión: " + e.getMessage(), e);
@@ -274,7 +275,7 @@ public class ApiClient {
     /**
      * Obtiene el dashboard completo del paciente autenticado
      * Requiere que el token de acceso esté configurado
-     * 
+     *
      * @param token Token de acceso del paciente
      * @return JsonObject con los datos del dashboard
      * @throws ApiException si hay error en la petición
@@ -285,7 +286,7 @@ public class ApiClient {
 
     /**
      * Obtiene todas las alertas del paciente con paginación
-     * 
+     *
      * @param token Token de acceso del paciente
      * @param limit Cantidad máxima de alertas a retornar
      * @return JsonObject con las alertas del paciente
@@ -307,7 +308,7 @@ public class ApiClient {
 
     /**
      * Obtiene todos los dispositivos del paciente
-     * 
+     *
      * @param token Token de acceso del paciente
      * @return JsonObject con los dispositivos del paciente
      * @throws ApiException si hay error en la petición
@@ -322,7 +323,7 @@ public class ApiClient {
     public JsonObject getPatientLatestLocation(String token) throws ApiException {
         return executeGatewayGet("/patient/location/latest", null, token, true, "Error al obtener ubicación");
     }
-    
+
     /**
      * Obtiene las últimas N ubicaciones del paciente
      */
@@ -418,6 +419,72 @@ public class ApiClient {
         } catch (IOException e) {
             throw new ApiException("Error de conexión con el gateway: " + e.getMessage(), e);
         }
+    }
+
+    private CompletableFuture<JsonObject> executeGatewayGetAsync(
+            String path,
+            Map<String, String> queryParams,
+            String token,
+            boolean requiresToken,
+            String defaultErrorMessage
+    ) {
+        CompletableFuture<JsonObject> future = new CompletableFuture<>();
+
+        String authToken = resolveToken(token);
+        if (requiresToken && (authToken == null || authToken.isEmpty())) {
+            future.completeExceptionally(new ApiException("Token de acceso no proporcionado"));
+            return future;
+        }
+
+        HttpUrl baseUrl = HttpUrl.parse(gatewayUrl + path);
+        if (baseUrl == null) {
+            future.completeExceptionally(new ApiException("URL inválida del gateway: " + gatewayUrl + path));
+            return future;
+        }
+
+        HttpUrl.Builder urlBuilder = baseUrl.newBuilder();
+        if (queryParams != null) {
+            for (Map.Entry<String, String> entry : queryParams.entrySet()) {
+                if (entry.getValue() != null) {
+                    urlBuilder.addQueryParameter(entry.getKey(), entry.getValue());
+                }
+            }
+        }
+
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(urlBuilder.build())
+                .get();
+
+        if (authToken != null && !authToken.isEmpty()) {
+            requestBuilder.addHeader("Authorization", "Bearer " + authToken);
+        }
+
+        httpClient.newCall(requestBuilder.build()).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                future.completeExceptionally(new ApiException("Error de conexión con el gateway: " + e.getMessage(), e));
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) {
+                try (response) {
+                    String responseBody = response.body() != null ? response.body().string() : "";
+                    handleErrorIfNeeded(response, responseBody, defaultErrorMessage);
+                    if (responseBody.isEmpty()) {
+                        future.complete(new JsonObject());
+                        return;
+                    }
+                    JsonObject payload = gson.fromJson(responseBody, JsonObject.class);
+                    future.complete(payload != null ? payload : new JsonObject());
+                } catch (ApiException e) {
+                    future.completeExceptionally(e);
+                } catch (Exception e) {
+                    future.completeExceptionally(new ApiException("Error procesando respuesta: " + e.getMessage(), e));
+                }
+            }
+        });
+
+        return future;
     }
 
     private JsonObject executeGatewayRequest(
@@ -551,15 +618,15 @@ public class ApiClient {
                 "Error al obtener organizaciones"
         );
         System.out.println("[DEBUG] Respuesta completa del endpoint: " + response.toString());
-        
+
         if (response.has("data")) {
             System.out.println("[DEBUG] Campo 'data' encontrado");
-            
+
             // La estructura es: {"data": {"memberships": [...]}}
             if (response.get("data").isJsonObject()) {
                 JsonObject dataObj = response.getAsJsonObject("data");
                 System.out.println("[DEBUG] 'data' es un JsonObject");
-                
+
                 if (dataObj.has("memberships") && dataObj.get("memberships").isJsonArray()) {
                     JsonArray membershipsArray = dataObj.getAsJsonArray("memberships");
                     System.out.println("[DEBUG] Campo 'memberships' encontrado con " + membershipsArray.size() + " elementos");
@@ -580,7 +647,7 @@ public class ApiClient {
             System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'data' en la respuesta");
             System.out.println("[DEBUG] Campos disponibles: " + response.keySet());
         }
-        
+
         return new JsonArray();
     }
 
@@ -736,6 +803,16 @@ public class ApiClient {
         );
     }
 
+    public JsonObject getCaregiverPatientDetail(String token, String patientId) throws ApiException {
+        return executeGatewayGet(
+                "/caregiver/patients/" + patientId,
+                null,
+                token,
+                true,
+                "Error al obtener detalle del paciente"
+        );
+    }
+
     public JsonObject getCaregiverPatientAlerts(String token, String patientId, int limit) throws ApiException {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("limit", String.valueOf(Math.max(1, limit)));
@@ -748,10 +825,12 @@ public class ApiClient {
         );
     }
 
-    public JsonObject getCaregiverPatientNotes(String token, String patientId) throws ApiException {
+    public JsonObject getCaregiverPatientNotes(String token, String patientId, int limit) throws ApiException {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
         return executeGatewayGet(
                 "/caregiver/patients/" + patientId + "/notes",
-                null,
+                params,
                 token,
                 true,
                 "Error al obtener notas del paciente"
@@ -809,6 +888,185 @@ public class ApiClient {
                 token,
                 true,
                 "Error al obtener streams del dispositivo"
+        );
+    }
+
+    // --------------------------- Variantes asíncronas ------------------------------
+
+    public CompletableFuture<JsonObject> getOrganizationDashboardAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/dashboard",
+                null,
+                token,
+                true,
+                "Error al obtener dashboard organizacional"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationMetricsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/metrics",
+                null,
+                token,
+                true,
+                "Error al obtener métricas de organización"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationCareTeamsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams",
+                null,
+                token,
+                true,
+                "Error al obtener equipos de cuidado"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationCareTeamPatientsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-team-patients",
+                null,
+                token,
+                true,
+                "Error al obtener pacientes por equipo"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCaregiverPatientsAsync(String token) {
+        return executeGatewayGetAsync(
+                "/caregiver/patients",
+                null,
+                token,
+                true,
+                "Error al obtener pacientes asignados"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamLocationsAsync(String token, Map<String, String> params) {
+        return executeGatewayGetAsync(
+                "/care-team/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones de equipos"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCaregiverPatientLocationsAsync(String token, Map<String, String> params) {
+        return executeGatewayGetAsync(
+                "/caregiver/patients/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones de pacientes"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamDevicesAsync(String token, String orgId, String teamId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos del equipo"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamDisconnectedDevicesAsync(String token, String orgId, String teamId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos desconectados"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getCareTeamDeviceStreamsAsync(String token, String orgId, String teamId, String deviceId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
+                null,
+                token,
+                true,
+                "Error al obtener streams del dispositivo"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientDashboardAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/dashboard",
+                null,
+                token,
+                true,
+                "Error al obtener dashboard"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientAlertsAsync(String token, int limit) {
+        return getPatientAlertsAsync(token, limit, 0, null);
+    }
+
+    public CompletableFuture<JsonObject> getPatientAlertsAsync(String token, int limit, int offset, String status) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        if (status != null && !status.trim().isEmpty()) {
+            params.put("status", status);
+        }
+        return executeGatewayGetAsync(
+                "/patient/alerts",
+                params,
+                token,
+                true,
+                "Error al obtener alertas"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientDevicesAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientLocationsAsync(String token, int limit) {
+        return getPatientLocationsAsync(token, limit, 0);
+    }
+
+    public CompletableFuture<JsonObject> getPatientLocationsAsync(String token, int limit, int offset) {
+        Map<String, String> params = new LinkedHashMap<>();
+        params.put("limit", String.valueOf(Math.max(1, limit)));
+        params.put("offset", String.valueOf(Math.max(0, offset)));
+        return executeGatewayGetAsync(
+                "/patient/locations",
+                params,
+                token,
+                true,
+                "Error al obtener ubicaciones"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientCaregiversAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/caregivers",
+                null,
+                token,
+                true,
+                "Error al obtener cuidadores"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getPatientCareTeamAsync(String token) {
+        return executeGatewayGetAsync(
+                "/patient/care-team",
+                null,
+                token,
+                true,
+                "Error al obtener equipo de cuidado"
         );
     }
 }
