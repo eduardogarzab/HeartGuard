@@ -24,6 +24,9 @@ make logs
 |----------|--------|-------------|
 | **auth-service** | 5001 | Autenticación y autorización JWT |
 | **admin-service** | 5002 | API de administración (organizaciones, pacientes, equipos) |
+| **user-service** | 5003 | API de perfil y membresías del usuario autenticado |
+| **patient-service** | 5004 | Portal de pacientes y datos asociados |
+| **media-service** | 5005 | Gestión de fotos de perfil en DigitalOcean Spaces |
 | **gateway** | 8080 | API Gateway que enruta a los servicios |
 
 ## 🎯 Comandos Principales
@@ -116,6 +119,15 @@ services/
 │   ├── Makefile          # Comandos específicos de admin
 │   ├── test_admin_service.sh
 │   └── src/admin/...
+├── user/
+│   ├── Makefile          # Comandos específicos de user
+│   └── src/user/...
+├── patient/
+│   ├── Makefile          # Comandos específicos de patient
+│   └── src/patient/...
+├── media/
+│   ├── Makefile          # Comandos específicos de media
+│   └── src/media/...
 └── gateway/
     ├── Makefile          # Comandos específicos de gateway
     ├── test_gateway.sh

@@ -85,6 +85,7 @@ auth_ok=0
 admin_ok=0
 user_ok=0
 patient_ok=0
+media_ok=0
 postgres_ok=0
 
 echo -e "${BLUE}═══════════════════════════════════════════════════════${NC}\n"
@@ -111,6 +112,11 @@ echo ""
 
 check_http_service "Patient Service (Puerto 5004)" "http://localhost:5004/health" "heartguard-patient"
 patient_ok=$?
+
+echo ""
+
+check_http_service "Media Service (Puerto 5005)" "http://localhost:5005/health" "heartguard-media"
+media_ok=$?
 
 echo ""
 
@@ -153,6 +159,12 @@ else
     echo -e "${RED}✗${NC} Patient Service :5004  [ERROR]"
 fi
 
+if [ $media_ok -eq 0 ]; then
+    echo -e "${GREEN}✓${NC} Media Service   :5005  [Solo Interno]"
+else
+    echo -e "${RED}✗${NC} Media Service   :5005  [ERROR]"
+fi
+
 if [ $postgres_ok -eq 0 ]; then
     echo -e "${GREEN}✓${NC} PostgreSQL      :5432  [Solo Interno]"
 else
@@ -163,13 +175,13 @@ echo ""
 
 # Verificar puertos
 echo -e "${BLUE}Puertos Escuchando:${NC}"
-netstat -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5004|5432)" | awk '{print "  "$4}' || \
-    ss -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5004|5432)" | awk '{print "  "$4}'
+netstat -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5004|5005|5432)" | awk '{print "  "$4}' || \
+    ss -tlnp 2>/dev/null | grep -E ":(8080|5001|5002|5003|5004|5005|5432)" | awk '{print "  "$4}'
 
 echo ""
 
 # Estado final
-if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $user_ok -eq 0 ] && [ $patient_ok -eq 0 ] && [ $postgres_ok -eq 0 ]; then
+if [ $gateway_ok -eq 0 ] && [ $auth_ok -eq 0 ] && [ $admin_ok -eq 0 ] && [ $user_ok -eq 0 ] && [ $patient_ok -eq 0 ] && [ $media_ok -eq 0 ] && [ $postgres_ok -eq 0 ]; then
     echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║  ✅ TODOS LOS SERVICIOS OPERACIONALES                 ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"

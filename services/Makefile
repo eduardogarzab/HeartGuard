@@ -5,7 +5,7 @@
 # =============================================================================
 
 SHELL := /bin/bash
-SERVICES := auth admin user patient gateway
+SERVICES := auth admin user patient media gateway
 PYTHON := python3
 VENV := .venv
 
@@ -14,6 +14,7 @@ AUTH_PORT := 5001
 ADMIN_PORT := 5002
 USER_PORT := 5003
 PATIENT_PORT := 5004
+MEDIA_PORT := 5005
 GATEWAY_PORT := 8080
 
 # Directorio de logs
@@ -36,6 +37,7 @@ help:
 	@echo "    make install-admin        - Instalar solo admin-service"
 	@echo "    make install-user         - Instalar solo user-service"
 	@echo "    make install-patient      - Instalar solo patient-service"
+	@echo "    make install-media        - Instalar solo media-service"
 	@echo "    make install-gateway      - Instalar solo gateway"
 	@echo ""
 	@echo "  🚀 Gestión de Servicios:"
@@ -44,6 +46,7 @@ help:
 	@echo "    make start-admin          - Iniciar solo admin-service"
 	@echo "    make start-user           - Iniciar solo user-service"
 	@echo "    make start-patient        - Iniciar solo patient-service"
+	@echo "    make start-media          - Iniciar solo media-service"
 	@echo "    make start-gateway        - Iniciar solo gateway"
 	@echo ""
 	@echo "  🔄 Control:"
@@ -52,6 +55,7 @@ help:
 	@echo "    make restart-admin        - Reiniciar solo admin-service"
 	@echo "    make restart-user         - Reiniciar solo user-service"
 	@echo "    make restart-patient      - Reiniciar solo patient-service"
+	@echo "    make restart-media        - Reiniciar solo media-service"
 	@echo "    make restart-gateway      - Reiniciar solo gateway"
 	@echo ""
 	@echo "  🛑 Detener:"
@@ -60,6 +64,7 @@ help:
 	@echo "    make stop-admin           - Detener solo admin-service"
 	@echo "    make stop-user            - Detener solo user-service"
 	@echo "    make stop-patient         - Detener solo patient-service"
+	@echo "    make stop-media           - Detener solo media-service"
 	@echo "    make stop-gateway         - Detener solo gateway"
 	@echo ""
 	@echo "  📊 Monitoreo:"
@@ -69,12 +74,14 @@ help:
 	@echo "    make logs-admin           - Ver logs de admin-service"
 	@echo "    make logs-user            - Ver logs de user-service"
 	@echo "    make logs-patient         - Ver logs de patient-service"
+	@echo "    make logs-media           - Ver logs de media-service"
 	@echo "    make logs-gateway         - Ver logs de gateway"
 	@echo "    make tail                 - Seguir logs en tiempo real (todos)"
 	@echo "    make tail-auth            - Seguir logs de auth-service"
 	@echo "    make tail-admin           - Seguir logs de admin-service"
 	@echo "    make tail-user            - Seguir logs de user-service"
 	@echo "    make tail-patient         - Seguir logs de patient-service"
+	@echo "    make tail-media           - Seguir logs de media-service"
 	@echo "    make tail-gateway         - Seguir logs de gateway"
 	@echo ""
 	@echo "  🧪 Testing:"
@@ -83,6 +90,7 @@ help:
 	@echo "    make test-admin           - Ejecutar tests de admin-service"
 	@echo "    make test-user            - Ejecutar tests de user-service"
 	@echo "    make test-patient         - Ejecutar tests de patient-service"
+	@echo "    make test-media           - Ejecutar tests de media-service"
 	@echo "    make test-gateway         - Ejecutar tests de gateway"
 	@echo ""
 	@echo "  🧹 Limpieza:"
@@ -95,7 +103,7 @@ help:
 # =============================================================================
 # Instalación
 # =============================================================================
-install: install-auth install-admin install-user install-patient install-gateway
+install: install-auth install-admin install-user install-patient install-media install-gateway
 	@echo "✓ Todas las dependencias instaladas"
 
 install-auth:
@@ -114,6 +122,10 @@ install-patient:
 	@echo "📦 Instalando patient-service..."
 	@cd patient && $(MAKE) install
 
+install-media:
+	@echo "📦 Instalando media-service..."
+	@cd media && $(MAKE) install
+
 install-gateway:
 	@echo "📦 Instalando gateway..."
 	@cd gateway && $(MAKE) install
@@ -127,7 +139,7 @@ $(LOG_DIR):
 $(PID_DIR):
 	@mkdir -p $(PID_DIR)
 
-start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-gateway wait-gateway
+start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  ✓ Todos los servicios iniciados correctamente"
@@ -173,6 +185,16 @@ start-patient: $(LOG_DIR) $(PID_DIR)
 			> $(LOG_DIR)/patient.log 2>&1 & \
 		echo $$! > $(PID_DIR)/patient.pid
 	@echo "  PID: $$(cat $(PID_DIR)/patient.pid)"
+
+start-media: $(LOG_DIR) $(PID_DIR)
+	@echo "🚀 Iniciando media-service en puerto $(MEDIA_PORT)..."
+	@cd media && \
+		source $(VENV)/bin/activate && \
+		PYTHONPATH=src FLASK_APP=media.app $(PYTHON) -m flask run \
+			--host=0.0.0.0 --port=$(MEDIA_PORT) --no-reload \
+			> $(LOG_DIR)/media.log 2>&1 & \
+		echo $$! > $(PID_DIR)/media.pid
+	@echo "  PID: $$(cat $(PID_DIR)/media.pid)"
 
 start-gateway: $(LOG_DIR) $(PID_DIR)
 	@echo "🚀 Iniciando gateway en puerto $(GATEWAY_PORT)..."
@@ -241,6 +263,20 @@ wait-patient:
 		sleep 1; \
 	done
 
+wait-media:
+	@echo "  ⏳ Esperando a que media-service esté listo..."
+	@for i in {1..30}; do \
+		if curl -s http://localhost:$(MEDIA_PORT)/health > /dev/null 2>&1; then \
+			echo "  ✓ Media-service respondiendo"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "  ✗ Timeout esperando media-service"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+
 wait-gateway:
 	@echo "  ⏳ Esperando a que gateway esté listo..."
 	@for i in {1..30}; do \
@@ -258,7 +294,7 @@ wait-gateway:
 # =============================================================================
 # Detener Servicios
 # =============================================================================
-stop: stop-gateway stop-patient stop-user stop-admin stop-auth
+stop: stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
 	@echo "✓ Todos los servicios detenidos"
 
 stop-auth:
@@ -305,6 +341,17 @@ stop-patient:
 	@lsof -ti :$(PATIENT_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "  ✓ Patient-service detenido"
 
+stop-media:
+	@if [ -f $(PID_DIR)/media.pid ]; then \
+		echo "🛑 Deteniendo media-service (PID: $$(cat $(PID_DIR)/media.pid))..."; \
+		kill $$(cat $(PID_DIR)/media.pid) 2>/dev/null || true; \
+		sleep 1; \
+		kill -9 $$(cat $(PID_DIR)/media.pid) 2>/dev/null || true; \
+		rm -f $(PID_DIR)/media.pid; \
+	fi
+	@lsof -ti :$(MEDIA_PORT) | xargs kill -9 2>/dev/null || true
+	@echo "  ✓ Media-service detenido"
+
 stop-gateway:
 	@if [ -f $(PID_DIR)/gateway.pid ]; then \
 		echo "🛑 Deteniendo gateway (PID: $$(cat $(PID_DIR)/gateway.pid))..."; \
@@ -332,6 +379,9 @@ restart-user: stop-user start-user wait-user
 
 restart-patient: stop-patient start-patient wait-patient
 	@echo "✓ Patient-service reiniciado"
+
+restart-media: stop-media start-media wait-media
+	@echo "✓ Media-service reiniciado"
 
 restart-gateway: stop-gateway start-gateway wait-gateway
 	@echo "✓ Gateway reiniciado"
@@ -386,6 +436,16 @@ status:
 	else \
 		printf "  %-20s %-10s %-10s %s\n" "patient-service" "$(PATIENT_PORT)" "✗ Stopped" "-"; \
 	fi
+	@if [ -f $(PID_DIR)/media.pid ]; then \
+		pid=$$(cat $(PID_DIR)/media.pid); \
+		if ps -p $$pid > /dev/null 2>&1; then \
+			printf "  %-20s %-10s %-10s %s\n" "media-service" "$(MEDIA_PORT)" "✓ Running" "$$pid"; \
+		else \
+			printf "  %-20s %-10s %-10s %s\n" "media-service" "$(MEDIA_PORT)" "✗ Stopped" "-"; \
+		fi; \
+	else \
+		printf "  %-20s %-10s %-10s %s\n" "media-service" "$(MEDIA_PORT)" "✗ Stopped" "-"; \
+	fi
 	@if [ -f $(PID_DIR)/gateway.pid ]; then \
 		pid=$$(cat $(PID_DIR)/gateway.pid); \
 		if ps -p $$pid > /dev/null 2>&1; then \
@@ -426,6 +486,11 @@ logs:
 	@tail -n 50 $(LOG_DIR)/patient.log 2>/dev/null || echo "  (sin logs)"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Logs - media-service"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@tail -n 50 $(LOG_DIR)/media.log 2>/dev/null || echo "  (sin logs)"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  Logs - gateway"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@tail -n 50 $(LOG_DIR)/gateway.log 2>/dev/null || echo "  (sin logs)"
@@ -441,6 +506,9 @@ logs-user:
 
 logs-patient:
 	@tail -n 100 $(LOG_DIR)/patient.log 2>/dev/null || echo "Sin logs de patient-service"
+
+logs-media:
+	@tail -n 100 $(LOG_DIR)/media.log 2>/dev/null || echo "Sin logs de media-service"
 
 logs-gateway:
 	@tail -n 100 $(LOG_DIR)/gateway.log 2>/dev/null || echo "Sin logs de gateway"
@@ -460,13 +528,16 @@ tail-user:
 tail-patient:
 	@tail -f $(LOG_DIR)/patient.log
 
+tail-media:
+	@tail -f $(LOG_DIR)/media.log
+
 tail-gateway:
 	@tail -f $(LOG_DIR)/gateway.log
 
 # =============================================================================
 # Testing
 # =============================================================================
-test: test-auth test-admin test-user test-patient test-gateway
+test: test-auth test-admin test-user test-patient test-media test-gateway
 	@echo "✓ Todos los tests completados"
 
 test-auth:
@@ -491,6 +562,14 @@ test-patient:
 		cd patient && $(MAKE) test; \
 	else \
 		echo "⚠️  patient-service no tiene pruebas definidas"; \
+	fi
+
+test-media:
+	@if [ -d media/tests ]; then \
+		echo "🧪 Ejecutando tests de media-service..."; \
+		cd media && $(MAKE) test; \
+	else \
+		echo "⚠️  media-service no tiene pruebas definidas"; \
 	fi
 
 test-gateway:

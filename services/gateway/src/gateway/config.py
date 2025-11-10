@@ -20,6 +20,7 @@ class AppConfig:
     admin_service_url: str = "http://localhost:5002"
     user_service_url: str = "http://localhost:5003"
     patient_service_url: str = "http://localhost:5004"
+    media_service_url: str = "http://localhost:5005"
 
 CONFIG_CLASS = AppConfig
 
@@ -37,6 +38,7 @@ def configure_app(app: Any) -> None:
         patient_service_url=os.getenv("PATIENT_SERVICE_URL", "http://localhost:5004"),
         admin_service_url=os.getenv("ADMIN_SERVICE_URL", "http://localhost:5002"),
         user_service_url=os.getenv("USER_SERVICE_URL", "http://localhost:5003"),
+        media_service_url=os.getenv("MEDIA_SERVICE_URL", "http://localhost:5005"),
     )
 
     app.config.update(
@@ -48,6 +50,7 @@ def configure_app(app: Any) -> None:
         PATIENT_SERVICE_URL=config.patient_service_url,
         ADMIN_SERVICE_URL=config.admin_service_url,
         USER_SERVICE_URL=config.user_service_url,
+        MEDIA_SERVICE_URL=config.media_service_url,
     )
 
 
