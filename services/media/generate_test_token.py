@@ -4,7 +4,7 @@ import jwt
 import uuid
 from datetime import datetime, timedelta, timezone
 
-JWT_SECRET = "dev_jwt_secret_change_me"
+JWT_SECRET = "change-me-secret-key-12345"
 JWT_ALGORITHM = "HS256"
 
 def generate_user_token(user_id: str = None) -> str:

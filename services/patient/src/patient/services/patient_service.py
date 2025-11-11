@@ -50,6 +50,7 @@ class PatientService:
                 'birthdate': profile['birthdate'].isoformat() if profile['birthdate'] else None,
                 'sex': self._format_sex(profile['sex']),
                 'risk_level': self._format_risk_level(profile['risk_level']),
+                'profile_photo_url': profile.get('profile_photo_url'),
                 'org_name': profile['org_name']
             },
             'stats': stats,
@@ -82,6 +83,7 @@ class PatientService:
             'birthdate': profile['birthdate'].isoformat() if profile['birthdate'] else None,
             'sex': self._format_sex(profile['sex']),
             'risk_level': self._format_risk_level(profile['risk_level']),
+            'profile_photo_url': profile.get('profile_photo_url'),
             'organization': {
                 'id': str(profile['org_id']) if profile['org_id'] else None,
                 'code': profile['org_code'],

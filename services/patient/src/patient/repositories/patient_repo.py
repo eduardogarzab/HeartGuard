@@ -28,6 +28,7 @@ class PatientRepository:
                     p.birthdate,
                     s.code as sex,
                     rl.code as risk_level,
+                    p.profile_photo_url,
                     p.created_at,
                     o.id as org_id,
                     o.code as org_code,

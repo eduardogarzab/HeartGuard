@@ -102,7 +102,7 @@ class DatabaseClient:
                 cur.execute(
                     """
                     UPDATE heartguard.patients 
-                    SET profile_photo_url = %s, updated_at = NOW()
+                    SET profile_photo_url = %s
                     WHERE id = %s
                     RETURNING id
                     """,

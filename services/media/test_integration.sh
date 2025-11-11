@@ -17,7 +17,7 @@ NC='\033[0m' # No Color
 GATEWAY_URL="http://localhost:8080"
 USER_ID="11111111-1111-1111-1111-111111111111"
 PATIENT_ID="22222222-2222-2222-2222-222222222222"
-TEST_IMAGE="/tmp/test_photo.jpg"
+TEST_IMAGE="/home/azureuser/HeartGuard/jorge.jpg"
 
 # Generate fresh tokens
 echo "Generating test tokens..."
