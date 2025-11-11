@@ -227,6 +227,65 @@ class UserRepository:
             return list(rows)
 
     @staticmethod
+    def list_org_care_team_patients_locations(org_id: str, user_id: str) -> List[Dict]:
+        """
+        Lista pacientes de care teams con sus ubicaciones.
+        SOLO devuelve equipos donde el usuario actual es miembro y pacientes con ubicación.
+        """
+        query = """
+            SELECT
+                ct.id AS care_team_id,
+                ct.name AS care_team_name,
+                p.id AS patient_id,
+                p.person_name AS patient_name,
+                p.email AS patient_email,
+                rl.code AS risk_level_code,
+                rl.label AS risk_level_label,
+                ST_Y(pl.geom) AS latitude,
+                ST_X(pl.geom) AS longitude,
+                pl.ts AS last_update,
+                CASE 
+                    WHEN pl.accuracy_m IS NOT NULL AND pl.accuracy_m > 100 THEN true
+                    ELSE false
+                END AS approximate,
+                et.code AS last_alert_code,
+                et.description AS last_alert_label,
+                al.code AS alert_level_code,
+                al.label AS alert_level_label
+            FROM care_teams ct
+            JOIN care_team_member ctm ON ctm.care_team_id = ct.id
+            JOIN patient_care_team pct ON pct.care_team_id = ct.id
+            JOIN patients p ON p.id = pct.patient_id
+            LEFT JOIN risk_levels rl ON rl.id = p.risk_level_id
+            LEFT JOIN LATERAL (
+                SELECT geom, ts, accuracy_m
+                FROM patient_locations
+                WHERE patient_id = p.id
+                ORDER BY ts DESC
+                LIMIT 1
+            ) pl ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT 
+                    a.type_id,
+                    a.alert_level_id
+                FROM alerts a
+                WHERE a.patient_id = p.id
+                ORDER BY a.created_at DESC
+                LIMIT 1
+            ) last_alert ON TRUE
+            LEFT JOIN alert_types et ON et.id = last_alert.type_id
+            LEFT JOIN alert_levels al ON al.id = last_alert.alert_level_id
+            WHERE ct.org_id = %s 
+              AND ctm.user_id = %s
+              AND pl.geom IS NOT NULL
+            ORDER BY ct.name ASC, patient_name ASC
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (org_id, user_id))
+            rows = cursor.fetchall() or []
+            return list(rows)
+
+    @staticmethod
     def get_patient(org_id: str, patient_id: str) -> Optional[Dict]:
         query = """
             SELECT
@@ -1228,8 +1287,11 @@ class UserRepository:
             LEFT JOIN latest_streams ls ON ls.device_id = d.id
             WHERE d.org_id = %s
               AND d.active = TRUE
-              AND (ls.last_started_at IS NULL OR ls.last_started_at <= NOW() - INTERVAL '24 hours')
-            ORDER BY ls.last_started_at NULLS FIRST, d.serial ASC
+              AND (
+                  ls.last_ended_at IS NULL 
+                  OR ls.last_ended_at < NOW() - INTERVAL '24 hours'
+              )
+            ORDER BY ls.last_ended_at NULLS FIRST, d.serial ASC
             LIMIT %s OFFSET %s
         """
 
@@ -1367,6 +1429,17 @@ class UserRepository:
             if not updated:
                 return None
             return str(updated['id'])
+
+    @staticmethod
+    def list_event_types() -> List[Dict[str, Any]]:
+        query = """
+            SELECT id, code, description
+            FROM event_types
+            ORDER BY code
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query)
+            return cursor.fetchall()
 
     @staticmethod
     def delete_push_device(user_id: str, device_id: str) -> bool:

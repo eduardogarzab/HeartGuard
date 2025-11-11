@@ -12,11 +12,6 @@ import com.heartguard.desktop.models.user.OrgMembership;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 import java.awt.*;
-import java.awt.Desktop;
-import java.io.File;
-import java.io.FileWriter;
-import java.io.IOException;
-import java.net.URI;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -72,10 +67,9 @@ public class UserDashboardPanel extends JPanel {
     private final MetricCard devicesCard = new MetricCard("Dispositivos activos", ACCENT_COLOR);
     private final MetricCard caregiversCard = new MetricCard("Caregivers activos", SUCCESS_COLOR);
 
-    private final UserMapPanel mapPanel = new UserMapPanel();
+    private final EmbeddedMapPanel mapPanel = new EmbeddedMapPanel();
     private final JComboBox<TeamOption> teamFilter = new JComboBox<>();
     private final JButton refreshMapButton = new JButton("Actualizar");
-    private final JButton viewMapButton = new JButton("Ver Mapa");
     private final JLabel mapStatusLabel = new JLabel(" ");
 
     private final JTabbedPane modulesTabs = new JTabbedPane();
@@ -257,62 +251,17 @@ public class UserDashboardPanel extends JPanel {
 
         wrapper.add(header, BorderLayout.NORTH);
 
-        // Contenedor del mapa con mejor diseño
+        // Contenedor del mapa incrustado con mejor diseño
         JPanel mapContainer = createStyledCard();
         mapContainer.setLayout(new BorderLayout());
         mapContainer.setBorder(BorderFactory.createCompoundBorder(
             BorderFactory.createLineBorder(BORDER_COLOR, 1),
-            new EmptyBorder(32, 32, 32, 32)
+            new EmptyBorder(8, 8, 8, 8)
         ));
 
-        // Panel del botón del mapa con mejor diseño
-        JPanel mapButtonPanel = new JPanel(new BorderLayout());
-        mapButtonPanel.setOpaque(false);
-
-        // Icono y texto del mapa
-        JPanel mapContent = new JPanel();
-        mapContent.setOpaque(false);
-        mapContent.setLayout(new BoxLayout(mapContent, BoxLayout.Y_AXIS));
-
-        // Icono del mapa
-        JLabel mapIcon = new JLabel("🗺️");
-        mapIcon.setFont(new Font("Segoe UI", Font.PLAIN, 48));
-        mapIcon.setForeground(TEXT_SECONDARY_COLOR);
-        mapIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mapContent.add(mapIcon);
-        mapContent.add(Box.createVerticalStrut(12));
-
-        // Texto descriptivo
-        JPanel textPanel = new JPanel();
-        textPanel.setOpaque(false);
-        textPanel.setLayout(new BoxLayout(textPanel, BoxLayout.Y_AXIS));
-
-        JLabel mapLabel = new JLabel("Visualizar Ubicaciones");
-        mapLabel.setFont(new Font("Segoe UI", Font.BOLD, 16));
-        mapLabel.setForeground(TEXT_PRIMARY_COLOR);
-        mapLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        textPanel.add(mapLabel);
-        textPanel.add(Box.createVerticalStrut(4));
-
-        JLabel mapDesc = new JLabel("Ver mapa interactivo con pacientes y miembros del equipo");
-        mapDesc.setFont(new Font("Segoe UI", Font.PLAIN, 13));
-        mapDesc.setForeground(TEXT_SECONDARY_COLOR);
-        mapDesc.setAlignmentX(Component.CENTER_ALIGNMENT);
-        textPanel.add(mapDesc);
-
-        mapContent.add(textPanel);
-        mapContent.add(Box.createVerticalStrut(16));
-
-        // Botón moderno del mapa centrado
-        JButton viewMapButton = createModernPrimaryButton("Abrir Mapa", "Abrir mapa de ubicaciones");
-        viewMapButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-        viewMapButton.addActionListener(e -> openMapDialog());
-
-        mapContent.add(viewMapButton);
-        mapButtonPanel.add(mapContent, BorderLayout.CENTER);
-
-        mapContainer.add(mapButtonPanel, BorderLayout.CENTER);
-        mapContainer.setPreferredSize(new Dimension(0, 280)); // Altura aumentada para que quepa todo cómodamente
+        // Agregar el mapa incrustado directamente
+        mapContainer.add(mapPanel, BorderLayout.CENTER);
+        mapContainer.setPreferredSize(new Dimension(0, 500)); // Altura generosa para el mapa
 
         wrapper.add(mapContainer, BorderLayout.CENTER);
 
@@ -880,6 +829,8 @@ public class UserDashboardPanel extends JPanel {
         Map<String, String> locationParams = Map.of("org_id", orgId);
         CompletableFuture<JsonObject> careTeamLocationsFuture = apiClient.getCareTeamLocationsAsync(token, locationParams);
         CompletableFuture<JsonObject> caregiverLocationsFuture = apiClient.getCaregiverPatientLocationsAsync(token, locationParams);
+        CompletableFuture<JsonObject> careTeamPatientsLocationsFuture = apiClient.getOrganizationCareTeamPatientsLocationsAsync(token, orgId)
+                .exceptionally(this::handleCareTeamPatientsFallback);
 
         CompletableFuture<DashboardBundle> bundleFuture = CompletableFuture.allOf(
                         dashboardFuture,
@@ -888,7 +839,8 @@ public class UserDashboardPanel extends JPanel {
                         careTeamPatientsFuture,
                         caregiverPatientsFuture,
                         careTeamLocationsFuture,
-                        caregiverLocationsFuture
+                        caregiverLocationsFuture,
+                        careTeamPatientsLocationsFuture
                 )
                 .thenApplyAsync(ignored -> {
                     DashboardBundle bundle = new DashboardBundle();
@@ -899,6 +851,7 @@ public class UserDashboardPanel extends JPanel {
                     bundle.caregiverPatients = caregiverPatientsFuture.join();
                     bundle.careTeamLocations = careTeamLocationsFuture.join();
                     bundle.caregiverLocations = caregiverLocationsFuture.join();
+                    bundle.careTeamPatientsLocations = careTeamPatientsLocationsFuture.join();
                     return bundle;
                 });
 
@@ -969,8 +922,26 @@ public class UserDashboardPanel extends JPanel {
             careTeamList.setSelectedIndex(0);
         }
 
-        mapPatientsData = getArray(getData(bundle.caregiverLocations), "patients");
+        // Combinar pacientes de care teams CON UBICACIONES + pacientes del caregiver
+        JsonArray careTeamPatientsWithLocations = processCareTeamPatients(bundle.careTeamPatientsLocations);
+        JsonArray caregiverPatients = getArray(getData(bundle.caregiverLocations), "patients");
+        
+        JsonArray allPatients = new JsonArray();
+        if (careTeamPatientsWithLocations != null) {
+            System.out.println("[RENDER] Agregando " + careTeamPatientsWithLocations.size() + " pacientes de care teams CON ubicaciones");
+            careTeamPatientsWithLocations.forEach(allPatients::add);
+        }
+        if (caregiverPatients != null) {
+            System.out.println("[RENDER] Agregando " + caregiverPatients.size() + " pacientes de caregiver");
+            caregiverPatients.forEach(allPatients::add);
+        }
+        
+        mapPatientsData = allPatients;
         mapMembersData = getArray(getData(bundle.careTeamLocations), "members");
+        
+        System.out.println("[RENDER] Total pacientes en mapa: " + mapPatientsData.size());
+        System.out.println("[RENDER] Total miembros en mapa: " + (mapMembersData != null ? mapMembersData.size() : 0));
+        
         applyMapFilter();
         mapStatusLabel.setText(mapPatientsData.size() == 0 && mapMembersData.size() == 0
                 ? "Sin ubicaciones registradas actualmente"
@@ -1607,22 +1578,35 @@ public class UserDashboardPanel extends JPanel {
     private void applyMapFilter() {
         TeamOption option = (TeamOption) teamFilter.getSelectedItem();
         if (option == null) {
-            mapPanel.updateLocations(mapPatientsData, mapMembersData);
+            mapPanel.updateLocations(mapPatientsData);
             return;
         }
         if (option.id.equals("all")) {
-            mapPanel.updateLocations(mapPatientsData, mapMembersData);
+            mapPanel.updateLocations(mapPatientsData);
             return;
         }
+        
+        System.out.println("[FILTRO] Filtrando por equipo: " + option.name + " (ID: " + option.id + ")");
+        System.out.println("[FILTRO] Total pacientes sin filtrar: " + mapPatientsData.size());
+        
         JsonArray filteredPatients = new JsonArray();
         for (JsonElement element : mapPatientsData) {
             if (!element.isJsonObject()) continue;
             JsonObject patient = element.getAsJsonObject();
+            
+            System.out.println("[FILTRO] Paciente: " + patient);
+            
             if (patient.has("care_team") && patient.get("care_team").isJsonObject()) {
                 JsonObject team = patient.getAsJsonObject("care_team");
+                System.out.println("[FILTRO]   - Tiene care_team: " + team);
                 if (team.has("id") && !team.get("id").isJsonNull() && team.get("id").getAsString().equals(option.id)) {
                     filteredPatients.add(patient);
+                    System.out.println("[FILTRO]   - ✓ INCLUIDO");
+                } else {
+                    System.out.println("[FILTRO]   - ✗ No coincide el ID");
                 }
+            } else {
+                System.out.println("[FILTRO]   - ✗ No tiene care_team");
             }
         }
         JsonArray filteredMembers = new JsonArray();
@@ -1636,26 +1620,116 @@ public class UserDashboardPanel extends JPanel {
                 }
             }
         }
-        mapPanel.updateLocations(filteredPatients, filteredMembers);
+        mapPanel.updateLocations(filteredPatients);
+    }
+
+    /**
+     * Procesa la respuesta de /orgs/{org_id}/care-team-patients para convertirla
+     * al formato esperado por el mapa (con care_team incluido en cada paciente)
+     */
+    private JsonArray processCareTeamPatients(JsonObject response) {
+        JsonArray result = new JsonArray();
+        JsonObject data = getData(response);
+        if (data == null) return result;
+        
+        JsonArray careTeams = getArray(data, "care_teams");
+        if (careTeams == null) return result;
+        
+        // Iterar sobre cada care team
+        for (JsonElement teamElement : careTeams) {
+            if (!teamElement.isJsonObject()) continue;
+            JsonObject team = teamElement.getAsJsonObject();
+            
+            String teamId = team.has("id") ? team.get("id").getAsString() : null;
+            String teamName = team.has("name") ? team.get("name").getAsString() : null;
+            
+            if (teamId == null) continue;
+            
+            // Obtener los pacientes de este team
+            JsonArray patients = getArray(team, "patients");
+            if (patients == null) continue;
+            
+            // Agregar la referencia del care team a cada paciente
+            for (JsonElement patientElement : patients) {
+                if (!patientElement.isJsonObject()) continue;
+                JsonObject patient = patientElement.getAsJsonObject();
+                
+                // Crear objeto care_team para agregar al paciente
+                JsonObject careTeamRef = new JsonObject();
+                careTeamRef.addProperty("id", teamId);
+                careTeamRef.addProperty("name", teamName);
+                
+                // Agregar care_team al paciente
+                patient.add("care_team", careTeamRef);
+                
+                result.add(patient);
+            }
+        }
+        
+        System.out.println("[DASHBOARD] Procesados " + result.size() + " pacientes de care teams");
+        return result;
     }
 
     private void fetchMapData() {
         if (currentOrg == null) return;
         mapStatusLabel.setText("Recargando ubicaciones...");
 
+        System.out.println("[DASHBOARD] Obteniendo datos de ubicaciones para org: " + currentOrg.getOrgId());
+        
         Map<String, String> params = Map.of("org_id", currentOrg.getOrgId());
-        CompletableFuture<JsonObject> caregiverFuture = apiClient.getCaregiverPatientLocationsAsync(token, params);
-        CompletableFuture<JsonObject> careTeamFuture = apiClient.getCareTeamLocationsAsync(token, params);
+        
+        // Obtener pacientes de care teams (con toda su info) y miembros del care team con ubicaciones
+        CompletableFuture<JsonObject> careTeamPatientsFuture = CompletableFuture.supplyAsync(() -> {
+            try {
+                return apiClient.getOrganizationCareTeamPatients(token, currentOrg.getOrgId());
+            } catch (Exception e) {
+                System.err.println("[DASHBOARD] Error obteniendo care team patients: " + e.getMessage());
+                return new JsonObject();
+            }
+        });
+        
+        CompletableFuture<JsonObject> caregiverPatientsFuture = apiClient.getCaregiverPatientLocationsAsync(token, params);
+        CompletableFuture<JsonObject> careTeamMembersFuture = apiClient.getCareTeamLocationsAsync(token, params);
 
-        CompletableFuture.allOf(caregiverFuture, careTeamFuture)
+        CompletableFuture.allOf(careTeamPatientsFuture, caregiverPatientsFuture, careTeamMembersFuture)
                 .thenApplyAsync(ignored -> {
-                    JsonArray patients = getArray(getData(caregiverFuture.join()), "patients");
-                    JsonArray members = getArray(getData(careTeamFuture.join()), "members");
-                    return new MapPayload(patients, members);
+                    JsonObject careTeamPatientsResponse = careTeamPatientsFuture.join();
+                    JsonObject caregiverPatientsResponse = caregiverPatientsFuture.join();
+                    JsonObject careTeamMembersResponse = careTeamMembersFuture.join();
+                    
+                    System.out.println("[DASHBOARD] Respuesta care team patients: " + careTeamPatientsResponse);
+                    System.out.println("[DASHBOARD] Respuesta caregiver patients: " + caregiverPatientsResponse);
+                    System.out.println("[DASHBOARD] Respuesta care team members: " + careTeamMembersResponse);
+                    
+                    // Procesar pacientes de care teams
+                    JsonArray careTeamPatients = processCareTeamPatients(careTeamPatientsResponse);
+                    
+                    // Obtener pacientes del caregiver individual (con ubicaciones)
+                    JsonArray caregiverPatients = getArray(getData(caregiverPatientsResponse), "patients");
+                    
+                    // Combinar ambos arrays de pacientes
+                    JsonArray allPatients = new JsonArray();
+                    if (careTeamPatients != null) {
+                        careTeamPatients.forEach(allPatients::add);
+                    }
+                    if (caregiverPatients != null) {
+                        caregiverPatients.forEach(allPatients::add);
+                    }
+                    
+                    // Obtener miembros del care team
+                    JsonArray members = getArray(getData(careTeamMembersResponse), "members");
+                    
+                    System.out.println("[DASHBOARD] Total pacientes combinados: " + allPatients.size());
+                    System.out.println("[DASHBOARD] Miembros obtenidos: " + (members != null ? members.size() : 0));
+                    
+                    return new MapPayload(allPatients, members);
                 })
                 .thenAccept(payload -> SwingUtilities.invokeLater(() -> {
                     mapPatientsData = payload.patients != null ? payload.patients : new JsonArray();
                     mapMembersData = payload.members != null ? payload.members : new JsonArray();
+                    
+                    System.out.println("[DASHBOARD] Datos actualizados - Pacientes: " + mapPatientsData.size() + ", Miembros: " + mapMembersData.size());
+                    
                     applyMapFilter();
                     snackbar.accept("Mapa actualizado", true);
                     mapStatusLabel.setText("Datos sincronizados");
@@ -1665,223 +1739,6 @@ public class UserDashboardPanel extends JPanel {
                     handleAsyncException(ex, "Error al recargar mapa");
                     return null;
                 });
-    }
-
-    private void openMapDialog() {
-        try {
-            // Crear archivo HTML temporal con el mapa
-            File tempFile = File.createTempFile("heartguard_map_", ".html");
-            tempFile.deleteOnExit();
-
-            String htmlContent = generateMapHtml();
-
-            try (FileWriter writer = new FileWriter(tempFile)) {
-                writer.write(htmlContent);
-            }
-
-            // Abrir en navegador
-            if (Desktop.isDesktopSupported()) {
-                Desktop.getDesktop().browse(tempFile.toURI());
-            } else {
-                snackbar.accept("No se puede abrir el navegador automáticamente", false);
-            }
-
-        } catch (IOException e) {
-            System.err.println("Error al crear mapa temporal: " + e.getMessage());
-            snackbar.accept("Error al abrir el mapa", false);
-        }
-    }
-
-    private String generateMapHtml() {
-        // Obtener datos filtrados según la selección actual
-        TeamOption selectedOption = (TeamOption) teamFilter.getSelectedItem();
-        JsonArray patients = new JsonArray();
-        JsonArray members = new JsonArray();
-
-        if (selectedOption == null || "all".equals(selectedOption.id)) {
-            patients = mapPatientsData;
-            members = mapMembersData;
-        } else {
-            // Filtrar por equipo
-            for (JsonElement element : mapPatientsData) {
-                if (!element.isJsonObject()) continue;
-                JsonObject patient = element.getAsJsonObject();
-                if (patient.has("care_team") && patient.get("care_team").isJsonObject()) {
-                    JsonObject team = patient.getAsJsonObject("care_team");
-                    if (team.has("id") && !team.get("id").isJsonNull() && selectedOption.id.equals(team.get("id").getAsString())) {
-                        patients.add(patient);
-                    }
-                }
-            }
-            for (JsonElement element : mapMembersData) {
-                if (!element.isJsonObject()) continue;
-                JsonObject member = element.getAsJsonObject();
-                if (member.has("care_team") && member.get("care_team").isJsonObject()) {
-                    JsonObject team = member.getAsJsonObject("care_team");
-                    if (team.has("id") && !team.get("id").isJsonNull() && selectedOption.id.equals(team.get("id").getAsString())) {
-                        members.add(member);
-                    }
-                }
-            }
-        }
-
-        String patientsJson = patients != null ? GSON.toJson(patients) : "[]";
-        String membersJson = members != null ? GSON.toJson(members) : "[]";
-
-        StringBuilder html = new StringBuilder();
-        html.append("<!DOCTYPE html>\n");
-        html.append("<html lang=\"es\">\n");
-        html.append("<head>\n");
-        html.append("    <meta charset=\"UTF-8\">\n");
-        html.append("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
-        html.append("    <title>Mapa de Ubicaciones - HeartGuard</title>\n");
-        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\">\n");
-        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css\">\n");
-        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css\">\n");
-        html.append("    <style>\n");
-        html.append("        body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }\n");
-        html.append("        h1 { color: #333; text-align: center; margin-bottom: 20px; }\n");
-        html.append("        #map { height: 600px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }\n");
-        html.append("        .info-panel { \n");
-        html.append("            position: absolute; \n");
-        html.append("            top: 20px; \n");
-        html.append("            right: 20px; \n");
-        html.append("            background: white; \n");
-        html.append("            padding: 15px; \n");
-        html.append("            border-radius: 8px; \n");
-        html.append("            box-shadow: 0 2px 10px rgba(0,0,0,0.1);\n");
-        html.append("            max-width: 300px;\n");
-        html.append("            z-index: 1000;\n");
-        html.append("        }\n");
-        html.append("        .info-panel h3 { margin: 0 0 10px 0; color: #333; }\n");
-        html.append("        .info-panel p { margin: 5px 0; font-size: 14px; }\n");
-        html.append("    </style>\n");
-        html.append("</head>\n");
-        html.append("<body>\n");
-        html.append("    <h1>Mapa de Ubicaciones en Tiempo Real</h1>\n");
-        html.append("    <div id=\"map\"></div>\n");
-        html.append("    \n");
-        html.append("    <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\"></script>\n");
-        html.append("    <script src=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js\"></script>\n");
-        html.append("    <script>\n");
-        html.append("        const map = L.map('map').setView([20, -30], 3);\n");
-        html.append("        \n");
-        html.append("        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {\n");
-        html.append("            attribution: '© OpenStreetMap contributors'\n");
-        html.append("        }).addTo(map);\n");
-        html.append("        \n");
-        html.append("        const patientCluster = L.markerClusterGroup();\n");
-        html.append("        const memberCluster = L.markerClusterGroup({\n");
-        html.append("            iconCreateFunction: function(cluster) {\n");
-        html.append("                return L.divIcon({\n");
-        html.append("                    html: '<div style=\"background:#1e88e5;color:white;border-radius:18px;padding:6px 10px;font-weight:600;\">' + cluster.getChildCount() + '</div>',\n");
-        html.append("                    className: 'member-cluster-icon',\n");
-        html.append("                    iconSize: L.point(30, 30)\n");
-        html.append("                });\n");
-        html.append("            }\n");
-        html.append("        });\n");
-        html.append("        \n");
-        html.append("        map.addLayer(patientCluster);\n");
-        html.append("        map.addLayer(memberCluster);\n");
-        html.append("        \n");
-        html.append("        const patients = ").append(patientsJson).append(";\n");
-        html.append("        const members = ").append(membersJson).append(";\n");
-        html.append("        \n");
-        html.append("        // Colores de riesgo\n");
-        html.append("        const riskColors = {\n");
-        html.append("            low: '#2ecc71',\n");
-        html.append("            medium: '#f1c40f', \n");
-        html.append("            high: '#e74c3c'\n");
-        html.append("        };\n");
-        html.append("        \n");
-        html.append("        const getRiskColor = (risk) => {\n");
-        html.append("            if (!risk) return '#2c98f0';\n");
-        html.append("            const code = (risk.code || '').toLowerCase();\n");
-        html.append("            if (code.includes('high') || code.includes('alto')) return riskColors.high;\n");
-        html.append("            if (code.includes('medium') || code.includes('moder')) return riskColors.medium;\n");
-        html.append("            return riskColors.low;\n");
-        html.append("        };\n");
-        html.append("        \n");
-        html.append("        // Renderizar pacientes\n");
-        html.append("        patients.forEach(p => {\n");
-        html.append("            if (!p.location || p.location.latitude === null || p.location.longitude === null) return;\n");
-        html.append("            \n");
-        html.append("            const color = getRiskColor(p.risk_level);\n");
-        html.append("            const marker = L.marker([p.location.latitude, p.location.longitude], {\n");
-        html.append("                icon: L.divIcon({\n");
-        html.append("                    html: `<div style=\"border-radius:50%;width:18px;height:18px;border:2px solid white;background:${color};box-shadow:0 0 4px rgba(0,0,0,0.2);\"></div>`,\n");
-        html.append("                    className: '',\n");
-        html.append("                    iconSize: [20, 20]\n");
-        html.append("                })\n");
-        html.append("            });\n");
-        html.append("            \n");
-        html.append("            const alertInfo = p.alert ? `<br><strong>Alerta:</strong> ${p.alert.label || 'Alerta activa'}` : '';\n");
-        html.append("            marker.bindPopup(`\n");
-        html.append("                <strong>${p.name || 'Paciente'}</strong><br>\n");
-        html.append("                <strong>Organización:</strong> ${p.organization?.name || 'N/A'}<br>\n");
-        html.append("                <strong>Equipo:</strong> ${p.care_team?.name || 'N/A'}\n");
-        html.append("                ${alertInfo}\n");
-        html.append("            `);\n");
-        html.append("            \n");
-        html.append("            patientCluster.addLayer(marker);\n");
-        html.append("        });\n");
-        html.append("        \n");
-        html.append("        // Renderizar miembros\n");
-        html.append("        members.forEach(m => {\n");
-        html.append("            if (!m.location) return;\n");
-        html.append("            \n");
-        html.append("            const marker = L.marker([m.location.latitude, m.location.longitude], {\n");
-        html.append("                icon: L.divIcon({\n");
-        html.append("                    html: '<div style=\"width:20px;height:20px;border-radius:6px;border:2px solid white;background:#42a5f5;box-shadow:0 0 4px rgba(0,0,0,0.2);\"></div>',\n");
-        html.append("                    className: '',\n");
-        html.append("                    iconSize: [22, 22]\n");
-        html.append("                })\n");
-        html.append("            });\n");
-        html.append("            \n");
-        html.append("            marker.bindPopup(`\n");
-        html.append("                <strong>${m.name || 'Miembro de equipo'}</strong><br>\n");
-        html.append("                <strong>Organización:</strong> ${m.organization?.name || 'N/A'}<br>\n");
-        html.append("                <strong>Rol:</strong> ${m.role?.label || m.role?.code || 'N/A'}\n");
-        html.append("            `);\n");
-        html.append("            \n");
-        html.append("            memberCluster.addLayer(marker);\n");
-        html.append("        });\n");
-        html.append("        \n");
-        html.append("        // Ajustar vista para mostrar todos los marcadores\n");
-        html.append("        const allBounds = [];\n");
-        html.append("        patients.forEach(p => {\n");
-        html.append("            if (p.location && p.location.latitude !== null && p.location.longitude !== null) {\n");
-        html.append("                allBounds.push([p.location.latitude, p.location.longitude]);\n");
-        html.append("            }\n");
-        html.append("        });\n");
-        html.append("        members.forEach(m => {\n");
-        html.append("            if (m.location && m.location.latitude !== null && m.location.longitude !== null) {\n");
-        html.append("                allBounds.push([m.location.latitude, m.location.longitude]);\n");
-        html.append("            }\n");
-        html.append("        });\n");
-        html.append("        \n");
-        html.append("        if (allBounds.length > 0) {\n");
-        html.append("            map.fitBounds(allBounds, { padding: [50, 50], maxZoom: 12 });\n");
-        html.append("        }\n");
-        html.append("        \n");
-        html.append("        // Panel de información\n");
-        html.append("        const infoPanel = L.control({position: 'topright'});\n");
-        html.append("        infoPanel.onAdd = function(map) {\n");
-        html.append("            const div = L.DomUtil.create('div', 'info-panel');\n");
-        html.append("            div.innerHTML = `\n");
-        html.append("                <h3>Información</h3>\n");
-        html.append("                <p><strong>Pacientes:</strong> ${patients.length}</p>\n");
-        html.append("                <p><strong>Miembros:</strong> ${members.length}</p>\n");
-        html.append("                <p><em>Haz clic en los marcadores para ver detalles</em></p>\n");
-        html.append("            `;\n");
-        html.append("            return div;\n");
-        html.append("        };\n");
-        html.append("        infoPanel.addTo(map);\n");
-        html.append("    </script>\n");
-        html.append("</body>\n");
-        html.append("</html>\n");
-
-        return html.toString();
     }
 
     private void handleAsyncException(Throwable throwable, String fallbackMessage) {
@@ -2031,6 +1888,7 @@ public class UserDashboardPanel extends JPanel {
         JsonObject caregiverPatients;
         JsonObject careTeamLocations;
         JsonObject caregiverLocations;
+        JsonObject careTeamPatientsLocations;
     }
 
     private static class MetricCard extends JPanel {
@@ -2157,4 +2015,14 @@ public class UserDashboardPanel extends JPanel {
             repaint();
         }
     }
+    
+    /**
+     * Limpia recursos del panel, especialmente el mapa incrustado
+     */
+    public void cleanup() {
+        if (mapPanel != null) {
+            mapPanel.dispose();
+        }
+    }
 }
+

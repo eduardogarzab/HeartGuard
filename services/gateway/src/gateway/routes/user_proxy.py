@@ -125,6 +125,11 @@ def org_care_team_patients(org_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/care-team-patients")
 
 
+@bp.route("/orgs/<string:org_id>/care-team-patients/locations", methods=["GET"])
+def org_care_team_patients_locations(org_id: str) -> Response:
+	return _proxy_user(f"/orgs/{org_id}/care-team-patients/locations")
+
+
 @bp.route("/orgs/<string:org_id>/care-teams/<string:team_id>/devices", methods=["GET"])
 def org_care_team_devices(org_id: str, team_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/care-teams/{team_id}/devices")
@@ -198,3 +203,8 @@ def caregiver_patient_notes(patient_id: str) -> Response:
 @bp.route("/caregiver/metrics", methods=["GET"])
 def caregiver_metrics() -> Response:
 	return _proxy_user("/caregiver/metrics")
+
+
+@bp.route("/event-types", methods=["GET"])
+def event_types() -> Response:
+	return _proxy_user("/event-types")

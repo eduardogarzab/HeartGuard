@@ -236,7 +236,7 @@ class UserService:
     def list_org_care_team_patients(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
         rows = self.repo.list_org_care_team_patients(org_id, user_id)
-        teams: Dict[str, Dict[str, Any]] = {}
+        teams: Dict[str, Any] = {}
         for row in rows:
             team_id = str(row['care_team_id'])
             team = teams.setdefault(
@@ -279,6 +279,56 @@ class UserService:
             'organization': membership,
             'care_teams': list(teams.values()),
         }
+
+    def list_org_care_team_patients_locations(self, org_id: str, user_id: str) -> Dict[str, Any]:
+        """Lista pacientes de care teams con sus ubicaciones."""
+        membership = self._ensure_membership(org_id, user_id)
+        rows = self.repo.list_org_care_team_patients_locations(org_id, user_id)
+        
+        teams: Dict[str, Dict[str, Any]] = {}
+        for row in rows:
+            team_id = str(row['care_team_id'])
+            team = teams.setdefault(
+                team_id,
+                {
+                    'id': team_id,
+                    'name': row.get('care_team_name'),
+                    'patients': [],
+                },
+            )
+            
+            # Solo agregar pacientes que tienen ubicación
+            if row.get('patient_id') and row.get('latitude') and row.get('longitude'):
+                patient = {
+                    'id': str(row['patient_id']),
+                    'name': row.get('patient_name'),
+                    'email': row.get('patient_email'),
+                    'risk_level': {
+                        'code': row.get('risk_level_code'),
+                        'label': row.get('risk_level_label'),
+                    },
+                    'location': {
+                        'latitude': float(row['latitude']),
+                        'longitude': float(row['longitude']),
+                        'last_update': row.get('last_update'),
+                        'approximate': row.get('approximate', False),
+                    },
+                }
+                
+                # Agregar last_alert si existe
+                if row.get('last_alert_code'):
+                    patient['last_alert'] = {
+                        'code': row.get('last_alert_code'),
+                        'label': row.get('last_alert_label'),
+                        'level': {
+                            'code': row.get('alert_level_code'),
+                            'label': row.get('alert_level_label'),
+                        },
+                    }
+                
+                team['patients'].append(patient)
+        
+        return {'care_teams': list(teams.values())}
 
     def get_org_patient_detail(self, org_id: str, patient_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
@@ -454,6 +504,18 @@ class UserService:
                 'active_patients': metrics.get('active_patients', 0),
                 'alerts_last_14d': metrics.get('alerts_last_14d', 0),
             }
+        }
+
+    def list_event_types(self) -> Dict[str, Any]:
+        event_types = self.repo.list_event_types()
+        return {
+            'event_types': [
+                {
+                    'code': row['code'],
+                    'description': row['description']
+                }
+                for row in event_types
+            ]
         }
 
     # ------------------------------------------------------------------

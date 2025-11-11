@@ -27,9 +27,6 @@
               <mainClass>com.heartguard.desktop.Main</mainClass>
               <addDefaultImplementationEntries>true</addDefaultImplementationEntries>
             </manifest>
-            <manifestEntries>
-              <Add-Opens>javafx.web/com.sun.webkit javafx.web/com.sun.javafx.webkit</Add-Opens>
-            </manifestEntries>
           </archive>
         </configuration>
       </plugin>
@@ -46,9 +43,6 @@
               <transformers>
                 <transformer>
                   <mainClass>com.heartguard.desktop.Main</mainClass>
-                  <manifestEntries>
-                    <Add-Opens>javafx.web/com.sun.webkit javafx.web/com.sun.javafx.webkit</Add-Opens>
-                  </manifestEntries>
                 </transformer>
               </transformers>
               <filters>
@@ -65,34 +59,18 @@
           </execution>
         </executions>
       </plugin>
-      <plugin>
-        <groupId>org.openjfx</groupId>
-        <artifactId>javafx-maven-plugin</artifactId>
-        <version>0.0.8</version>
-        <configuration>
-          <mainClass>com.heartguard.desktop.Main</mainClass>
-          <options>
-            <option>--add-opens</option>
-            <option>javafx.web/com.sun.webkit=ALL-UNNAMED</option>
-            <option>--add-opens</option>
-            <option>javafx.web/com.sun.javafx.webkit=ALL-UNNAMED</option>
-            <option>--add-opens</option>
-            <option>javafx.graphics/com.sun.javafx.sg.prism=ALL-UNNAMED</option>
-            <option>--add-opens</option>
-            <option>javafx.graphics/com.sun.prism=ALL-UNNAMED</option>
-            <option>--add-exports</option>
-            <option>javafx.web/com.sun.webkit=ALL-UNNAMED</option>
-            <option>--add-exports</option>
-            <option>javafx.web/com.sun.javafx.webkit=ALL-UNNAMED</option>
-          </options>
-        </configuration>
-      </plugin>
     </plugins>
   </build>
+  <repositories>
+    <repository>
+      <id>com.teamdev</id>
+      <url>https://europe-maven.pkg.dev/jxbrowser/releases</url>
+    </repository>
+  </repositories>
   <properties>
     <maven.compiler.release>21</maven.compiler.release>
-    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.target>21</maven.compiler.target>
     <maven.compiler.source>21</maven.compiler.source>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
   </properties>
 </project>

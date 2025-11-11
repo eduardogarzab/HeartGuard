@@ -1,4 +1,0 @@
-requests>=2.31.0
-python-dateutil>=2.9.0
-tkintermapview>=1.29
-pillow>=10.2.0

@@ -42,18 +42,16 @@ public class UserDashboardFrame extends JFrame {
 
     private UserProfile profile;
     private List<OrgMembership> memberships = new ArrayList<>();
-    private OrgMembership selectedMembership;
 
     private final JLabel nameLabel = new JLabel(" ");
     private final JLabel roleLabel = new JLabel(" ");
-    private final JComboBox<OrgMembership> orgSelector = new JComboBox<>();
     private final JButton menuButton = new JButton("⚙");
 
     private final JPanel centerContainer = new JPanel();
     private final CardLayout centerLayout = new CardLayout();
     private final JPanel emptyStatePanel = new JPanel();
     private final JPanel loadingPanel = new JPanel();
-    private final UserDashboardPanel dashboardPanel;
+    private MainDashboardPanel mainDashboardPanel;
     private final JPanel snackbarPanel = new JPanel(new BorderLayout());
     private Timer snackbarTimer;
 
@@ -61,7 +59,6 @@ public class UserDashboardFrame extends JFrame {
         this.apiClient = apiClient;
         this.loginResponse = loginResponse;
         this.accessToken = loginResponse.getAccessToken();
-        this.dashboardPanel = new UserDashboardPanel(apiClient, accessToken, this::handleApiException, this::showSnackbar);
 
         initUI();
         loadInitialData();
@@ -136,7 +133,7 @@ public class UserDashboardFrame extends JFrame {
 
         centerContainer.add(loadingPanel, "loading");
         centerContainer.add(emptyStatePanel, "empty");
-        centerContainer.add(dashboardPanel, "dashboard");
+        // mainDashboardPanel se agregará dinámicamente después de cargar datos
         
         // ScrollPane con fitToWidth para scroll vertical uniforme
         JScrollPane scrollPane = new JScrollPane(centerContainer);
@@ -181,17 +178,9 @@ public class UserDashboardFrame extends JFrame {
         brandPanel.add(subtitle);
         topBar.add(brandPanel, BorderLayout.WEST);
 
-        // Selector de organización centrado
-        JPanel centerPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 12, 0));
+        // Panel central vacío (el MainDashboardPanel maneja organizaciones internamente)
+        JPanel centerPanel = new JPanel();
         centerPanel.setOpaque(false);
-        JLabel orgLabel = new JLabel("Organización:");
-        orgLabel.setFont(new Font("Inter", Font.PLAIN, 15));
-        orgLabel.setForeground(TEXT_PRIMARY);
-        orgSelector.setPreferredSize(new Dimension(280, 36));
-        orgSelector.setFont(new Font("Inter", Font.PLAIN, 14));
-        orgSelector.addActionListener(this::onOrganizationSelected);
-        centerPanel.add(orgLabel);
-        centerPanel.add(orgSelector);
         topBar.add(centerPanel, BorderLayout.CENTER);
 
         // Panel de usuario con rol visible y menú flotante
@@ -370,29 +359,35 @@ public class UserDashboardFrame extends JFrame {
     }
 
     private void refreshOrganizations() {
-        orgSelector.removeAllItems();
         if (memberships.isEmpty()) {
             centerLayout.show(centerContainer, "empty");
             return;
         }
 
-        for (OrgMembership membership : memberships) {
-            orgSelector.addItem(membership);
+        // Crear MainDashboardPanel con datos cargados
+        if (mainDashboardPanel == null && profile != null) {
+            mainDashboardPanel = new MainDashboardPanel(
+                    apiClient,
+                    accessToken,
+                    profile,
+                    memberships,
+                    this::handleApiException,
+                    this::showSnackbar
+            );
+            centerContainer.add(mainDashboardPanel, "dashboard");
         }
-
-        selectedMembership = memberships.get(0);
-        orgSelector.setSelectedIndex(0);
+        
         centerLayout.show(centerContainer, "dashboard");
-        dashboardPanel.showForOrganization(selectedMembership);
+        
+        // Cargar datos
+        if (mainDashboardPanel != null) {
+            mainDashboardPanel.loadCaregiverData();
+            mainDashboardPanel.updateMemberships(memberships);
+        }
     }
 
     private void onOrganizationSelected(ActionEvent event) {
-        OrgMembership membership = (OrgMembership) orgSelector.getSelectedItem();
-        if (membership != null && (selectedMembership == null || !membership.getOrgId().equals(selectedMembership.getOrgId()))) {
-            selectedMembership = membership;
-            centerLayout.show(centerContainer, "dashboard");
-            dashboardPanel.showForOrganization(membership);
-        }
+        // Ya no se usa - el MainDashboardPanel maneja organizaciones internamente
     }
 
     private void openProfileDialog() {
@@ -420,11 +415,15 @@ public class UserDashboardFrame extends JFrame {
                 return OrgMembership.listFrom(membershipArray);
             }
 
-            @Override
             protected void done() {
                 try {
                     memberships = get();
                     refreshOrganizations();
+                    
+                    // Actualizar memberships en MainDashboardPanel si existe
+                    if (mainDashboardPanel != null) {
+                        mainDashboardPanel.updateMemberships(memberships);
+                    }
                 } catch (Exception ex) {
                     handleApiException(ex);
                 }
@@ -446,17 +445,17 @@ public class UserDashboardFrame extends JFrame {
             // Limpiar datos de la sesión actual
             profile = null;
             memberships.clear();
-            selectedMembership = null;
-            orgSelector.removeAllItems();
             
             // Detener cualquier timer activo
             if (snackbarTimer != null && snackbarTimer.isRunning()) {
                 snackbarTimer.stop();
             }
             
-            // Nota: No llamamos a dashboardPanel.removeAll() porque puede causar
-            // problemas con componentes JavaFX embebidos. En su lugar, simplemente
-            // cerramos la ventana y creamos un nuevo LoginFrame limpio.
+            // Limpiar MainDashboardPanel
+            if (mainDashboardPanel != null) {
+                centerContainer.remove(mainDashboardPanel);
+                mainDashboardPanel = null;
+            }
             
             // Cerrar ventana actual
             dispose();

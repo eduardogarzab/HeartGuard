@@ -42,4 +42,18 @@ Thumbs.db
 # Ignorar cualquier carpeta __pycache__ en cualquier lugar del proyecto
 **/__pycache__/
 **/validation_logs/
-\n# Python bytecode\n__pycache__/
+
+# Python bytecode
+__pycache__/
+
+# Maven/Java
+**/target/
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+dependency-reduced-pom.xml
+.mvn/
+mvnw
+mvnw.cmd

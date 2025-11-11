@@ -747,6 +747,16 @@ public class ApiClient {
         );
     }
 
+    public JsonObject getOrganizationCareTeamDevices(String token, String orgId, String careTeamId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-teams/" + careTeamId + "/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos del equipo"
+        );
+    }
+
     public JsonObject getOrganizationCareTeamPatients(String token, String orgId) throws ApiException {
         return executeGatewayGet(
                 "/orgs/" + orgId + "/care-team-patients",
@@ -803,6 +813,16 @@ public class ApiClient {
         );
     }
 
+    public JsonObject getEventTypes() throws ApiException {
+        return executeGatewayGet(
+                "/event-types",
+                null,
+                null,
+                false,
+                "Error al obtener tipos de evento"
+        );
+    }
+
     public JsonObject getCaregiverPatientDetail(String token, String patientId) throws ApiException {
         return executeGatewayGet(
                 "/caregiver/patients/" + patientId,
@@ -837,6 +857,18 @@ public class ApiClient {
         );
     }
 
+    public JsonObject createCaregiverPatientNote(String token, String patientId, JsonObject noteData) throws ApiException {
+        return executeGatewayRequest(
+                "POST",
+                "/caregiver/patients/" + patientId + "/notes",
+                noteData,
+                null,
+                token,
+                true,
+                "Error al crear nota del paciente"
+        );
+    }
+
     // --------------------------- Mapa y ubicaciones -----------------------
 
     public JsonObject getCareTeamLocations(String token, Map<String, String> params) throws ApiException {
@@ -856,6 +888,16 @@ public class ApiClient {
                 token,
                 true,
                 "Error al obtener ubicaciones de pacientes"
+        );
+    }
+
+    public JsonObject getOrganizationCareTeamPatientsLocations(String token, String orgId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/care-team-patients/locations",
+                null,
+                token,
+                true,
+                "Error al obtener ubicaciones de pacientes de care teams"
         );
     }
 
@@ -960,6 +1002,16 @@ public class ApiClient {
                 token,
                 true,
                 "Error al obtener ubicaciones de pacientes"
+        );
+    }
+
+    public CompletableFuture<JsonObject> getOrganizationCareTeamPatientsLocationsAsync(String token, String orgId) {
+        return executeGatewayGetAsync(
+                "/orgs/" + orgId + "/care-team-patients/locations",
+                null,
+                token,
+                true,
+                "Error al obtener ubicaciones de pacientes de care teams"
         );
     }
 

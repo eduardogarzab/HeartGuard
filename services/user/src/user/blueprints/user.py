@@ -234,6 +234,19 @@ def org_care_team_patients(org_id: str, current_user_id: str):
         return error_response(message='Error interno al listar pacientes por equipo', error_code='internal_error', status_code=500)
 
 
+@user_bp.route('/orgs/<string:org_id>/care-team-patients/locations', methods=['GET'])
+@require_user_token
+def org_care_team_patients_locations(org_id: str, current_user_id: str):
+    try:
+        data = user_service.list_org_care_team_patients_locations(org_id, current_user_id)
+        return success_response(data=data, message='Ubicaciones de pacientes por equipo recuperadas correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al listar ubicaciones de pacientes por equipo', extra={'trace_id': g.trace_id, 'org_id': org_id, 'user_id': current_user_id})
+        return error_response(message='Error interno al listar ubicaciones de pacientes por equipo', error_code='internal_error', status_code=500)
+
+
 @user_bp.route('/orgs/<string:org_id>/care-teams/<string:team_id>/devices', methods=['GET'])
 @require_user_token
 def care_team_devices(org_id: str, team_id: str, current_user_id: str):
@@ -565,6 +578,16 @@ def caregiver_metrics(current_user_id: str):
     except Exception:  # pragma: no cover - defensivo
         current_app.logger.exception('Error al obtener métricas del cuidador', extra={'trace_id': g.trace_id, 'user_id': current_user_id})
         return error_response(message='Error interno al obtener métricas del cuidador', error_code='internal_error', status_code=500)
+
+
+@user_bp.route('/event-types', methods=['GET'])
+def list_event_types():
+    try:
+        data = user_service.list_event_types()
+        return success_response(data=data, message='Tipos de evento recuperados correctamente')
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al obtener tipos de evento', extra={'trace_id': g.trace_id})
+        return error_response(message='Error interno al obtener tipos de evento', error_code='internal_error', status_code=500)
 
 
 @user_bp.route('/users/me/push-devices', methods=['GET'])
