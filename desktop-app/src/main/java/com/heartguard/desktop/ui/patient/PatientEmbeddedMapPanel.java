@@ -1,7 +1,8 @@
-package com.heartguard.desktop.ui.user;
+package com.heartguard.desktop.ui.patient;
 
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.teamdev.jxbrowser.browser.Browser;
 import com.teamdev.jxbrowser.engine.Engine;
 import com.teamdev.jxbrowser.engine.EngineOptions;
@@ -13,22 +14,21 @@ import javax.swing.*;
 import java.awt.*;
 
 /**
- * Panel que incrusta un mapa interactivo usando JxBrowser (Chromium).
- * Aprovecha el motor de Chromium completo para renderizar Leaflet con excelente rendimiento.
- * Usa lazy initialization para no bloquear el arranque de la aplicación.
+ * Panel que incrusta un mapa interactivo para mostrar ubicaciones de un paciente.
+ * Muestra múltiples puntos de ubicación y diferencia visualmente la ubicación más reciente.
  */
-public class EmbeddedMapPanel extends JPanel {
+public class PatientEmbeddedMapPanel extends JPanel {
     private static final Gson GSON = new Gson();
     
     private Engine engine;
     private Browser browser;
     private BrowserView view;
     
-    private JsonArray currentPatients = new JsonArray();
+    private JsonArray currentLocations = new JsonArray();
     
     private boolean isInitialized = false;
     
-    public EmbeddedMapPanel() {
+    public PatientEmbeddedMapPanel() {
         setLayout(new BorderLayout());
         setBackground(Color.WHITE);
         
@@ -60,7 +60,7 @@ public class EmbeddedMapPanel extends JPanel {
                 throw new IllegalStateException("JXBROWSER_LICENSE_KEY no encontrada. Revisa el archivo .env");
             }
             
-            System.out.println("[MAPA JAVA] Licencia JxBrowser cargada exitosamente");
+            System.out.println("[MAPA PACIENTE] Licencia JxBrowser cargada exitosamente");
             
             // Crear engine de JxBrowser con configuración optimizada y licencia
             EngineOptions options = EngineOptions.newBuilder(RenderingMode.HARDWARE_ACCELERATED)
@@ -131,11 +131,11 @@ public class EmbeddedMapPanel extends JPanel {
             System.getProperty("user.home") + "/.heartguard"  // Home del usuario
         };
         
-        System.out.println("[MAPA JAVA] Buscando archivo .env en las siguientes ubicaciones:");
+        System.out.println("[MAPA PACIENTE] Buscando archivo .env en las siguientes ubicaciones:");
         
         for (String path : searchPaths) {
             try {
-                System.out.println("[MAPA JAVA]   - Intentando: " + path);
+                System.out.println("[MAPA PACIENTE]   - Intentando: " + path);
                 Dotenv dotenv = Dotenv.configure()
                         .directory(path)
                         .ignoreIfMissing()
@@ -143,17 +143,17 @@ public class EmbeddedMapPanel extends JPanel {
                 
                 String licenseKey = dotenv.get("JXBROWSER_LICENSE_KEY");
                 if (licenseKey != null && !licenseKey.isEmpty()) {
-                    System.out.println("[MAPA JAVA]   ✓ Licencia encontrada en: " + path);
+                    System.out.println("[MAPA PACIENTE]   ✓ Licencia encontrada en: " + path);
                     return licenseKey;
                 }
             } catch (Exception e) {
                 // Continuar con la siguiente ubicación
-                System.out.println("[MAPA JAVA]   ✗ No encontrado en: " + path);
+                System.out.println("[MAPA PACIENTE]   ✗ No encontrado en: " + path);
             }
         }
         
-        System.err.println("[MAPA JAVA] ✗ No se encontró JXBROWSER_LICENSE_KEY en ninguna ubicación");
-        System.err.println("[MAPA JAVA] Directorio actual: " + System.getProperty("user.dir"));
+        System.err.println("[MAPA PACIENTE] ✗ No se encontró JXBROWSER_LICENSE_KEY en ninguna ubicación");
+        System.err.println("[MAPA PACIENTE] Directorio actual: " + System.getProperty("user.dir"));
         
         return null;
     }
@@ -163,13 +163,13 @@ public class EmbeddedMapPanel extends JPanel {
         
         // Esperar a que la página cargue completamente antes de marcar como inicializado
         browser.navigation().on(com.teamdev.jxbrowser.navigation.event.FrameLoadFinished.class, event -> {
-            System.out.println("[MAPA JAVA] Página cargada completamente");
+            System.out.println("[MAPA PACIENTE] Página cargada completamente");
             isInitialized = true;
             
             // Si hay datos pendientes de actualizar, actualizarlos ahora
-            if (currentPatients.size() > 0) {
-                System.out.println("[MAPA JAVA] Actualizando datos pendientes...");
-                updateLocations(currentPatients);
+            if (currentLocations.size() > 0) {
+                System.out.println("[MAPA PACIENTE] Actualizando datos pendientes...");
+                updateLocations(currentLocations);
             }
         });
         
@@ -177,46 +177,46 @@ public class EmbeddedMapPanel extends JPanel {
     }
     
     /**
-     * Actualiza el mapa con nuevos datos de pacientes
+     * Actualiza el mapa con nuevos datos de ubicaciones del paciente
      */
-    public void updateLocations(JsonArray patients) {
-        this.currentPatients = patients != null ? patients : new JsonArray();
+    public void updateLocations(JsonArray locations) {
+        this.currentLocations = locations != null ? locations : new JsonArray();
         
-        System.out.println("[MAPA] Actualizando ubicaciones:");
-        System.out.println("  - Pacientes: " + currentPatients.size());
+        System.out.println("[MAPA PACIENTE] Actualizando ubicaciones:");
+        System.out.println("  - Ubicaciones: " + currentLocations.size());
         
         // Inicializar JxBrowser si aún no se ha hecho
         ensureInitialized();
         
         if (!isInitialized || browser == null) {
-            System.out.println("[MAPA JAVA] Mapa no inicializado todavía, esperando...");
+            System.out.println("[MAPA PACIENTE] Mapa no inicializado todavía, esperando...");
             return;
         }
         
         SwingUtilities.invokeLater(() -> {
-            String patientsJson = GSON.toJson(currentPatients);
+            String locationsJson = GSON.toJson(currentLocations);
             
-            System.out.println("[MAPA JAVA] patientsJson: " + patientsJson);
+            System.out.println("[MAPA PACIENTE] locationsJson: " + locationsJson);
             
             // Ejecutar JavaScript para actualizar el mapa
             String script = String.format(
-                "if (typeof updateMapData === 'function') { updateMapData(%s); } else { console.error('[MAPA JS] updateMapData function not found!'); }",
-                patientsJson
+                "if (typeof updateMapData === 'function') { updateMapData(%s); } else { console.error('[MAPA PACIENTE JS] updateMapData function not found!'); }",
+                locationsJson
             );
             
             try {
-                System.out.println("[MAPA JAVA] Ejecutando script JavaScript...");
+                System.out.println("[MAPA PACIENTE] Ejecutando script JavaScript...");
                 browser.mainFrame().ifPresent(frame -> {
-                    System.out.println("[MAPA JAVA] Frame presente, ejecutando...");
+                    System.out.println("[MAPA PACIENTE] Frame presente, ejecutando...");
                     frame.executeJavaScript(script);
                 });
-                System.out.println("[MAPA JAVA] Script ejecutado correctamente");
+                System.out.println("[MAPA PACIENTE] Script ejecutado correctamente");
             } catch (Exception e) {
-                System.err.println("[MAPA JAVA] Error actualizando mapa: " + e.getMessage());
+                System.err.println("[MAPA PACIENTE] Error actualizando mapa: " + e.getMessage());
                 e.printStackTrace();
                 // Si falla, recargar completamente el mapa
-                System.out.println("[MAPA JAVA] Recargando HTML completo del mapa...");
-                String html = generateMapHtml(currentPatients);
+                System.out.println("[MAPA PACIENTE] Recargando HTML completo del mapa...");
+                String html = generateMapHtml(currentLocations);
                 browser.navigation().loadUrl("data:text/html;charset=utf-8," + encodeHtml(html));
             }
         });
@@ -226,7 +226,7 @@ public class EmbeddedMapPanel extends JPanel {
      * Reinicia el mapa a su estado inicial
      */
     public void reset() {
-        currentPatients = new JsonArray();
+        currentLocations = new JsonArray();
         
         if (isInitialized && browser != null) {
             loadInitialMap();
@@ -262,8 +262,8 @@ public class EmbeddedMapPanel extends JPanel {
         }
     }
     
-    private String generateMapHtml(JsonArray patients) {
-        String patientsJson = GSON.toJson(patients);
+    private String generateMapHtml(JsonArray locations) {
+        String locationsJson = GSON.toJson(locations);
         
         StringBuilder html = new StringBuilder();
         html.append("<!DOCTYPE html>\n");
@@ -271,10 +271,8 @@ public class EmbeddedMapPanel extends JPanel {
         html.append("<head>\n");
         html.append("    <meta charset=\"UTF-8\">\n");
         html.append("    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n");
-        html.append("    <title>Mapa - HeartGuard</title>\n");
+        html.append("    <title>Mapa de Ubicaciones - Paciente</title>\n");
         html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css\">\n");
-        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.css\">\n");
-        html.append("    <link rel=\"stylesheet\" href=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css\">\n");
         html.append("    <style>\n");
         html.append("        * { margin: 0; padding: 0; box-sizing: border-box; }\n");
         html.append("        html, body { \n");
@@ -310,20 +308,62 @@ public class EmbeddedMapPanel extends JPanel {
         html.append("            display: block;\n");
         html.append("            margin-bottom: 4px;\n");
         html.append("        }\n");
+        html.append("        .legend {\n");
+        html.append("            position: absolute;\n");
+        html.append("            bottom: 30px;\n");
+        html.append("            right: 10px;\n");
+        html.append("            background: rgba(255, 255, 255, 0.95);\n");
+        html.append("            padding: 10px 14px;\n");
+        html.append("            border-radius: 6px;\n");
+        html.append("            box-shadow: 0 2px 6px rgba(0,0,0,0.1);\n");
+        html.append("            z-index: 1000;\n");
+        html.append("            font-size: 12px;\n");
+        html.append("        }\n");
+        html.append("        .legend-item {\n");
+        html.append("            display: flex;\n");
+        html.append("            align-items: center;\n");
+        html.append("            margin: 4px 0;\n");
+        html.append("        }\n");
+        html.append("        .legend-icon {\n");
+        html.append("            width: 16px;\n");
+        html.append("            height: 16px;\n");
+        html.append("            border-radius: 50%;\n");
+        html.append("            margin-right: 8px;\n");
+        html.append("            border: 2px solid white;\n");
+        html.append("            box-shadow: 0 1px 3px rgba(0,0,0,0.3);\n");
+        html.append("        }\n");
+        html.append("        .legend-icon.recent {\n");
+        html.append("            background: #ef4444;\n");
+        html.append("            width: 20px;\n");
+        html.append("            height: 20px;\n");
+        html.append("        }\n");
+        html.append("        .legend-icon.historical {\n");
+        html.append("            background: #3b82f6;\n");
+        html.append("        }\n");
         html.append("    </style>\n");
         html.append("</head>\n");
         html.append("<body>\n");
         html.append("    <div id=\"map\"></div>\n");
         html.append("    <div class=\"info-badge\">\n");
-        html.append("        <strong>📍 Ubicaciones</strong>\n");
-        html.append("        <div>Pacientes: <span id=\"patient-count\">0</span></div>\n");
+        html.append("        <strong>📍 Ubicaciones del Paciente</strong>\n");
+        html.append("        <div>Total: <span id=\"location-count\">0</span></div>\n");
+        html.append("    </div>\n");
+        html.append("    <div class=\"legend\">\n");
+        html.append("        <div class=\"legend-item\">\n");
+        html.append("            <div class=\"legend-icon recent\"></div>\n");
+        html.append("            <span>Más reciente</span>\n");
+        html.append("        </div>\n");
+        html.append("        <div class=\"legend-item\">\n");
+        html.append("            <div class=\"legend-icon historical\"></div>\n");
+        html.append("            <span>Históricas</span>\n");
+        html.append("        </div>\n");
         html.append("    </div>\n");
         html.append("    \n");
         html.append("    <script src=\"https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js\"></script>\n");
-        html.append("    <script src=\"https://cdn.jsdelivr.net/npm/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js\"></script>\n");
         html.append("    <script>\n");
         html.append("        let map;\n");
-        html.append("        let patientCluster;\n");
+        html.append("        let markers = [];\n");
+        html.append("        let polyline = null;\n");
         html.append("        \n");
         html.append("        // Inicializar mapa\n");
         html.append("        function initMap() {\n");
@@ -336,107 +376,128 @@ public class EmbeddedMapPanel extends JPanel {
         html.append("                attribution: '© OpenStreetMap contributors',\n");
         html.append("                maxZoom: 18\n");
         html.append("            }).addTo(map);\n");
-        html.append("            \n");
-        html.append("            patientCluster = L.markerClusterGroup({\n");
-        html.append("                iconCreateFunction: function(cluster) {\n");
-        html.append("                    const count = cluster.getChildCount();\n");
-        html.append("                    return L.divIcon({\n");
-        html.append("                        html: '<div style=\"background:#ef4444;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:14px;box-shadow:0 2px 6px rgba(0,0,0,0.2);\">' + count + '</div>',\n");
-        html.append("                        className: '',\n");
-        html.append("                        iconSize: L.point(40, 40)\n");
-        html.append("                    });\n");
-        html.append("                }\n");
-        html.append("            });\n");
-        html.append("            \n");
-        html.append("            map.addLayer(patientCluster);\n");
         html.append("        }\n");
         html.append("        \n");
-        html.append("        const riskColors = {\n");
-        html.append("            low: '#22c55e',\n");
-        html.append("            medium: '#f59e0b',\n");
-        html.append("            high: '#ef4444'\n");
-        html.append("        };\n");
-        html.append("        \n");
-        html.append("        function getRiskColor(risk) {\n");
-        html.append("            if (!risk) return '#3b82f6';\n");
-        html.append("            const code = (risk.code || '').toLowerCase();\n");
-        html.append("            if (code.includes('high') || code.includes('alto')) return riskColors.high;\n");
-        html.append("            if (code.includes('medium') || code.includes('moder')) return riskColors.medium;\n");
-        html.append("            return riskColors.low;\n");
+        html.append("        function formatDate(dateStr) {\n");
+        html.append("            if (!dateStr) return 'Desconocido';\n");
+        html.append("            try {\n");
+        html.append("                const date = new Date(dateStr);\n");
+        html.append("                return date.toLocaleString('es-MX', {\n");
+        html.append("                    year: 'numeric',\n");
+        html.append("                    month: 'short',\n");
+        html.append("                    day: 'numeric',\n");
+        html.append("                    hour: '2-digit',\n");
+        html.append("                    minute: '2-digit'\n");
+        html.append("                });\n");
+        html.append("            } catch (e) {\n");
+        html.append("                return dateStr;\n");
+        html.append("            }\n");
         html.append("        }\n");
         html.append("        \n");
-        html.append("        function updateMapData(patients) {\n");
-        html.append("            console.log('[MAPA JS] updateMapData called');\n");
-        html.append("            console.log('[MAPA JS] Patients:', patients);\n");
+        html.append("        function updateMapData(locations) {\n");
+        html.append("            console.log('[MAPA PACIENTE JS] updateMapData called');\n");
+        html.append("            console.log('[MAPA PACIENTE JS] Locations:', locations);\n");
         html.append("            \n");
         html.append("            if (!map) {\n");
-        html.append("                console.error('[MAPA JS] Map not initialized!');\n");
+        html.append("                console.error('[MAPA PACIENTE JS] Map not initialized!');\n");
         html.append("                return;\n");
         html.append("            }\n");
         html.append("            \n");
-        html.append("            patientCluster.clearLayers();\n");
+        html.append("            // Limpiar marcadores previos\n");
+        html.append("            markers.forEach(m => map.removeLayer(m));\n");
+        html.append("            markers = [];\n");
+        html.append("            \n");
+        html.append("            // Limpiar polyline previa\n");
+        html.append("            if (polyline) {\n");
+        html.append("                map.removeLayer(polyline);\n");
+        html.append("                polyline = null;\n");
+        html.append("            }\n");
         html.append("            \n");
         html.append("            const bounds = [];\n");
+        html.append("            const pathCoords = [];\n");
         html.append("            \n");
-        html.append("            patients.forEach((p, index) => {\n");
-        html.append("                console.log('[MAPA JS] Processing patient', index, ':', p);\n");
+        html.append("            locations.forEach((loc, index) => {\n");
+        html.append("                console.log('[MAPA PACIENTE JS] Processing location', index, ':', loc);\n");
         html.append("                \n");
-        html.append("                // Soportar dos formatos: p.latitude o p.location.latitude\n");
-        html.append("                const lat = p.latitude !== undefined ? p.latitude : (p.location ? p.location.latitude : null);\n");
-        html.append("                const lng = p.longitude !== undefined ? p.longitude : (p.location ? p.location.longitude : null);\n");
+        html.append("                const lat = loc.latitude;\n");
+        html.append("                const lng = loc.longitude;\n");
         html.append("                \n");
-        html.append("                console.log('[MAPA JS] Patient coords:', lat, lng);\n");
-        html.append("                \n");
-        html.append("                if (lat === null || lng === null) {\n");
-        html.append("                    console.warn('[MAPA JS] Skipping patient - no coords');\n");
+        html.append("                if (lat === null || lat === undefined || lng === null || lng === undefined) {\n");
+        html.append("                    console.warn('[MAPA PACIENTE JS] Skipping location - no coords');\n");
         html.append("                    return;\n");
         html.append("                }\n");
         html.append("                \n");
-        html.append("                const color = getRiskColor(p.risk_level);\n");
+        html.append("                // El primer elemento es el más reciente\n");
+        html.append("                const isRecent = index === 0;\n");
+        html.append("                const color = isRecent ? '#ef4444' : '#3b82f6';\n");
+        html.append("                const size = isRecent ? 32 : 20;\n");
+        html.append("                const zIndex = isRecent ? 1000 : 100;\n");
         html.append("                \n");
         html.append("                const marker = L.marker([lat, lng], {\n");
         html.append("                    icon: L.divIcon({\n");
-        html.append("                        html: `<div style=\"border-radius:50%;width:24px;height:24px;border:3px solid white;background:${color};box-shadow:0 2px 6px rgba(0,0,0,0.3);\"></div>`,\n");
+        html.append("                        html: `<div style=\"border-radius:50%;width:${size}px;height:${size}px;border:3px solid white;background:${color};box-shadow:0 2px 6px rgba(0,0,0,0.4);\"></div>`,\n");
         html.append("                        className: '',\n");
-        html.append("                        iconSize: [28, 28]\n");
-        html.append("                    })\n");
+        html.append("                        iconSize: [size + 4, size + 4]\n");
+        html.append("                    }),\n");
+        html.append("                    zIndexOffset: zIndex\n");
         html.append("                });\n");
         html.append("                \n");
-        html.append("                const lastAlert = p.last_alert || p.alert;\n");
-        html.append("                const alertInfo = lastAlert\n");
-        html.append("                    ? `<br><strong>⚠️ Alerta:</strong> ${lastAlert.label || 'Alerta activa'}` \n");
-        html.append("                    : '';\n");
+        html.append("                const timestamp = formatDate(loc.timestamp || loc.ts);\n");
+        html.append("                const accuracy = loc.accuracy || loc.accuracy_m;\n");
+        html.append("                const accuracyText = accuracy ? `${accuracy.toFixed(1)} m` : 'N/A';\n");
+        html.append("                \n");
+        html.append("                const locationLabel = isRecent \n");
+        html.append("                    ? '<strong style=\"color:#ef4444;\">🔴 Ubicación Más Reciente</strong>' \n");
+        html.append("                    : `<strong style=\"color:#3b82f6;\">📍 Ubicación Histórica #${locations.length - index}</strong>`;\n");
         html.append("                \n");
         html.append("                marker.bindPopup(`\n");
-        html.append("                    <div style=\"min-width:200px;\">\n");
-        html.append("                        <strong style=\"font-size:15px;color:#1e40af;\">👤 ${p.name || 'Paciente'}</strong><br>\n");
-        html.append("                        <strong>Email:</strong> ${p.email || 'N/A'}<br>\n");
-        html.append("                        <strong>Equipo:</strong> ${p.care_team_name || p.care_team?.name || 'N/A'}<br>\n");
-        html.append("                        <strong>Riesgo:</strong> <span style=\"color:${color}\">●</span> ${p.risk_level?.label || 'N/A'}\n");
-        html.append("                        ${alertInfo}\n");
+        html.append("                    <div style=\"min-width:220px;\">\n");
+        html.append("                        ${locationLabel}<br>\n");
+        html.append("                        <strong>Fecha:</strong> ${timestamp}<br>\n");
+        html.append("                        <strong>Precisión:</strong> ${accuracyText}<br>\n");
+        html.append("                        <strong>Coordenadas:</strong> ${lat.toFixed(5)}, ${lng.toFixed(5)}\n");
         html.append("                    </div>\n");
         html.append("                `);\n");
         html.append("                \n");
-        html.append("                patientCluster.addLayer(marker);\n");
+        html.append("                marker.addTo(map);\n");
+        html.append("                markers.push(marker);\n");
         html.append("                bounds.push([lat, lng]);\n");
+        html.append("                pathCoords.push([lat, lng]);\n");
         html.append("            });\n");
         html.append("            \n");
-        html.append("            document.getElementById('patient-count').textContent = patients.length;\n");
+        html.append("            // Dibujar línea conectando las ubicaciones (de la más antigua a la más reciente)\n");
+        html.append("            if (pathCoords.length > 1) {\n");
+        html.append("                const reversedPath = [...pathCoords].reverse();\n");
+        html.append("                polyline = L.polyline(reversedPath, {\n");
+        html.append("                    color: '#6b7280',\n");
+        html.append("                    weight: 2,\n");
+        html.append("                    opacity: 0.6,\n");
+        html.append("                    dashArray: '5, 10'\n");
+        html.append("                }).addTo(map);\n");
+        html.append("            }\n");
+        html.append("            \n");
+        html.append("            document.getElementById('location-count').textContent = locations.length;\n");
         html.append("            \n");
         html.append("            if (bounds.length > 0) {\n");
-        html.append("                map.fitBounds(bounds, { \n");
-        html.append("                    padding: [50, 50], \n");
-        html.append("                    maxZoom: 14,\n");
-        html.append("                    animate: true,\n");
-        html.append("                    duration: 0.5\n");
-        html.append("                });\n");
+        html.append("                if (bounds.length === 1) {\n");
+        html.append("                    // Si solo hay una ubicación, centrar en ella\n");
+        html.append("                    map.setView(bounds[0], 14);\n");
+        html.append("                } else {\n");
+        html.append("                    // Si hay múltiples ubicaciones, ajustar para mostrar todas\n");
+        html.append("                    map.fitBounds(bounds, { \n");
+        html.append("                        padding: [50, 50], \n");
+        html.append("                        maxZoom: 15,\n");
+        html.append("                        animate: true,\n");
+        html.append("                        duration: 0.5\n");
+        html.append("                    });\n");
+        html.append("                }\n");
         html.append("            }\n");
         html.append("        }\n");
         html.append("        \n");
         html.append("        initMap();\n");
         html.append("        \n");
-        html.append("        const initialPatients = ").append(patientsJson).append(";\n");
-        html.append("        updateMapData(initialPatients);\n");
+        html.append("        const initialLocations = ").append(locationsJson).append(";\n");
+        html.append("        updateMapData(initialLocations);\n");
         html.append("    </script>\n");
         html.append("</body>\n");
         html.append("</html>\n");

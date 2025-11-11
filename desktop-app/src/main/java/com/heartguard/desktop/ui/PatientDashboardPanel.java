@@ -2,6 +2,8 @@ package com.heartguard.desktop.ui;
 
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
+import com.heartguard.desktop.ui.patient.PatientEmbeddedMapPanel;
+import com.heartguard.desktop.ui.patient.ProfilePhotoPanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -70,6 +72,8 @@ public class PatientDashboardPanel extends JPanel {
     private JPanel careTeamPanel;
     private JPanel caregiversPanel;
     private JLabel mapStatusLabel;
+    private PatientEmbeddedMapPanel embeddedMapPanel;
+    private ProfilePhotoPanel profilePhotoPanel;
     private JsonArray cachedLocationsData = new JsonArray();
 
     public PatientDashboardPanel(ApiClient apiClient, String accessToken, String patientId) {
@@ -173,8 +177,26 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private JPanel createProfileSection() {
-        JPanel content = new JPanel(new GridLayout(0, 2, 18, 18));
-        content.setOpaque(false);
+        // Crear panel principal con BorderLayout
+        JPanel mainContent = new JPanel(new BorderLayout(20, 0));
+        mainContent.setOpaque(false);
+        
+        // Panel izquierdo: Foto de perfil
+        profilePhotoPanel = new ProfilePhotoPanel(apiClient, accessToken, patientId);
+        profilePhotoPanel.setOnPhotoChangedCallback(() -> {
+            // Recargar el dashboard cuando la foto cambie
+            loadDashboardData();
+        });
+        
+        JPanel photoContainer = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        photoContainer.setOpaque(false);
+        photoContainer.add(profilePhotoPanel);
+        
+        mainContent.add(photoContainer, BorderLayout.WEST);
+        
+        // Panel derecho: Información del perfil
+        JPanel infoContent = new JPanel(new GridLayout(0, 2, 18, 18));
+        infoContent.setOpaque(false);
 
         nameLabel = createInfoValueLabel("--");
         emailLabel = createInfoValueLabel("--");
@@ -183,18 +205,20 @@ public class PatientDashboardPanel extends JPanel {
         riskLevelLabel.setFont(new Font("Segoe UI", Font.BOLD, 15));
         orgLabel = createInfoValueLabel("--");
 
-        content.add(createFieldLabel("Nombre"));
-        content.add(nameLabel);
-        content.add(createFieldLabel("Email"));
-        content.add(emailLabel);
-        content.add(createFieldLabel("Fecha de Nacimiento"));
-        content.add(birthdateLabel);
-        content.add(createFieldLabel("Nivel de Riesgo"));
-        content.add(riskLevelLabel);
-        content.add(createFieldLabel("Organización"));
-        content.add(orgLabel);
+        infoContent.add(createFieldLabel("Nombre"));
+        infoContent.add(nameLabel);
+        infoContent.add(createFieldLabel("Email"));
+        infoContent.add(emailLabel);
+        infoContent.add(createFieldLabel("Fecha de Nacimiento"));
+        infoContent.add(birthdateLabel);
+        infoContent.add(createFieldLabel("Nivel de Riesgo"));
+        infoContent.add(riskLevelLabel);
+        infoContent.add(createFieldLabel("Organización"));
+        infoContent.add(orgLabel);
 
-        return createCardSection("👤 Información Personal", content);
+        mainContent.add(infoContent, BorderLayout.CENTER);
+
+        return createCardSection("👤 Información Personal", mainContent);
     }
 
     private JPanel createStatsSection() {
@@ -242,77 +266,58 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private JPanel createLocationSection() {
-        JPanel mapContainer = new JPanel(new BorderLayout());
+        JPanel mapContainer = new JPanel(new BorderLayout(0, 12));
         mapContainer.setOpaque(false);
 
-        // Panel para el contenido del mapa con mejor diseño
-        JPanel mapContent = new JPanel();
-        mapContent.setLayout(new BoxLayout(mapContent, BoxLayout.Y_AXIS));
-        mapContent.setOpaque(false);
-        mapContent.setBorder(new EmptyBorder(40, 20, 40, 20));
-
-        // Icono grande del mapa
-        JLabel mapIcon = new JLabel("🗺️");
-        mapIcon.setFont(new Font("Segoe UI", Font.PLAIN, 64));
-        mapIcon.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mapContent.add(mapIcon);
-
-        mapContent.add(Box.createVerticalStrut(20));
-
-        // Título
-        JLabel mapTitle = new JLabel("Mapa de Ubicaciones");
-        mapTitle.setFont(new Font("Segoe UI", Font.BOLD, 22));
-        mapTitle.setForeground(PRIMARY_DARK);
-        mapTitle.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mapContent.add(mapTitle);
-
-        mapContent.add(Box.createVerticalStrut(8));
-
+        // Panel superior con información del mapa
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setOpaque(false);
+        topPanel.setBorder(new EmptyBorder(0, 0, 12, 0));
+        
         // Descripción
-        JLabel mapDesc = new JLabel("Ver ubicaciones del paciente en mapa interactivo");
+        JLabel mapDesc = new JLabel("Ubicaciones recientes del paciente");
         mapDesc.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         mapDesc.setForeground(TEXT_SECONDARY_COLOR);
-        mapDesc.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mapContent.add(mapDesc);
-
-        mapContent.add(Box.createVerticalStrut(24));
-
-        // Botón para abrir mapa
-        JButton openMapButton = new JButton("Abrir Mapa");
-        openMapButton.setFont(BUTTON_FONT);
-        openMapButton.setForeground(Color.WHITE);
-        openMapButton.setBackground(PRIMARY_COLOR);
-        openMapButton.setBorderPainted(false);
-        openMapButton.setFocusPainted(false);
-        openMapButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        openMapButton.setPreferredSize(new Dimension(180, 45));
-        openMapButton.setMaximumSize(new Dimension(180, 45));
-        openMapButton.setAlignmentX(Component.CENTER_ALIGNMENT);
-
-        // Efectos hover
-        openMapButton.addMouseListener(new java.awt.event.MouseAdapter() {
-            public void mouseEntered(java.awt.event.MouseEvent evt) {
-                openMapButton.setBackground(PRIMARY_DARK);
-            }
-            public void mouseExited(java.awt.event.MouseEvent evt) {
-                openMapButton.setBackground(PRIMARY_COLOR);
-            }
-        });
-
-        openMapButton.addActionListener(e -> openPatientMapInBrowser());
-
-        mapContent.add(openMapButton);
-
-        mapContent.add(Box.createVerticalStrut(16));
-
+        topPanel.add(mapDesc, BorderLayout.WEST);
+        
         // Estado del mapa
-        mapStatusLabel = new JLabel("Ubicaciones listas para visualizar");
+        mapStatusLabel = new JLabel("Cargando...");
         mapStatusLabel.setFont(CAPTION_FONT);
         mapStatusLabel.setForeground(TEXT_SECONDARY_COLOR);
-        mapStatusLabel.setAlignmentX(Component.CENTER_ALIGNMENT);
-        mapContent.add(mapStatusLabel);
+        topPanel.add(mapStatusLabel, BorderLayout.EAST);
+        
+        mapContainer.add(topPanel, BorderLayout.NORTH);
 
-        mapContainer.add(mapContent, BorderLayout.CENTER);
+        // Panel del mapa embebido
+        JPanel mapPanel = new JPanel(new BorderLayout());
+        mapPanel.setOpaque(false);
+        mapPanel.setPreferredSize(new Dimension(800, 450));
+        mapPanel.setMinimumSize(new Dimension(600, 400));
+        
+        try {
+            embeddedMapPanel = new PatientEmbeddedMapPanel();
+            mapPanel.add(embeddedMapPanel, BorderLayout.CENTER);
+        } catch (Exception e) {
+            System.err.println("Error al crear el mapa embebido: " + e.getMessage());
+            e.printStackTrace();
+            JLabel errorLabel = new JLabel("Error al cargar el mapa", SwingConstants.CENTER);
+            errorLabel.setForeground(DANGER_COLOR);
+            errorLabel.setFont(BODY_FONT);
+            mapPanel.add(errorLabel, BorderLayout.CENTER);
+        }
+        
+        mapContainer.add(mapPanel, BorderLayout.CENTER);
+        
+        // Botón para abrir en navegador (opcional)
+        JPanel bottomPanel = new JPanel(new FlowLayout(FlowLayout.CENTER, 10, 8));
+        bottomPanel.setOpaque(false);
+        
+        JButton openInBrowserBtn = new RoundedButton("Abrir en Navegador", SURFACE_COLOR, PRIMARY_COLOR, PRIMARY_DARK);
+        openInBrowserBtn.addActionListener(e -> openPatientMapInBrowser());
+        openInBrowserBtn.setPreferredSize(new Dimension(200, 36));
+        bottomPanel.add(openInBrowserBtn);
+        
+        mapContainer.add(bottomPanel, BorderLayout.SOUTH);
 
         return createCardSection("🗺️ Ubicaciones del Paciente", mapContainer);
     }
@@ -547,6 +552,9 @@ public class PatientDashboardPanel extends JPanel {
             if (mapStatusLabel != null) {
                 mapStatusLabel.setText("Sin ubicaciones disponibles");
             }
+            if (embeddedMapPanel != null) {
+                embeddedMapPanel.updateLocations(new JsonArray());
+            }
             return;
         }
 
@@ -560,9 +568,18 @@ public class PatientDashboardPanel extends JPanel {
             if (mapStatusLabel != null) {
                 mapStatusLabel.setText("Sin ubicaciones registradas");
             }
+            if (embeddedMapPanel != null) {
+                embeddedMapPanel.updateLocations(new JsonArray());
+            }
         } else {
             if (mapStatusLabel != null) {
                 mapStatusLabel.setText(locations.size() + " ubicación(es) disponible(s)");
+            }
+            
+            // Actualizar el mapa embebido con las ubicaciones
+            if (embeddedMapPanel != null) {
+                System.out.println("DEBUG: Actualizando mapa embebido con " + locations.size() + " ubicaciones");
+                embeddedMapPanel.updateLocations(locations);
             }
         }
     }
@@ -583,6 +600,13 @@ public class PatientDashboardPanel extends JPanel {
         String orgName = patient.has("org_name") && !patient.get("org_name").isJsonNull()
                 ? patient.get("org_name").getAsString() : "Sin organización";
         orgLabel.setText(orgName);
+        
+        // Actualizar la foto de perfil
+        String photoUrl = patient.has("profile_photo_url") && !patient.get("profile_photo_url").isJsonNull()
+                ? patient.get("profile_photo_url").getAsString() : null;
+        if (profilePhotoPanel != null) {
+            profilePhotoPanel.setPhotoUrl(photoUrl);
+        }
     }
 
     private void setRiskLevelColor(String riskLevel) {

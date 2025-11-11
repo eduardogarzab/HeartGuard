@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
  * El Gateway se encarga de enrutar a los microservicios internos
  */
 public class ApiClient {
-    private static final String DEFAULT_GATEWAY_URL = "http://136.115.53.140:8080"; // aqui tiene que cambiarse al correspondiente
+    private static final String DEFAULT_GATEWAY_URL = "http://0.0.0.0:8080"; // aqui tiene que cambiarse al correspondiente
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final String gatewayUrl;
@@ -1120,5 +1120,100 @@ public class ApiClient {
                 true,
                 "Error al obtener equipo de cuidado"
         );
+    }
+
+    /**
+     * Sube o actualiza la foto de perfil de un paciente
+     * Ruta: POST/PUT /media/patients/{patientId}/photo
+     * 
+     * @param token Token de autenticación del paciente
+     * @param patientId ID del paciente
+     * @param photoFile Archivo de la foto a subir
+     * @param isUpdate true para PUT (actualizar), false para POST (crear)
+     * @return CompletableFuture con la respuesta que incluye la URL de la foto
+     */
+    public CompletableFuture<JsonObject> uploadPatientPhotoAsync(String token, String patientId, 
+                                                                  java.io.File photoFile, boolean isUpdate) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String url = gatewayUrl + "/media/patients/" + patientId + "/photo";
+                
+                RequestBody fileBody = RequestBody.create(
+                        photoFile,
+                        MediaType.parse("image/*")
+                );
+                
+                RequestBody requestBody = new MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("photo", photoFile.getName(), fileBody)
+                        .build();
+                
+                Request.Builder requestBuilder = new Request.Builder()
+                        .url(url)
+                        .addHeader("Authorization", "Bearer " + token);
+                
+                if (isUpdate) {
+                    requestBuilder.put(requestBody);
+                } else {
+                    requestBuilder.post(requestBody);
+                }
+                
+                Request request = requestBuilder.build();
+                
+                Response response = httpClient.newCall(request).execute();
+                String responseBody = response.body() != null ? response.body().string() : "{}";
+                
+                if (!response.isSuccessful()) {
+                    JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                    String errorMessage = errorObj.has("message") 
+                            ? errorObj.get("message").getAsString() 
+                            : "Error al subir la foto";
+                    throw new RuntimeException(new ApiException(errorMessage, response.code(), "photo_upload_error", responseBody));
+                }
+                
+                response.close();
+                return gson.fromJson(responseBody, JsonObject.class);
+            } catch (IOException e) {
+                throw new RuntimeException(new ApiException("Error al subir la foto: " + e.getMessage(), e));
+            }
+        });
+    }
+
+    /**
+     * Elimina la foto de perfil de un paciente
+     * Ruta: DELETE /media/patients/{patientId}/photo
+     * 
+     * @param token Token de autenticación del paciente
+     * @param patientId ID del paciente
+     * @return CompletableFuture con la respuesta de confirmación
+     */
+    public CompletableFuture<JsonObject> deletePatientPhotoAsync(String token, String patientId) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String url = gatewayUrl + "/media/patients/" + patientId + "/photo";
+                
+                Request request = new Request.Builder()
+                        .url(url)
+                        .delete()
+                        .addHeader("Authorization", "Bearer " + token)
+                        .build();
+                
+                Response response = httpClient.newCall(request).execute();
+                String responseBody = response.body() != null ? response.body().string() : "{}";
+                
+                if (!response.isSuccessful()) {
+                    JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                    String errorMessage = errorObj.has("message") 
+                            ? errorObj.get("message").getAsString() 
+                            : "Error al eliminar la foto";
+                    throw new RuntimeException(new ApiException(errorMessage, response.code(), "photo_delete_error", responseBody));
+                }
+                
+                response.close();
+                return gson.fromJson(responseBody, JsonObject.class);
+            } catch (IOException e) {
+                throw new RuntimeException(new ApiException("Error al eliminar la foto: " + e.getMessage(), e));
+            }
+        });
     }
 }
