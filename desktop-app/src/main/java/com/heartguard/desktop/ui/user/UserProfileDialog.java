@@ -41,11 +41,13 @@ public class UserProfileDialog extends JDialog {
 
     private final JLabel emailLabel = new JLabel("-");
     private final JTextField nameField = new JTextField(28);
-    private final JTextField photoField = new JTextField(28);
+    private UserProfilePhotoPanel profilePhotoPanel;
     private final JCheckBox twoFactorCheck = new JCheckBox("Habilitar segundo factor de autenticación");
     private final JLabel statusLabel = new JLabel(" ");
 
     private UserProfile profile;
+    private JPanel formPanel;
+    private JPanel photoPlaceholder;
 
     public UserProfileDialog(Frame owner, ApiClient apiClient, String token, UserProfile profile,
                              Consumer<UserProfile> onProfileUpdated) {
@@ -59,7 +61,7 @@ public class UserProfileDialog extends JDialog {
     }
 
     private void initComponents() {
-        setSize(600, 480);
+        setSize(700, 600);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout(0, 0));
         getContentPane().setBackground(GLOBAL_BG);
@@ -78,78 +80,112 @@ public class UserProfileDialog extends JDialog {
         header.add(title, BorderLayout.WEST);
         add(header, BorderLayout.NORTH);
 
-        // Formulario con grilla
-        JPanel formPanel = new JPanel(new GridBagLayout());
-        formPanel.setBorder(new EmptyBorder(24, 24, 24, 24));
-        formPanel.setBackground(CARD_BG);
+        // Panel principal con dos columnas
+        JPanel mainPanel = new JPanel(new BorderLayout(20, 0));
+        mainPanel.setBorder(new EmptyBorder(24, 24, 24, 24));
+        mainPanel.setBackground(CARD_BG);
+
+        // Columna izquierda: Foto de perfil
+        JPanel leftPanel = new JPanel(new BorderLayout(0, 12));
+        leftPanel.setOpaque(false);
+        leftPanel.setBorder(new EmptyBorder(0, 0, 0, 20));
+        
+        JLabel photoSectionLabel = new JLabel("Foto de perfil", SwingConstants.CENTER);
+        photoSectionLabel.setFont(BODY_BOLD);
+        photoSectionLabel.setForeground(TEXT_PRIMARY);
+        leftPanel.add(photoSectionLabel, BorderLayout.NORTH);
+        
+        // El panel de foto se creará después de cargar el perfil
+        photoPlaceholder = new JPanel();
+        photoPlaceholder.setOpaque(false);
+        photoPlaceholder.setPreferredSize(new Dimension(150, 200));
+        leftPanel.add(photoPlaceholder, BorderLayout.CENTER);
+
+        // Columna derecha: Formulario
+        formPanel = new JPanel(new GridBagLayout());
+        formPanel.setOpaque(false);
         GridBagConstraints gbc = new GridBagConstraints();
-        gbc.insets = new Insets(12, 12, 12, 12);
-        gbc.anchor = GridBagConstraints.WEST;
+        gbc.insets = new Insets(8, 0, 8, 0);
+        gbc.anchor = GridBagConstraints.NORTHWEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.gridx = 0;
         gbc.gridy = 0;
+        gbc.weightx = 1.0;
+
+        // Título de sección
+        JLabel infoSectionLabel = new JLabel("Información personal");
+        infoSectionLabel.setFont(new Font("Inter", Font.BOLD, 16));
+        infoSectionLabel.setForeground(TEXT_PRIMARY);
+        infoSectionLabel.setBorder(new EmptyBorder(0, 0, 12, 0));
+        formPanel.add(infoSectionLabel, gbc);
 
         // Campo Email (read-only)
+        gbc.gridy++;
         JLabel emailFieldLabel = new JLabel("Correo electrónico");
-        emailFieldLabel.setFont(BODY_BOLD);
-        emailFieldLabel.setForeground(TEXT_PRIMARY);
+        emailFieldLabel.setFont(CAPTION_FONT);
+        emailFieldLabel.setForeground(TEXT_SECONDARY);
         formPanel.add(emailFieldLabel, gbc);
 
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
+        gbc.gridy++;
         emailLabel.setFont(BODY_FONT);
-        emailLabel.setForeground(TEXT_SECONDARY);
+        emailLabel.setForeground(TEXT_PRIMARY);
+        emailLabel.setBorder(new EmptyBorder(0, 0, 12, 0));
         formPanel.add(emailLabel, gbc);
 
         // Campo Nombre
-        gbc.gridx = 0;
         gbc.gridy++;
-        gbc.weightx = 0;
         JLabel nameLabel = new JLabel("Nombre completo");
-        nameLabel.setFont(BODY_BOLD);
-        nameLabel.setForeground(TEXT_PRIMARY);
+        nameLabel.setFont(CAPTION_FONT);
+        nameLabel.setForeground(TEXT_SECONDARY);
         formPanel.add(nameLabel, gbc);
 
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
+        gbc.gridy++;
         nameField.setFont(BODY_FONT);
-        nameField.setPreferredSize(new Dimension(300, 36));
+        nameField.setPreferredSize(new Dimension(300, 40));
         nameField.setBorder(new CompoundBorder(
-            new LineBorder(BORDER_LIGHT, 1),
+            new LineBorder(BORDER_LIGHT, 1, true),
             new EmptyBorder(8, 12, 8, 12)
         ));
         formPanel.add(nameField, gbc);
 
-        gbc.gridx = 0;
+        // Espacio
         gbc.gridy++;
-        gbc.weightx = 0;
-        JLabel photoLabel = new JLabel("Foto de perfil (URL)");
-        photoLabel.setFont(BODY_BOLD);
-        photoLabel.setForeground(TEXT_PRIMARY);
-        formPanel.add(photoLabel, gbc);
+        JPanel spacer = new JPanel();
+        spacer.setOpaque(false);
+        spacer.setPreferredSize(new Dimension(1, 20));
+        formPanel.add(spacer, gbc);
 
-        gbc.gridx = 1;
-        gbc.weightx = 1.0;
-        photoField.setFont(BODY_FONT);
-        photoField.setPreferredSize(new Dimension(300, 36));
-        photoField.setBorder(new CompoundBorder(
-            new LineBorder(BORDER_LIGHT, 1),
-            new EmptyBorder(8, 12, 8, 12)
-        ));
-        formPanel.add(photoField, gbc);
-
-        gbc.gridx = 0;
+        // Título de seguridad
         gbc.gridy++;
-        gbc.gridwidth = 2;
+        JLabel securitySectionLabel = new JLabel("Seguridad");
+        securitySectionLabel.setFont(new Font("Inter", Font.BOLD, 16));
+        securitySectionLabel.setForeground(TEXT_PRIMARY);
+        securitySectionLabel.setBorder(new EmptyBorder(0, 0, 12, 0));
+        formPanel.add(securitySectionLabel, gbc);
+
+        // Checkbox 2FA
+        gbc.gridy++;
         twoFactorCheck.setFont(BODY_FONT);
         twoFactorCheck.setForeground(TEXT_PRIMARY);
-        twoFactorCheck.setBackground(CARD_BG);
+        twoFactorCheck.setOpaque(false);
         formPanel.add(twoFactorCheck, gbc);
+
+        // Empujar todo hacia arriba
+        gbc.gridy++;
+        gbc.weighty = 1.0;
+        gbc.fill = GridBagConstraints.BOTH;
+        JPanel filler = new JPanel();
+        filler.setOpaque(false);
+        formPanel.add(filler, gbc);
+
+        // Agregar columnas al panel principal
+        mainPanel.add(leftPanel, BorderLayout.WEST);
+        mainPanel.add(formPanel, BorderLayout.CENTER);
 
         JPanel formWrapper = new JPanel(new BorderLayout());
         formWrapper.setBorder(new EmptyBorder(0, 16, 16, 16));
         formWrapper.setOpaque(false);
-        formWrapper.add(formPanel, BorderLayout.CENTER);
+        formWrapper.add(mainPanel, BorderLayout.CENTER);
         add(formWrapper, BorderLayout.CENTER);
 
         // Footer con estado y botones
@@ -235,7 +271,41 @@ public class UserProfileDialog extends JDialog {
     private void fillForm(UserProfile profile) {
         emailLabel.setText(profile.getEmail() != null ? profile.getEmail() : "-");
         nameField.setText(profile.getName());
-        photoField.setText(profile.getProfilePhotoUrl() != null ? profile.getProfilePhotoUrl() : "");
+        
+        // Crear o actualizar el panel de foto de perfil
+        if (profilePhotoPanel == null && profile.getId() != null) {
+            // Primera vez: crear el panel
+            profilePhotoPanel = new UserProfilePhotoPanel(apiClient, token, profile.getId());
+            profilePhotoPanel.setOnPhotoChangedCallback(() -> {
+                // Recargar el perfil cuando cambia la foto
+                loadProfile();
+            });
+            
+            // Reemplazar el placeholder con el panel real
+            if (photoPlaceholder != null && photoPlaceholder.getParent() != null) {
+                Container parent = photoPlaceholder.getParent();
+                int index = -1;
+                for (int i = 0; i < parent.getComponentCount(); i++) {
+                    if (parent.getComponent(i) == photoPlaceholder) {
+                        index = i;
+                        break;
+                    }
+                }
+                if (index != -1) {
+                    parent.remove(photoPlaceholder);
+                    parent.add(profilePhotoPanel, index);
+                    parent.revalidate();
+                    parent.repaint();
+                }
+            }
+        }
+        
+        // Cargar foto en el panel si existe
+        if (profilePhotoPanel != null) {
+            String photoUrl = profile.getProfilePhotoUrl();
+            profilePhotoPanel.setPhotoUrl(photoUrl);
+        }
+        
         twoFactorCheck.setSelected(profile.isTwoFactorEnabled());
         statusLabel.setForeground(TEXT_SECONDARY);
         statusLabel.setText("Última actualización: " + (profile.getUpdatedAt() != null ? profile.getUpdatedAt() : "n/d"));
@@ -253,8 +323,7 @@ public class UserProfileDialog extends JDialog {
         if (!name.equals(profile != null ? profile.getName() : "")) {
             updates.put("name", name);
         }
-        String photo = photoField.getText().trim();
-        updates.put("profile_photo_url", photo.isEmpty() ? null : photo);
+        // La foto de perfil se maneja directamente en UserProfilePhotoPanel
         updates.put("two_factor_enabled", twoFactorCheck.isSelected());
 
         if (updates.isEmpty()) {

@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.models.user.OrgMembership;
+import com.heartguard.desktop.ui.components.AvatarPanel;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
@@ -431,12 +432,15 @@ public class OrgCareTeamsTab extends JPanel {
         card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
         
         // Avatar circular - con contenedor para asegurar tamaño
+        String photoUrl = member.has("profile_photo_url") && !member.get("profile_photo_url").isJsonNull()
+                ? member.get("profile_photo_url").getAsString() : null;
+        
         JPanel avatarContainer = new JPanel(new BorderLayout());
         avatarContainer.setOpaque(false);
         avatarContainer.setPreferredSize(new Dimension(64, 64));
         avatarContainer.setMinimumSize(new Dimension(64, 64));
         avatarContainer.setMaximumSize(new Dimension(64, 64));
-        JPanel avatarPanel = createAvatarPanel(name, 64);
+        AvatarPanel avatarPanel = new AvatarPanel(name, photoUrl, 64);
         avatarContainer.add(avatarPanel, BorderLayout.CENTER);
         card.add(avatarContainer, BorderLayout.WEST);
         
@@ -613,8 +617,10 @@ public class OrgCareTeamsTab extends JPanel {
         contentPanel.setBackground(GLOBAL_BACKGROUND);
         contentPanel.setBorder(new EmptyBorder(24, 24, 24, 24));
         
-        // Avatar grande
-        JPanel avatarPanel = createAvatarPanel(name, 120);
+        // Avatar grande con foto o iniciales
+        String photoUrl = member.has("profile_photo_url") && !member.get("profile_photo_url").isJsonNull()
+                ? member.get("profile_photo_url").getAsString() : null;
+        AvatarPanel avatarPanel = new AvatarPanel(name, photoUrl, 120);
         avatarPanel.setAlignmentX(Component.CENTER_ALIGNMENT);
         contentPanel.add(avatarPanel);
         contentPanel.add(Box.createVerticalStrut(20));

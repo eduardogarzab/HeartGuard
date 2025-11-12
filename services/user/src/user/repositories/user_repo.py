@@ -182,6 +182,7 @@ class UserRepository:
                 ctm.user_id AS member_user_id,
                 u.name AS member_name,
                 u.email AS member_email,
+                u.profile_photo_url AS member_profile_photo_url,
                 tm.code AS member_role_code,
                 tm.label AS member_role_label
             FROM care_teams ct
@@ -239,6 +240,7 @@ class UserRepository:
                 p.id AS patient_id,
                 p.person_name AS patient_name,
                 p.email AS patient_email,
+                p.profile_photo_url AS patient_profile_photo_url,
                 rl.code AS risk_level_code,
                 rl.label AS risk_level_label,
                 ST_Y(pl.geom) AS latitude,

@@ -8,6 +8,7 @@ import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
 import com.heartguard.desktop.models.user.OrgMembership;
+import com.heartguard.desktop.ui.components.AvatarPanel;
 
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
@@ -1304,7 +1305,19 @@ public class UserDashboardPanel extends JPanel {
                     BorderFactory.createLineBorder(new Color(229, 234, 243)),
                     new EmptyBorder(10, 12, 10, 12)
                 ));
-                memberCard.setLayout(new BoxLayout(memberCard, BoxLayout.Y_AXIS));
+                memberCard.setLayout(new BorderLayout(12, 0));
+
+                // Avatar circular con foto o iniciales
+                String memberName = member.get("name").getAsString();
+                String photoUrl = member.has("profile_photo_url") && !member.get("profile_photo_url").isJsonNull()
+                        ? member.get("profile_photo_url").getAsString() : null;
+                AvatarPanel avatar = new AvatarPanel(memberName, photoUrl, 40);
+                memberCard.add(avatar, BorderLayout.WEST);
+
+                // Panel central con información
+                JPanel infoPanel = new JPanel();
+                infoPanel.setOpaque(false);
+                infoPanel.setLayout(new BoxLayout(infoPanel, BoxLayout.Y_AXIS));
 
                 // Fila superior: Nombre y badge de rol
                 JPanel headerRow = new JPanel();
@@ -1312,7 +1325,7 @@ public class UserDashboardPanel extends JPanel {
                 headerRow.setLayout(new BoxLayout(headerRow, BoxLayout.X_AXIS));
 
                 // Nombre del miembro
-                JLabel nameLabel = new JLabel(member.get("name").getAsString());
+                JLabel nameLabel = new JLabel(memberName);
                 nameLabel.setFont(new Font("Segoe UI", Font.BOLD, 13));
                 nameLabel.setForeground(TEXT_PRIMARY_COLOR);
                 headerRow.add(nameLabel);
@@ -1329,9 +1342,21 @@ public class UserDashboardPanel extends JPanel {
                 roleBadge.setBorder(new EmptyBorder(3, 8, 3, 8));
                 headerRow.add(roleBadge);
 
-                headerRow.add(Box.createHorizontalGlue()); // Mantener elementos a la izquierda
+                headerRow.add(Box.createHorizontalGlue());
 
-                memberCard.add(headerRow);
+                infoPanel.add(headerRow);
+
+                // Email (si está disponible)
+                if (member.has("email") && !member.get("email").isJsonNull()) {
+                    String email = member.get("email").getAsString();
+                    JLabel emailLabel = new JLabel(email);
+                    emailLabel.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+                    emailLabel.setForeground(TEXT_SECONDARY_COLOR);
+                    infoPanel.add(Box.createVerticalStrut(2));
+                    infoPanel.add(emailLabel);
+                }
+
+                memberCard.add(infoPanel, BorderLayout.CENTER);
 
                 membersListPanel.add(memberCard);
                 membersListPanel.add(Box.createVerticalStrut(6));

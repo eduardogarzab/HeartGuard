@@ -1216,4 +1216,99 @@ public class ApiClient {
             }
         });
     }
+
+    /**
+     * Sube o actualiza la foto de perfil de un usuario
+     * Ruta: POST/PUT /media/users/{userId}/photo
+     * 
+     * @param token Token de autenticación del usuario
+     * @param userId ID del usuario
+     * @param photoFile Archivo de la foto a subir
+     * @param isUpdate true para PUT (actualizar), false para POST (crear)
+     * @return CompletableFuture con la respuesta que incluye la URL de la foto
+     */
+    public CompletableFuture<JsonObject> uploadUserPhotoAsync(String token, String userId, 
+                                                               java.io.File photoFile, boolean isUpdate) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String url = gatewayUrl + "/media/users/" + userId + "/photo";
+                
+                RequestBody fileBody = RequestBody.create(
+                        photoFile,
+                        MediaType.parse("image/*")
+                );
+                
+                RequestBody requestBody = new MultipartBody.Builder()
+                        .setType(MultipartBody.FORM)
+                        .addFormDataPart("photo", photoFile.getName(), fileBody)
+                        .build();
+                
+                Request.Builder requestBuilder = new Request.Builder()
+                        .url(url)
+                        .addHeader("Authorization", "Bearer " + token);
+                
+                if (isUpdate) {
+                    requestBuilder.put(requestBody);
+                } else {
+                    requestBuilder.post(requestBody);
+                }
+                
+                Request request = requestBuilder.build();
+                
+                Response response = httpClient.newCall(request).execute();
+                String responseBody = response.body() != null ? response.body().string() : "{}";
+                
+                if (!response.isSuccessful()) {
+                    JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                    String errorMessage = errorObj.has("message") 
+                            ? errorObj.get("message").getAsString() 
+                            : "Error al subir la foto";
+                    throw new RuntimeException(new ApiException(errorMessage, response.code(), "photo_upload_error", responseBody));
+                }
+                
+                response.close();
+                return gson.fromJson(responseBody, JsonObject.class);
+            } catch (IOException e) {
+                throw new RuntimeException(new ApiException("Error al subir la foto: " + e.getMessage(), e));
+            }
+        });
+    }
+
+    /**
+     * Elimina la foto de perfil de un usuario
+     * Ruta: DELETE /media/users/{userId}/photo
+     * 
+     * @param token Token de autenticación del usuario
+     * @param userId ID del usuario
+     * @return CompletableFuture con la respuesta de confirmación
+     */
+    public CompletableFuture<JsonObject> deleteUserPhotoAsync(String token, String userId) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                String url = gatewayUrl + "/media/users/" + userId + "/photo";
+                
+                Request request = new Request.Builder()
+                        .url(url)
+                        .delete()
+                        .addHeader("Authorization", "Bearer " + token)
+                        .build();
+                
+                Response response = httpClient.newCall(request).execute();
+                String responseBody = response.body() != null ? response.body().string() : "{}";
+                
+                if (!response.isSuccessful()) {
+                    JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                    String errorMessage = errorObj.has("message") 
+                            ? errorObj.get("message").getAsString() 
+                            : "Error al eliminar la foto";
+                    throw new RuntimeException(new ApiException(errorMessage, response.code(), "photo_delete_error", responseBody));
+                }
+                
+                response.close();
+                return gson.fromJson(responseBody, JsonObject.class);
+            } catch (IOException e) {
+                throw new RuntimeException(new ApiException("Error al eliminar la foto: " + e.getMessage(), e));
+            }
+        });
+    }
 }

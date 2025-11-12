@@ -222,6 +222,7 @@ class UserService:
                     'user_id': str(row['member_user_id']),
                     'name': row.get('member_name'),
                     'email': row.get('member_email'),
+                    'profile_photo_url': row.get('member_profile_photo_url'),
                     'role': {
                         'code': row.get('member_role_code'),
                         'label': row.get('member_role_label'),
@@ -269,6 +270,7 @@ class UserService:
                     'user_id': str(row['member_user_id']),
                     'name': row.get('member_name'),
                     'email': row.get('member_email'),
+                    'profile_photo_url': row.get('member_profile_photo_url'),
                     'role': {
                         'code': row.get('member_role_code'),
                         'label': row.get('member_role_label'),
@@ -303,6 +305,7 @@ class UserService:
                     'id': str(row['patient_id']),
                     'name': row.get('patient_name'),
                     'email': row.get('patient_email'),
+                    'profile_photo_url': row.get('patient_profile_photo_url'),
                     'risk_level': {
                         'code': row.get('risk_level_code'),
                         'label': row.get('risk_level_label'),

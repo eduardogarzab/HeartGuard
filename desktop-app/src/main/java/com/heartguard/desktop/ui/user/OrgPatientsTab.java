@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.models.user.OrgMembership;
+import com.heartguard.desktop.ui.components.AvatarPanel;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
@@ -457,6 +458,13 @@ public class OrgPatientsTab extends JPanel {
         ));
         card.setMaximumSize(new Dimension(Integer.MAX_VALUE, 110));
         card.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
+        
+        // Avatar del paciente
+        String photoUrl = patientData.has("profile_photo_url") && !patientData.get("profile_photo_url").isJsonNull()
+            ? patientData.get("profile_photo_url").getAsString()
+            : null;
+        AvatarPanel avatar = new AvatarPanel(name, photoUrl, 40);
+        card.add(avatar, BorderLayout.WEST);
         
         // Panel izquierdo con info principal
         JPanel leftPanel = new JPanel();
@@ -921,38 +929,8 @@ public class OrgPatientsTab extends JPanel {
     }
     
     private JPanel createLargeAvatarPanel(String name, String photoUrl) {
-        JPanel container = new JPanel(new BorderLayout());
-        container.setPreferredSize(new Dimension(120, 120));
-        container.setMinimumSize(new Dimension(120, 120));
-        container.setMaximumSize(new Dimension(120, 120));
-        container.setOpaque(false);
-        
-        JPanel avatar = new JPanel() {
-            @Override
-            protected void paintComponent(Graphics g) {
-                super.paintComponent(g);
-                Graphics2D g2 = (Graphics2D) g;
-                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-                
-                // Dibujar círculo
-                g2.setColor(PRIMARY_BLUE);
-                g2.fillOval(0, 0, getWidth(), getHeight());
-                
-                // Dibujar iniciales
-                String initials = getInitials(name);
-                g2.setColor(Color.WHITE);
-                g2.setFont(new Font("Inter", Font.BOLD, 36));
-                FontMetrics fm = g2.getFontMetrics();
-                int x = (getWidth() - fm.stringWidth(initials)) / 2;
-                int y = ((getHeight() - fm.getHeight()) / 2) + fm.getAscent();
-                g2.drawString(initials, x, y);
-            }
-        };
-        avatar.setOpaque(false);
-        avatar.setPreferredSize(new Dimension(120, 120));
-        
-        container.add(avatar, BorderLayout.CENTER);
-        return container;
+        AvatarPanel avatar = new AvatarPanel(name, photoUrl, 120);
+        return avatar;
     }
     
     private JPanel createAlertsSection(JsonObject alertsResponse) {
