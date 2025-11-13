@@ -148,13 +148,13 @@ public class OrgCareTeamsTab extends JPanel {
             @Override
             protected JsonArray doInBackground() throws Exception {
                 JsonObject response = apiClient.getOrganizationCareTeams(accessToken, organization.getOrgId());
-                System.out.println("[OrgCareTeamsTab] Response: " + response.toString());
                 
                 // Backend retorna: {data: {organization: {...}, care_teams: [...]}}
                 if (response.has("data") && response.get("data").isJsonObject()) {
                     JsonObject data = response.getAsJsonObject("data");
                     if (data.has("care_teams") && data.get("care_teams").isJsonArray()) {
-                        return data.getAsJsonArray("care_teams");
+                        JsonArray teams = data.getAsJsonArray("care_teams");
+                        return teams;
                     }
                 }
                 
@@ -165,7 +165,6 @@ public class OrgCareTeamsTab extends JPanel {
             protected void done() {
                 try {
                     careTeams = get();
-                    System.out.println("[OrgCareTeamsTab] Care teams loaded: " + careTeams.size());
                     updateTeamsList();
                 } catch (Exception ex) {
                     ex.printStackTrace();
@@ -609,7 +608,12 @@ public class OrgCareTeamsTab extends JPanel {
         // Crear diálogo modal con detalles del miembro
         Window parentWindow = SwingUtilities.getWindowAncestor(this);
         JDialog dialog = new JDialog(parentWindow, "Detalle del Miembro", Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setSize(500, 450);
+        
+        // Hacer responsive - usar tamaño proporcional, máximo 500x450
+        Dimension parentSize = parentWindow != null ? parentWindow.getSize() : new Dimension(1200, 800);
+        int dialogWidth = Math.min(500, (int)(parentSize.width * 0.35));
+        int dialogHeight = Math.min(450, (int)(parentSize.height * 0.5));
+        dialog.setSize(dialogWidth, dialogHeight);
         dialog.setLocationRelativeTo(parentWindow); // Centrar respecto a la ventana padre
         
         JPanel contentPanel = new JPanel();

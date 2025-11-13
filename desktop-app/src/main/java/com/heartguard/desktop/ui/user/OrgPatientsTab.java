@@ -250,7 +250,6 @@ public class OrgPatientsTab extends JPanel {
         SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
             @Override
             protected JsonArray doInBackground() throws Exception {
-                System.out.println("[OrgPatientsTab] Cargando pacientes para org: " + organization.getOrgName());
                 // Obtener pacientes de care teams con ubicaciones
                 // Endpoint: /orgs/{org_id}/care-team-patients/locations
                 // Retorna: [{care_team_id, care_team_name, patients: [...]}, ...]
@@ -259,20 +258,15 @@ public class OrgPatientsTab extends JPanel {
                         organization.getOrgId()
                 );
                 
-                System.out.println("[OrgPatientsTab] Respuesta completa: " + response.toString());
-                
                 // La respuesta tiene estructura: {data: {care_teams: [...]}}
                 if (response.has("data") && response.get("data").isJsonObject()) {
                     JsonObject dataObj = response.getAsJsonObject("data");
-                    System.out.println("[OrgPatientsTab] Data object: " + dataObj.toString());
                     if (dataObj.has("care_teams") && dataObj.get("care_teams").isJsonArray()) {
                         JsonArray careTeams = dataObj.getAsJsonArray("care_teams");
-                        System.out.println("[OrgPatientsTab] Care teams encontrados: " + careTeams.size());
                         return careTeams;
                     }
                 }
                 
-                System.out.println("[OrgPatientsTab] No se encontraron care teams");
                 return new JsonArray();
             }
             
@@ -280,7 +274,6 @@ public class OrgPatientsTab extends JPanel {
             protected void done() {
                 try {
                     patientsData = get();
-                    System.out.println("[OrgPatientsTab] Procesando " + patientsData.size() + " care teams");
                     processPatientsData();
                     updateTable();
                     updateMap();
@@ -308,7 +301,6 @@ public class OrgPatientsTab extends JPanel {
         // Extraer care teams y construir mapa
         for (int i = 0; i < patientsData.size(); i++) {
             JsonObject careTeam = patientsData.get(i).getAsJsonObject();
-            System.out.println("[processPatientsData] Care Team " + i + ": " + careTeam.toString());
             
             String teamId = careTeam.has("id") ? careTeam.get("id").getAsString() : "";
             String teamName = careTeam.has("name") ? careTeam.get("name").getAsString() : "Sin nombre";
@@ -317,15 +309,7 @@ public class OrgPatientsTab extends JPanel {
             if (careTeam.has("patients")) {
                 if (careTeam.get("patients").isJsonArray()) {
                     JsonArray patients = careTeam.getAsJsonArray("patients");
-                    System.out.println("  → Tiene " + patients.size() + " pacientes");
-                    if (patients.size() > 0) {
-                        System.out.println("  → Primer paciente: " + patients.get(0).toString());
-                    }
-                } else {
-                    System.out.println("  → Campo 'patients' NO es un array");
                 }
-            } else {
-                System.out.println("  → NO tiene campo 'patients'");
             }
             
             if (!teamId.isEmpty()) {
@@ -581,37 +565,25 @@ public class OrgPatientsTab extends JPanel {
     private void updateMap() {
         if (mapPanel == null || patientsData == null) return;
         
-        System.out.println("[updateMap] Iniciando actualización del mapa...");
-        System.out.println("[updateMap] Número de care teams: " + patientsData.size());
-        
         // Convertir datos agrupados a formato flat para el mapa
         JsonArray flatPatients = new JsonArray();
         
         for (int i = 0; i < patientsData.size(); i++) {
             JsonObject careTeam = patientsData.get(i).getAsJsonObject();
-            System.out.println("[updateMap] Care Team " + i + ": " + (careTeam.has("name") ? careTeam.get("name").getAsString() : "Sin nombre"));
             
             if (careTeam.has("patients") && careTeam.get("patients").isJsonArray()) {
                 JsonArray patients = careTeam.getAsJsonArray("patients");
-                System.out.println("  → Tiene " + patients.size() + " pacientes");
                 
                 for (int j = 0; j < patients.size(); j++) {
                     JsonObject patient = patients.get(j).getAsJsonObject();
-                    System.out.println("    → Paciente " + j + ": " + (patient.has("name") ? patient.get("name").getAsString() : "Sin nombre"));
                     
                     // Verificar si tiene ubicación válida dentro del objeto location
                     if (patient.has("location") && patient.get("location").isJsonObject()) {
                         JsonObject location = patient.getAsJsonObject("location");
-                        System.out.println("      → Tiene objeto location");
-                        System.out.println("      → Location keys: " + location.keySet().toString());
                         
                         if (location.has("latitude") && location.has("longitude")
                                 && !location.get("latitude").isJsonNull()
                                 && !location.get("longitude").isJsonNull()) {
-                            
-                            System.out.println("      → ✓ Tiene coordenadas válidas: " + 
-                                location.get("latitude").getAsString() + ", " + 
-                                location.get("longitude").getAsString());
                             
                             // Crear copia del paciente con datos aplanados para el mapa
                             JsonObject flatPatient = new JsonObject();
@@ -640,22 +612,10 @@ public class OrgPatientsTab extends JPanel {
                             }
                             
                             flatPatients.add(flatPatient);
-                        } else {
-                            System.out.println("      → ✗ No tiene coordenadas válidas");
                         }
-                    } else {
-                        System.out.println("      → ✗ No tiene objeto location");
                     }
                 }
-            } else {
-                System.out.println("  → ✗ No tiene array de pacientes");
             }
-        }
-        
-        // Debug: Imprimir cantidad de pacientes con ubicación
-        System.out.println("📍 OrgPatientsTab - Pacientes con ubicación para el mapa: " + flatPatients.size());
-        if (flatPatients.size() > 0) {
-            System.out.println("   Primer paciente: " + flatPatients.get(0).toString());
         }
         
         // Actualizar mapa
@@ -785,7 +745,12 @@ public class OrgPatientsTab extends JPanel {
         Frame parentWindow = (Frame) SwingUtilities.getWindowAncestor(this);
         JDialog dialog = new JDialog(parentWindow, "Detalle de Paciente", Dialog.ModalityType.APPLICATION_MODAL);
         dialog.setLayout(new BorderLayout());
-        dialog.setSize(1000, 750);
+        
+        // Hacer responsive - usar 80% del tamaño de la ventana padre, máximo 1000x750
+        Dimension parentSize = parentWindow != null ? parentWindow.getSize() : new Dimension(1200, 800);
+        int dialogWidth = Math.min(1000, (int)(parentSize.width * 0.8));
+        int dialogHeight = Math.min(750, (int)(parentSize.height * 0.85));
+        dialog.setSize(dialogWidth, dialogHeight);
         dialog.setLocationRelativeTo(parentWindow);
         
         // Panel principal con BorderLayout para mejor control del ancho

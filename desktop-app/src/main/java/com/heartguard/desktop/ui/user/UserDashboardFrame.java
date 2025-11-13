@@ -9,6 +9,7 @@ import com.heartguard.desktop.models.UserLoginData;
 import com.heartguard.desktop.models.user.OrgMembership;
 import com.heartguard.desktop.models.user.UserProfile;
 import com.heartguard.desktop.util.JsonUtils;
+import com.heartguard.desktop.util.ResponsiveUtils;
 import com.heartguard.desktop.ui.LoginFrame;
 
 import javax.swing.*;
@@ -66,7 +67,10 @@ public class UserDashboardFrame extends JFrame {
 
     private void initUI() {
         setTitle("HeartGuard - Centro Clínico");
-        setSize(1360, 900);
+        
+        // Usar utilidad responsive para calcular tamaño
+        Dimension windowSize = ResponsiveUtils.getResponsiveSize(0.9, 0.9, 1200, 800);
+        setSize(windowSize);
         setLocationRelativeTo(null);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
@@ -267,14 +271,8 @@ public class UserDashboardFrame extends JFrame {
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             @Override
             protected Void doInBackground() throws Exception {
-                // Log: Iniciando carga de datos
-                System.out.println("[DEBUG] Iniciando carga de datos del usuario");
-                System.out.println("[DEBUG] Access Token: " + (accessToken != null ? accessToken.substring(0, Math.min(20, accessToken.length())) + "..." : "null"));
-                
                 // Obtener perfil de usuario
-                System.out.println("[DEBUG] Obteniendo perfil de usuario...");
                 JsonObject profileResponse = apiClient.getCurrentUserProfile(accessToken);
-                System.out.println("[DEBUG] Respuesta de perfil: " + profileResponse.toString());
                 
                 // Parsear el perfil correctamente: data -> user
                 if (profileResponse.has("data") && profileResponse.get("data").isJsonObject()) {
@@ -284,27 +282,13 @@ public class UserDashboardFrame extends JFrame {
                     if (dataObj.has("user") && dataObj.get("user").isJsonObject()) {
                         JsonObject userObj = dataObj.getAsJsonObject("user");
                         profile = JsonUtils.GSON.fromJson(userObj, UserProfile.class);
-                        System.out.println("[DEBUG] Perfil parseado correctamente: " + (profile != null ? profile.getName() : "null"));
-                    } else {
-                        System.out.println("[DEBUG] ADVERTENCIA: No se encontró 'user' dentro de 'data'");
-                        System.out.println("[DEBUG] Contenido de 'data': " + dataObj.toString());
                     }
-                } else {
-                    System.out.println("[DEBUG] ERROR: No se encontró 'data' en la respuesta del perfil");
                 }
 
                 // Obtener membresías de organizaciones
-                System.out.println("[DEBUG] Obteniendo organizaciones del usuario...");
                 JsonArray membershipArray = apiClient.getCurrentUserMemberships(accessToken);
-                System.out.println("[DEBUG] Organizaciones recibidas: " + membershipArray.toString());
-                System.out.println("[DEBUG] Cantidad de organizaciones: " + membershipArray.size());
                 
                 memberships = OrgMembership.listFrom(membershipArray);
-                System.out.println("[DEBUG] Membresías parseadas: " + memberships.size());
-                for (int i = 0; i < memberships.size(); i++) {
-                    OrgMembership m = memberships.get(i);
-                    System.out.println("[DEBUG]   [" + i + "] " + m.getOrgName() + " (ID: " + m.getOrgId() + ")");
-                }
                 
                 return null;
             }
@@ -313,12 +297,9 @@ public class UserDashboardFrame extends JFrame {
             protected void done() {
                 try {
                     get();
-                    System.out.println("[DEBUG] Actualizando interfaz...");
                     updateTopBar();
                     refreshOrganizations();
-                    System.out.println("[DEBUG] Carga completada exitosamente");
                 } catch (Exception ex) {
-                    System.out.println("[DEBUG] ERROR durante la carga: " + ex.getMessage());
                     ex.printStackTrace();
                     handleApiException(ex);
                 }
@@ -394,6 +375,14 @@ public class UserDashboardFrame extends JFrame {
         UserProfileDialog dialog = new UserProfileDialog(this, apiClient, accessToken, profile, updatedProfile -> {
             profile = updatedProfile;
             updateTopBar();
+            
+            // Actualizar el perfil en MainDashboardPanel si existe y refrescar TODOS los datos
+            if (mainDashboardPanel != null) {
+                mainDashboardPanel.updateUserProfile(updatedProfile);
+                // Refrescar TODOS los tabs (no solo el actual) porque la foto puede aparecer en cualquier tab
+                mainDashboardPanel.refreshAllTabs();
+            }
+            
             showSnackbar("Perfil actualizado correctamente", true);
         });
         dialog.setVisible(true);
@@ -497,8 +486,6 @@ public class UserDashboardFrame extends JFrame {
     }
 
     private void handleApiException(Exception ex) {
-        System.out.println("[DEBUG] handleApiException llamado con: " + ex.getClass().getName());
-        System.out.println("[DEBUG] Mensaje: " + ex.getMessage());
         ex.printStackTrace();
         
         Throwable cause = ex instanceof ApiException ? ex : ex.getCause();
@@ -521,10 +508,6 @@ public class UserDashboardFrame extends JFrame {
     }
 
     void handleApiException(ApiException apiException) {
-        System.out.println("[DEBUG] handleApiException(ApiException) llamado");
-        System.out.println("[DEBUG] Status Code: " + apiException.getStatusCode());
-        System.out.println("[DEBUG] Mensaje: " + apiException.getMessage());
-        
         if (apiException.getStatusCode() == 401) {
             showSnackbar(apiException.getMessage(), false);
             dispose();

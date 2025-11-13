@@ -4,6 +4,7 @@ import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
 import com.heartguard.desktop.models.LoginResponse;
 import com.heartguard.desktop.ui.user.UserDashboardFrame;
+import com.heartguard.desktop.util.ResponsiveUtils;
 
 import javax.swing.*;
 import java.awt.*;
@@ -30,7 +31,10 @@ public class LoginFrame extends JFrame {
     private void initComponents() {
         setTitle("HeartGuard - Sistema de Monitoreo Cardíaco");
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        setSize(550, 700);
+        
+        // Usar altura responsive, máximo 700px
+        Dimension loginSize = ResponsiveUtils.getResponsiveSizeWithMax(0.4, 0.8, 550, 700);
+        setSize(loginSize);
         setLocationRelativeTo(null);
         setResizable(false);
 

@@ -61,10 +61,39 @@ public class UserProfileDialog extends JDialog {
     }
 
     private void initComponents() {
-        setSize(700, 600);
+        // Calcular tamaño responsive basado en el parent frame
+        Dimension parentSize = getOwner() != null ? getOwner().getSize() : new Dimension(1200, 800);
+        int dialogWidth = Math.min(700, (int)(parentSize.width * 0.6));
+        int dialogHeight = Math.min(600, (int)(parentSize.height * 0.7));
+        
+        setSize(dialogWidth, dialogHeight);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout(0, 0));
         getContentPane().setBackground(GLOBAL_BG);
+        
+        // Manejar el cierre del diálogo
+        setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent e) {
+                // Si hay una subida en progreso, cancelarla y restaurar estado
+                if (profilePhotoPanel != null && profilePhotoPanel.isUploadInProgress()) {
+                    int confirm = JOptionPane.showConfirmDialog(
+                        UserProfileDialog.this,
+                        "Hay una foto subiendo. ¿Desea cancelar la subida y cerrar?",
+                        "Subida en progreso",
+                        JOptionPane.YES_NO_OPTION,
+                        JOptionPane.WARNING_MESSAGE
+                    );
+                    if (confirm == JOptionPane.YES_OPTION) {
+                        profilePhotoPanel.cancelUploadIfInProgress();
+                        dispose();
+                    }
+                } else {
+                    dispose();
+                }
+            }
+        });
 
         // Encabezado estilizado
         JPanel header = new JPanel(new BorderLayout());
@@ -216,7 +245,10 @@ public class UserProfileDialog extends JDialog {
         ));
         cancelButton.setFocusPainted(false);
         cancelButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        cancelButton.addActionListener(e -> dispose());
+        cancelButton.addActionListener(e -> {
+            // Usar el mismo comportamiento que al cerrar con la X
+            dispatchEvent(new java.awt.event.WindowEvent(this, java.awt.event.WindowEvent.WINDOW_CLOSING));
+        });
         
         JButton saveButton = new JButton("Guardar cambios");
         saveButton.setFont(BODY_BOLD);
@@ -237,11 +269,12 @@ public class UserProfileDialog extends JDialog {
     }
 
     private void loadProfile() {
-        if (profile != null) {
-            fillForm(profile);
-            return;
-        }
-
+        loadProfile(false);
+    }
+    
+    private void loadProfile(boolean forceReload) {
+        // SIEMPRE recargar desde el servidor para tener datos frescos
+        // (no confiar en el profile pasado al constructor que puede estar desactualizado)
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
         statusLabel.setText("Cargando perfil...");
         SwingWorker<UserProfile, Void> worker = new SwingWorker<>() {
@@ -249,16 +282,44 @@ public class UserProfileDialog extends JDialog {
             protected UserProfile doInBackground() throws Exception {
                 JsonObject response = apiClient.getCurrentUserProfile(token);
                 JsonObject data = response.getAsJsonObject("data");
-                return JsonUtils.GSON.fromJson(data, UserProfile.class);
+                
+                // La respuesta tiene estructura: {"data": {"user": {...}}}
+                JsonObject userObj = data.has("user") ? data.getAsJsonObject("user") : data;
+                return JsonUtils.GSON.fromJson(userObj, UserProfile.class);
             }
 
             @Override
             protected void done() {
                 setCursor(Cursor.getDefaultCursor());
                 try {
-                    profile = get();
-                    fillForm(profile);
-                    statusLabel.setText("Perfil cargado correctamente");
+                    UserProfile updatedProfile = get();
+                    profile = updatedProfile;
+                    
+                    // Si se forzó la recarga (ej. después de cambiar foto), solo actualizar datos sin tocar el panel de foto
+                    if (forceReload && profilePhotoPanel != null) {
+                        // Ya existe el panel, solo actualizar campos
+                        emailLabel.setText(profile.getEmail() != null ? profile.getEmail() : "-");
+                        nameField.setText(profile.getName());
+                        twoFactorCheck.setSelected(profile.isTwoFactorEnabled());
+                        statusLabel.setForeground(TEXT_SECONDARY);
+                        statusLabel.setText("Última actualización: " + (profile.getUpdatedAt() != null ? profile.getUpdatedAt() : "n/d"));
+                        
+                        // IMPORTANTE: Después de recargar, sincronizar la foto si NO hay upload en progreso
+                        // Esto actualiza la foto después de que se completó la subida
+                        if (!profilePhotoPanel.isUploadInProgress()) {
+                            String photoUrl = profile.getProfilePhotoUrl();
+                            profilePhotoPanel.setPhotoUrl(photoUrl);
+                        }
+                        
+                        // Notificar al padre que el perfil cambió
+                        if (onProfileUpdated != null) {
+                            onProfileUpdated.accept(profile);
+                        }
+                    } else {
+                        // Primera carga o necesita crear componentes: llenar todo el formulario incluyendo foto
+                        fillForm(profile);
+                        statusLabel.setText("Perfil cargado correctamente");
+                    }
                 } catch (Exception ex) {
                     statusLabel.setForeground(Color.RED.darker());
                     statusLabel.setText("No fue posible obtener el perfil: " + ex.getMessage());
@@ -277,8 +338,13 @@ public class UserProfileDialog extends JDialog {
             // Primera vez: crear el panel
             profilePhotoPanel = new UserProfilePhotoPanel(apiClient, token, profile.getId());
             profilePhotoPanel.setOnPhotoChangedCallback(() -> {
-                // Recargar el perfil cuando cambia la foto
-                loadProfile();
+                // Recargar el perfil desde el servidor para tener la URL actualizada
+                loadProfile(true);
+                
+                // LUEGO notificar al frame principal con el perfil actualizado
+                if (onProfileUpdated != null && profile != null) {
+                    onProfileUpdated.accept(profile);
+                }
             });
             
             // Reemplazar el placeholder con el panel real
@@ -300,8 +366,9 @@ public class UserProfileDialog extends JDialog {
             }
         }
         
-        // Cargar foto en el panel si existe
-        if (profilePhotoPanel != null) {
+        // Sincronizar la foto con la URL del perfil SOLO si no hay una subida en progreso
+        // Si hay una subida en progreso, no tocar la foto para no sobrescribir la preview
+        if (profilePhotoPanel != null && !profilePhotoPanel.isUploadInProgress()) {
             String photoUrl = profile.getProfilePhotoUrl();
             profilePhotoPanel.setPhotoUrl(photoUrl);
         }
@@ -342,7 +409,10 @@ public class UserProfileDialog extends JDialog {
             protected UserProfile doInBackground() throws Exception {
                 JsonObject response = apiClient.updateCurrentUserProfile(token, updates);
                 JsonObject data = response.getAsJsonObject("data");
-                return JsonUtils.GSON.fromJson(data, UserProfile.class);
+                
+                // La respuesta tiene estructura: {"data": {"user": {...}}}
+                JsonObject userObj = data.has("user") ? data.getAsJsonObject("user") : data;
+                return JsonUtils.GSON.fromJson(userObj, UserProfile.class);
             }
 
             @Override

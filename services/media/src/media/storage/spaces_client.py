@@ -71,3 +71,21 @@ class SpacesClient:
         except (BotoCoreError, ClientError) as exc:  # pragma: no cover - depende de red
             raise SpacesClientError("Error al eliminar objetos en Spaces", error_code="delete_failed") from exc
         return deleted
+
+    def delete_object(self, key: str) -> bool:
+        """Elimina un objeto específico por su key.
+        
+        Args:
+            key: Key del objeto a eliminar
+            
+        Returns:
+            True si se eliminó correctamente
+            
+        Raises:
+            SpacesClientError: Si hay un error al eliminar
+        """
+        try:
+            self._client.delete_object(Bucket=self.bucket, Key=key)
+            return True
+        except (BotoCoreError, ClientError) as exc:  # pragma: no cover - depende de red
+            raise SpacesClientError(f"Error al eliminar objeto {key} en Spaces", error_code="delete_failed") from exc

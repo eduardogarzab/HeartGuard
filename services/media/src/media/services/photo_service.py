@@ -125,13 +125,20 @@ class MediaService:
             pass
 
         prefix = self._build_prefix(entity_type, entity_id)
+        
+        # Obtener la URL anterior antes de borrar (para evitar race conditions)
+        old_photo_url = None
+        try:
+            if entity_type == "users":
+                old_photo_url = self.db_client.get_user_photo_url(entity_id)
+            else:  # patients
+                old_photo_url = self.db_client.get_patient_photo_url(entity_id)
+        except Exception:
+            pass  # Si no se puede obtener, continuamos
+        
         object_key = self._build_object_key(prefix, extension)
 
-        try:
-            self.storage.delete_prefix(prefix)
-        except SpacesClientError as exc:  # pragma: no cover - entorno externo
-            raise MediaStorageError("No fue posible limpiar fotos previas", error_code="storage_cleanup_failed") from exc
-
+        # Subir la NUEVA foto PRIMERO (antes de borrar nada)
         try:
             upload_meta = self.storage.upload_object(
                 key=object_key,
@@ -143,7 +150,7 @@ class MediaService:
 
         photo_url = upload_meta["url"]
         
-        # Persistir URL en la base de datos
+        # Persistir URL en la base de datos (ahora la nueva foto YA existe en Spaces)
         try:
             if entity_type == "users":
                 updated = self.db_client.update_user_photo_url(entity_id, photo_url)
@@ -153,7 +160,7 @@ class MediaService:
             if not updated:
                 # Si no se encuentra la entidad, eliminar la foto del almacenamiento
                 try:
-                    self.storage.delete_prefix(prefix)
+                    self.storage.delete_object(object_key)
                 except SpacesClientError:
                     pass  # Ignorar error de limpieza
                 raise MediaValidationError(
@@ -162,15 +169,27 @@ class MediaService:
                     status_code=404
                 )
         except DatabaseError as exc:
-            # Si falla la DB, intentar limpiar el almacenamiento
+            # Si falla la DB, intentar limpiar el almacenamiento (solo la nueva foto)
             try:
-                self.storage.delete_prefix(prefix)
+                self.storage.delete_object(object_key)
             except SpacesClientError:
                 pass  # Ignorar error de limpieza
             raise MediaStorageError(
                 "No se pudo guardar la referencia de la foto en la base de datos",
                 error_code="database_error"
             ) from exc
+        
+        # AHORA que la BD está actualizada, borrar la foto ANTERIOR de forma segura
+        # Esto minimiza el tiempo donde un cliente podría tener una URL obsoleta
+        if old_photo_url and old_photo_url != photo_url:
+            try:
+                # Extraer el object key de la URL anterior
+                old_object_key = self._extract_object_key_from_url(old_photo_url, prefix)
+                if old_object_key:
+                    self.storage.delete_object(old_object_key)
+            except Exception:
+                # Ignorar errores al borrar foto anterior (no crítico)
+                pass
 
         uploaded_at = datetime.now(timezone.utc)
         return PhotoUploadResult(
@@ -259,6 +278,49 @@ class MediaService:
     def _resolve_content_type(self, file: FileStorage) -> tuple[str, str]:
         candidate = (file.mimetype or file.content_type or "").lower()
         if candidate in self.allowed_map:
+            return candidate, self.allowed_map[candidate]
+        
+        # Log para debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Content type rechazado: '{candidate}' (mimetype={file.mimetype}, content_type={file.content_type}, filename={file.filename})")
+        logger.error(f"Tipos permitidos: {list(self.allowed_map.keys())}")
+        
+        raise MediaValidationError(
+            f"Tipo de archivo no permitido: {candidate or 'desconocido'}. Tipos aceptados: {', '.join(self.allowed_map.keys())}",
+            error_code="unsupported_file_type",
+            status_code=415,
+        )
+
+    def _extract_object_key_from_url(self, photo_url: str, prefix: str) -> str | None:
+        """Extrae el object key de una URL de foto.
+        
+        Args:
+            photo_url: URL completa de la foto
+            prefix: Prefijo esperado (users/<id>/ o patients/<id>/)
+            
+        Returns:
+            Object key si se pudo extraer, None en caso contrario
+        """
+        try:
+            # URL format: https://bucket.region.digitaloceanspaces.com/prefix/filename.ext
+            # Extraer la parte después del dominio
+            if '/' not in photo_url:
+                return None
+            
+            parts = photo_url.split('/', 3)  # ['https:', '', 'bucket.region.digitaloceanspaces.com', 'path...']
+            if len(parts) < 4:
+                return None
+            
+            path = parts[3]  # 'users/uuid/profile-xxx.jpg'
+            
+            # Verificar que empiece con el prefijo esperado
+            if path.startswith(prefix):
+                return path
+            
+            return None
+        except Exception:
+            return None
             return candidate, self.allowed_map[candidate]
 
         filename = secure_filename(file.filename or "")

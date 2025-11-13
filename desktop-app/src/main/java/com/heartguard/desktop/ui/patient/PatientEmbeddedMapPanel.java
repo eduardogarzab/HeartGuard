@@ -60,7 +60,6 @@ public class PatientEmbeddedMapPanel extends JPanel {
                 throw new IllegalStateException("JXBROWSER_LICENSE_KEY no encontrada. Revisa el archivo .env");
             }
             
-            System.out.println("[MAPA PACIENTE] Licencia JxBrowser cargada exitosamente");
             
             // Crear engine de JxBrowser con configuración optimizada y licencia
             EngineOptions options = EngineOptions.newBuilder(RenderingMode.HARDWARE_ACCELERATED)
@@ -131,11 +130,9 @@ public class PatientEmbeddedMapPanel extends JPanel {
             System.getProperty("user.home") + "/.heartguard"  // Home del usuario
         };
         
-        System.out.println("[MAPA PACIENTE] Buscando archivo .env en las siguientes ubicaciones:");
         
         for (String path : searchPaths) {
             try {
-                System.out.println("[MAPA PACIENTE]   - Intentando: " + path);
                 Dotenv dotenv = Dotenv.configure()
                         .directory(path)
                         .ignoreIfMissing()
@@ -143,12 +140,10 @@ public class PatientEmbeddedMapPanel extends JPanel {
                 
                 String licenseKey = dotenv.get("JXBROWSER_LICENSE_KEY");
                 if (licenseKey != null && !licenseKey.isEmpty()) {
-                    System.out.println("[MAPA PACIENTE]   ✓ Licencia encontrada en: " + path);
                     return licenseKey;
                 }
             } catch (Exception e) {
                 // Continuar con la siguiente ubicación
-                System.out.println("[MAPA PACIENTE]   ✗ No encontrado en: " + path);
             }
         }
         
@@ -163,12 +158,10 @@ public class PatientEmbeddedMapPanel extends JPanel {
         
         // Esperar a que la página cargue completamente antes de marcar como inicializado
         browser.navigation().on(com.teamdev.jxbrowser.navigation.event.FrameLoadFinished.class, event -> {
-            System.out.println("[MAPA PACIENTE] Página cargada completamente");
             isInitialized = true;
             
             // Si hay datos pendientes de actualizar, actualizarlos ahora
             if (currentLocations.size() > 0) {
-                System.out.println("[MAPA PACIENTE] Actualizando datos pendientes...");
                 updateLocations(currentLocations);
             }
         });
@@ -177,26 +170,21 @@ public class PatientEmbeddedMapPanel extends JPanel {
     }
     
     /**
-     * Actualiza el mapa con nuevos datos de ubicaciones del paciente
+     * Actualiza las ubicaciones en el mapa
      */
     public void updateLocations(JsonArray locations) {
         this.currentLocations = locations != null ? locations : new JsonArray();
-        
-        System.out.println("[MAPA PACIENTE] Actualizando ubicaciones:");
-        System.out.println("  - Ubicaciones: " + currentLocations.size());
         
         // Inicializar JxBrowser si aún no se ha hecho
         ensureInitialized();
         
         if (!isInitialized || browser == null) {
-            System.out.println("[MAPA PACIENTE] Mapa no inicializado todavía, esperando...");
             return;
         }
         
         SwingUtilities.invokeLater(() -> {
             String locationsJson = GSON.toJson(currentLocations);
             
-            System.out.println("[MAPA PACIENTE] locationsJson: " + locationsJson);
             
             // Ejecutar JavaScript para actualizar el mapa
             String script = String.format(
@@ -205,17 +193,13 @@ public class PatientEmbeddedMapPanel extends JPanel {
             );
             
             try {
-                System.out.println("[MAPA PACIENTE] Ejecutando script JavaScript...");
                 browser.mainFrame().ifPresent(frame -> {
-                    System.out.println("[MAPA PACIENTE] Frame presente, ejecutando...");
                     frame.executeJavaScript(script);
                 });
-                System.out.println("[MAPA PACIENTE] Script ejecutado correctamente");
             } catch (Exception e) {
                 System.err.println("[MAPA PACIENTE] Error actualizando mapa: " + e.getMessage());
                 e.printStackTrace();
                 // Si falla, recargar completamente el mapa
-                System.out.println("[MAPA PACIENTE] Recargando HTML completo del mapa...");
                 String html = generateMapHtml(currentLocations);
                 browser.navigation().loadUrl("data:text/html;charset=utf-8," + encodeHtml(html));
             }

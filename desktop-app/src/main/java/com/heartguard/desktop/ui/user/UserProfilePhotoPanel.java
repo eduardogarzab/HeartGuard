@@ -41,6 +41,10 @@ public class UserProfilePhotoPanel extends JPanel {
     private JButton deleteButton;
     private Runnable onPhotoChangedCallback;
     
+    // Estado de subida
+    private boolean uploadInProgress = false;
+    private JDialog activeProgressDialog = null;
+    
     public UserProfilePhotoPanel(ApiClient apiClient, String accessToken, String userId) {
         this.apiClient = apiClient;
         this.accessToken = accessToken;
@@ -210,6 +214,25 @@ public class UserProfilePhotoPanel extends JPanel {
                 return;
             }
             
+            // Guardar el estado anterior por si hay que revertir
+            BufferedImage previousPhoto = currentPhoto;
+            String previousPhotoUrl = currentPhotoUrl;
+            
+            // Previsualizar la imagen ANTES de subirla
+            try {
+                BufferedImage previewImage = ImageIO.read(selectedFile);
+                currentPhoto = previewImage;
+                photoLabel.repaint();
+            } catch (IOException e) {
+                JOptionPane.showMessageDialog(
+                        this,
+                        "No se pudo cargar la imagen seleccionada",
+                        "Error",
+                        JOptionPane.ERROR_MESSAGE
+                );
+                return;
+            }
+            
             // Mostrar diálogo de progreso
             JDialog progressDialog = new JDialog(
                     (Window) SwingUtilities.getWindowAncestor(this),
@@ -219,6 +242,25 @@ public class UserProfilePhotoPanel extends JPanel {
             progressDialog.setSize(300, 100);
             progressDialog.setLocationRelativeTo(this);
             progressDialog.setLayout(new BorderLayout(10, 10));
+            progressDialog.setDefaultCloseOperation(JDialog.DO_NOTHING_ON_CLOSE);
+            
+            // Marcar que hay una subida en progreso
+            uploadInProgress = true;
+            activeProgressDialog = progressDialog;
+            
+            // Listener para manejar cuando se cierra el diálogo durante la subida
+            progressDialog.addWindowListener(new java.awt.event.WindowAdapter() {
+                @Override
+                public void windowClosing(java.awt.event.WindowEvent e) {
+                    // Si el usuario intenta cerrar, restaurar el estado anterior
+                    currentPhoto = previousPhoto;
+                    currentPhotoUrl = previousPhotoUrl;
+                    photoLabel.repaint();
+                    uploadInProgress = false;
+                    activeProgressDialog = null;
+                    progressDialog.dispose();
+                }
+            });
             
             JLabel progressLabel = new JLabel("Subiendo foto de perfil...", SwingConstants.CENTER);
             JProgressBar progressBar = new JProgressBar();
@@ -232,48 +274,72 @@ public class UserProfilePhotoPanel extends JPanel {
             progressDialog.setContentPane(contentPanel);
             
             // Subir la foto en background
-            boolean isUpdate = currentPhotoUrl != null && !currentPhotoUrl.trim().isEmpty();
+            boolean isUpdate = previousPhotoUrl != null && !previousPhotoUrl.trim().isEmpty();
             
             apiClient.uploadUserPhotoAsync(accessToken, userId, selectedFile, isUpdate)
                     .thenAccept(response -> SwingUtilities.invokeLater(() -> {
+                        uploadInProgress = false;
+                        activeProgressDialog = null;
                         progressDialog.dispose();
                         
                         // Extraer la URL de la foto de la respuesta
                         if (response.has("data")) {
                             JsonObject data = response.getAsJsonObject("data");
-                            if (data.has("photo_url")) {
-                                String newPhotoUrl = data.get("photo_url").getAsString();
-                                
-                                // Primero, cargar la imagen localmente desde el archivo seleccionado
-                                // para mostrarla inmediatamente sin esperar la descarga desde la URL
-                                try {
-                                    currentPhoto = ImageIO.read(selectedFile);
+                            if (data.has("photo") && data.get("photo").isJsonObject()) {
+                                JsonObject photo = data.getAsJsonObject("photo");
+                                if (photo.has("url")) {
+                                    String newPhotoUrl = photo.get("url").getAsString();
+                                    
+                                    // Actualizar la URL y habilitar el botón de eliminar
                                     currentPhotoUrl = newPhotoUrl;
                                     deleteButton.setEnabled(true);
-                                    photoLabel.repaint();
-                                } catch (IOException e) {
-                                    // Si falla la carga local, cargar desde URL
-                                    setPhotoUrl(newPhotoUrl);
-                                }
-                                
-                                JOptionPane.showMessageDialog(
-                                        this,
-                                        "Foto de perfil actualizada correctamente",
-                                        "Éxito",
-                                        JOptionPane.INFORMATION_MESSAGE
-                                );
-                                
-                                // Notificar cambio para actualizar el resto del dashboard
-                                if (onPhotoChangedCallback != null) {
-                                    onPhotoChangedCallback.run();
                                 }
                             }
                         }
+                        
+                        // Si llegamos aquí sin URL, algo salió mal
+                        if (currentPhotoUrl == null || currentPhotoUrl.equals(previousPhotoUrl)) {
+                            // Restaurar estado anterior
+                            currentPhoto = previousPhoto;
+                            currentPhotoUrl = previousPhotoUrl;
+                            photoLabel.repaint();
+                            
+                            JOptionPane.showMessageDialog(
+                                    this,
+                                    "Error: No se recibió la URL de la foto del servidor",
+                                    "Error",
+                                    JOptionPane.ERROR_MESSAGE
+                            );
+                            return;
+                        }
+                        // IMPORTANTE: Iniciar el timer ANTES del JOptionPane para que no se bloquee
+                        // Esperar 1.5 segundos antes de refrescar para dar tiempo a que Spaces propague el archivo
+                        Timer refreshTimer = new Timer(1500, evt -> {
+                            if (onPhotoChangedCallback != null) {
+                                onPhotoChangedCallback.run();
+                            }
+                        });
+                        refreshTimer.setRepeats(false);
+                        refreshTimer.start();
+                        
+                        JOptionPane.showMessageDialog(
+                                this,
+                                "Foto de perfil actualizada correctamente",
+                                "Éxito",
+                                JOptionPane.INFORMATION_MESSAGE
+                        );
                     }))
                     .exceptionally(ex -> {
                         SwingUtilities.invokeLater(() -> {
+                            uploadInProgress = false;
+                            activeProgressDialog = null;
                             progressDialog.dispose();
                             handleAsyncError(ex, "Error al subir la foto de perfil");
+                            
+                            // Restaurar el estado anterior (foto y URL)
+                            currentPhoto = previousPhoto;
+                            currentPhotoUrl = previousPhotoUrl;
+                            photoLabel.repaint();
                         });
                         return null;
                     });
@@ -326,17 +392,21 @@ public class UserProfilePhotoPanel extends JPanel {
                     
                     setPhotoUrl(null);
                     
+                    // IMPORTANTE: Iniciar el timer ANTES del JOptionPane
+                    Timer refreshTimer = new Timer(1500, evt -> {
+                        if (onPhotoChangedCallback != null) {
+                            onPhotoChangedCallback.run();
+                        }
+                    });
+                    refreshTimer.setRepeats(false);
+                    refreshTimer.start();
+                    
                     JOptionPane.showMessageDialog(
                             this,
                             "Foto de perfil eliminada correctamente",
                             "Éxito",
                             JOptionPane.INFORMATION_MESSAGE
                     );
-                    
-                    // Notificar cambio
-                    if (onPhotoChangedCallback != null) {
-                        onPhotoChangedCallback.run();
-                    }
                 }))
                 .exceptionally(ex -> {
                     SwingUtilities.invokeLater(() -> {
@@ -388,6 +458,25 @@ public class UserProfilePhotoPanel extends JPanel {
             return execution.getCause();
         }
         return throwable;
+    }
+    
+    /**
+     * Verifica si hay una subida en progreso
+     */
+    public boolean isUploadInProgress() {
+        return uploadInProgress;
+    }
+    
+    /**
+     * Cancela la subida en progreso y restaura el estado anterior
+     */
+    public void cancelUploadIfInProgress() {
+        if (uploadInProgress && activeProgressDialog != null) {
+            // Disparar el windowClosing para restaurar el estado
+            activeProgressDialog.dispatchEvent(
+                new java.awt.event.WindowEvent(activeProgressDialog, java.awt.event.WindowEvent.WINDOW_CLOSING)
+            );
+        }
     }
     
     /**

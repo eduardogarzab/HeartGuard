@@ -129,6 +129,17 @@ public class MainDashboardPanel extends JPanel {
     }
     
     /**
+     * Refresca TODOS los tabs (útil cuando cambia la foto de perfil que aparece en múltiples lugares)
+     */
+    public void refreshAllTabs() {
+        // Refrescar Caregiver
+        caregiverPanel.loadData();
+        
+        // Refrescar Organizaciones
+        organizationsPanel.refreshCurrentOrganization();
+    }
+    
+    /**
      * Cambia al tab de organizaciones
      */
     public void switchToOrganizations() {

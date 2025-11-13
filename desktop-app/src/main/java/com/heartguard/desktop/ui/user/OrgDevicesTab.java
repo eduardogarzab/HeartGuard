@@ -258,7 +258,6 @@ public class OrgDevicesTab extends JPanel {
             @Override
             protected JsonArray doInBackground() throws Exception {
                 JsonObject response = apiClient.getOrganizationCareTeams(accessToken, organization.getOrgId());
-                System.out.println("[OrgDevicesTab] Response care teams: " + response.toString());
                 
                 // Backend retorna: {data: {organization: {...}, care_teams: [...]}}
                 if (response.has("data") && response.get("data").isJsonObject()) {
@@ -275,7 +274,6 @@ public class OrgDevicesTab extends JPanel {
             protected void done() {
                 try {
                     careTeams = get();
-                    System.out.println("[OrgDevicesTab] Care teams loaded: " + careTeams.size());
                     processCareTeams();
                     loadDevicesForAllTeams();
                 } catch (Exception ex) {
@@ -342,7 +340,6 @@ public class OrgDevicesTab extends JPanel {
                             teamId
                     );
                     
-                    System.out.println("[OrgDevicesTab] Devices response for team " + teamName + ": " + response.toString());
                     
                     // Backend retorna: {data: {organization, care_team, devices: [...], pagination}}
                     if (response.has("data") && response.get("data").isJsonObject()) {
@@ -411,6 +408,11 @@ public class OrgDevicesTab extends JPanel {
         
         String selectedTeam = (String) careTeamFilter.getSelectedItem();
         boolean onlyDisconnected = showOnlyDisconnectedFilter.isSelected();
+        
+        // Si no hay selección (ej. durante recarga), no aplicar filtros aún
+        if (selectedTeam == null) {
+            return;
+        }
         
         for (DeviceRow device : allDevices) {
             // Filtro por care team

@@ -250,7 +250,6 @@ public class CaregiverDashboardPanel extends JPanel {
      * Carga datos del caregiver
      */
     public void loadData() {
-        System.out.println("[CaregiverDashboardPanel] ===== loadData() LLAMADO =====");
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
             private JsonArray patients;
             private JsonArray locations;
@@ -260,36 +259,29 @@ public class CaregiverDashboardPanel extends JPanel {
             @Override
             protected Void doInBackground() throws Exception {
                 try {
-                    System.out.println("[CaregiverDashboardPanel] Iniciando carga de datos...");
                     
                     // Cargar pacientes personales
                     JsonObject patientsResponse = apiClient.getCaregiverPatients(accessToken);
-                    System.out.println("[CaregiverDashboardPanel] Respuesta pacientes: " + patientsResponse.toString());
                     
                     if (patientsResponse.has("data") && patientsResponse.get("data").isJsonObject()) {
                         JsonObject dataObj = patientsResponse.getAsJsonObject("data");
                         patients = dataObj.has("patients") && dataObj.get("patients").isJsonArray()
                                 ? dataObj.getAsJsonArray("patients")
                                 : new JsonArray();
-                        System.out.println("[CaregiverDashboardPanel] Pacientes encontrados: " + patients.size());
                     } else {
                         patients = new JsonArray();
-                        System.out.println("[CaregiverDashboardPanel] No se encontraron pacientes");
                     }
                     
                     // Cargar ubicaciones (con parámetros vacíos)
                     JsonObject locationsResponse = apiClient.getCaregiverPatientLocations(accessToken, null);
-                    System.out.println("[CaregiverDashboardPanel] Respuesta ubicaciones: " + locationsResponse.toString());
                     
                     if (locationsResponse.has("data") && locationsResponse.get("data").isJsonObject()) {
                         JsonObject dataObj = locationsResponse.getAsJsonObject("data");
                         locations = dataObj.has("patients") && dataObj.get("patients").isJsonArray()
                                 ? dataObj.getAsJsonArray("patients")
                                 : new JsonArray();
-                        System.out.println("[CaregiverDashboardPanel] Ubicaciones encontradas: " + locations.size());
                     } else {
                         locations = new JsonArray();
-                        System.out.println("[CaregiverDashboardPanel] No se encontraron ubicaciones");
                     }
                     
                     // Métricas básicas (calcular desde los datos)
@@ -299,7 +291,6 @@ public class CaregiverDashboardPanel extends JPanel {
                     metrics.addProperty("open_alerts", 0);
                     
                 } catch (Exception ex) {
-                    System.out.println("[CaregiverDashboardPanel] ERROR en carga de datos: " + ex.getMessage());
                     ex.printStackTrace();
                     loadError = ex;
                 }
@@ -313,7 +304,6 @@ public class CaregiverDashboardPanel extends JPanel {
                     get();
                     
                     if (loadError != null) {
-                        System.out.println("[CaregiverDashboardPanel] Mostrando error capturado");
                         exceptionHandler.accept(loadError);
                         return;
                     }
@@ -321,14 +311,12 @@ public class CaregiverDashboardPanel extends JPanel {
                     caregiverPatients = patients;
                     patientLocations = locations;
                     
-                    System.out.println("[CaregiverDashboardPanel] Actualizando UI...");
                     updateMetrics(metrics);
                     updatePatientsList(patients);
                     updateMap(locations);
                     
                     snackbarHandler.accept("Datos cargados correctamente", true);
                 } catch (Exception ex) {
-                    System.out.println("[CaregiverDashboardPanel] ERROR en done(): " + ex.getMessage());
                     ex.printStackTrace();
                     exceptionHandler.accept(ex);
                 }
@@ -464,7 +452,6 @@ public class CaregiverDashboardPanel extends JPanel {
             @Override
             protected Void doInBackground() {
                 try {
-                    System.out.println("[CaregiverDashboard] Obteniendo detalle del paciente: " + patientId);
                     
                     // Cargar detalle del paciente
                     JsonObject detailResponse = apiClient.getCaregiverPatientDetail(accessToken, patientId);
@@ -733,7 +720,6 @@ public class CaregiverDashboardPanel extends JPanel {
     
     private JPanel createNoteCard(JsonObject note) {
         // DEBUG: Imprimir el JSON completo de la nota
-        System.out.println("[DEBUG createNoteCard] JSON de nota: " + note.toString());
         
         JPanel card = new JPanel();
         card.setLayout(new BoxLayout(card, BoxLayout.Y_AXIS));
@@ -748,15 +734,11 @@ public class CaregiverDashboardPanel extends JPanel {
         String eventLabel = "Desconocido";
         if (note.has("event") && note.get("event").isJsonObject()) {
             JsonObject event = note.getAsJsonObject("event");
-            System.out.println("[DEBUG createNoteCard] Objeto event: " + event.toString());
             if (event.has("label")) {
                 eventLabel = event.get("label").getAsString();
-                System.out.println("[DEBUG createNoteCard] Event label encontrado: " + eventLabel);
             } else {
-                System.out.println("[DEBUG createNoteCard] Event NO tiene label");
             }
         } else {
-            System.out.println("[DEBUG createNoteCard] Nota NO tiene event o no es JsonObject");
         }
         
         // Título con tipo de evento

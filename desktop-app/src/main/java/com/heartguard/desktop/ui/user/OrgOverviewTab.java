@@ -205,7 +205,6 @@ public class OrgOverviewTab extends JPanel {
         SwingWorker<JsonObject, Void> worker = new SwingWorker<>() {
             @Override
             protected JsonObject doInBackground() throws Exception {
-                System.out.println("[OrgOverviewTab] Cargando dashboard para org: " + organization.getOrgName());
                 return apiClient.getOrganizationDashboard(accessToken, organization.getOrgId());
             }
             
@@ -213,23 +212,18 @@ public class OrgOverviewTab extends JPanel {
             protected void done() {
                 try {
                     JsonObject response = get();
-                    System.out.println("[OrgOverviewTab] Respuesta recibida: " + response.toString());
                     
                     // La respuesta tiene estructura: {data: {organization, overview, metrics}}
                     JsonObject data = response.has("data") ? response.getAsJsonObject("data") : new JsonObject();
-                    System.out.println("[OrgOverviewTab] Data extraída: " + data.toString());
                     
                     // Extraer overview y metrics
                     JsonObject overview = data.has("overview") ? data.getAsJsonObject("overview") : new JsonObject();
                     JsonObject metrics = data.has("metrics") ? data.getAsJsonObject("metrics") : new JsonObject();
                     
-                    System.out.println("[OrgOverviewTab] Overview: " + overview.toString());
-                    System.out.println("[OrgOverviewTab] Metrics: " + metrics.toString());
                     
                     updateMetrics(overview, metrics);
                     updateCharts(overview, metrics);
                     
-                    System.out.println("[OrgOverviewTab] Datos actualizados correctamente");
                 } catch (Exception ex) {
                     System.err.println("[OrgOverviewTab] ERROR: " + ex.getMessage());
                     ex.printStackTrace();

@@ -793,6 +793,15 @@ public class UserDashboardPanel extends JPanel {
         resetPanels();
         loadDashboardData();
     }
+    
+    /**
+     * Refresca los datos de la organización actual sin cambiar de organización
+     */
+    public void refreshCurrentOrganization() {
+        if (currentOrg != null) {
+            loadDashboardData();
+        }
+    }
 
     private void resetPanels() {
         patientsStatusLabel.setText("Actualizando pacientes...");
@@ -867,7 +876,6 @@ public class UserDashboardPanel extends JPanel {
     private JsonObject handleCareTeamPatientsFallback(Throwable throwable) {
         Throwable cause = unwrapCompletionException(throwable);
         if (cause instanceof ApiException apiException && apiException.getStatusCode() == 403) {
-            System.out.println("[INFO] Usuario no pertenece a ningún equipo de cuidado en esta organización");
             return createEmptyResponse();
         }
         throw new CompletionException(cause);
@@ -929,19 +937,14 @@ public class UserDashboardPanel extends JPanel {
         
         JsonArray allPatients = new JsonArray();
         if (careTeamPatientsWithLocations != null) {
-            System.out.println("[RENDER] Agregando " + careTeamPatientsWithLocations.size() + " pacientes de care teams CON ubicaciones");
             careTeamPatientsWithLocations.forEach(allPatients::add);
         }
         if (caregiverPatients != null) {
-            System.out.println("[RENDER] Agregando " + caregiverPatients.size() + " pacientes de caregiver");
             caregiverPatients.forEach(allPatients::add);
         }
         
         mapPatientsData = allPatients;
         mapMembersData = getArray(getData(bundle.careTeamLocations), "members");
-        
-        System.out.println("[RENDER] Total pacientes en mapa: " + mapPatientsData.size());
-        System.out.println("[RENDER] Total miembros en mapa: " + (mapMembersData != null ? mapMembersData.size() : 0));
         
         applyMapFilter();
         mapStatusLabel.setText(mapPatientsData.size() == 0 && mapMembersData.size() == 0
@@ -1611,27 +1614,16 @@ public class UserDashboardPanel extends JPanel {
             return;
         }
         
-        System.out.println("[FILTRO] Filtrando por equipo: " + option.name + " (ID: " + option.id + ")");
-        System.out.println("[FILTRO] Total pacientes sin filtrar: " + mapPatientsData.size());
-        
         JsonArray filteredPatients = new JsonArray();
         for (JsonElement element : mapPatientsData) {
             if (!element.isJsonObject()) continue;
             JsonObject patient = element.getAsJsonObject();
             
-            System.out.println("[FILTRO] Paciente: " + patient);
-            
             if (patient.has("care_team") && patient.get("care_team").isJsonObject()) {
                 JsonObject team = patient.getAsJsonObject("care_team");
-                System.out.println("[FILTRO]   - Tiene care_team: " + team);
                 if (team.has("id") && !team.get("id").isJsonNull() && team.get("id").getAsString().equals(option.id)) {
                     filteredPatients.add(patient);
-                    System.out.println("[FILTRO]   - ✓ INCLUIDO");
-                } else {
-                    System.out.println("[FILTRO]   - ✗ No coincide el ID");
                 }
-            } else {
-                System.out.println("[FILTRO]   - ✗ No tiene care_team");
             }
         }
         JsonArray filteredMembers = new JsonArray();
@@ -1691,15 +1683,12 @@ public class UserDashboardPanel extends JPanel {
             }
         }
         
-        System.out.println("[DASHBOARD] Procesados " + result.size() + " pacientes de care teams");
         return result;
     }
 
     private void fetchMapData() {
         if (currentOrg == null) return;
         mapStatusLabel.setText("Recargando ubicaciones...");
-
-        System.out.println("[DASHBOARD] Obteniendo datos de ubicaciones para org: " + currentOrg.getOrgId());
         
         Map<String, String> params = Map.of("org_id", currentOrg.getOrgId());
         
@@ -1722,10 +1711,6 @@ public class UserDashboardPanel extends JPanel {
                     JsonObject caregiverPatientsResponse = caregiverPatientsFuture.join();
                     JsonObject careTeamMembersResponse = careTeamMembersFuture.join();
                     
-                    System.out.println("[DASHBOARD] Respuesta care team patients: " + careTeamPatientsResponse);
-                    System.out.println("[DASHBOARD] Respuesta caregiver patients: " + caregiverPatientsResponse);
-                    System.out.println("[DASHBOARD] Respuesta care team members: " + careTeamMembersResponse);
-                    
                     // Procesar pacientes de care teams
                     JsonArray careTeamPatients = processCareTeamPatients(careTeamPatientsResponse);
                     
@@ -1744,16 +1729,11 @@ public class UserDashboardPanel extends JPanel {
                     // Obtener miembros del care team
                     JsonArray members = getArray(getData(careTeamMembersResponse), "members");
                     
-                    System.out.println("[DASHBOARD] Total pacientes combinados: " + allPatients.size());
-                    System.out.println("[DASHBOARD] Miembros obtenidos: " + (members != null ? members.size() : 0));
-                    
                     return new MapPayload(allPatients, members);
                 })
                 .thenAccept(payload -> SwingUtilities.invokeLater(() -> {
                     mapPatientsData = payload.patients != null ? payload.patients : new JsonArray();
                     mapMembersData = payload.members != null ? payload.members : new JsonArray();
-                    
-                    System.out.println("[DASHBOARD] Datos actualizados - Pacientes: " + mapPatientsData.size() + ", Miembros: " + mapMembersData.size());
                     
                     applyMapFilter();
                     snackbar.accept("Mapa actualizado", true);

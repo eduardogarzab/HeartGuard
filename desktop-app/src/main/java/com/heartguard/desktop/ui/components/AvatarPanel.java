@@ -6,6 +6,7 @@ import java.awt.*;
 import java.awt.geom.Ellipse2D;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
+import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.ExecutionException;
 
@@ -16,6 +17,8 @@ import java.util.concurrent.ExecutionException;
 public class AvatarPanel extends JPanel {
     private static final Color DEFAULT_BACKGROUND = new Color(33, 150, 243);
     private static final Color DEFAULT_TEXT = Color.WHITE;
+    private static final int MAX_RETRIES = 3;
+    private static final int RETRY_DELAY_MS = 1000;
     
     private final int size;
     private final String name;
@@ -57,22 +60,64 @@ public class AvatarPanel extends JPanel {
     }
     
     /**
-     * Carga la foto de forma asíncrona desde una URL
+     * Carga la foto de forma asíncrona desde una URL con reintentos
      */
     private void loadPhotoAsync(String urlString) {
         if (loadingPhoto) return;
         loadingPhoto = true;
         
+        // Agregar timestamp para evitar caché del navegador/CDN
+        String urlWithCacheBuster = urlString;
+        if (urlString != null && !urlString.isEmpty()) {
+            String separator = urlString.contains("?") ? "&" : "?";
+            urlWithCacheBuster = urlString + separator + "t=" + System.currentTimeMillis();
+        }
+        
+        final String finalUrl = urlWithCacheBuster;
+        
         SwingWorker<BufferedImage, Void> worker = new SwingWorker<>() {
             @Override
             protected BufferedImage doInBackground() throws Exception {
-                try {
-                    URL url = new URL(urlString);
-                    return ImageIO.read(url);
-                } catch (IOException e) {
-                    System.err.println("Error al cargar foto desde URL: " + urlString + " - " + e.getMessage());
-                    return null;
+                Exception lastException = null;
+                
+                for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+                    try {
+                        URL url = new URL(finalUrl);
+                        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+                        connection.setRequestProperty("User-Agent", "HeartGuard Desktop App");
+                        connection.setRequestProperty("Cache-Control", "no-cache, no-store, must-revalidate");
+                        connection.setRequestProperty("Pragma", "no-cache");
+                        connection.setRequestProperty("Expires", "0");
+                        connection.setConnectTimeout(5000);
+                        connection.setReadTimeout(10000);
+                        connection.connect();
+                        
+                        int responseCode = connection.getResponseCode();
+                        if (responseCode == 200) {
+                            BufferedImage image = ImageIO.read(connection.getInputStream());
+                            connection.disconnect();
+                            if (image != null) {
+                                return image;
+                            }
+                        } else {
+                            System.err.println("HTTP " + responseCode + " al cargar: " + urlString + " (intento " + attempt + "/" + MAX_RETRIES + ")");
+                        }
+                        connection.disconnect();
+                    } catch (IOException e) {
+                        lastException = e;
+                        System.err.println("Error al cargar foto (intento " + attempt + "/" + MAX_RETRIES + "): " + e.getMessage());
+                        
+                        if (attempt < MAX_RETRIES) {
+                            Thread.sleep(RETRY_DELAY_MS * attempt); // Backoff exponencial
+                        }
+                    }
                 }
+                
+                // Si llegamos aquí, fallaron todos los intentos
+                if (lastException != null) {
+                    System.err.println("Falló carga de foto después de " + MAX_RETRIES + " intentos: " + urlString);
+                }
+                return null;
             }
             
             @Override

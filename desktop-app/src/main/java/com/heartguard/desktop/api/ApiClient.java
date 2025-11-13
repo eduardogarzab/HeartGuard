@@ -399,7 +399,8 @@ public class ApiClient {
 
         Request.Builder requestBuilder = new Request.Builder()
                 .url(urlBuilder.build())
-                .get();
+                .get()
+                .header("Cache-Control", "no-cache");
 
         if (authToken != null && !authToken.isEmpty()) {
             requestBuilder.addHeader("Authorization", "Bearer " + authToken);
@@ -453,7 +454,8 @@ public class ApiClient {
 
         Request.Builder requestBuilder = new Request.Builder()
                 .url(urlBuilder.build())
-                .get();
+                .get()
+                .header("Cache-Control", "no-cache");
 
         if (authToken != null && !authToken.isEmpty()) {
             requestBuilder.addHeader("Authorization", "Bearer " + authToken);
@@ -609,7 +611,6 @@ public class ApiClient {
     }
 
     public JsonArray getCurrentUserMemberships(String token) throws ApiException {
-        System.out.println("[DEBUG] ApiClient.getCurrentUserMemberships() - Llamando endpoint /users/me/org-memberships");
         JsonObject response = executeGatewayGet(
                 "/users/me/org-memberships",
                 null,
@@ -617,35 +618,21 @@ public class ApiClient {
                 true,
                 "Error al obtener organizaciones"
         );
-        System.out.println("[DEBUG] Respuesta completa del endpoint: " + response.toString());
 
         if (response.has("data")) {
-            System.out.println("[DEBUG] Campo 'data' encontrado");
-
             // La estructura es: {"data": {"memberships": [...]}}
             if (response.get("data").isJsonObject()) {
                 JsonObject dataObj = response.getAsJsonObject("data");
-                System.out.println("[DEBUG] 'data' es un JsonObject");
 
                 if (dataObj.has("memberships") && dataObj.get("memberships").isJsonArray()) {
                     JsonArray membershipsArray = dataObj.getAsJsonArray("memberships");
-                    System.out.println("[DEBUG] Campo 'memberships' encontrado con " + membershipsArray.size() + " elementos");
                     return membershipsArray;
-                } else {
-                    System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'memberships' o no es un array");
-                    System.out.println("[DEBUG] Campos disponibles en 'data': " + dataObj.keySet());
                 }
             } else if (response.get("data").isJsonArray()) {
                 // Por si acaso el formato cambia en el futuro
                 JsonArray dataArray = response.getAsJsonArray("data");
-                System.out.println("[DEBUG] 'data' es un JsonArray con " + dataArray.size() + " elementos (formato alternativo)");
                 return dataArray;
-            } else {
-                System.out.println("[DEBUG] ADVERTENCIA: 'data' NO es ni JsonObject ni JsonArray, es: " + response.get("data").getClass().getSimpleName());
             }
-        } else {
-            System.out.println("[DEBUG] ADVERTENCIA: No se encontró campo 'data' en la respuesta");
-            System.out.println("[DEBUG] Campos disponibles: " + response.keySet());
         }
 
         return new JsonArray();
@@ -1233,9 +1220,20 @@ public class ApiClient {
             try {
                 String url = gatewayUrl + "/media/users/" + userId + "/photo";
                 
+                // Determinar el content type basado en la extensión del archivo
+                String fileName = photoFile.getName().toLowerCase();
+                String contentType = "image/jpeg"; // default
+                if (fileName.endsWith(".png")) {
+                    contentType = "image/png";
+                } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+                    contentType = "image/jpeg";
+                } else if (fileName.endsWith(".webp")) {
+                    contentType = "image/webp";
+                }
+                
                 RequestBody fileBody = RequestBody.create(
                         photoFile,
-                        MediaType.parse("image/*")
+                        MediaType.parse(contentType)
                 );
                 
                 RequestBody requestBody = new MultipartBody.Builder()

@@ -544,9 +544,7 @@ public class PatientDashboardPanel extends JPanel {
     }
 
     private void updateLocationsSection(JsonObject locationsResponse) {
-        System.out.println("DEBUG: updateLocationsSection llamado");
         if (locationsResponse == null || !locationsResponse.has("locations")) {
-            System.out.println("DEBUG: locationsResponse es null o no tiene 'locations'");
             // No hay ubicaciones disponibles
             cachedLocationsData = new JsonArray();
             if (mapStatusLabel != null) {
@@ -559,7 +557,6 @@ public class PatientDashboardPanel extends JPanel {
         }
 
         JsonArray locations = locationsResponse.getAsJsonArray("locations");
-        System.out.println("DEBUG: Cantidad de ubicaciones: " + locations.size());
 
         // Guardar ubicaciones para el mapa
         cachedLocationsData = locations;
@@ -578,7 +575,6 @@ public class PatientDashboardPanel extends JPanel {
             
             // Actualizar el mapa embebido con las ubicaciones
             if (embeddedMapPanel != null) {
-                System.out.println("DEBUG: Actualizando mapa embebido con " + locations.size() + " ubicaciones");
                 embeddedMapPanel.updateLocations(locations);
             }
         }
