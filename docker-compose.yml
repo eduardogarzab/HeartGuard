@@ -1,34 +1,57 @@
 version: "3.9"
 
 services:
-    postgres:
-        image: postgis/postgis:14-3.2
-        container_name: heartguard-postgres
-        environment:
-            POSTGRES_USER: postgres
-            POSTGRES_PASSWORD: postgres123
-        ports:
-            - "5432:5432"
-        shm_size: "1g"
-        healthcheck:
-            test: ["CMD-SHELL", "pg_isready -U postgres -d postgres || exit 1"]
-            interval: 5s
-            timeout: 3s
-            retries: 30
-        volumes:
-            - postgres_data:/var/lib/postgresql/data
+  postgres:
+    image: postgis/postgis:14-3.2
+    container_name: heartguard-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres123
+    ports:
+      - "5432:5432"
+    shm_size: "1g"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
-    redis:
-        image: redis:7-alpine
-        container_name: heartguard-redis
-        ports:
-            - "6379:6379"
-        command: ["redis-server", "--appendonly", "no"]
-        healthcheck:
-            test: ["CMD", "redis-cli", "PING"]
-            interval: 5s
-            timeout: 2s
-            retries: 10
+  redis:
+    image: redis:7-alpine
+    container_name: heartguard-redis
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "PING"]
+      interval: 5s
+      timeout: 2s
+      retries: 10
+
+  influxdb:
+    image: influxdb:2.7-alpine
+    container_name: heartguard-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: admin
+      DOCKER_INFLUXDB_INIT_PASSWORD: influxdb123
+      DOCKER_INFLUXDB_INIT_ORG: heartguard
+      DOCKER_INFLUXDB_INIT_BUCKET: timeseries
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: heartguard-dev-token-change-me
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - influxdb_data:/var/lib/influxdb2
+      - influxdb_config:/etc/influxdb2
 
 volumes:
-    postgres_data:
+  postgres_data:
+  influxdb_data:
+  influxdb_config:
