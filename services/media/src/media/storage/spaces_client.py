@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import boto3
+from botocore.config import Config
 from botocore.exceptions import BotoCoreError, ClientError
 
 
@@ -30,12 +31,24 @@ class SpacesClient:
 
     def __post_init__(self) -> None:
         session = boto3.session.Session()
+        
+        # Configuración de timeouts y reintentos para boto3
+        boto_config = Config(
+            connect_timeout=10,
+            read_timeout=30,
+            retries={
+                'max_attempts': 3,
+                'mode': 'standard'
+            }
+        )
+        
         self._client = session.client(
             "s3",
             region_name=self.region,
             endpoint_url=self.endpoint_url,
             aws_access_key_id=self.access_key,
             aws_secret_access_key=self.secret_key,
+            config=boto_config,
         )
         self.cdn_base_url = self.cdn_base_url.rstrip("/")
 

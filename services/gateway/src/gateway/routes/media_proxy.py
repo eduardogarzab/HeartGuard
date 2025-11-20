@@ -47,7 +47,10 @@ def _proxy_media(path: str, method: str | None = None) -> Response:
             # For multipart/form-data with files
             files_payload = {}
             for key, file in request.files.items():
-                files_payload[key] = (file.filename, file.stream, file.content_type)
+                # Read the file content to avoid stream exhaustion issues
+                file_content = file.read()
+                file.seek(0)  # Reset in case it's needed locally
+                files_payload[key] = (file.filename, file_content, file.content_type)
         else:
             data_payload = request.get_data() if request.data else None
 

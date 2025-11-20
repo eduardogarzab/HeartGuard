@@ -1125,9 +1125,20 @@ public class ApiClient {
             try {
                 String url = gatewayUrl + "/media/patients/" + patientId + "/photo";
                 
+                // Determinar el content type basado en la extensión del archivo
+                String fileName = photoFile.getName().toLowerCase();
+                String contentType = "image/jpeg"; // default
+                if (fileName.endsWith(".png")) {
+                    contentType = "image/png";
+                } else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
+                    contentType = "image/jpeg";
+                } else if (fileName.endsWith(".webp")) {
+                    contentType = "image/webp";
+                }
+                
                 RequestBody fileBody = RequestBody.create(
                         photoFile,
-                        MediaType.parse("image/*")
+                        MediaType.parse(contentType)
                 );
                 
                 RequestBody requestBody = new MultipartBody.Builder()
