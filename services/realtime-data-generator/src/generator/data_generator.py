@@ -1,7 +1,7 @@
 """Core data generation logic for vital signs."""
 import random
 from datetime import datetime, timezone
-from typing import Dict
+from typing import Dict, Optional
 from dataclasses import dataclass
 
 
@@ -14,6 +14,27 @@ class Patient:
     org_id: str
     risk_level_code: str
     created_at: datetime
+
+
+@dataclass
+class StreamConfig:
+    """Stream configuration from PostgreSQL for InfluxDB binding"""
+    patient_id: str
+    patient_name: str
+    patient_email: str
+    org_id: str
+    org_name: Optional[str]
+    risk_level_code: Optional[str]
+    device_id: str
+    device_serial: str
+    stream_id: str
+    signal_type_code: str
+    binding_id: str
+    influx_org: str
+    influx_bucket: str
+    measurement: str
+    retention_hint: Optional[str]
+    custom_tags: Dict[str, str]
 
 
 class VitalSignsGenerator:

@@ -4,7 +4,7 @@ from influxdb_client.client.write_api import SYNCHRONOUS
 from typing import Dict
 import logging
 
-from .data_generator import Patient
+from .data_generator import Patient, StreamConfig
 
 logger = logging.getLogger(__name__)
 
@@ -46,6 +46,9 @@ class InfluxDBService:
     
     def write_vital_signs(self, patient: Patient, reading: Dict):
         """
+        DEPRECATED: Legacy method for backward compatibility.
+        Use write_vital_signs_from_stream() instead.
+        
         Write vital signs to InfluxDB.
         Each measurement is tagged with patient_id and org_id.
         """
@@ -81,3 +84,57 @@ class InfluxDBService:
             )
         except Exception as e:
             logger.error(f"Error writing to InfluxDB for patient {patient.id}: {e}")
+    
+    def write_vital_signs_from_stream(self, stream_config: StreamConfig, reading: Dict):
+        """
+        Write vital signs to InfluxDB using full stream configuration.
+        This method uses the PostgreSQL metadata to properly tag the data.
+        
+        Args:
+            stream_config: StreamConfig with device_id, stream_id, and binding info
+            reading: Dictionary with vital signs data and timestamp
+        """
+        try:
+            timestamp = reading['timestamp']
+            
+            # Create a point using the measurement from binding
+            point = Point(stream_config.measurement) \
+                .tag("patient_id", stream_config.patient_id) \
+                .tag("patient_name", stream_config.patient_name) \
+                .tag("device_id", stream_config.device_id) \
+                .tag("stream_id", stream_config.stream_id) \
+                .tag("org_id", stream_config.org_id or "none") \
+                .tag("signal_type", stream_config.signal_type_code) \
+                .tag("risk_level", stream_config.risk_level_code or "unknown") \
+                .field("gps_longitude", reading['gps_longitude']) \
+                .field("gps_latitude", reading['gps_latitude']) \
+                .field("heart_rate", reading['heart_rate']) \
+                .field("spo2", reading['spo2']) \
+                .field("systolic_bp", reading['systolic_bp']) \
+                .field("diastolic_bp", reading['diastolic_bp']) \
+                .field("temperature", reading['temperature']) \
+                .time(timestamp, WritePrecision.NS)
+            
+            # Add custom tags from timeseries_binding_tag
+            for tag_key, tag_value in stream_config.custom_tags.items():
+                point = point.tag(tag_key, tag_value)
+            
+            # Write using bucket and org from stream config
+            self.write_api.write(
+                bucket=stream_config.influx_bucket,
+                org=stream_config.influx_org,
+                record=point
+            )
+            
+            logger.debug(
+                f"Wrote vital signs for patient {stream_config.patient_name} "
+                f"(stream: {stream_config.stream_id}, device: {stream_config.device_serial}): "
+                f"HR={reading['heart_rate']}, SpO2={reading['spo2']}, "
+                f"BP={reading['systolic_bp']}/{reading['diastolic_bp']}, "
+                f"Temp={reading['temperature']}°C"
+            )
+        except Exception as e:
+            logger.error(
+                f"Error writing to InfluxDB for stream {stream_config.stream_id}: {e}"
+            )
+

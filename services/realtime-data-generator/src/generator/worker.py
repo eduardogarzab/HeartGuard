@@ -58,20 +58,38 @@ class GeneratorWorker:
                 time.sleep(self.interval)
     
     def _generate_and_send_data(self):
-        """Generate and send data for all active patients."""
-        patients = self.db_service.get_active_patients()
+        """
+        Generate and send data for all active patients using stream configurations.
+        This version uses the full PostgreSQL metadata to properly tag InfluxDB data.
+        """
+        # Get stream configurations instead of just patients
+        stream_configs = self.db_service.get_patient_device_streams()
         
-        if not patients:
-            logger.warning("No patients found in database")
+        if not stream_configs:
+            logger.warning("No stream configurations found in database. Run init_sync_data.sql first.")
             return
         
-        count = 0
-        for patient in patients:
-            try:
-                reading = self.generator.generate_reading(patient.id)
-                self.influx_service.write_vital_signs(patient, reading)
-                count += 1
-            except Exception as e:
-                logger.error(f"Error processing patient {patient.id}: {e}")
+        successful = 0
+        skipped = 0
         
-        logger.info(f"Successfully generated and sent data for {count}/{len(patients)} patients")
+        for stream_config in stream_configs:
+            try:
+                # Generate reading for this patient
+                reading = self.generator.generate_reading(stream_config.patient_id)
+                
+                # Write using the new method with full stream configuration
+                self.influx_service.write_vital_signs_from_stream(stream_config, reading)
+                successful += 1
+                
+            except Exception as e:
+                logger.error(
+                    f"Error processing stream {stream_config.stream_id} "
+                    f"for patient {stream_config.patient_name}: {e}"
+                )
+                skipped += 1
+        
+        logger.info(
+            f"Data generation: {successful} successful, {skipped} skipped "
+            f"(total streams: {len(stream_configs)})"
+        )
+
