@@ -5,6 +5,8 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
+import com.heartguard.desktop.api.InfluxDBService;
+import com.heartguard.desktop.config.AppConfig;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
@@ -38,11 +40,13 @@ public class PatientDetailDialog extends JDialog {
     private final String orgId;
     private final String patientId;
     private final String patientName;
+    private final InfluxDBService influxService;
 
     private final JLabel statusLabel = new JLabel(" ");
     private final JTextArea infoArea = new JTextArea();
     private final DefaultListModel<String> alertsModel = new DefaultListModel<>();
     private final DefaultListModel<String> notesModel = new DefaultListModel<>();
+    private VitalSignsChartPanel chartPanel;
 
     public PatientDetailDialog(Frame owner, ApiClient apiClient, String token, String orgId, String patientId, String patientName) {
         super(owner, "Paciente: " + patientName, true);
@@ -51,12 +55,25 @@ public class PatientDetailDialog extends JDialog {
         this.orgId = orgId;
         this.patientId = patientId;
         this.patientName = patientName;
+        
+        // Obtener configuración desde AppConfig (lee de .env o variables de entorno)
+        AppConfig config = AppConfig.getInstance();
+        
+        this.influxService = new InfluxDBService(
+            config.getInfluxdbUrl(),
+            config.getInfluxdbToken(),
+            config.getInfluxdbOrg(),
+            config.getInfluxdbBucket()
+        );
+        
+        System.out.println("Initializing patient detail for: " + patientName + " (ID: " + patientId + ")");
+        
         initComponents();
         loadData();
     }
 
     private void initComponents() {
-        setSize(820, 680);
+        setSize(1000, 800);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout());
         getContentPane().setBackground(GLOBAL_BG);
@@ -81,11 +98,17 @@ public class PatientDetailDialog extends JDialog {
 
         add(header, BorderLayout.NORTH);
 
-        // Tabs estilizados
+        // Panel principal con scroll para contener tabs y gráficas
+        JPanel mainPanel = new JPanel(new BorderLayout(0, 12));
+        mainPanel.setOpaque(false);
+        mainPanel.setBorder(new EmptyBorder(0, 16, 16, 16));
+
+        // Tabs estilizados para métricas, alertas y notas
         JTabbedPane tabs = new JTabbedPane();
         tabs.setFont(new Font("Inter", Font.PLAIN, 15));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
+        tabs.setPreferredSize(new Dimension(0, 250));
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -105,7 +128,6 @@ public class PatientDetailDialog extends JDialog {
         alertsList.setFixedCellHeight(50);
         JScrollPane alertsScroll = new JScrollPane(alertsList);
         alertsScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
-        alertsScroll.setPreferredSize(new Dimension(0, 400));
         tabs.addTab("ALERTAS", alertsScroll);
 
         JList<String> notesList = new JList<>(notesModel);
@@ -116,11 +138,29 @@ public class PatientDetailDialog extends JDialog {
         notesScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
         tabs.addTab("NOTAS", notesScroll);
 
-        JPanel tabsWrapper = new JPanel(new BorderLayout());
-        tabsWrapper.setBorder(new EmptyBorder(0, 16, 16, 16));
-        tabsWrapper.setOpaque(false);
-        tabsWrapper.add(tabs, BorderLayout.CENTER);
-        add(tabsWrapper, BorderLayout.CENTER);
+        mainPanel.add(tabs, BorderLayout.NORTH);
+
+        // Panel de gráficas en tiempo real
+        JPanel chartContainer = new JPanel(new BorderLayout());
+        chartContainer.setOpaque(false);
+        chartContainer.setBorder(new CompoundBorder(
+            new LineBorder(BORDER_LIGHT, 1, true),
+            new EmptyBorder(8, 8, 8, 8)
+        ));
+
+        JLabel chartTitle = new JLabel("📊 Signos Vitales en Tiempo Real");
+        chartTitle.setFont(new Font("Inter", Font.BOLD, 16));
+        chartTitle.setForeground(TEXT_PRIMARY);
+        chartTitle.setBorder(new EmptyBorder(0, 0, 8, 0));
+        chartContainer.add(chartTitle, BorderLayout.NORTH);
+
+        // Crear panel de gráficas (se actualiza cada 10 segundos)
+        chartPanel = new VitalSignsChartPanel(patientId, influxService, 10);
+        chartContainer.add(chartPanel, BorderLayout.CENTER);
+
+        mainPanel.add(chartContainer, BorderLayout.CENTER);
+
+        add(mainPanel, BorderLayout.CENTER);
 
         // Footer con estado y botón cerrar
         JPanel footer = new JPanel(new BorderLayout());
@@ -144,7 +184,10 @@ public class PatientDetailDialog extends JDialog {
         ));
         closeButton.setFocusPainted(false);
         closeButton.setCursor(Cursor.getPredefinedCursor(Cursor.HAND_CURSOR));
-        closeButton.addActionListener(e -> dispose());
+        closeButton.addActionListener(e -> {
+            cleanup();
+            dispose();
+        });
         footer.add(closeButton, BorderLayout.EAST);
 
         add(footer, BorderLayout.SOUTH);
@@ -291,5 +334,14 @@ public class PatientDetailDialog extends JDialog {
             return "-";
         }
         return element.getAsString();
+    }
+
+    /**
+     * Limpiar recursos al cerrar el diálogo
+     */
+    private void cleanup() {
+        if (chartPanel != null) {
+            chartPanel.cleanup();
+        }
     }
 }

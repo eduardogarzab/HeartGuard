@@ -96,6 +96,13 @@
             <version>1.5.4</version>
         </dependency>
 
+        <!-- InfluxDB Client - Para leer datos de series temporales -->
+        <dependency>
+            <groupId>com.influxdb</groupId>
+            <artifactId>influxdb-client-java</artifactId>
+            <version>6.11.0</version>
+        </dependency>
+
         <!-- dotenv-java - Para cargar variables de entorno desde .env -->
         <dependency>
             <groupId>io.github.cdimascio</groupId>
