@@ -743,82 +743,19 @@ public class OrgPatientsTab extends JPanel {
                                        JsonObject notesResponse) {
         
         Frame parentWindow = (Frame) SwingUtilities.getWindowAncestor(this);
-        JDialog dialog = new JDialog(parentWindow, "Detalle de Paciente", Dialog.ModalityType.APPLICATION_MODAL);
-        dialog.setLayout(new BorderLayout());
         
-        // Hacer responsive - usar 80% del tamaño de la ventana padre, máximo 1000x750
-        Dimension parentSize = parentWindow != null ? parentWindow.getSize() : new Dimension(1200, 800);
-        int dialogWidth = Math.min(1000, (int)(parentSize.width * 0.8));
-        int dialogHeight = Math.min(750, (int)(parentSize.height * 0.85));
-        dialog.setSize(dialogWidth, dialogHeight);
-        dialog.setLocationRelativeTo(parentWindow);
+        System.out.println("[OrgPatientsTab] Opening PatientDetailDialog for patient: " + patientName + " (ID: " + patientId + ")");
         
-        // Panel principal con BorderLayout para mejor control del ancho
-        JPanel mainPanel = new JPanel(new BorderLayout(0, 24));
-        mainPanel.setBackground(GLOBAL_BACKGROUND);
-        mainPanel.setBorder(new EmptyBorder(24, 24, 24, 24));
+        // Usar el diálogo profesional con gráficas de signos vitales
+        PatientDetailDialog dialog = new PatientDetailDialog(
+            parentWindow,
+            apiClient,
+            accessToken,
+            organization.getOrgId(),
+            patientId,
+            patientName
+        );
         
-        // Extraer datos del paciente
-        JsonObject patientData = detailResponse.has("data") && detailResponse.getAsJsonObject("data").has("patient") 
-            ? detailResponse.getAsJsonObject("data").getAsJsonObject("patient") 
-            : new JsonObject();
-        
-        String email = patientData.has("email") ? patientData.get("email").getAsString() : "N/A";
-        String birthdate = patientData.has("birthdate") && !patientData.get("birthdate").isJsonNull() 
-            ? patientData.get("birthdate").getAsString() : "N/A";
-        String riskLevel = "N/A";
-        String riskCode = "";
-        if (patientData.has("risk_level") && patientData.get("risk_level").isJsonObject()) {
-            JsonObject risk = patientData.getAsJsonObject("risk_level");
-            if (risk.has("label")) riskLevel = risk.get("label").getAsString();
-            if (risk.has("code")) riskCode = risk.get("code").getAsString();
-        }
-        String sex = "N/A";
-        if (patientData.has("sex") && patientData.get("sex").isJsonObject()) {
-            JsonObject sexObj = patientData.getAsJsonObject("sex");
-            if (sexObj.has("label")) sex = sexObj.get("label").getAsString();
-        }
-        String photoUrl = patientData.has("profile_photo_url") && !patientData.get("profile_photo_url").isJsonNull()
-            ? patientData.get("profile_photo_url").getAsString() : null;
-        
-        // Header con info del paciente (en NORTH)
-        JPanel headerPanel = createPatientHeaderPanel(patientName, email, birthdate, sex, riskLevel, riskCode, photoUrl);
-        mainPanel.add(headerPanel, BorderLayout.NORTH);
-        
-        // Grid de 2 columnas: Alertas | Notas (en CENTER para que ocupe todo el ancho)
-        JPanel gridPanel = new JPanel(new GridLayout(1, 2, 24, 0));
-        gridPanel.setOpaque(false);
-        
-        // Columna 1: Alertas Recientes
-        JPanel alertsSection = createAlertsSection(alertsResponse);
-        gridPanel.add(alertsSection);
-        
-        // Columna 2: Notas
-        JPanel notesSection = createNotesSection(notesResponse);
-        gridPanel.add(notesSection);
-        
-        mainPanel.add(gridPanel, BorderLayout.CENTER);
-        
-        JScrollPane scrollPane = new JScrollPane(mainPanel);
-        scrollPane.setBorder(null);
-        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        
-        dialog.add(scrollPane, BorderLayout.CENTER);
-        
-        // Botón de cerrar
-        JPanel footerPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        footerPanel.setBackground(Color.WHITE);
-        footerPanel.setBorder(new CompoundBorder(
-            new LineBorder(BORDER_LIGHT, 1, false),
-            new EmptyBorder(12, 16, 12, 16)
-        ));
-        
-        JButton closeButton = new JButton("Cerrar");
-        closeButton.setFont(new Font("Inter", Font.PLAIN, 14));
-        closeButton.addActionListener(e -> dialog.dispose());
-        footerPanel.add(closeButton);
-        
-        dialog.add(footerPanel, BorderLayout.SOUTH);
         dialog.setVisible(true);
     }
     

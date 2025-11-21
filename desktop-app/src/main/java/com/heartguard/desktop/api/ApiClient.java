@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit;
  * El Gateway se encarga de enrutar a los microservicios internos
  */
 public class ApiClient {
-    private static final String DEFAULT_GATEWAY_URL = "http://0.0.0.0:8080"; // aqui tiene que cambiarse al correspondiente
+    private static final String DEFAULT_GATEWAY_URL = "http://129.212.181.53:8080"; // aqui tiene que cambiarse al correspondiente
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final String gatewayUrl;

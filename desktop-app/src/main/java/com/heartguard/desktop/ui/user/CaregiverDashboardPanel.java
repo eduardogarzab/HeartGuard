@@ -431,71 +431,29 @@ public class CaregiverDashboardPanel extends JPanel {
     
     private void showPatientDetail(JsonObject patient) {
         String patientId = patient.has("id") ? patient.get("id").getAsString() : null;
+        String patientName = patient.has("name") ? patient.get("name").getAsString() : "Sin nombre";
+        
         if (patientId == null) {
             snackbarHandler.accept("ID de paciente no disponible", false);
             return;
         }
         
-        // Mostrar diálogo de carga
-        JDialog loadingDialog = new JDialog((Frame) SwingUtilities.getWindowAncestor(this), "Cargando...", true);
-        loadingDialog.setLayout(new BorderLayout(16, 16));
-        loadingDialog.add(new JLabel("Cargando detalles del paciente...", SwingConstants.CENTER), BorderLayout.CENTER);
-        loadingDialog.setSize(300, 100);
-        loadingDialog.setLocationRelativeTo(this);
+        Frame parentWindow = (Frame) SwingUtilities.getWindowAncestor(this);
         
-        SwingWorker<Void, Void> worker = new SwingWorker<>() {
-            private JsonObject patientDetail;
-            private JsonArray alerts;
-            private JsonArray notes;
-            private Exception error;
-            
-            @Override
-            protected Void doInBackground() {
-                try {
-                    
-                    // Cargar detalle del paciente
-                    JsonObject detailResponse = apiClient.getCaregiverPatientDetail(accessToken, patientId);
-                    if (detailResponse.has("data") && detailResponse.get("data").isJsonObject()) {
-                        patientDetail = detailResponse.getAsJsonObject("data").getAsJsonObject("patient");
-                    }
-                    
-                    // Cargar alertas (últimas 10)
-                    JsonObject alertsResponse = apiClient.getCaregiverPatientAlerts(accessToken, patientId, 10);
-                    if (alertsResponse.has("data") && alertsResponse.get("data").isJsonObject()) {
-                        alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
-                    }
-                    
-                    // Cargar notas (últimas 10)
-                    JsonObject notesResponse = apiClient.getCaregiverPatientNotes(accessToken, patientId, 10);
-                    if (notesResponse.has("data") && notesResponse.get("data").isJsonObject()) {
-                        notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
-                    }
-                    
-                } catch (Exception ex) {
-                    error = ex;
-                }
-                return null;
-            }
-            
-            @Override
-            protected void done() {
-                loadingDialog.dispose();
-                
-                if (error != null) {
-                    exceptionHandler.accept(error);
-                    return;
-                }
-                
-                if (patientDetail != null) {
-                    showPatientDetailModal(patientDetail, alerts, notes);
-                } else {
-                    snackbarHandler.accept("No se pudo cargar el detalle del paciente", false);
-                }
-            }
-        };
+        System.out.println("[CaregiverDashboard] Opening PatientDetailDialog for patient: " + patientName + " (ID: " + patientId + ")");
         
-        worker.execute();
-        loadingDialog.setVisible(true);
+        // Usar el diálogo profesional con gráficas de signos vitales
+        // Para caregiver, orgId es null
+        PatientDetailDialog dialog = new PatientDetailDialog(
+            parentWindow,
+            apiClient,
+            accessToken,
+            null, // orgId es null para pacientes de caregiver
+            patientId,
+            patientName
+        );
+        
+        dialog.setVisible(true);
     }
     
     private void showPatientDetailModal(JsonObject patient, JsonArray alerts, JsonArray notes) {

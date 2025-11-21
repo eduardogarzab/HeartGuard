@@ -155,8 +155,24 @@ public class PatientDetailDialog extends JDialog {
         chartContainer.add(chartTitle, BorderLayout.NORTH);
 
         // Crear panel de gráficas (se actualiza cada 10 segundos)
-        chartPanel = new VitalSignsChartPanel(patientId, influxService, 10);
-        chartContainer.add(chartPanel, BorderLayout.CENTER);
+        try {
+            System.out.println("[PatientDetail] Creating VitalSignsChartPanel for patient " + patientId);
+            chartPanel = new VitalSignsChartPanel(patientId, influxService, 10);
+            chartContainer.add(chartPanel, BorderLayout.CENTER);
+            System.out.println("[PatientDetail] VitalSignsChartPanel created successfully");
+        } catch (Exception e) {
+            System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
+            e.printStackTrace();
+            
+            // Mostrar mensaje de error en lugar del panel
+            JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:20px;'>" +
+                    "<b>Error al cargar gráficas:</b><br>" + 
+                    e.getMessage() + 
+                    "</div></html>");
+            errorLabel.setForeground(DANGER_RED);
+            errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            chartContainer.add(errorLabel, BorderLayout.CENTER);
+        }
 
         mainPanel.add(chartContainer, BorderLayout.CENTER);
 
