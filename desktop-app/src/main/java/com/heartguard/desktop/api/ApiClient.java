@@ -6,6 +6,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonNull;
 import com.google.gson.JsonObject;
+import com.heartguard.desktop.config.AppConfig;
 import com.heartguard.desktop.models.LoginResponse;
 import com.heartguard.desktop.models.Patient;
 import com.heartguard.desktop.models.User;
@@ -23,7 +24,6 @@ import java.util.concurrent.TimeUnit;
  * El Gateway se encarga de enrutar a los microservicios internos
  */
 public class ApiClient {
-    private static final String DEFAULT_GATEWAY_URL = "http://129.212.181.53:8080"; // aqui tiene que cambiarse al correspondiente
     private static final MediaType JSON = MediaType.get("application/json; charset=utf-8");
 
     private final String gatewayUrl;
@@ -32,7 +32,7 @@ public class ApiClient {
     private String accessToken;
 
     public ApiClient() {
-        this(DEFAULT_GATEWAY_URL);
+        this(AppConfig.getInstance().getGatewayBaseUrl());
     }
 
     public ApiClient(String gatewayUrl) {
@@ -1340,4 +1340,52 @@ public class ApiClient {
             }
         });
     }
+    
+    /**
+     * Obtiene los signos vitales más recientes de un paciente desde InfluxDB vía Gateway.
+     * Ruta: GET /realtime/patients/{patientId}/vital-signs
+     * 
+     * @param patientId ID del paciente
+     * @param deviceId ID del dispositivo (opcional)
+     * @param limit Número máximo de registros (default: 10)
+     * @return JsonObject con los datos de signos vitales
+     * @throws ApiException si hay error en la petición
+     */
+    public JsonObject getPatientVitalSigns(String patientId, String deviceId, int limit) throws ApiException {
+        HttpUrl.Builder urlBuilder = HttpUrl.parse(gatewayUrl + "/realtime/patients/" + patientId + "/vital-signs").newBuilder();
+        
+        if (deviceId != null && !deviceId.isEmpty()) {
+            urlBuilder.addQueryParameter("device_id", deviceId);
+        }
+        urlBuilder.addQueryParameter("limit", String.valueOf(limit));
+        
+        String url = urlBuilder.build().toString();
+        
+        Request.Builder requestBuilder = new Request.Builder()
+                .url(url)
+                .get();
+        
+        if (accessToken != null) {
+            requestBuilder.addHeader("Authorization", "Bearer " + accessToken);
+        }
+        
+        Request request = requestBuilder.build();
+        
+        try (Response response = httpClient.newCall(request).execute()) {
+            String responseBody = response.body() != null ? response.body().string() : "{}";
+            
+            if (!response.isSuccessful()) {
+                JsonObject errorObj = gson.fromJson(responseBody, JsonObject.class);
+                String errorMessage = errorObj.has("message") 
+                        ? errorObj.get("message").getAsString() 
+                        : "Error al obtener signos vitales";
+                throw new ApiException(errorMessage, response.code(), "vital_signs_fetch_error", responseBody);
+            }
+            
+            return gson.fromJson(responseBody, JsonObject.class);
+        } catch (IOException e) {
+            throw new ApiException("Error de conexión al obtener signos vitales: " + e.getMessage(), e);
+        }
+    }
 }
+

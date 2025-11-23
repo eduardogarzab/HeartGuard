@@ -1,6 +1,6 @@
 """Flask application entrypoint for Generator Service."""
 import logging
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 
 from .config import configure_app
 from .db import DatabaseService
@@ -108,6 +108,47 @@ def create_app() -> Flask:
                 for p in patients
             ]
         }), 200
+    
+    @app.route('/patients/<patient_id>/vital-signs', methods=['GET'])
+    def get_patient_vital_signs(patient_id: str):
+        """
+        Get latest vital signs for a patient.
+        
+        Query Parameters:
+            - device_id (optional): Filter by specific device
+            - limit (optional): Number of records to return (default: 10, max: 100)
+            - measurement (optional): InfluxDB measurement name (default: vital_signs)
+        """
+        if not influx_service:
+            return jsonify({'error': 'InfluxDB service not initialized'}), 500
+        
+        # Get query parameters
+        device_id = request.args.get('device_id')
+        limit = min(int(request.args.get('limit', 10)), 100)  # Max 100 records
+        measurement = request.args.get('measurement', 'vital_signs')
+        
+        try:
+            readings = influx_service.query_patient_vital_signs(
+                patient_id=patient_id,
+                device_id=device_id,
+                limit=limit,
+                measurement=measurement
+            )
+            
+            return jsonify({
+                'patient_id': patient_id,
+                'device_id': device_id,
+                'measurement': measurement,
+                'count': len(readings),
+                'readings': readings
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error fetching vital signs for patient {patient_id}: {e}")
+            return jsonify({
+                'error': 'query_failed',
+                'message': str(e)
+            }), 500
     
     # Cleanup on shutdown
     def cleanup_on_shutdown():

@@ -5,16 +5,17 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
-import com.heartguard.desktop.api.InfluxDBService;
-import com.heartguard.desktop.config.AppConfig;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.ActionListener;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Ventana modal con diseño profesional para mostrar detalles clínicos de un paciente.
@@ -40,7 +41,6 @@ public class PatientDetailDialog extends JDialog {
     private final String orgId;
     private final String patientId;
     private final String patientName;
-    private final InfluxDBService influxService;
 
     private final JLabel statusLabel = new JLabel(" ");
     private final JTextArea infoArea = new JTextArea();
@@ -65,16 +65,6 @@ public class PatientDetailDialog extends JDialog {
         this.patientId = patientId;
         this.patientName = patientName;
         
-        // Obtener configuración desde AppConfig (lee de .env o variables de entorno)
-        AppConfig config = AppConfig.getInstance();
-        
-        this.influxService = new InfluxDBService(
-            config.getInfluxdbUrl(),
-            config.getInfluxdbToken(),
-            config.getInfluxdbOrg(),
-            config.getInfluxdbBucket()
-        );
-        
         System.out.println("Initializing patient detail for: " + patientName + " (ID: " + patientId + ")");
         
         initComponents();
@@ -82,10 +72,12 @@ public class PatientDetailDialog extends JDialog {
     }
 
     private void initComponents() {
-        setSize(1000, 800);
+        // Ventana más grande y centrada
+        setSize(1400, 900);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout());
         getContentPane().setBackground(GLOBAL_BG);
+        setMinimumSize(new Dimension(1200, 800));
 
         // Encabezado con título y separador
         JPanel header = new JPanel(new BorderLayout());
@@ -117,7 +109,7 @@ public class PatientDetailDialog extends JDialog {
         tabs.setFont(new Font("Inter", Font.PLAIN, 15));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
-        tabs.setPreferredSize(new Dimension(0, 250));
+        tabs.setPreferredSize(new Dimension(0, 280));
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -560,6 +552,7 @@ public class PatientDetailDialog extends JDialog {
     
     /**
      * Carga las gráficas para un dispositivo específico (con caché para rendimiento)
+     * OPTIMIZACIÓN: Carga en background para no bloquear la UI
      */
     private void loadChartsForDevice(DeviceInfo device) {
         // Remover panel actual del contenedor (pero NO hacer cleanup todavía)
@@ -575,30 +568,64 @@ public class PatientDetailDialog extends JDialog {
             System.out.println("[PatientDetail] Reusing cached panel for device: " + device.serial);
             chartPanel = cachedPanel;
             chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+            chartContainerPanel.revalidate();
+            chartContainerPanel.repaint();
         } else {
-            // Crear nuevo panel solo si no existe en caché
-            try {
-                System.out.println("[PatientDetail] Creating NEW VitalSignsChartPanel for device: " + device.serial);
-                chartPanel = new VitalSignsChartPanel(patientId, device.id, influxService, 10);
-                chartPanelCache.put(device.id, chartPanel); // Guardar en caché
-                chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
-                System.out.println("[PatientDetail] VitalSignsChartPanel created and cached for device " + device.serial);
-            } catch (Exception e) {
-                System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
-                e.printStackTrace();
+            // Mostrar mensaje de carga mientras se crea el panel en background
+            JPanel loadingPanel = new JPanel(new BorderLayout());
+            loadingPanel.setOpaque(false);
+            JLabel loadingLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                    "<b style='font-size:16px;'>📊 Cargando gráficas...</b><br><br>" +
+                    "<span style='color:#64748b;'>Obteniendo datos de " + device.serial + "</span>" +
+                    "</div></html>");
+            loadingLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            loadingLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+            loadingPanel.add(loadingLabel, BorderLayout.CENTER);
+            chartContainerPanel.add(loadingPanel, BorderLayout.CENTER);
+            chartContainerPanel.revalidate();
+            chartContainerPanel.repaint();
+            
+            // Crear panel en background worker para no bloquear UI
+            SwingWorker<VitalSignsChartPanel, Void> chartWorker = new SwingWorker<>() {
+                @Override
+                protected VitalSignsChartPanel doInBackground() throws Exception {
+                    System.out.println("[PatientDetail] Creating NEW VitalSignsChartPanel for device: " + device.serial);
+                    return new VitalSignsChartPanel(patientId, device.id, apiClient, 10);
+                }
                 
-                JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:20px;'>" +
-                        "<b>Error al cargar gráficas:</b><br>" + 
-                        e.getMessage() + 
-                        "</div></html>");
-                errorLabel.setForeground(DANGER_RED);
-                errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
-                chartContainerPanel.add(errorLabel, BorderLayout.CENTER);
-            }
+                @Override
+                protected void done() {
+                    try {
+                        VitalSignsChartPanel newPanel = get();
+                        chartContainerPanel.remove(loadingPanel);
+                        chartPanel = newPanel;
+                        chartPanelCache.put(device.id, chartPanel);
+                        chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+                        chartContainerPanel.revalidate();
+                        chartContainerPanel.repaint();
+                        
+                        // OPTIMIZACIÓN: Iniciar carga de datos DESPUÉS de que el panel esté visible
+                        SwingUtilities.invokeLater(() -> {
+                            chartPanel.startDataLoading();
+                        });
+                        
+                        System.out.println("[PatientDetail] VitalSignsChartPanel created and cached for device " + device.serial);
+                    } catch (Exception e) {
+                        System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
+                        e.printStackTrace();
+                        chartContainerPanel.remove(loadingPanel);
+                        JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                                "<b style='color:#dc3545;font-size:16px;'>Error al cargar gráficas</b><br><br>" +
+                                "<span style='color:#64748b;'>" + e.getMessage() + "</span>" +
+                                "</div></html>");
+                        errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                        chartContainerPanel.add(errorLabel, BorderLayout.CENTER);
+                        chartContainerPanel.revalidate();
+                        chartContainerPanel.repaint();
+                    }
+                }
+            };
+            chartWorker.execute();
         }
-        
-        // Solo revalidar y repintar - muy rápido
-        chartContainerPanel.revalidate();
-        chartContainerPanel.repaint();
     }
 }

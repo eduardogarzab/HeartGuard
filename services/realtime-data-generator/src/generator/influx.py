@@ -1,7 +1,8 @@
 """InfluxDB operations for Generator Service."""
 from influxdb_client import InfluxDBClient, Point, WritePrecision
 from influxdb_client.client.write_api import SYNCHRONOUS
-from typing import Dict
+from typing import Dict, List, Optional
+from datetime import datetime
 import logging
 
 from .data_generator import Patient, StreamConfig
@@ -154,4 +155,84 @@ class InfluxDBService:
             logger.error(
                 f"Error writing to InfluxDB for stream {stream_config.stream_id}: {e}"
             )
+    
+    def query_patient_vital_signs(
+        self,
+        patient_id: str,
+        device_id: Optional[str] = None,
+        limit: int = 10,
+        measurement: str = "vital_signs"
+    ) -> List[Dict]:
+        """
+        Query latest vital signs for a patient.
+        
+        Args:
+            patient_id: Patient UUID
+            device_id: Optional device UUID to filter by
+            limit: Maximum number of records to return
+            measurement: InfluxDB measurement name (default: vital_signs)
+            
+        Returns:
+            List of vital signs readings as dictionaries
+        """
+        if not self.client:
+            logger.error("InfluxDB client not connected")
+            return []
+        
+        try:
+            # Build device filter if provided
+            device_filter = f'  |> filter(fn: (r) => r["device_id"] == "{device_id}")\n' if device_id else ""
+            
+            # Flux query to get latest vital signs
+            flux_query = f'''
+from(bucket: "{self.bucket}")
+  |> range(start: -24h)
+  |> filter(fn: (r) => r["_measurement"] == "{measurement}")
+  |> filter(fn: (r) => r["patient_id"] == "{patient_id}")
+{device_filter}  |> filter(fn: (r) => 
+      r["_field"] == "heart_rate" or
+      r["_field"] == "spo2" or
+      r["_field"] == "systolic_bp" or
+      r["_field"] == "diastolic_bp" or
+      r["_field"] == "temperature" or
+      r["_field"] == "gps_longitude" or
+      r["_field"] == "gps_latitude"
+  )
+  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+  |> sort(columns: ["_time"], desc: true)
+  |> limit(n: {limit})
+'''
+            
+            logger.debug(f"Executing Flux query for patient {patient_id}")
+            
+            query_api = self.client.query_api()
+            tables = query_api.query(flux_query, org=self.org)
+            
+            readings = []
+            for table in tables:
+                for record in table.records:
+                    reading = {
+                        'timestamp': record.get_time().isoformat() if record.get_time() else None,
+                        'patient_id': record.values.get('patient_id'),
+                        'device_id': record.values.get('device_id'),
+                        'heart_rate': record.values.get('heart_rate'),
+                        'spo2': record.values.get('spo2'),
+                        'systolic_bp': record.values.get('systolic_bp'),
+                        'diastolic_bp': record.values.get('diastolic_bp'),
+                        'temperature': record.values.get('temperature'),
+                        'gps_longitude': record.values.get('gps_longitude'),
+                        'gps_latitude': record.values.get('gps_latitude')
+                    }
+                    readings.append(reading)
+            
+            # Sort by timestamp ascending (oldest to newest)
+            readings.sort(key=lambda x: x['timestamp'] if x['timestamp'] else '')
+            
+            logger.info(f"Retrieved {len(readings)} vital signs for patient {patient_id}")
+            return readings
+            
+        except Exception as e:
+            logger.error(f"Error querying InfluxDB for patient {patient_id}: {e}")
+            return []
+
 

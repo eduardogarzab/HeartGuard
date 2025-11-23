@@ -2,6 +2,7 @@ package com.heartguard.desktop.api;
 
 import com.influxdb.client.InfluxDBClient;
 import com.influxdb.client.InfluxDBClientFactory;
+import com.influxdb.client.InfluxDBClientOptions;
 import com.influxdb.query.FluxRecord;
 import com.influxdb.query.FluxTable;
 
@@ -23,8 +24,9 @@ public class InfluxDBService {
     private final String bucket;
     private InfluxDBClient client;
 
-    private static final int CONNECTION_TIMEOUT_SECONDS = 5;
-    private static final int READ_TIMEOUT_SECONDS = 10;
+    private static final int CONNECTION_TIMEOUT_SECONDS = 30;
+    private static final int READ_TIMEOUT_SECONDS = 30;
+    private static final int WRITE_TIMEOUT_SECONDS = 30;
     private boolean useMockData = false;
     
     public InfluxDBService(String url, String token, String org, String bucket) {
@@ -45,11 +47,24 @@ public class InfluxDBService {
             System.out.println("[InfluxDB] Timeout: " + CONNECTION_TIMEOUT_SECONDS + "s");
             
             try {
-                // Crear cliente InfluxDB con configuración básica
-                client = InfluxDBClientFactory.create(url, token.toCharArray(), org, bucket);
+                // Crear cliente InfluxDB con timeouts personalizados usando InfluxDBClientOptions
+                okhttp3.OkHttpClient.Builder okHttpBuilder = new okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(CONNECTION_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(READ_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(WRITE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+                
+                InfluxDBClientOptions options = InfluxDBClientOptions.builder()
+                    .url(url)
+                    .authenticateToken(token.toCharArray())
+                    .org(org)
+                    .bucket(bucket)
+                    .okHttpClient(okHttpBuilder)
+                    .build();
+                
+                client = InfluxDBClientFactory.create(options);
                 
                 // Verificar conexión con una query simple
-                System.out.println("[InfluxDB] Testing connection...");
+                System.out.println("[InfluxDB] Testing connection with " + CONNECTION_TIMEOUT_SECONDS + "s timeout...");
                 try {
                     client.getQueryApi().query("buckets()", org);
                     System.out.println("[InfluxDB] ✓ Connection established and verified successfully");
