@@ -90,12 +90,28 @@ class InfluxDBService:
         Write vital signs to InfluxDB using full stream configuration.
         This method uses the PostgreSQL metadata to properly tag the data.
         
+        GPS Coordinates Priority:
+        1. Use GPS from stream_config.custom_tags (from patient_locations table)
+        2. Fall back to generated GPS from reading if not in PostgreSQL
+        
         Args:
             stream_config: StreamConfig with device_id, stream_id, and binding info
             reading: Dictionary with vital signs data and timestamp
         """
         try:
             timestamp = reading['timestamp']
+            
+            # Check if GPS coordinates come from PostgreSQL (patient_locations)
+            gps_long = reading['gps_longitude']
+            gps_lat = reading['gps_latitude']
+            
+            if 'gps_longitude_pg' in stream_config.custom_tags:
+                try:
+                    gps_long = float(stream_config.custom_tags['gps_longitude_pg'])
+                    gps_lat = float(stream_config.custom_tags['gps_latitude_pg'])
+                    logger.debug(f"Using GPS from patient_locations: ({gps_long}, {gps_lat})")
+                except (ValueError, TypeError):
+                    logger.warning("Invalid GPS from PostgreSQL, using generated values")
             
             # Create a point using the measurement from binding
             point = Point(stream_config.measurement) \
@@ -106,8 +122,8 @@ class InfluxDBService:
                 .tag("org_id", stream_config.org_id or "none") \
                 .tag("signal_type", stream_config.signal_type_code) \
                 .tag("risk_level", stream_config.risk_level_code or "unknown") \
-                .field("gps_longitude", reading['gps_longitude']) \
-                .field("gps_latitude", reading['gps_latitude']) \
+                .field("gps_longitude", gps_long) \
+                .field("gps_latitude", gps_lat) \
                 .field("heart_rate", reading['heart_rate']) \
                 .field("spo2", reading['spo2']) \
                 .field("systolic_bp", reading['systolic_bp']) \
@@ -115,9 +131,10 @@ class InfluxDBService:
                 .field("temperature", reading['temperature']) \
                 .time(timestamp, WritePrecision.NS)
             
-            # Add custom tags from timeseries_binding_tag
+            # Add custom tags from timeseries_binding_tag (excluding GPS which are fields)
             for tag_key, tag_value in stream_config.custom_tags.items():
-                point = point.tag(tag_key, tag_value)
+                if not tag_key.startswith('gps_'):  # Skip GPS tags, already added as fields
+                    point = point.tag(tag_key, tag_value)
             
             # Write using bucket and org from stream config
             self.write_api.write(
@@ -128,10 +145,10 @@ class InfluxDBService:
             
             logger.debug(
                 f"Wrote vital signs for patient {stream_config.patient_name} "
-                f"(stream: {stream_config.stream_id}, device: {stream_config.device_serial}): "
+                f"(device: {stream_config.device_serial}, stream: {stream_config.stream_id}): "
                 f"HR={reading['heart_rate']}, SpO2={reading['spo2']}, "
                 f"BP={reading['systolic_bp']}/{reading['diastolic_bp']}, "
-                f"Temp={reading['temperature']}°C"
+                f"Temp={reading['temperature']}°C, GPS=({gps_long:.4f}, {gps_lat:.4f})"
             )
         except Exception as e:
             logger.error(

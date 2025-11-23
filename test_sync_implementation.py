@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # Add the generator module to the path
-sys.path.insert(0, str(Path(__file__).parent.parent / 'services' / 'realtime-data-generator' / 'src'))
+sys.path.insert(0, str(Path(__file__).parent / 'services' / 'realtime-data-generator' / 'src'))
 
 from generator.data_generator import Patient, StreamConfig, VitalSignsGenerator
 

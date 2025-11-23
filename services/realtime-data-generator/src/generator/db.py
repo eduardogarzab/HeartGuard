@@ -110,8 +110,25 @@ class DatabaseService:
     def get_patient_device_streams(self) -> List[StreamConfig]:
         """
         Fetch complete stream configurations for all active patients.
-        Returns full JOIN of patients + devices + streams + bindings + tags.
-        This provides all the metadata needed to write to InfluxDB correctly.
+        Returns full JOIN of patients + devices + streams + bindings + tags + locations.
+        
+        CRITICAL FILTERS:
+        - Only devices that are ASSIGNED to a patient (owner_patient_id IS NOT NULL)
+        - Only devices that are ACTIVE (d.active = TRUE)
+        - Only streams that are ACTIVE (ended_at IS NULL)
+        
+        This ensures we only generate synthetic data for devices that are:
+        1. Purchased by organization (in devices table)
+        2. Assigned to a specific patient
+        3. Currently active and operational
+        
+        Query includes:
+        - Patient metadata (id, name, org, risk_level)
+        - Device metadata (id, serial, brand, model)
+        - Stream metadata (id, signal_type)
+        - InfluxDB binding (bucket, measurement, org)
+        - Custom tags from timeseries_binding_tag
+        - GPS coordinates from patient_locations (latest)
         """
         try:
             # Asegurar que la conexión está activa
@@ -128,6 +145,8 @@ class DatabaseService:
                         rl.code AS risk_level_code,
                         d.id::text AS device_id,
                         d.serial AS device_serial,
+                        d.brand AS device_brand,
+                        d.model AS device_model,
                         ss.id::text AS stream_id,
                         st.code AS signal_type_code,
                         tb.id::text AS binding_id,
@@ -139,22 +158,35 @@ class DatabaseService:
                             json_object_agg(tbt.tag_key, tbt.tag_value) 
                             FILTER (WHERE tbt.tag_key IS NOT NULL),
                             '{}'::json
-                        ) AS custom_tags
+                        ) AS custom_tags,
+                        pl_latest.gps_longitude,
+                        pl_latest.gps_latitude
                     FROM heartguard.patients p
                     LEFT JOIN heartguard.organizations o ON o.id = p.org_id
                     LEFT JOIN heartguard.risk_levels rl ON rl.id = p.risk_level_id
-                    JOIN heartguard.devices d ON d.owner_patient_id = p.id AND d.active = TRUE
+                    JOIN heartguard.devices d ON d.owner_patient_id = p.id 
+                        AND d.active = TRUE
+                        AND d.owner_patient_id IS NOT NULL
                     JOIN heartguard.signal_streams ss ON ss.patient_id = p.id 
                         AND ss.device_id = d.id 
                         AND ss.ended_at IS NULL
                     JOIN heartguard.signal_types st ON st.id = ss.signal_type_id
                     JOIN heartguard.timeseries_binding tb ON tb.stream_id = ss.id
                     LEFT JOIN heartguard.timeseries_binding_tag tbt ON tbt.binding_id = tb.id
-                    WHERE st.code = 'vital_signs'
+                    LEFT JOIN LATERAL (
+                        SELECT 
+                            ST_X(geom) AS gps_longitude,
+                            ST_Y(geom) AS gps_latitude
+                        FROM heartguard.patient_locations
+                        WHERE patient_id = p.id
+                        ORDER BY ts DESC
+                        LIMIT 1
+                    ) pl_latest ON TRUE
                     GROUP BY 
                         p.id, p.person_name, p.email, p.org_id, o.name, rl.code,
-                        d.id, d.serial, ss.id, st.code,
-                        tb.id, tb.influx_org, tb.influx_bucket, tb.measurement, tb.retention_hint
+                        d.id, d.serial, d.brand, d.model, ss.id, st.code,
+                        tb.id, tb.influx_org, tb.influx_bucket, tb.measurement, tb.retention_hint,
+                        pl_latest.gps_longitude, pl_latest.gps_latitude
                     ORDER BY p.person_name
                 """
                 cursor.execute(query)
@@ -170,6 +202,11 @@ class DatabaseService:
                         elif isinstance(row['custom_tags'], dict):
                             custom_tags = row['custom_tags']
                     
+                    # Add GPS coordinates to custom_tags if available from patient_locations
+                    if row.get('gps_longitude') is not None and row.get('gps_latitude') is not None:
+                        custom_tags['gps_longitude_pg'] = str(row['gps_longitude'])
+                        custom_tags['gps_latitude_pg'] = str(row['gps_latitude'])
+                    
                     stream_configs.append(
                         StreamConfig(
                             patient_id=row['patient_id'],
@@ -180,6 +217,8 @@ class DatabaseService:
                             risk_level_code=row['risk_level_code'],
                             device_id=row['device_id'],
                             device_serial=row['device_serial'],
+                            device_brand=row.get('device_brand'),
+                            device_model=row.get('device_model'),
                             stream_id=row['stream_id'],
                             signal_type_code=row['signal_type_code'],
                             binding_id=row['binding_id'],

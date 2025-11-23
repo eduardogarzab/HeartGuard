@@ -27,6 +27,8 @@ class StreamConfig:
     risk_level_code: Optional[str]
     device_id: str
     device_serial: str
+    device_brand: Optional[str]
+    device_model: Optional[str]
     stream_id: str
     signal_type_code: str
     binding_id: str

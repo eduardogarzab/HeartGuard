@@ -524,8 +524,8 @@ VALUES
   (
     '86eee85e-de79-4414-9986-15d2930271aa',
     'f171d21c-a837-4d03-8233-9d80a20911ca',
-    'heartguard-lab',
-    'telemetria',
+    'heartguard',
+    'timeseries',
     'ecg_waveform',
     '30d',
     NOW() - INTERVAL '7 days'
@@ -533,13 +533,13 @@ VALUES
   (
     '333d08ad-b521-4d3b-9259-9013ff6aa360',
     '7470ea38-4d6d-4519-9bb8-766d2dee575a',
-    'heartguard-lab',
-    'telemetria',
+    'heartguard',
+    'timeseries',
     'spo2_series',
     '14d',
     NOW() - INTERVAL '3 days'
   )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET influx_org = EXCLUDED.influx_org, influx_bucket = EXCLUDED.influx_bucket;
 
 INSERT INTO timeseries_binding_tag (id, binding_id, tag_key, tag_value)
 VALUES
@@ -839,6 +839,147 @@ WHERE NOT EXISTS (SELECT 1 FROM devices d WHERE d.serial='HG-ECG-OLD-01');
 
 -- Ensure that this old device has no recent signal (simulate disconnected)
 DELETE FROM signal_streams ss WHERE ss.device_id = (SELECT id FROM devices WHERE serial='HG-ECG-OLD-01') AND ss.started_at > NOW() - INTERVAL '30 days';
+
+
+-- =========================================================
+-- SINCRONIZACIÓN INFLUXDB-POSTGRESQL
+-- =========================================================
+-- Este script crea automáticamente streams y bindings para dispositivos
+-- que están ASIGNADOS a pacientes y ACTIVOS.
+-- 
+-- Flujo de trabajo:
+-- 1. Organización compra dispositivo (INSERT en devices con owner_patient_id=NULL)
+-- 2. Administrador asigna dispositivo a paciente (UPDATE devices SET owner_patient_id=X)
+-- 3. Este trigger automáticamente crea:
+--    - signal_stream (para captura de datos)
+--    - timeseries_binding (vinculación con InfluxDB)
+--    - timeseries_binding_tag (tags custom: location, floor, GPS)
+
+-- Trigger para crear automáticamente stream y binding cuando se asigna un dispositivo
+CREATE OR REPLACE FUNCTION create_stream_on_device_assignment()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_signal_type_id UUID;
+  v_stream_id UUID;
+  v_binding_id UUID;
+  v_location_geom GEOMETRY;
+  v_gps_long DOUBLE PRECISION;
+  v_gps_lat DOUBLE PRECISION;
+BEGIN
+  -- Solo procesar si:
+  -- 1. El dispositivo se está asignando a un paciente (owner_patient_id cambió a NOT NULL)
+  -- 2. El dispositivo está activo
+  IF NEW.owner_patient_id IS NOT NULL AND NEW.active = TRUE AND 
+     (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.owner_patient_id IS DISTINCT FROM NEW.owner_patient_id)) THEN
+    
+    -- Obtener signal_type para vital signs (HR = Heart Rate, genérico para signos vitales)
+    SELECT id INTO v_signal_type_id FROM signal_types WHERE code = 'HR' LIMIT 1;
+    
+    IF v_signal_type_id IS NULL THEN
+      RAISE WARNING 'Signal type HR not found, cannot create stream for device %', NEW.serial;
+      RETURN NEW;
+    END IF;
+
+    -- Verificar si ya existe un stream activo para este dispositivo
+    SELECT id INTO v_stream_id
+    FROM signal_streams
+    WHERE device_id = NEW.id
+      AND patient_id = NEW.owner_patient_id
+      AND ended_at IS NULL
+    LIMIT 1;
+
+    -- Si no existe stream, crearlo
+    IF v_stream_id IS NULL THEN
+      INSERT INTO signal_streams (
+        patient_id,
+        device_id,
+        signal_type_id,
+        sample_rate_hz,
+        started_at,
+        ended_at
+      ) VALUES (
+        NEW.owner_patient_id,
+        NEW.id,
+        v_signal_type_id,
+        1.0, -- 1 Hz (1 lectura por segundo)
+        NOW(),
+        NULL -- Stream activo
+      ) RETURNING id INTO v_stream_id;
+
+      RAISE NOTICE 'Stream created for device % assigned to patient %', NEW.serial, NEW.owner_patient_id;
+
+      -- Crear binding a InfluxDB
+      INSERT INTO timeseries_binding (
+        stream_id,
+        influx_org,
+        influx_bucket,
+        measurement,
+        retention_hint
+      ) VALUES (
+        v_stream_id,
+        'heartguard',
+        'timeseries',
+        'vital_signs',
+        '30d'
+      ) RETURNING id INTO v_binding_id;
+
+      RAISE NOTICE 'InfluxDB binding created for stream %', v_stream_id;
+
+      -- Obtener ubicación GPS del paciente (última conocida)
+      SELECT geom INTO v_location_geom
+      FROM patient_locations
+      WHERE patient_id = NEW.owner_patient_id
+      ORDER BY ts DESC
+      LIMIT 1;
+
+      -- Crear tags custom
+      IF v_location_geom IS NOT NULL THEN
+        v_gps_long := ST_X(v_location_geom);
+        v_gps_lat := ST_Y(v_location_geom);
+
+        INSERT INTO timeseries_binding_tag (binding_id, tag_key, tag_value) VALUES
+          (v_binding_id, 'gps_longitude', v_gps_long::TEXT),
+          (v_binding_id, 'gps_latitude', v_gps_lat::TEXT),
+          (v_binding_id, 'location', 'hospital_main'),
+          (v_binding_id, 'floor', '3');
+      ELSE
+        INSERT INTO timeseries_binding_tag (binding_id, tag_key, tag_value) VALUES
+          (v_binding_id, 'location', 'hospital_main'),
+          (v_binding_id, 'floor', '3');
+      END IF;
+
+      RAISE NOTICE 'Tags created for binding %', v_binding_id;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger en la tabla devices
+DROP TRIGGER IF EXISTS trg_device_assignment ON devices;
+CREATE TRIGGER trg_device_assignment
+  AFTER INSERT OR UPDATE OF owner_patient_id, active ON devices
+  FOR EACH ROW
+  EXECUTE FUNCTION create_stream_on_device_assignment();
+
+-- Ejecutar la lógica para dispositivos ya asignados (migración de datos existentes)
+DO $$
+DECLARE
+  v_device RECORD;
+BEGIN
+  RAISE NOTICE '✓ Trigger de sincronización automática creado';
+  
+  FOR v_device IN 
+    SELECT id, owner_patient_id FROM devices 
+    WHERE owner_patient_id IS NOT NULL AND active = TRUE
+  LOOP
+    -- Esto disparará el trigger para crear streams si no existen
+    UPDATE devices SET active = active WHERE id = v_device.id;
+  END LOOP;
+  
+  RAISE NOTICE '✓ Streams creados para dispositivos existentes asignados';
+END $$;
 
 
 -- =========================================================
