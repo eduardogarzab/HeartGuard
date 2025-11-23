@@ -115,12 +115,13 @@ public class VitalSignsChartPanel extends JPanel {
         diastolicBpSeries = new TimeSeries("Presión Diastólica (mmHg)");
         temperatureSeries = new TimeSeries("Temperatura (°C)");
 
-        // Limitar el número de puntos en la serie (ventana deslizante)
-        heartRateSeries.setMaximumItemCount(50);
-        spo2Series.setMaximumItemCount(50);
-        systolicBpSeries.setMaximumItemCount(50);
-        diastolicBpSeries.setMaximumItemCount(50);
-        temperatureSeries.setMaximumItemCount(50);
+        // OPTIMIZACIÓN: Limitar a 30 puntos (ventana deslizante) para mejor rendimiento
+        // Con updates cada 10 segundos = ~5 minutos de historia visible
+        heartRateSeries.setMaximumItemCount(30);
+        spo2Series.setMaximumItemCount(30);
+        systolicBpSeries.setMaximumItemCount(30);
+        diastolicBpSeries.setMaximumItemCount(30);
+        temperatureSeries.setMaximumItemCount(30);
 
         // Labels para valores actuales
         heartRateLabel = new JLabel("--");
@@ -621,7 +622,8 @@ public class VitalSignsChartPanel extends JPanel {
                     influxService.connect();
                     System.out.println("[VitalSignsChart] InfluxDB connected successfully");
                     
-                    List<VitalSignsReading> readings = influxService.getLatestPatientVitalSigns(patientId, deviceId, 50);
+                    // OPTIMIZACIÓN: Cargar solo 20 lecturas iniciales en lugar de 50 para inicio más rápido
+                    List<VitalSignsReading> readings = influxService.getLatestPatientVitalSigns(patientId, deviceId, 20);
                     System.out.println("[VitalSignsChart] Loaded " + (readings != null ? readings.size() : 0) + " initial readings");
                     return readings != null ? readings : new ArrayList<>();
                 } catch (Exception e) {

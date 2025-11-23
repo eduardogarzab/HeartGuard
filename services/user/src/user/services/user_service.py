@@ -523,9 +523,14 @@ class UserService:
 
     def list_caregiver_patient_devices(self, patient_id: str, user_id: str) -> Dict[str, Any]:
         """Lista los dispositivos activos asignados a un paciente (endpoint de caregiver)."""
-        self._ensure_caregiver_access(patient_id, user_id)
+        relationship = self._ensure_caregiver_access(patient_id, user_id)
+        patient_record = self.repo.get_patient_by_id(patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado")
         devices = self.repo.list_patient_devices(patient_id)
         return {
+            'patient': self._format_patient_summary(patient_record),
+            'relationship': self._format_relationship(relationship),
             'devices': [self._format_patient_device(row) for row in devices],
             'count': len(devices),
         }

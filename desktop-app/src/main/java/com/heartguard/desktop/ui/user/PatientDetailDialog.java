@@ -53,6 +53,9 @@ public class PatientDetailDialog extends JDialog {
     private JPanel chartContainerPanel;
     private JComboBox<String> deviceSelector;
     private JLabel deviceInfoLabel;
+    
+    // Caché de paneles de gráficas por dispositivo (para evitar reconstrucción)
+    private final java.util.Map<String, VitalSignsChartPanel> chartPanelCache = new java.util.HashMap<>();
 
     public PatientDetailDialog(Frame owner, ApiClient apiClient, String token, String orgId, String patientId, String patientName) {
         super(owner, "Paciente: " + patientName, true);
@@ -231,6 +234,11 @@ public class PatientDetailDialog extends JDialog {
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
 
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            private JsonObject patient;
+            private JsonArray alerts;
+            private JsonArray notes;
+            private JsonArray devices;
+            
             @Override
             protected Void doInBackground() throws Exception {
                 // Si orgId es null, el paciente es del caregiver (sin organización)
@@ -239,40 +247,32 @@ public class PatientDetailDialog extends JDialog {
                     // Endpoints para pacientes del caregiver
                     JsonObject detailResponse = apiClient.getCaregiverPatientDetail(token, patientId);
                     JsonObject detailData = detailResponse.getAsJsonObject("data");
-                    JsonObject patient = detailData.getAsJsonObject("patient");
-                    updateInfoArea(patient);
+                    patient = detailData.getAsJsonObject("patient");
 
                     JsonObject alertsResponse = apiClient.getCaregiverPatientAlerts(token, patientId, 20);
-                    JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
-                    updateAlerts(alerts);
+                    alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
 
                     JsonObject notesResponse = apiClient.getCaregiverPatientNotes(token, patientId, 20);
-                    JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
-                    updateNotes(notes);
+                    notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
                     
                     // Cargar dispositivos del paciente
                     JsonObject devicesResponse = apiClient.getCaregiverPatientDevices(token, patientId);
-                    JsonArray devices = devicesResponse.getAsJsonObject("data").getAsJsonArray("devices");
-                    loadDevices(devices);
+                    devices = devicesResponse.getAsJsonObject("data").getAsJsonArray("devices");
                 } else {
                     // Endpoints para pacientes de organización
                     JsonObject detailResponse = apiClient.getOrganizationPatientDetail(token, orgId, patientId);
                     JsonObject detailData = detailResponse.getAsJsonObject("data");
-                    JsonObject patient = detailData.getAsJsonObject("patient");
-                    updateInfoArea(patient);
+                    patient = detailData.getAsJsonObject("patient");
 
                     JsonObject alertsResponse = apiClient.getOrganizationPatientAlerts(token, orgId, patientId, 20);
-                    JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
-                    updateAlerts(alerts);
+                    alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
 
                     JsonObject notesResponse = apiClient.getOrganizationPatientNotes(token, orgId, patientId, 20);
-                    JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
-                    updateNotes(notes);
+                    notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
                     
                     // Cargar dispositivos del paciente
                     JsonObject devicesResponse = apiClient.getOrganizationPatientDevices(token, orgId, patientId);
-                    JsonArray devices = devicesResponse.getAsJsonObject("data").getAsJsonArray("devices");
-                    loadDevices(devices);
+                    devices = devicesResponse.getAsJsonObject("data").getAsJsonArray("devices");
                 }
                 return null;
             }
@@ -282,6 +282,12 @@ public class PatientDetailDialog extends JDialog {
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     get();
+                    // Actualizar UI en el EDT
+                    updateInfoArea(patient);
+                    updateAlerts(alerts);
+                    updateNotes(notes);
+                    loadDevices(devices);
+                    
                     statusLabel.setForeground(SUCCESS_GREEN);
                     statusLabel.setText("Información actualizada");
                 } catch (Exception ex) {
@@ -382,9 +388,13 @@ public class PatientDetailDialog extends JDialog {
      * Limpiar recursos al cerrar el diálogo
      */
     private void cleanup() {
-        if (chartPanel != null) {
-            chartPanel.cleanup();
+        // Limpiar todos los paneles cacheados
+        for (VitalSignsChartPanel panel : chartPanelCache.values()) {
+            if (panel != null) {
+                panel.cleanup();
+            }
         }
+        chartPanelCache.clear();
     }
     
     /**
@@ -452,10 +462,11 @@ public class PatientDetailDialog extends JDialog {
      * Actualiza la UI según la cantidad de dispositivos disponibles
      */
     private void updateDeviceUI() {
-        // Limpiar el centro del chartContainerPanel
-        for (Component comp : chartContainerPanel.getComponents()) {
-            if (comp != chartContainerPanel.getComponent(0)) { // No remover el header
-                chartContainerPanel.remove(comp);
+        // Limpiar el centro del chartContainerPanel (excepto el header)
+        Component[] components = chartContainerPanel.getComponents();
+        for (int i = components.length - 1; i >= 0; i--) {
+            if (components[i] != chartContainerPanel.getComponent(0)) { // No remover el header
+                chartContainerPanel.remove(components[i]);
             }
         }
         
@@ -471,14 +482,32 @@ public class PatientDetailDialog extends JDialog {
             deviceSelector.setVisible(false);
             loadChartsForDevice(device);
         } else {
-            // Múltiples dispositivos - mostrar selector
+            // Múltiples dispositivos - configurar selector
+            // OPTIMIZACIÓN: Remover listener temporalmente para evitar eventos durante población
+            ActionListener[] listeners = deviceSelector.getActionListeners();
+            for (ActionListener listener : listeners) {
+                deviceSelector.removeActionListener(listener);
+            }
+            
             deviceSelector.removeAllItems();
             for (DeviceInfo device : patientDevices) {
                 deviceSelector.addItem(device.getDisplayName());
             }
+            
+            // Restaurar listeners
+            for (ActionListener listener : listeners) {
+                deviceSelector.addActionListener(listener);
+            }
+            
             deviceSelector.setVisible(true);
-            deviceSelector.setSelectedIndex(0);
-            // onDeviceSelected() se llamará automáticamente por el listener
+            
+            // Cargar primer dispositivo directamente
+            if (deviceSelector.getItemCount() > 0) {
+                DeviceInfo firstDevice = patientDevices.get(0);
+                deviceInfoLabel.setText("📱 " + firstDevice.getShortInfo());
+                deviceSelector.setSelectedIndex(0);
+                loadChartsForDevice(firstDevice);
+            }
         }
         
         chartContainerPanel.revalidate();
@@ -513,42 +542,63 @@ public class PatientDetailDialog extends JDialog {
         int selectedIndex = deviceSelector.getSelectedIndex();
         if (selectedIndex >= 0 && selectedIndex < patientDevices.size()) {
             DeviceInfo selectedDevice = patientDevices.get(selectedIndex);
+            
+            // Evitar recarga si ya estamos mostrando este dispositivo
+            if (chartPanel != null && chartPanelCache.containsKey(selectedDevice.id)) {
+                VitalSignsChartPanel existingPanel = chartPanelCache.get(selectedDevice.id);
+                if (existingPanel == chartPanel) {
+                    // Ya está mostrando este dispositivo, solo actualizar label
+                    deviceInfoLabel.setText("📱 " + selectedDevice.getShortInfo());
+                    return;
+                }
+            }
+            
             deviceInfoLabel.setText("📱 " + selectedDevice.getShortInfo());
             loadChartsForDevice(selectedDevice);
         }
     }
     
     /**
-     * Carga las gráficas para un dispositivo específico
+     * Carga las gráficas para un dispositivo específico (con caché para rendimiento)
      */
     private void loadChartsForDevice(DeviceInfo device) {
-        // Limpiar chart panel anterior si existe
+        // Remover panel actual del contenedor (pero NO hacer cleanup todavía)
         if (chartPanel != null) {
-            chartPanel.cleanup();
             chartContainerPanel.remove(chartPanel);
         }
         
-        try {
-            System.out.println("[PatientDetail] Creating VitalSignsChartPanel for device: " + device.serial);
-            // Pasar device_id al chart panel
-            chartPanel = new VitalSignsChartPanel(patientId, device.id, influxService, 10);
+        // Verificar si ya tenemos un panel cacheado para este dispositivo
+        VitalSignsChartPanel cachedPanel = chartPanelCache.get(device.id);
+        
+        if (cachedPanel != null) {
+            // Reutilizar panel existente - mucho más rápido
+            System.out.println("[PatientDetail] Reusing cached panel for device: " + device.serial);
+            chartPanel = cachedPanel;
             chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
-            chartContainerPanel.revalidate();
-            chartContainerPanel.repaint();
-            System.out.println("[PatientDetail] VitalSignsChartPanel created successfully for device " + device.serial);
-        } catch (Exception e) {
-            System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
-            e.printStackTrace();
-            
-            JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:20px;'>" +
-                    "<b>Error al cargar gráficas:</b><br>" + 
-                    e.getMessage() + 
-                    "</div></html>");
-            errorLabel.setForeground(DANGER_RED);
-            errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            chartContainerPanel.add(errorLabel, BorderLayout.CENTER);
-            chartContainerPanel.revalidate();
-            chartContainerPanel.repaint();
+        } else {
+            // Crear nuevo panel solo si no existe en caché
+            try {
+                System.out.println("[PatientDetail] Creating NEW VitalSignsChartPanel for device: " + device.serial);
+                chartPanel = new VitalSignsChartPanel(patientId, device.id, influxService, 10);
+                chartPanelCache.put(device.id, chartPanel); // Guardar en caché
+                chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+                System.out.println("[PatientDetail] VitalSignsChartPanel created and cached for device " + device.serial);
+            } catch (Exception e) {
+                System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
+                e.printStackTrace();
+                
+                JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:20px;'>" +
+                        "<b>Error al cargar gráficas:</b><br>" + 
+                        e.getMessage() + 
+                        "</div></html>");
+                errorLabel.setForeground(DANGER_RED);
+                errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                chartContainerPanel.add(errorLabel, BorderLayout.CENTER);
+            }
         }
+        
+        // Solo revalidar y repintar - muy rápido
+        chartContainerPanel.revalidate();
+        chartContainerPanel.repaint();
     }
 }
