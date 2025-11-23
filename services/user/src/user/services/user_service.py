@@ -532,16 +532,15 @@ class UserService:
 
     def list_org_patient_devices(self, org_id: str, patient_id: str, user_id: str) -> Dict[str, Any]:
         """Lista los dispositivos activos asignados a un paciente (endpoint de organización)."""
-        patient = self.repo.get_patient_by_id(patient_id)
-        if not patient:
-            raise ValueError("Paciente no encontrado")
+        membership = self._ensure_membership(org_id, user_id)
+        patient_record = self.repo.get_patient(org_id, patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado en la organización indicada")
         
-        if str(patient.get('org_id')) != org_id:
-            raise PermissionError("El paciente no pertenece a esta organización")
-        
-        self._ensure_org_patient_access(org_id, patient_id, user_id)
         devices = self.repo.list_patient_devices(patient_id)
         return {
+            'organization': membership,
+            'patient': self._format_patient_summary(patient_record),
             'devices': [self._format_patient_device(row) for row in devices],
             'count': len(devices),
         }
