@@ -82,37 +82,32 @@ public class PatientDetailDialog extends JDialog {
         getContentPane().setBackground(GLOBAL_BG);
         setMinimumSize(new Dimension(1400, 900));
 
-        // Encabezado con título y separador
+        // Encabezado compacto con título y separador
         JPanel header = new JPanel(new BorderLayout());
         header.setBorder(new CompoundBorder(
             new LineBorder(BORDER_LIGHT, 1, false),
-            new EmptyBorder(24, 24, 16, 24)
+            new EmptyBorder(12, 20, 12, 20)  // Reducido padding
         ));
         header.setBackground(CARD_BG);
 
-        JLabel title = new JLabel("Resumen Clínico");
-        title.setFont(TITLE_FONT);
+        JLabel title = new JLabel("📋 " + patientName);
+        title.setFont(new Font("Inter", Font.BOLD, 18));  // Un solo título
         title.setForeground(TEXT_PRIMARY);
         header.add(title, BorderLayout.WEST);
-
-        JLabel patientNameLabel = new JLabel(patientName);
-        patientNameLabel.setFont(new Font("Inter", Font.BOLD, 16));
-        patientNameLabel.setForeground(PRIMARY_BLUE);
-        header.add(patientNameLabel, BorderLayout.EAST);
 
         add(header, BorderLayout.NORTH);
 
         // Panel principal con scroll para contener tabs y gráficas
-        JPanel mainPanel = new JPanel(new BorderLayout(0, 12));
+        JPanel mainPanel = new JPanel(new BorderLayout(0, 8));
         mainPanel.setOpaque(false);
-        mainPanel.setBorder(new EmptyBorder(0, 16, 16, 16));
+        mainPanel.setBorder(new EmptyBorder(0, 12, 12, 12));  // Reducido padding
 
         // Tabs estilizados para métricas, alertas y notas
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setFont(new Font("Inter", Font.PLAIN, 15));
+        tabs.setFont(new Font("Inter", Font.PLAIN, 14));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
-        tabs.setPreferredSize(new Dimension(0, 220)); // Reducido para dar más espacio a gráficas
+        tabs.setPreferredSize(new Dimension(0, 150)); // Muy reducido para maximizar gráficas
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -193,11 +188,11 @@ public class PatientDetailDialog extends JDialog {
 
         add(mainPanel, BorderLayout.CENTER);
 
-        // Footer con estado y botón cerrar
+        // Footer compacto con estado y botón cerrar
         JPanel footer = new JPanel(new BorderLayout());
         footer.setBorder(new CompoundBorder(
             new LineBorder(BORDER_LIGHT, 1, false),
-            new EmptyBorder(16, 24, 16, 24)
+            new EmptyBorder(10, 20, 10, 20)  // Reducido padding
         ));
         footer.setBackground(CARD_BG);
 

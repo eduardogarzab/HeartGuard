@@ -138,9 +138,9 @@ public class VitalSignsChartPanel extends JPanel {
     }
 
     private void initComponents() {
-        setLayout(new BorderLayout(20, 20));
+        setLayout(new BorderLayout(16, 16));
         setBackground(CARD_BG);
-        setBorder(new EmptyBorder(24, 24, 24, 24));
+        setBorder(new EmptyBorder(16, 20, 16, 20));  // Reducido padding
 
         // Panel superior con valores actuales - más grande
         JPanel currentValuesPanel = createCurrentValuesPanel();
@@ -153,7 +153,7 @@ public class VitalSignsChartPanel extends JPanel {
         // Panel inferior con estado
         JPanel statusPanel = new JPanel(new BorderLayout());
         statusPanel.setOpaque(false);
-        statusPanel.setBorder(new EmptyBorder(16, 0, 0, 0));
+        statusPanel.setBorder(new EmptyBorder(8, 0, 0, 0));  // Reducido
 
         lastUpdateLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         lastUpdateLabel.setForeground(TEXT_SECONDARY);
@@ -163,10 +163,10 @@ public class VitalSignsChartPanel extends JPanel {
     }
 
     private JPanel createCurrentValuesPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 4, 20, 0));
+        JPanel panel = new JPanel(new GridLayout(1, 4, 16, 0));
         panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(0, 0, 24, 0));
-        panel.setPreferredSize(new Dimension(0, 140)); // Altura fija más grande
+        panel.setBorder(new EmptyBorder(0, 0, 16, 0));
+        panel.setPreferredSize(new Dimension(0, 110)); // Altura reducida para maximizar gráficas
 
         // Card de frecuencia cardíaca
         panel.add(createValueCard("❤️  Frecuencia Cardíaca", heartRateLabel, "bpm", HEART_COLOR));
@@ -226,12 +226,12 @@ public class VitalSignsChartPanel extends JPanel {
         JPanel valuePanel = new JPanel(new BorderLayout(8, 0));
         valuePanel.setOpaque(false);
 
-        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 42)); // Más grande
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 36)); // Compacto pero legible
         valueLabel.setForeground(accentColor);
         valuePanel.add(valueLabel, BorderLayout.CENTER);
 
         JLabel unitLabel = new JLabel(unit);
-        unitLabel.setFont(new Font("Segoe UI", Font.PLAIN, 18)); // Más grande
+        unitLabel.setFont(new Font("Segoe UI", Font.PLAIN, 15));
         unitLabel.setForeground(TEXT_SECONDARY);
         unitLabel.setBorder(new EmptyBorder(14, 0, 0, 0));
         valuePanel.add(unitLabel, BorderLayout.EAST);
