@@ -64,6 +64,7 @@ public class VitalSignsChartPanel extends JPanel {
     private static final Color SHADOW_COLOR = new Color(0, 0, 0, 8);
 
     private final String patientId;
+    private final String deviceId; // Nuevo: filtrar por dispositivo específico
     private final InfluxDBService influxService;
     private Timer updateTimer;
     private final int updateIntervalSeconds;
@@ -90,7 +91,20 @@ public class VitalSignsChartPanel extends JPanel {
      * @param updateIntervalSeconds Intervalo de actualización en segundos
      */
     public VitalSignsChartPanel(String patientId, InfluxDBService influxService, int updateIntervalSeconds) {
+        this(patientId, null, influxService, updateIntervalSeconds);
+    }
+    
+    /**
+     * Constructor con filtro de dispositivo específico
+     * 
+     * @param patientId ID del paciente
+     * @param deviceId ID del dispositivo (opcional, si es null se consultan todos los dispositivos)
+     * @param influxService Servicio de InfluxDB
+     * @param updateIntervalSeconds Intervalo de actualización en segundos
+     */
+    public VitalSignsChartPanel(String patientId, String deviceId, InfluxDBService influxService, int updateIntervalSeconds) {
         this.patientId = patientId;
+        this.deviceId = deviceId;
         this.influxService = influxService;
         this.updateIntervalSeconds = updateIntervalSeconds;
 
@@ -600,13 +614,14 @@ public class VitalSignsChartPanel extends JPanel {
         SwingWorker<List<VitalSignsReading>, Void> worker = new SwingWorker<>() {
             @Override
             protected List<VitalSignsReading> doInBackground() {
-                System.out.println("[VitalSignsChart] Loading initial vital signs data for patient: " + patientId);
+                String deviceInfo = deviceId != null ? " from device " + deviceId : "";
+                System.out.println("[VitalSignsChart] Loading initial vital signs data for patient: " + patientId + deviceInfo);
                 try {
                     // Asegurar conexión a InfluxDB
                     influxService.connect();
                     System.out.println("[VitalSignsChart] InfluxDB connected successfully");
                     
-                    List<VitalSignsReading> readings = influxService.getLatestPatientVitalSigns(patientId, 50);
+                    List<VitalSignsReading> readings = influxService.getLatestPatientVitalSigns(patientId, deviceId, 50);
                     System.out.println("[VitalSignsChart] Loaded " + (readings != null ? readings.size() : 0) + " initial readings");
                     return readings != null ? readings : new ArrayList<>();
                 } catch (Exception e) {
@@ -690,7 +705,7 @@ public class VitalSignsChartPanel extends JPanel {
                 @Override
                 protected List<VitalSignsReading> doInBackground() {
                     // Obtener solo los últimos 10 registros para actualización incremental
-                    return influxService.getLatestPatientVitalSigns(patientId, 10);
+                    return influxService.getLatestPatientVitalSigns(patientId, deviceId, 10);
                 }
 
                 @Override

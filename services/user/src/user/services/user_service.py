@@ -521,6 +521,31 @@ class UserService:
             ]
         }
 
+    def list_caregiver_patient_devices(self, patient_id: str, user_id: str) -> Dict[str, Any]:
+        """Lista los dispositivos activos asignados a un paciente (endpoint de caregiver)."""
+        self._ensure_caregiver_access(patient_id, user_id)
+        devices = self.repo.list_patient_devices(patient_id)
+        return {
+            'devices': [self._format_patient_device(row) for row in devices],
+            'count': len(devices),
+        }
+
+    def list_org_patient_devices(self, org_id: str, patient_id: str, user_id: str) -> Dict[str, Any]:
+        """Lista los dispositivos activos asignados a un paciente (endpoint de organización)."""
+        patient = self.repo.get_patient_by_id(patient_id)
+        if not patient:
+            raise ValueError("Paciente no encontrado")
+        
+        if str(patient.get('org_id')) != org_id:
+            raise PermissionError("El paciente no pertenece a esta organización")
+        
+        self._ensure_org_patient_access(org_id, patient_id, user_id)
+        devices = self.repo.list_patient_devices(patient_id)
+        return {
+            'devices': [self._format_patient_device(row) for row in devices],
+            'count': len(devices),
+        }
+
     # ------------------------------------------------------------------
     # Dispositivos clínicos
     # ------------------------------------------------------------------
@@ -1015,6 +1040,26 @@ class UserService:
                 'user_id': str(record['annotated_by_user_id']) if record.get('annotated_by_user_id') else None,
                 'name': record.get('annotated_by_name'),
             },
+        }
+
+    def _format_patient_device(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Formatea un dispositivo asignado a un paciente."""
+        return {
+            'id': str(record['device_id']),
+            'serial': record.get('serial'),
+            'brand': record.get('brand'),
+            'model': record.get('model'),
+            'device_type': {
+                'code': record.get('device_type_code'),
+                'label': record.get('device_type_label'),
+            },
+            'registered_at': self._serialize_datetime(record.get('registered_at')),
+            'stream': {
+                'id': str(record['stream_id']) if record.get('stream_id') else None,
+                'started_at': self._serialize_datetime(record.get('stream_started_at')),
+                'ended_at': self._serialize_datetime(record.get('stream_ended_at')),
+                'is_active': record.get('stream_id') is not None and record.get('stream_ended_at') is None,
+            } if record.get('stream_id') else None,
         }
 
     def _format_org_overview(self, data: Dict[str, Any]) -> Dict[str, Any]:

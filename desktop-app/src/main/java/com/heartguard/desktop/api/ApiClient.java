@@ -844,6 +844,26 @@ public class ApiClient {
         );
     }
 
+    public JsonObject getCaregiverPatientDevices(String token, String patientId) throws ApiException {
+        return executeGatewayGet(
+                "/caregiver/patients/" + patientId + "/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos del paciente"
+        );
+    }
+
+    public JsonObject getOrganizationPatientDevices(String token, String orgId, String patientId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/patients/" + patientId + "/devices",
+                null,
+                token,
+                true,
+                "Error al obtener dispositivos del paciente"
+        );
+    }
+
     public JsonObject createCaregiverPatientNote(String token, String patientId, JsonObject noteData) throws ApiException {
         return executeGatewayRequest(
                 "POST",

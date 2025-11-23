@@ -1454,3 +1454,33 @@ class UserRepository:
             cursor.execute(query, (user_id, device_id))
             deleted = cursor.fetchone()
             return bool(deleted)
+
+    @staticmethod
+    def list_patient_devices(patient_id: str) -> List[Dict[str, Any]]:
+        """
+        Retorna lista de dispositivos activos asignados a un paciente.
+        Incluye información del dispositivo y del stream activo si existe.
+        """
+        query = """
+            SELECT
+                d.id AS device_id,
+                d.serial,
+                d.brand,
+                d.model,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                d.registered_at,
+                ss.id AS stream_id,
+                ss.started_at AS stream_started_at,
+                ss.ended_at AS stream_ended_at
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN signal_streams ss ON ss.device_id = d.id AND ss.ended_at IS NULL
+            WHERE d.owner_patient_id = %s
+              AND d.active = TRUE
+            ORDER BY d.registered_at DESC
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (patient_id,))
+            rows = cursor.fetchall() or []
+            return list(rows)

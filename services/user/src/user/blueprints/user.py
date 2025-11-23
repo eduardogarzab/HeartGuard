@@ -409,6 +409,25 @@ def org_patient_notes(org_id: str, patient_id: str, current_user_id: str):
         return error_response(message='Error interno al listar notas de paciente', error_code='internal_error', status_code=500)
 
 
+@user_bp.route('/orgs/<string:org_id>/patients/<string:patient_id>/devices', methods=['GET'])
+@require_user_token
+def org_patient_devices(org_id: str, patient_id: str, current_user_id: str):
+    """Lista los dispositivos activos asignados a un paciente (endpoint de organización)."""
+    try:
+        data = user_service.list_org_patient_devices(org_id, patient_id, current_user_id)
+        return success_response(data=data, message='Dispositivos del paciente recuperados correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        message = str(exc)
+        if 'no encontrado' in message.lower():
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        return fail_response(message=message, error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al listar dispositivos del paciente', extra={'trace_id': g.trace_id, 'org_id': org_id, 'patient_id': patient_id, 'user_id': current_user_id})
+        return error_response(message='Error interno al listar dispositivos del paciente', error_code='internal_error', status_code=500)
+
+
 @user_bp.route('/orgs/<string:org_id>/metrics', methods=['GET'])
 @require_user_token
 def org_metrics(org_id: str, current_user_id: str):
@@ -567,6 +586,25 @@ def caregiver_patient_add_note(patient_id: str, current_user_id: str):
     except Exception:  # pragma: no cover - defensivo
         current_app.logger.exception('Error al crear nota para cuidador', extra={'trace_id': g.trace_id, 'patient_id': patient_id, 'user_id': current_user_id})
         return error_response(message='Error interno al crear nota del paciente', error_code='internal_error', status_code=500)
+
+
+@user_bp.route('/caregiver/patients/<string:patient_id>/devices', methods=['GET'])
+@require_user_token
+def caregiver_patient_devices(patient_id: str, current_user_id: str):
+    """Lista los dispositivos activos asignados a un paciente (endpoint de caregiver)."""
+    try:
+        data = user_service.list_caregiver_patient_devices(patient_id, current_user_id)
+        return success_response(data=data, message='Dispositivos del paciente recuperados correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        message = str(exc)
+        if 'no encontrado' in message.lower():
+            return fail_response(message=message, error_code='not_found', status_code=404)
+        return fail_response(message=message, error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al listar dispositivos del paciente', extra={'trace_id': g.trace_id, 'patient_id': patient_id, 'user_id': current_user_id})
+        return error_response(message='Error interno al listar dispositivos del paciente', error_code='internal_error', status_code=500)
 
 
 @user_bp.route('/caregiver/metrics', methods=['GET'])

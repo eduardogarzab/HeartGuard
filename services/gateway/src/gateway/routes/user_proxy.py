@@ -165,6 +165,11 @@ def org_patient_notes(org_id: str, patient_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/notes")
 
 
+@bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/devices", methods=["GET"])
+def org_patient_devices(org_id: str, patient_id: str) -> Response:
+	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/devices")
+
+
 @bp.route("/orgs/<string:org_id>/metrics", methods=["GET"])
 def org_metrics(org_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/metrics")
@@ -198,6 +203,11 @@ def caregiver_patient_alerts(patient_id: str) -> Response:
 @bp.route("/caregiver/patients/<string:patient_id>/notes", methods=["GET", "POST"])
 def caregiver_patient_notes(patient_id: str) -> Response:
 	return _proxy_user(f"/caregiver/patients/{patient_id}/notes")
+
+
+@bp.route("/caregiver/patients/<string:patient_id>/devices", methods=["GET"])
+def caregiver_patient_devices(patient_id: str) -> Response:
+	return _proxy_user(f"/caregiver/patients/{patient_id}/devices")
 
 
 @bp.route("/caregiver/metrics", methods=["GET"])
