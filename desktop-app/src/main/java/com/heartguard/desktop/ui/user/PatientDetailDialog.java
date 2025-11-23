@@ -72,12 +72,15 @@ public class PatientDetailDialog extends JDialog {
     }
 
     private void initComponents() {
-        // Ventana más grande y centrada
-        setSize(1400, 900);
+        // Ventana maximizada para mejor visualización
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        int width = (int) (screenSize.width * 0.9);  // 90% del ancho de pantalla
+        int height = (int) (screenSize.height * 0.9); // 90% del alto de pantalla
+        setSize(width, height);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout());
         getContentPane().setBackground(GLOBAL_BG);
-        setMinimumSize(new Dimension(1200, 800));
+        setMinimumSize(new Dimension(1400, 900));
 
         // Encabezado con título y separador
         JPanel header = new JPanel(new BorderLayout());
@@ -109,7 +112,7 @@ public class PatientDetailDialog extends JDialog {
         tabs.setFont(new Font("Inter", Font.PLAIN, 15));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
-        tabs.setPreferredSize(new Dimension(0, 280));
+        tabs.setPreferredSize(new Dimension(0, 220)); // Reducido para dar más espacio a gráficas
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -154,8 +157,9 @@ public class PatientDetailDialog extends JDialog {
         headerPanel.setOpaque(false);
         
         JLabel chartTitle = new JLabel("📊 Signos Vitales en Tiempo Real");
-        chartTitle.setFont(new Font("Inter", Font.BOLD, 16));
+        chartTitle.setFont(new Font("Inter", Font.BOLD, 18));
         chartTitle.setForeground(TEXT_PRIMARY);
+        chartTitle.setBorder(new EmptyBorder(8, 0, 8, 0));
         headerPanel.add(chartTitle, BorderLayout.WEST);
         
         // Panel para selector de dispositivo e info

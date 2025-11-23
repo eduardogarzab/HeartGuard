@@ -138,11 +138,11 @@ public class VitalSignsChartPanel extends JPanel {
     }
 
     private void initComponents() {
-        setLayout(new BorderLayout(16, 16));
+        setLayout(new BorderLayout(20, 20));
         setBackground(CARD_BG);
-        setBorder(new EmptyBorder(20, 20, 20, 20));
+        setBorder(new EmptyBorder(24, 24, 24, 24));
 
-        // Panel superior con valores actuales
+        // Panel superior con valores actuales - más grande
         JPanel currentValuesPanel = createCurrentValuesPanel();
         add(currentValuesPanel, BorderLayout.NORTH);
 
@@ -153,9 +153,9 @@ public class VitalSignsChartPanel extends JPanel {
         // Panel inferior con estado
         JPanel statusPanel = new JPanel(new BorderLayout());
         statusPanel.setOpaque(false);
-        statusPanel.setBorder(new EmptyBorder(12, 0, 0, 0));
+        statusPanel.setBorder(new EmptyBorder(16, 0, 0, 0));
 
-        lastUpdateLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lastUpdateLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         lastUpdateLabel.setForeground(TEXT_SECONDARY);
         statusPanel.add(lastUpdateLabel, BorderLayout.WEST);
 
@@ -163,9 +163,10 @@ public class VitalSignsChartPanel extends JPanel {
     }
 
     private JPanel createCurrentValuesPanel() {
-        JPanel panel = new JPanel(new GridLayout(1, 4, 16, 0));
+        JPanel panel = new JPanel(new GridLayout(1, 4, 20, 0));
         panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(0, 0, 20, 0));
+        panel.setBorder(new EmptyBorder(0, 0, 24, 0));
+        panel.setPreferredSize(new Dimension(0, 140)); // Altura fija más grande
 
         // Card de frecuencia cardíaca
         panel.add(createValueCard("❤️  Frecuencia Cardíaca", heartRateLabel, "bpm", HEART_COLOR));
@@ -217,7 +218,7 @@ public class VitalSignsChartPanel extends JPanel {
 
         // Title label
         JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        titleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         titleLabel.setForeground(TEXT_SECONDARY);
         card.add(titleLabel, BorderLayout.NORTH);
 
@@ -225,14 +226,14 @@ public class VitalSignsChartPanel extends JPanel {
         JPanel valuePanel = new JPanel(new BorderLayout(8, 0));
         valuePanel.setOpaque(false);
 
-        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 32));
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 42)); // Más grande
         valueLabel.setForeground(accentColor);
         valuePanel.add(valueLabel, BorderLayout.CENTER);
 
         JLabel unitLabel = new JLabel(unit);
-        unitLabel.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        unitLabel.setFont(new Font("Segoe UI", Font.PLAIN, 18)); // Más grande
         unitLabel.setForeground(TEXT_SECONDARY);
-        unitLabel.setBorder(new EmptyBorder(10, 0, 0, 0));
+        unitLabel.setBorder(new EmptyBorder(14, 0, 0, 0));
         valuePanel.add(unitLabel, BorderLayout.EAST);
 
         card.add(valuePanel, BorderLayout.CENTER);
@@ -242,9 +243,9 @@ public class VitalSignsChartPanel extends JPanel {
 
     private JTabbedPane createChartTabs() {
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tabs.setFont(new Font("Segoe UI", Font.BOLD, 14)); // Más grande
         tabs.setBackground(CARD_BG);
-        tabs.setBorder(new EmptyBorder(8, 0, 0, 0));
+        tabs.setBorder(new EmptyBorder(12, 0, 0, 0));
 
         // Crear gráficas individuales para cada parámetro
         tabs.addTab("❤️ Frecuencia Cardíaca", createHeartRateChart());
@@ -593,20 +594,20 @@ public class VitalSignsChartPanel extends JPanel {
         renderer.setDefaultShapesVisible(false); // Hide data point markers for cleaner look
         plot.setRenderer(renderer);
 
-        // Style domain axis (time)
+        // Style domain axis (time) - fuentes más grandes
         DateAxis domainAxis = (DateAxis) plot.getDomainAxis();
         domainAxis.setDateFormatOverride(new SimpleDateFormat("HH:mm:ss"));
-        domainAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 12));
-        domainAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 11));
+        domainAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 14));
+        domainAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 13));
         domainAxis.setLabelPaint(TEXT_SECONDARY);
         domainAxis.setTickLabelPaint(TEXT_SECONDARY);
         domainAxis.setAxisLinePaint(BORDER_LIGHT);
         domainAxis.setTickMarkPaint(BORDER_LIGHT);
         
-        // Style range axis (values)
+        // Style range axis (values) - fuentes más grandes
         NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-        rangeAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 12));
-        rangeAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 11));
+        rangeAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 14));
+        rangeAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 13));
         rangeAxis.setLabelPaint(TEXT_SECONDARY);
         rangeAxis.setTickLabelPaint(TEXT_SECONDARY);
         rangeAxis.setAxisLinePaint(BORDER_LIGHT);
