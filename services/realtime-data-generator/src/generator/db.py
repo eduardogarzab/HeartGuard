@@ -264,3 +264,41 @@ class DatabaseService:
         except Exception as e:
             logger.error(f"Error fetching binding tags: {e}")
             return {}
+    
+    def get_measurement_for_device(self, patient_id: str, device_id: str) -> str:
+        """
+        Get the InfluxDB measurement name for a specific patient-device combination.
+        
+        Args:
+            patient_id: UUID of the patient
+            device_id: UUID of the device
+            
+        Returns:
+            Measurement name (e.g., 'vital_signs', 'ecg_waveform') or None if not found
+        """
+        try:
+            self.ensure_connection()
+            
+            with self.conn.cursor(cursor_factory=RealDictCursor) as cursor:
+                query = """
+                    SELECT tb.measurement
+                    FROM heartguard.signal_streams ss
+                    JOIN heartguard.timeseries_binding tb ON tb.stream_id = ss.id
+                    WHERE ss.patient_id = %s 
+                      AND ss.device_id = %s
+                      AND ss.ended_at IS NULL
+                    LIMIT 1
+                """
+                cursor.execute(query, (patient_id, device_id))
+                result = cursor.fetchone()
+                
+                if result:
+                    logger.debug(f"Found measurement '{result['measurement']}' for patient {patient_id}, device {device_id}")
+                    return result['measurement']
+                else:
+                    logger.warning(f"No active binding found for patient {patient_id}, device {device_id}")
+                    return None
+        except Exception as e:
+            logger.error(f"Error fetching measurement: {e}")
+            return None
+

@@ -117,15 +117,33 @@ def create_app() -> Flask:
         Query Parameters:
             - device_id (optional): Filter by specific device
             - limit (optional): Number of records to return (default: 10, max: 100)
-            - measurement (optional): InfluxDB measurement name (default: vital_signs)
+            - measurement (optional): InfluxDB measurement name (auto-detected from PostgreSQL if device_id provided)
         """
         if not influx_service:
             return jsonify({'error': 'InfluxDB service not initialized'}), 500
         
+        if not db_service:
+            return jsonify({'error': 'Database service not initialized'}), 500
+        
         # Get query parameters
         device_id = request.args.get('device_id')
         limit = min(int(request.args.get('limit', 10)), 100)  # Max 100 records
-        measurement = request.args.get('measurement', 'vital_signs')
+        measurement = request.args.get('measurement')
+        
+        # Auto-detect measurement from PostgreSQL if device_id provided
+        if device_id and not measurement:
+            try:
+                measurement = db_service.get_measurement_for_device(patient_id, device_id)
+                if not measurement:
+                    logger.warning(f"No binding found for patient {patient_id}, device {device_id}")
+                    measurement = 'vital_signs'  # fallback
+            except Exception as e:
+                logger.error(f"Error getting measurement from database: {e}")
+                measurement = 'vital_signs'  # fallback
+        
+        # Default measurement if not specified
+        if not measurement:
+            measurement = 'vital_signs'
         
         try:
             readings = influx_service.query_patient_vital_signs(
