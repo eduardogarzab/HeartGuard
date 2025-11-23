@@ -645,15 +645,9 @@ public class VitalSignsChartPanel extends JPanel {
                         System.out.println("[VitalSignsChart] Updating charts with " + readings.size() + " readings");
                         updateChartsWithReadings(readings);
                         
-                        // Verificar si son datos de prueba (todos tienen el mismo patrón)
-                        boolean isMockData = checkIfMockData(readings);
-                        if (isMockData) {
-                            lastUpdateLabel.setText("⚠ Datos de demostración (InfluxDB no accesible) - " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
-                            lastUpdateLabel.setForeground(new Color(255, 152, 0)); // Naranja
-                        } else {
-                            lastUpdateLabel.setText("✓ Última actualización: " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
-                            lastUpdateLabel.setForeground(new Color(40, 167, 69));
-                        }
+                        // Datos cargados exitosamente desde el gateway
+                        lastUpdateLabel.setText("✓ Última actualización: " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
+                        lastUpdateLabel.setForeground(new Color(40, 167, 69));
                     } else {
                         System.out.println("[VitalSignsChart] No data available for patient " + patientId);
                         lastUpdateLabel.setText("⚠ No hay datos de signos vitales para este paciente");
@@ -741,16 +735,6 @@ public class VitalSignsChartPanel extends JPanel {
         if (updateTimer != null) {
             updateTimer.stop();
         }
-    }
-
-    /**
-     * Verificar si los datos son mock (de prueba)
-     */
-    private boolean checkIfMockData(List<VitalSignsReading> readings) {
-        if (readings == null || readings.isEmpty()) return false;
-        // Si los datos tienen valores muy uniformes, probablemente son mock
-        // Esta es una heurística simple
-        return readings.size() >= 5 && readings.get(0).heartRate >= 65 && readings.get(0).heartRate <= 80;
     }
     
     /**
