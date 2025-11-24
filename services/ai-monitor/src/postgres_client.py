@@ -16,7 +16,13 @@ class PostgresClient:
     
     def __init__(self):
         self.conn = None
-        self.connect()
+        self.enabled = True
+        try:
+            self.connect()
+        except Exception as e:
+            logger.warning(f"PostgreSQL no disponible: {e}")
+            logger.warning("El servicio continuará sin almacenar alertas en PostgreSQL")
+            self.enabled = False
     
     def connect(self):
         """Establece conexión a PostgreSQL"""
@@ -29,12 +35,17 @@ class PostgresClient:
                 password=config.POSTGRES_PASSWORD
             )
             logger.info("PostgreSQL connection established")
+            self.enabled = True
         except Exception as e:
             logger.error(f"Error connecting to PostgreSQL: {e}")
+            self.enabled = False
             raise
     
     def ensure_connection(self):
         """Verifica y reestablece conexión si es necesario"""
+        if not self.enabled:
+            return False
+        
         try:
             if self.conn is None or self.conn.closed:
                 self.connect()
@@ -42,9 +53,11 @@ class PostgresClient:
                 # Test connection
                 with self.conn.cursor() as cur:
                     cur.execute("SELECT 1")
+            return True
         except Exception as e:
-            logger.warning(f"Connection test failed, reconnecting: {e}")
-            self.connect()
+            logger.warning(f"Connection test failed: {e}")
+            self.enabled = False
+            return False
     
     def create_alert(
         self, 
@@ -73,7 +86,9 @@ class PostgresClient:
         Returns:
             UUID de la alerta creada o None si falla
         """
-        self.ensure_connection()
+        if not self.ensure_connection():
+            logger.warning("PostgreSQL no disponible, alerta no almacenada")
+            return None
         
         try:
             with self.conn.cursor() as cur:

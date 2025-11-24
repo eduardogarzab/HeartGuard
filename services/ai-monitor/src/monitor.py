@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 class AIMonitorWorker:
     """Worker principal que monitorea pacientes y genera alertas con IA"""
     
-    def __init__(self):
+    def __init__(self, use_signals=True):
         self.running = False
         
         # Inicializar clientes
@@ -43,9 +43,10 @@ class AIMonitorWorker:
         self.notification_service = NotificationService()
         self.auth_client = AuthClient()
         
-        # Registrar handlers para shutdown graceful
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
+        # Registrar handlers para shutdown graceful solo si estamos en main thread
+        if use_signals:
+            signal.signal(signal.SIGINT, self._signal_handler)
+            signal.signal(signal.SIGTERM, self._signal_handler)
         
         logger.info("AI Monitor Worker initialized successfully")
     

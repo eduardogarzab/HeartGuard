@@ -36,5 +36,10 @@ BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))  # pacientes por batch
 ENABLE_NOTIFICATIONS = os.getenv("ENABLE_NOTIFICATIONS", "true").lower() == "true"
 NOTIFICATION_SERVICE_URL = os.getenv("NOTIFICATION_SERVICE_URL", "http://localhost:8083")
 
+# Flask Configuration
+FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")
+FLASK_PORT = int(os.getenv("FLASK_PORT", "5008"))
+FLASK_DEBUG = os.getenv("FLASK_DEBUG", "false").lower() == "true"
+
 # Logging
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
