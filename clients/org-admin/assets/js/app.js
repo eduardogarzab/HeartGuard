@@ -1468,6 +1468,8 @@
             
             const response = await Api.admin.getPatientVitalSigns(state.token, patientId, deviceId, 100);
             
+            console.log('📊 Respuesta de signos vitales:', response);
+            
             if (!response || !response.readings || response.readings.length === 0) {
                 chartsContainer.innerHTML = '<p class="muted">📊 No hay lecturas recientes de signos vitales</p>';
                 return;
@@ -1544,8 +1546,13 @@
                     const canvas = document.getElementById(canvasId);
                     if (!canvas) return;
 
-                    const ChartConstructor = window.Chart || Chart;
-                    new ChartConstructor(canvas, {
+                    // Verificar que Chart.js esté disponible
+                    if (typeof Chart === 'undefined') {
+                        console.error('Chart.js no está cargado');
+                        return;
+                    }
+
+                    new Chart(canvas, {
                         type: 'line',
                         data: {
                             labels: data.labels,

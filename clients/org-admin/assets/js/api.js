@@ -843,7 +843,32 @@ const Api = (() => {
                     params.append('device_id', deviceId);
                 }
                 const path = `/realtime/patients/${patientId}/vital-signs?${params.toString()}`;
-                return requestJson(path, { token });
+                const doc = await requestXml(path, { token });
+                
+                // Parse XML response
+                const response = {
+                    patient_id: Xml.text(doc, "response > patient_id"),
+                    device_id: Xml.text(doc, "response > device_id"),
+                    measurement: Xml.text(doc, "response > measurement"),
+                    count: Xml.integer(doc, "response > count"),
+                    readings: Xml.mapNodes(doc, "response > readings > reading", (node) => {
+                        const reading = {};
+                        // Extract all child nodes as properties
+                        Array.from(node.children).forEach(child => {
+                            const key = child.tagName;
+                            const value = child.textContent;
+                            // Try to parse as number if it looks like one
+                            if (value && !isNaN(value) && value.trim() !== '') {
+                                reading[key] = parseFloat(value);
+                            } else {
+                                reading[key] = value;
+                            }
+                        });
+                        return reading;
+                    })
+                };
+                
+                return response;
             },
         },
     };

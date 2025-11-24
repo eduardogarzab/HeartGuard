@@ -6,6 +6,7 @@ from .config import configure_app
 from .db import DatabaseService
 from .influx import InfluxDBService
 from .worker import GeneratorWorker
+from .xml import xml_response, xml_error_response
 
 # Configure logging
 logging.basicConfig(
@@ -18,6 +19,12 @@ logger = logging.getLogger(__name__)
 db_service = None
 influx_service = None
 worker = None
+
+
+def wants_xml() -> bool:
+    """Check if the client prefers XML response."""
+    accept = request.headers.get('Accept', '')
+    return 'application/xml' in accept or 'text/xml' in accept
 
 
 def create_app() -> Flask:
@@ -59,18 +66,21 @@ def create_app() -> Flask:
     @app.route('/health', methods=['GET'])
     def health():
         """Health check endpoint."""
-        return jsonify({
+        payload = {
             'status': 'healthy',
             'service': 'realtime-data-generator',
             'worker_running': worker.running if worker else False,
             'iteration': worker.iteration if worker else 0
-        }), 200
+        }
+        if wants_xml():
+            return xml_response(payload)
+        return jsonify(payload), 200
     
     @app.route('/status', methods=['GET'])
     def status():
         """Detailed status endpoint."""
         patients = db_service.get_active_patients() if db_service else []
-        return jsonify({
+        payload = {
             'status': 'running',
             'service': 'realtime-data-generator',
             'worker': {
@@ -87,16 +97,22 @@ def create_app() -> Flask:
                 'url': app.config['INFLUXDB_URL'],
                 'bucket': app.config['INFLUXDB_BUCKET']
             }
-        }), 200
+        }
+        if wants_xml():
+            return xml_response(payload)
+        return jsonify(payload), 200
     
     @app.route('/patients', methods=['GET'])
     def get_patients():
         """Get list of active patients being monitored."""
         if not db_service:
-            return jsonify({'error': 'Database service not initialized'}), 500
+            error_msg = 'Database service not initialized'
+            if wants_xml():
+                return xml_error_response('service_unavailable', error_msg, status=500)
+            return jsonify({'error': error_msg}), 500
         
         patients = db_service.get_active_patients()
-        return jsonify({
+        payload = {
             'count': len(patients),
             'patients': [
                 {
@@ -107,7 +123,10 @@ def create_app() -> Flask:
                 }
                 for p in patients
             ]
-        }), 200
+        }
+        if wants_xml():
+            return xml_response(payload)
+        return jsonify(payload), 200
     
     @app.route('/patients/<patient_id>/vital-signs', methods=['GET'])
     def get_patient_vital_signs(patient_id: str):
@@ -120,10 +139,16 @@ def create_app() -> Flask:
             - measurement (optional): InfluxDB measurement name (auto-detected from PostgreSQL if device_id provided)
         """
         if not influx_service:
-            return jsonify({'error': 'InfluxDB service not initialized'}), 500
+            error_msg = 'InfluxDB service not initialized'
+            if wants_xml():
+                return xml_error_response('service_unavailable', error_msg, status=500)
+            return jsonify({'error': error_msg}), 500
         
         if not db_service:
-            return jsonify({'error': 'Database service not initialized'}), 500
+            error_msg = 'Database service not initialized'
+            if wants_xml():
+                return xml_error_response('service_unavailable', error_msg, status=500)
+            return jsonify({'error': error_msg}), 500
         
         # Get query parameters
         device_id = request.args.get('device_id')
@@ -153,16 +178,21 @@ def create_app() -> Flask:
                 measurement=measurement
             )
             
-            return jsonify({
+            payload = {
                 'patient_id': patient_id,
                 'device_id': device_id,
                 'measurement': measurement,
                 'count': len(readings),
                 'readings': readings
-            }), 200
+            }
+            if wants_xml():
+                return xml_response(payload)
+            return jsonify(payload), 200
             
         except Exception as e:
             logger.error(f"Error fetching vital signs for patient {patient_id}: {e}")
+            if wants_xml():
+                return xml_error_response('query_failed', str(e), status=500)
             return jsonify({
                 'error': 'query_failed',
                 'message': str(e)
