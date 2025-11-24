@@ -82,25 +82,34 @@ INSERT INTO alert_status(code, description, step_order) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- Tipos de alerta (rango de severidad por nivel)
+-- Incluye todos los tipos que el modelo de IA puede generar
 INSERT INTO alert_types(code, description, severity_min_id, severity_max_id)
 SELECT x.code, x.description,
        (SELECT id FROM alert_levels WHERE code = x.min_code),
        (SELECT id FROM alert_levels WHERE code = x.max_code)
 FROM (VALUES
-  ('ARRHYTHMIA','Ritmo cardiaco anómalo','medium','critical'),
+  ('GENERAL_RISK','Riesgo general de salud','low','critical'),
+  ('ARRHYTHMIA','Arritmia - Ritmo cardiaco anómalo','medium','critical'),
   ('DESAT','Desaturación de oxígeno','low','critical'),
-  ('HYPERTENSION','Presión arterial elevada','medium','critical')
+  ('HYPERTENSION','Hipertensión arterial','medium','critical'),
+  ('HYPOTENSION','Hipotensión arterial','medium','critical'),
+  ('FEVER','Fiebre','low','high'),
+  ('HYPOTHERMIA','Hipotermia','medium','critical')
 ) AS x(code,description,min_code,max_code)
 ON CONFLICT (code) DO NOTHING;
 
 -- Tipos de evento (severidad por defecto)
+-- Incluye todos los tipos que el modelo de IA puede detectar
 INSERT INTO event_types(code, description, severity_default_id)
 SELECT x.code, x.description, (SELECT id FROM alert_levels WHERE code = x.def_level)
 FROM (VALUES
-  ('AFIB','Fibrilación auricular','high'),
-  ('TACHY','Taquicardia','medium'),
-  ('DESAT','Desaturación O2','high'),
-  ('HYPERTENSION','Hipertensión','medium')
+  ('GENERAL_RISK','Riesgo general de salud detectado por IA','medium'),
+  ('ARRHYTHMIA','Arritmia - Frecuencia cardiaca anormal','high'),
+  ('DESAT','Desaturación de oxígeno','high'),
+  ('HYPERTENSION','Hipertensión arterial','medium'),
+  ('HYPOTENSION','Hipotensión arterial','high'),
+  ('FEVER','Fiebre - Temperatura elevada','medium'),
+  ('HYPOTHERMIA','Hipotermia - Temperatura baja','high')
 ) AS x(code,description,def_level)
 ON CONFLICT (code) DO NOTHING;
 
