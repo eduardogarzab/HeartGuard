@@ -247,6 +247,80 @@ def org_care_team_patients_locations(org_id: str, current_user_id: str):
         return error_response(message='Error interno al listar ubicaciones de pacientes por equipo', error_code='internal_error', status_code=500)
 
 
+@user_bp.route('/orgs/<string:org_id>/devices', methods=['GET'])
+@require_user_token
+def org_devices(org_id: str, current_user_id: str):
+    """
+    Lista todos los dispositivos de una organización.
+    Query params: ?active=true|false&connected=true|false&patient_id=UUID
+    """
+    try:
+        data = user_service.list_org_devices(org_id, current_user_id, request.args)
+        current_app.logger.info(
+            'Dispositivos de organización listados',
+            extra={
+                'trace_id': g.trace_id,
+                'user_id': current_user_id,
+                'org_id': org_id,
+                'returned': len(data.get('devices', [])),
+            },
+        )
+        return success_response(data=data, message='Dispositivos de organización recuperados correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        return fail_response(message=str(exc), error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al listar dispositivos de organización', extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'org_id': org_id})
+        return error_response(message='Error interno al listar dispositivos de organización', error_code='internal_error', status_code=500)
+
+
+@user_bp.route('/orgs/<string:org_id>/devices/<string:device_id>', methods=['GET'])
+@require_user_token
+def org_device_detail(org_id: str, device_id: str, current_user_id: str):
+    """Obtiene detalles de un dispositivo específico de la organización."""
+    try:
+        data = user_service.get_org_device_detail(org_id, device_id, current_user_id)
+        current_app.logger.info(
+            'Detalle de dispositivo obtenido',
+            extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'org_id': org_id, 'device_id': device_id},
+        )
+        return success_response(data=data, message='Detalle de dispositivo recuperado correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        return fail_response(message=str(exc), error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al obtener detalle de dispositivo', extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'org_id': org_id, 'device_id': device_id})
+        return error_response(message='Error interno al obtener detalle de dispositivo', error_code='internal_error', status_code=500)
+
+
+@user_bp.route('/orgs/<string:org_id>/devices/<string:device_id>/streams', methods=['GET'])
+@require_user_token
+def org_device_streams(org_id: str, device_id: str, current_user_id: str):
+    """Lista historial de streams (conexiones) de un dispositivo."""
+    try:
+        data = user_service.list_device_streams(org_id, device_id, current_user_id, request.args)
+        current_app.logger.info(
+            'Historial de streams obtenido',
+            extra={
+                'trace_id': g.trace_id,
+                'user_id': current_user_id,
+                'org_id': org_id,
+                'device_id': device_id,
+                'returned': len(data.get('streams', [])),
+            },
+        )
+        return success_response(data=data, message='Historial de streams recuperado correctamente')
+    except PermissionError as exc:
+        return fail_response(message=str(exc), error_code='forbidden', status_code=403)
+    except ValueError as exc:
+        return fail_response(message=str(exc), error_code='validation_error', status_code=400)
+    except Exception:  # pragma: no cover - defensivo
+        current_app.logger.exception('Error al obtener historial de streams', extra={'trace_id': g.trace_id, 'user_id': current_user_id, 'org_id': org_id, 'device_id': device_id})
+        return error_response(message='Error interno al obtener historial de streams', error_code='internal_error', status_code=500)
+
+
 @user_bp.route('/orgs/<string:org_id>/care-teams/<string:team_id>/devices', methods=['GET'])
 @require_user_token
 def care_team_devices(org_id: str, team_id: str, current_user_id: str):

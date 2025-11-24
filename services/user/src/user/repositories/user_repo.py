@@ -1051,6 +1051,178 @@ class UserRepository:
     # Dispositivos clínicos
     # ------------------------------------------------------------------
     @staticmethod
+    def list_org_devices(
+        org_id: str,
+        *,
+        patient_id: Optional[str],
+        active: Optional[bool],
+        connected: Optional[bool],
+        limit: int,
+        offset: int,
+    ) -> List[Dict]:
+        """
+        Lista todos los dispositivos de una organización.
+        - patient_id: filtrar por paciente owner
+        - active: filtrar por campo active del device
+        - connected: True=con stream activo, False=sin stream activo, None=todos
+        """
+        conditions = ["d.org_id = %s"]
+        params: List[Any] = [org_id]
+
+        if patient_id:
+            conditions.append("d.owner_patient_id = %s")
+            params.append(patient_id)
+
+        if active is not None:
+            conditions.append("d.active = %s")
+            params.append(active)
+
+        if connected is True:
+            conditions.append("active_stream.stream_id IS NOT NULL")
+        elif connected is False:
+            conditions.append("active_stream.stream_id IS NULL")
+
+        where_clause = " AND ".join(conditions)
+        params.extend([limit, offset])
+
+        query = f"""
+            WITH active_stream AS (
+                SELECT
+                    ss.id AS stream_id,
+                    ss.device_id,
+                    ss.patient_id AS current_patient_id,
+                    ss.started_at
+                FROM signal_streams ss
+                WHERE ss.ended_at IS NULL
+            ),
+            all_streams_count AS (
+                SELECT
+                    device_id,
+                    COUNT(*)::int AS total_streams,
+                    MAX(started_at) AS last_started_at
+                FROM signal_streams
+                GROUP BY device_id
+            )
+            SELECT
+                d.id,
+                d.serial,
+                d.brand,
+                d.model,
+                d.active,
+                d.registered_at,
+                d.owner_patient_id,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                owner_p.person_name AS owner_patient_name,
+                owner_p.email AS owner_patient_email,
+                active_stream.stream_id AS active_stream_id,
+                active_stream.current_patient_id,
+                current_p.person_name AS current_patient_name,
+                active_stream.started_at AS connection_started_at,
+                COALESCE(sc.total_streams, 0) AS total_streams,
+                sc.last_started_at
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN patients owner_p ON owner_p.id = d.owner_patient_id
+            LEFT JOIN active_stream ON active_stream.device_id = d.id
+            LEFT JOIN patients current_p ON current_p.id = active_stream.current_patient_id
+            LEFT JOIN all_streams_count sc ON sc.device_id = d.id
+            WHERE {where_clause}
+            ORDER BY d.serial ASC
+            LIMIT %s OFFSET %s
+        """
+
+        with get_db_cursor() as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall() or []
+            return list(rows)
+
+    @staticmethod
+    def get_org_device(org_id: str, device_id: str) -> Optional[Dict]:
+        """Obtiene detalles de un dispositivo de la organización."""
+        query = """
+            WITH active_stream AS (
+                SELECT
+                    ss.id AS stream_id,
+                    ss.device_id,
+                    ss.patient_id AS current_patient_id,
+                    ss.started_at
+                FROM signal_streams ss
+                WHERE ss.ended_at IS NULL AND ss.device_id = %s
+            ),
+            all_streams_count AS (
+                SELECT
+                    device_id,
+                    COUNT(*)::int AS total_streams,
+                    MAX(started_at) AS last_started_at
+                FROM signal_streams
+                WHERE device_id = %s
+                GROUP BY device_id
+            )
+            SELECT
+                d.id,
+                d.serial,
+                d.brand,
+                d.model,
+                d.active,
+                d.registered_at,
+                d.owner_patient_id,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                owner_p.person_name AS owner_patient_name,
+                owner_p.email AS owner_patient_email,
+                active_stream.stream_id AS active_stream_id,
+                active_stream.current_patient_id,
+                current_p.person_name AS current_patient_name,
+                active_stream.started_at AS connection_started_at,
+                COALESCE(sc.total_streams, 0) AS total_streams,
+                sc.last_started_at
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN patients owner_p ON owner_p.id = d.owner_patient_id
+            LEFT JOIN active_stream ON active_stream.device_id = d.id
+            LEFT JOIN patients current_p ON current_p.id = active_stream.current_patient_id
+            LEFT JOIN all_streams_count sc ON sc.device_id = d.id
+            WHERE d.org_id = %s AND d.id = %s
+            LIMIT 1
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (device_id, device_id, org_id, device_id))
+            return cursor.fetchone()
+
+    @staticmethod
+    def list_device_streams(
+        device_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> List[Dict]:
+        """Lista todos los signal_streams de un dispositivo (historial completo)."""
+        query = """
+            SELECT
+                ss.id,
+                ss.device_id,
+                ss.patient_id,
+                p.person_name AS patient_name,
+                p.email AS patient_email,
+                ss.started_at,
+                ss.ended_at,
+                CASE
+                    WHEN ss.ended_at IS NULL THEN 'active'
+                    ELSE 'ended'
+                END AS status
+            FROM signal_streams ss
+            JOIN patients p ON p.id = ss.patient_id
+            WHERE ss.device_id = %s
+            ORDER BY ss.started_at DESC
+            LIMIT %s OFFSET %s
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (device_id, limit, offset))
+            rows = cursor.fetchall() or []
+            return list(rows)
+
+    @staticmethod
     def get_care_team_membership(org_id: str, care_team_id: str, user_id: str) -> Optional[Dict]:
         query = """
             SELECT

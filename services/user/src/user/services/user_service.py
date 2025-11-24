@@ -553,6 +553,95 @@ class UserService:
     # ------------------------------------------------------------------
     # Dispositivos clínicos
     # ------------------------------------------------------------------
+    def list_org_devices(
+        self,
+        org_id: str,
+        user_id: str,
+        params: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Lista dispositivos de una organización (sin filtro de care_team)."""
+        membership = self._ensure_membership(org_id, user_id)
+
+        active = self._parse_bool(params.get('active'), field='active') if 'active' in params else None
+        connected = self._parse_bool(params.get('connected'), field='connected') if 'connected' in params else None
+        patient_value = params.get('patient_id')
+        patient_id = self._normalize_uuid(patient_value, field='patient_id') if patient_value else None
+        limit = self._parse_limit(params.get('limit'), default=200, maximum=500, field='limit')
+        offset = self._parse_offset(params.get('offset'), field='offset')
+
+        rows = self.repo.list_org_devices(
+            org_id,
+            patient_id=patient_id,
+            active=active,
+            connected=connected,
+            limit=limit,
+            offset=offset,
+        )
+        devices = [self._format_org_device(row) for row in rows]
+
+        return {
+            'organization': membership,
+            'devices': devices,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'returned': len(devices),
+            },
+        }
+
+    def get_org_device_detail(
+        self,
+        org_id: str,
+        device_id: str,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        """Obtiene detalle de un dispositivo de la organización."""
+        membership = self._ensure_membership(org_id, user_id)
+        record = self.repo.get_org_device(org_id, device_id)
+        if not record:
+            raise ValueError(f"Dispositivo {device_id} no encontrado en la organización {org_id}")
+
+        return {
+            'organization': membership,
+            'device': self._format_org_device(record),
+        }
+
+    def list_device_streams(
+        self,
+        org_id: str,
+        device_id: str,
+        user_id: str,
+        params: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Lista historial de streams de un dispositivo."""
+        membership = self._ensure_membership(org_id, user_id)
+        
+        # Verificar que el dispositivo pertenece a la org
+        device = self.repo.get_org_device(org_id, device_id)
+        if not device:
+            raise ValueError(f"Dispositivo {device_id} no encontrado en la organización {org_id}")
+
+        limit = self._parse_limit(params.get('limit'), default=50, maximum=200, field='limit')
+        offset = self._parse_offset(params.get('offset'), field='offset')
+
+        rows = self.repo.list_device_streams(
+            device_id,
+            limit=limit,
+            offset=offset,
+        )
+        streams = [self._format_device_stream(row) for row in rows]
+
+        return {
+            'organization': membership,
+            'device': self._format_org_device(device),
+            'streams': streams,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'returned': len(streams),
+            },
+        }
+
     def list_care_team_devices(
         self,
         org_id: str,
@@ -1259,6 +1348,44 @@ class UserService:
             'last_alert': alert,
         }
 
+    def _format_org_device(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Formatea un dispositivo con información de owner y conexión actual.
+        - owner: paciente owner_patient_id
+        - current_patient: paciente con stream activo (puede ser diferente)
+        - connected: boolean basado en active_stream_id
+        """
+        owner_id = row.get('owner_patient_id')
+        current_patient_id = row.get('current_patient_id')
+        
+        return {
+            'id': str(row['id']),
+            'serial': row.get('serial'),
+            'brand': row.get('brand'),
+            'model': row.get('model'),
+            'active': bool(row.get('active', False)),
+            'registered_at': self._serialize_datetime(row.get('registered_at')),
+            'connected': row.get('active_stream_id') is not None,
+            'type': {
+                'code': row.get('device_type_code'),
+                'label': row.get('device_type_label'),
+            },
+            'owner': {
+                'id': str(owner_id) if owner_id else None,
+                'name': row.get('owner_patient_name'),
+                'email': row.get('owner_patient_email'),
+            },
+            'current_connection': {
+                'patient_id': str(current_patient_id) if current_patient_id else None,
+                'patient_name': row.get('current_patient_name'),
+                'started_at': self._serialize_datetime(row.get('connection_started_at')),
+            } if current_patient_id else None,
+            'streams': {
+                'total': int(row.get('total_streams') or 0),
+                'last_started_at': self._serialize_datetime(row.get('last_started_at')),
+            },
+        }
+
     def _format_care_team_device(self, row: Dict[str, Any]) -> Dict[str, Any]:
         owner_id = row.get('owner_patient_id')
         return {
@@ -1285,17 +1412,18 @@ class UserService:
         }
 
     def _format_device_stream(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        patient_id = row.get('patient_id')
         return {
             'id': str(row['id']),
-            'patient_id': str(row['patient_id']) if row.get('patient_id') else None,
             'device_id': str(row['device_id']) if row.get('device_id') else None,
+            'status': row.get('status'),
+            'patient': {
+                'id': str(patient_id) if patient_id else None,
+                'name': row.get('patient_name'),
+                'email': row.get('patient_email'),
+            },
             'started_at': self._serialize_datetime(row.get('started_at')),
             'ended_at': self._serialize_datetime(row.get('ended_at')),
-            'sample_rate_hz': self._coerce_float(row.get('sample_rate_hz')),
-            'signal_type': {
-                'code': row.get('signal_type_code'),
-                'label': row.get('signal_type_label'),
-            },
         }
 
     def _format_push_device(self, record: Dict[str, Any]) -> Dict[str, Any]:
