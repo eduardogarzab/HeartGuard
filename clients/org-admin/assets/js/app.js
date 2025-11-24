@@ -1416,7 +1416,10 @@
     };
 
     const renderVitalSignsCharts = (patientId, devices = []) => {
+        console.log('🎨 renderVitalSignsCharts llamado:', { patientId, deviceCount: devices.length });
+        
         if (!hasItems(devices)) {
+            console.log('⚠️ No hay dispositivos disponibles');
             return `
                 <div class="vital-signs-placeholder">
                     <p class="muted">📊 No hay dispositivos con datos de signos vitales disponibles</p>
@@ -1427,6 +1430,8 @@
         // ID único para el contenedor
         const containerId = `vital-signs-${patientId}`;
         const deviceSelectId = `device-select-${patientId}`;
+        
+        console.log('✅ Generando contenedor de signos vitales:', containerId);
         
         // Si solo hay un dispositivo, lo mostramos directamente
         const deviceOptions = devices
@@ -2052,13 +2057,17 @@
             setModalBody(renderPatientProfileView(profile));
             
             // Inicializar signos vitales si hay dispositivos
+            console.log('🔍 Verificando dispositivos en perfil:', profile.devices?.length);
             if (profile.devices && profile.devices.length > 0) {
                 const containerId = `vital-signs-${profile.patient.id}`;
                 const deviceSelectId = `device-select-${profile.patient.id}`;
                 const firstDeviceId = profile.devices[0].id;
                 
+                console.log('🚀 Iniciando carga de signos vitales para dispositivo:', firstDeviceId);
+                
                 // Cargar datos del primer dispositivo
                 setTimeout(() => {
+                    console.log('⏰ Ejecutando loadVitalSignsData...');
                     loadVitalSignsData(profile.patient.id, firstDeviceId, containerId);
                 }, 100);
                 
