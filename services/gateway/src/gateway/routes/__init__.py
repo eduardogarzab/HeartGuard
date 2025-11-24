@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from flask import Blueprint, Flask
 
-from . import admin_proxy, auth_proxy, health, media_proxy, user_proxy, patient_proxy, realtime_proxy
+from . import admin_proxy, auth_proxy, health, media_proxy, user_proxy, patient_proxy, realtime_proxy, ai_proxy
 
 ROUTES: tuple[Blueprint, ...] = (
     health.bp,
@@ -13,6 +13,7 @@ ROUTES: tuple[Blueprint, ...] = (
     admin_proxy.bp,
     user_proxy.bp,
     realtime_proxy.bp,
+    ai_proxy.bp,
 )
 
 

@@ -51,6 +51,27 @@ services:
       - influxdb_data:/var/lib/influxdb2
       - influxdb_config:/etc/influxdb2
 
+  ai-prediction-service:
+    build:
+      context: ./services/ai-prediction
+      dockerfile: Dockerfile
+    container_name: heartguard-ai-prediction
+    ports:
+      - "5008:5008"
+    environment:
+      FLASK_HOST: 0.0.0.0
+      FLASK_PORT: 5008
+      FLASK_DEBUG: "False"
+      PREDICTION_THRESHOLD: "0.6"
+      JWT_SECRET: "heartguard-jwt-secret-change-in-production"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    volumes:
+      - ./services/ai-prediction/models:/app/models:ro
+
 volumes:
   postgres_data:
   influxdb_data:
