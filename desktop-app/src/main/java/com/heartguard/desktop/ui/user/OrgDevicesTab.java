@@ -22,21 +22,21 @@ import java.util.function.Consumer;
 
 /**
  * Tab de Dispositivos de una organización.
- * Muestra TODOS los dispositivos médicos de los care teams de la org.
+ * Muestra TODOS los dispositivos médicos de la organización.
  * 
  * Estructura:
  * - Dispositivos pertenecen a la org (org_id)
  * - Están asignados a pacientes (owner_patient_id)
- * - Pacientes están en care teams
+ * - Pueden estar conectados actualmente con un paciente (current_connection)
  * 
  * Endpoints:
- * - GET /orgs/{org_id}/care-teams - Lista de care teams
- * - GET /orgs/{org_id}/care-teams/{team_id}/devices - Dispositivos del team
- * - GET /orgs/{org_id}/care-teams/{team_id}/devices/disconnected - Desconectados
+ * - GET /orgs/{org_id}/devices - Lista TODOS los dispositivos de la org
+ * - GET /orgs/{org_id}/devices/{device_id} - Detalle de dispositivo
+ * - GET /orgs/{org_id}/devices/{device_id}/streams - Historial de conexiones
  * 
  * Layout:
- * - Panel superior: Resumen (Total, Activos, Desconectados) + Filtros
- * - Tabla: Serial | Marca | Modelo | Care Team | Paciente | Estado | Última Conexión
+ * - Panel superior: Resumen (Total, Conectados, Desconectados) + Filtros
+ * - Tabla: Serial | Marca | Modelo | Paciente Owner | Paciente Actual | Estado | Última Conexión
  */
 public class OrgDevicesTab extends JPanel {
     // Colores
@@ -58,21 +58,19 @@ public class OrgDevicesTab extends JPanel {
     
     // Componentes de resumen
     private final JLabel totalDevicesLabel = new JLabel("0");
-    private final JLabel activeDevicesLabel = new JLabel("0");
+    private final JLabel connectedDevicesLabel = new JLabel("0");
     private final JLabel disconnectedDevicesLabel = new JLabel("0");
     
     // Filtros
-    private final JComboBox<String> careTeamFilter = new JComboBox<>();
-    private final JCheckBox showOnlyDisconnectedFilter = new JCheckBox("Solo desconectados");
+    private final JComboBox<String> statusFilter = new JComboBox<>();
+    private final JTextField searchField = new JTextField(20);
     
     // Tabla
     private final DefaultTableModel tableModel;
     private final JTable devicesTable;
     
     // Datos
-    private JsonArray careTeams; // Lista de care teams
-    private List<DeviceRow> allDevices = new ArrayList<>(); // Todos los dispositivos
-    private Map<String, String> careTeamsMap = new HashMap<>(); // id -> nombre
+    private List<DeviceRow> allDevices = new ArrayList<>();
     
     public OrgDevicesTab(
             ApiClient apiClient,
@@ -92,7 +90,7 @@ public class OrgDevicesTab extends JPanel {
         setBorder(new EmptyBorder(24, 24, 24, 24));
         
         // Modelo de tabla
-        String[] columnNames = {"Serial", "Marca", "Modelo", "Care Team", "Paciente", "Estado", "Última Conexión"};
+        String[] columnNames = {"Serial", "Marca", "Modelo", "Tipo", "Paciente Owner", "Conectado Con", "Estado"};
         tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -165,11 +163,11 @@ public class OrgDevicesTab extends JPanel {
         // Card 1: Total Dispositivos
         panel.add(createMetricCard("📊 Total Dispositivos", totalDevicesLabel, PRIMARY_BLUE));
         
-        // Card 2: Activos
-        panel.add(createMetricCard("✅ Activos", activeDevicesLabel, SECONDARY_GREEN));
+        // Card 2: Conectados
+        panel.add(createMetricCard("✅ Conectados", connectedDevicesLabel, SECONDARY_GREEN));
         
         // Card 3: Desconectados
-        panel.add(createMetricCard("⚠️ Desconectados", disconnectedDevicesLabel, DANGER_RED));
+        panel.add(createMetricCard("⚠️ Desconectados", disconnectedDevicesLabel, WARNING_ORANGE));
         
         return panel;
     }
@@ -202,25 +200,39 @@ public class OrgDevicesTab extends JPanel {
         panel.setOpaque(false);
         panel.setMaximumSize(new Dimension(Integer.MAX_VALUE, 50));
         
-        // Filtro por Care Team
-        JLabel careTeamLabel = new JLabel("Care Team:");
-        careTeamLabel.setFont(new Font("Inter", Font.PLAIN, 14));
-        careTeamLabel.setForeground(TEXT_PRIMARY);
+        // Filtro por estado
+        JLabel statusLabel = new JLabel("Estado:");
+        statusLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+        statusLabel.setForeground(TEXT_PRIMARY);
         
-        careTeamFilter.setPreferredSize(new Dimension(250, 35));
-        careTeamFilter.setFont(new Font("Inter", Font.PLAIN, 13));
-        careTeamFilter.addItem("Todos");
-        careTeamFilter.addActionListener(e -> applyFilters());
+        statusFilter.setPreferredSize(new Dimension(180, 35));
+        statusFilter.setFont(new Font("Inter", Font.PLAIN, 13));
+        statusFilter.addItem("Todos");
+        statusFilter.addItem("Conectados");
+        statusFilter.addItem("Desconectados");
+        statusFilter.addItem("Activos");
+        statusFilter.addItem("Inactivos");
+        statusFilter.addActionListener(e -> applyFilters());
         
-        // Checkbox desconectados
-        showOnlyDisconnectedFilter.setFont(new Font("Inter", Font.PLAIN, 13));
-        showOnlyDisconnectedFilter.setOpaque(false);
-        showOnlyDisconnectedFilter.addActionListener(e -> applyFilters());
+        // Campo de búsqueda
+        JLabel searchLabel = new JLabel("Buscar:");
+        searchLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+        searchLabel.setForeground(TEXT_PRIMARY);
         
-        panel.add(careTeamLabel);
-        panel.add(careTeamFilter);
-        panel.add(Box.createHorizontalStrut(8));
-        panel.add(showOnlyDisconnectedFilter);
+        searchField.setPreferredSize(new Dimension(250, 35));
+        searchField.setFont(new Font("Inter", Font.PLAIN, 13));
+        searchField.addActionListener(e -> applyFilters());
+        
+        JButton searchButton = new JButton("🔍");
+        searchButton.setPreferredSize(new Dimension(40, 35));
+        searchButton.addActionListener(e -> applyFilters());
+        
+        panel.add(statusLabel);
+        panel.add(statusFilter);
+        panel.add(Box.createHorizontalStrut(16));
+        panel.add(searchLabel);
+        panel.add(searchField);
+        panel.add(searchButton);
         
         return panel;
     }
@@ -250,20 +262,25 @@ public class OrgDevicesTab extends JPanel {
     }
     
     /**
-     * Carga dispositivos de todos los care teams de la organización
+     * Carga TODOS los dispositivos de la organización directamente
      */
     public void loadData() {
-        // Paso 1: Obtener lista de care teams
         SwingWorker<JsonArray, Void> worker = new SwingWorker<>() {
             @Override
             protected JsonArray doInBackground() throws Exception {
-                JsonObject response = apiClient.getOrganizationCareTeams(accessToken, organization.getOrgId());
+                // Usar nuevo endpoint: GET /orgs/{org_id}/devices
+                JsonObject response = apiClient.getOrganizationDevices(
+                        accessToken,
+                        organization.getOrgId(),
+                        null,  // active: null = todos (activos e inactivos)
+                        null   // connected: null = todos (conectados y desconectados)
+                );
                 
-                // Backend retorna: {data: {organization: {...}, care_teams: [...]}}
+                // Backend retorna: {data: {organization: {...}, devices: [...], pagination}}
                 if (response.has("data") && response.get("data").isJsonObject()) {
                     JsonObject data = response.getAsJsonObject("data");
-                    if (data.has("care_teams") && data.get("care_teams").isJsonArray()) {
-                        return data.getAsJsonArray("care_teams");
+                    if (data.has("devices") && data.get("devices").isJsonArray()) {
+                        return data.getAsJsonArray("devices");
                     }
                 }
                 
@@ -273,130 +290,46 @@ public class OrgDevicesTab extends JPanel {
             @Override
             protected void done() {
                 try {
-                    careTeams = get();
-                    processCareTeams();
-                    loadDevicesForAllTeams();
+                    JsonArray devices = get();
+                    processDevices(devices);
+                    snackbarHandler.accept("Dispositivos cargados: " + allDevices.size(), true);
                 } catch (Exception ex) {
                     ex.printStackTrace();
                     exceptionHandler.accept(ex);
+                    snackbarHandler.accept("Error al cargar dispositivos: " + ex.getMessage(), false);
                 }
             }
         };
         worker.execute();
     }
     
-    private void processCareTeams() {
-        careTeamsMap.clear();
-        careTeamFilter.removeAllItems();
-        careTeamFilter.addItem("Todos");
-        
-        if (careTeams == null) return;
-        
-        // Extraer care teams únicos
-        Map<String, String> uniqueTeams = new HashMap<>();
-        
-        for (int i = 0; i < careTeams.size(); i++) {
-            JsonObject teamObj = careTeams.get(i).getAsJsonObject();
-            String teamId = teamObj.has("id") ? teamObj.get("id").getAsString() : "";
-            String teamName = teamObj.has("name") ? teamObj.get("name").getAsString() : "Sin nombre";
-            
-            if (!teamId.isEmpty() && !uniqueTeams.containsKey(teamId)) {
-                uniqueTeams.put(teamId, teamName);
-                careTeamsMap.put(teamId, teamName);
-            }
-        }
-        
-        // Agregar al filtro
-        for (String teamName : uniqueTeams.values()) {
-            careTeamFilter.addItem(teamName);
-        }
-    }
-    
-    /**
-     * Carga dispositivos de todos los care teams en paralelo
-     */
-    private void loadDevicesForAllTeams() {
+    private void processDevices(JsonArray devices) {
         allDevices.clear();
         
-        if (careTeamsMap.isEmpty()) {
-            updateSummaryAndTable();
-            snackbarHandler.accept("No hay care teams disponibles", false);
-            return;
+        for (int i = 0; i < devices.size(); i++) {
+            JsonObject device = devices.get(i).getAsJsonObject();
+            allDevices.add(new DeviceRow(device));
         }
         
-        // Crear lista de futures para cargar en paralelo
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-        
-        for (Map.Entry<String, String> entry : careTeamsMap.entrySet()) {
-            String teamId = entry.getKey();
-            String teamName = entry.getValue();
-            
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                try {
-                    // Obtener dispositivos del care team
-                    JsonObject response = apiClient.getOrganizationCareTeamDevices(
-                            accessToken,
-                            organization.getOrgId(),
-                            teamId
-                    );
-                    
-                    
-                    // Backend retorna: {data: {organization, care_team, devices: [...], pagination}}
-                    if (response.has("data") && response.get("data").isJsonObject()) {
-                        JsonObject data = response.getAsJsonObject("data");
-                        if (data.has("devices") && data.get("devices").isJsonArray()) {
-                            JsonArray devices = data.getAsJsonArray("devices");
-                            
-                            synchronized (allDevices) {
-                                for (int i = 0; i < devices.size(); i++) {
-                                    JsonObject device = devices.get(i).getAsJsonObject();
-                                    allDevices.add(new DeviceRow(device, teamId, teamName));
-                                }
-                            }
-                        }
-                    }
-                } catch (Exception e) {
-                    System.err.println("Error cargando dispositivos del team " + teamName + ": " + e.getMessage());
-                    e.printStackTrace();
-                }
-            });
-            
-            futures.add(future);
-        }
-        
-        // Esperar a que terminen todas las cargas
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0]))
-                .thenRun(() -> SwingUtilities.invokeLater(() -> {
-                    updateSummaryAndTable();
-                    snackbarHandler.accept("Dispositivos cargados: " + allDevices.size(), true);
-                }))
-                .exceptionally(ex -> {
-                    SwingUtilities.invokeLater(() -> {
-                        exceptionHandler.accept((Exception) ex);
-                    });
-                    return null;
-                });
+        updateSummaryAndTable();
     }
     
     private void updateSummaryAndTable() {
         // Calcular resumen
         int total = allDevices.size();
-        int active = 0;
+        int connected = 0;
         int disconnected = 0;
         
         for (DeviceRow device : allDevices) {
-            if (device.isActive) {
-                // Un dispositivo está desconectado si tiene última conexión antigua
-                if (device.isDisconnected()) {
-                    disconnected++;
-                } else {
-                    active++;
-                }
+            if (device.isConnected) {
+                connected++;
+            } else {
+                disconnected++;
             }
         }
         
         totalDevicesLabel.setText(String.valueOf(total));
-        activeDevicesLabel.setText(String.valueOf(active));
+        connectedDevicesLabel.setText(String.valueOf(connected));
         disconnectedDevicesLabel.setText(String.valueOf(disconnected));
         
         // Actualizar tabla
@@ -406,23 +339,39 @@ public class OrgDevicesTab extends JPanel {
     private void applyFilters() {
         tableModel.setRowCount(0);
         
-        String selectedTeam = (String) careTeamFilter.getSelectedItem();
-        boolean onlyDisconnected = showOnlyDisconnectedFilter.isSelected();
+        String selectedStatus = (String) statusFilter.getSelectedItem();
+        String searchText = searchField.getText().trim().toLowerCase();
         
         // Si no hay selección (ej. durante recarga), no aplicar filtros aún
-        if (selectedTeam == null) {
+        if (selectedStatus == null) {
             return;
         }
         
         for (DeviceRow device : allDevices) {
-            // Filtro por care team
-            if (!selectedTeam.equals("Todos") && !device.careTeamName.equals(selectedTeam)) {
+            // Filtro por estado
+            if (selectedStatus.equals("Conectados") && !device.isConnected) {
+                continue;
+            }
+            if (selectedStatus.equals("Desconectados") && device.isConnected) {
+                continue;
+            }
+            if (selectedStatus.equals("Activos") && !device.isActive) {
+                continue;
+            }
+            if (selectedStatus.equals("Inactivos") && device.isActive) {
                 continue;
             }
             
-            // Filtro por desconectados
-            if (onlyDisconnected && !device.isDisconnected()) {
-                continue;
+            // Filtro por búsqueda (serial, marca, modelo, paciente)
+            if (!searchText.isEmpty()) {
+                boolean matches = device.serial.toLowerCase().contains(searchText) ||
+                                device.brand.toLowerCase().contains(searchText) ||
+                                device.model.toLowerCase().contains(searchText) ||
+                                device.ownerPatientName.toLowerCase().contains(searchText) ||
+                                (device.currentPatientName != null && device.currentPatientName.toLowerCase().contains(searchText));
+                if (!matches) {
+                    continue;
+                }
             }
             
             // Agregar fila
@@ -430,10 +379,10 @@ public class OrgDevicesTab extends JPanel {
                     device.serial,
                     device.brand,
                     device.model,
-                    device.careTeamName,
-                    device.patientName,
-                    device.getStatusText(),
-                    device.getLastConnectionText()
+                    device.deviceType,
+                    device.ownerPatientName,
+                    device.getCurrentPatientText(),
+                    device.getStatusText()
             });
         }
     }
@@ -445,37 +394,73 @@ public class OrgDevicesTab extends JPanel {
         String serial;
         String brand;
         String model;
-        String careTeamId;
-        String careTeamName;
-        String patientName;
+        String deviceType;
         boolean isActive;
-        String lastStartedAt;
-        String lastEndedAt;
+        boolean isConnected;
         
-        DeviceRow(JsonObject device, String teamId, String teamName) {
-            this.careTeamId = teamId;
-            this.careTeamName = teamName;
-            
+        // Paciente propietario del dispositivo
+        String ownerPatientName;
+        
+        // Paciente con stream activo (puede ser diferente al owner)
+        String currentPatientName;
+        String connectionStartedAt;
+        
+        int totalStreams;
+        
+        DeviceRow(JsonObject device) {
             this.serial = device.has("serial") && !device.get("serial").isJsonNull()
                     ? device.get("serial").getAsString() : "N/A";
             this.brand = device.has("brand") && !device.get("brand").isJsonNull()
                     ? device.get("brand").getAsString() : "N/A";
             this.model = device.has("model") && !device.get("model").isJsonNull()
                     ? device.get("model").getAsString() : "N/A";
-            this.patientName = device.has("patient_name") && !device.get("patient_name").isJsonNull()
-                    ? device.get("patient_name").getAsString() : "Sin asignar";
             this.isActive = device.has("active") && device.get("active").getAsBoolean();
-            this.lastStartedAt = device.has("last_started_at") && !device.get("last_started_at").isJsonNull()
-                    ? device.get("last_started_at").getAsString() : null;
-            this.lastEndedAt = device.has("last_ended_at") && !device.get("last_ended_at").isJsonNull()
-                    ? device.get("last_ended_at").getAsString() : null;
+            this.isConnected = device.has("connected") && device.get("connected").getAsBoolean();
+            
+            // Tipo de dispositivo
+            if (device.has("type") && device.get("type").isJsonObject()) {
+                JsonObject type = device.getAsJsonObject("type");
+                this.deviceType = type.has("label") && !type.get("label").isJsonNull()
+                        ? type.get("label").getAsString() : "N/A";
+            } else {
+                this.deviceType = "N/A";
+            }
+            
+            // Paciente owner
+            if (device.has("owner") && device.get("owner").isJsonObject()) {
+                JsonObject owner = device.getAsJsonObject("owner");
+                this.ownerPatientName = owner.has("name") && !owner.get("name").isJsonNull()
+                        ? owner.get("name").getAsString() : "Sin asignar";
+            } else {
+                this.ownerPatientName = "Sin asignar";
+            }
+            
+            // Conexión actual
+            if (device.has("current_connection") && !device.get("current_connection").isJsonNull()) {
+                JsonObject currentConn = device.getAsJsonObject("current_connection");
+                this.currentPatientName = currentConn.has("patient_name") && !currentConn.get("patient_name").isJsonNull()
+                        ? currentConn.get("patient_name").getAsString() : null;
+                this.connectionStartedAt = currentConn.has("started_at") && !currentConn.get("started_at").isJsonNull()
+                        ? currentConn.get("started_at").getAsString() : null;
+            }
+            
+            // Streams
+            if (device.has("streams") && device.get("streams").isJsonObject()) {
+                JsonObject streams = device.getAsJsonObject("streams");
+                this.totalStreams = streams.has("total") ? streams.get("total").getAsInt() : 0;
+            }
         }
         
-        boolean isDisconnected() {
-            // Un dispositivo está desconectado si:
-            // 1. No tiene streams (lastStartedAt == null)
-            // 2. El último stream terminó (lastEndedAt != null)
-            return lastStartedAt == null || lastEndedAt != null;
+        String getCurrentPatientText() {
+            if (!isConnected || currentPatientName == null) {
+                return "—";
+            }
+            
+            String text = currentPatientName;
+            if (connectionStartedAt != null) {
+                text += " (desde " + formatTimestamp(connectionStartedAt) + ")";
+            }
+            return text;
         }
         
         String getStatusText() {
@@ -483,30 +468,16 @@ public class OrgDevicesTab extends JPanel {
                 return "❌ Inactivo";
             }
             
-            if (isDisconnected()) {
-                return "⚠️ Desconectado";
+            if (isConnected) {
+                return "✅ Conectado";
             }
             
-            return "✅ Conectado";
-        }
-        
-        String getLastConnectionText() {
-            if (lastStartedAt == null) {
-                return "Nunca conectado";
-            }
-            
-            if (lastEndedAt != null) {
-                // Terminó - mostrar cuándo desconectó
-                return "Desconectó: " + formatTimestamp(lastEndedAt);
-            }
-            
-            // Conectado actualmente
-            return "Desde: " + formatTimestamp(lastStartedAt);
+            return "⚠️ Desconectado";
         }
         
         private String formatTimestamp(String timestamp) {
-            // TODO: Implementar formato de fecha relativo
             if (timestamp == null) return "N/A";
+            // Formato simple: 2025-11-23T08:15:00 -> 2025-11-23 08:15
             return timestamp.length() > 19 ? timestamp.substring(0, 19).replace('T', ' ') : timestamp;
         }
     }

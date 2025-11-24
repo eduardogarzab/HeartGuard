@@ -910,6 +910,60 @@ public class ApiClient {
 
     // --------------------------- Dispositivos ------------------------------
 
+    /**
+     * Obtiene TODOS los dispositivos de una organización (sin filtro de care_team)
+     * @param token Token de autenticación
+     * @param orgId ID de la organización
+     * @param active Filtro opcional: true=activos, false=inactivos, null=todos
+     * @param connected Filtro opcional: true=conectados, false=desconectados, null=todos
+     * @return JsonObject con lista de dispositivos
+     */
+    public JsonObject getOrganizationDevices(String token, String orgId, Boolean active, Boolean connected) throws ApiException {
+        Map<String, String> queryParams = new HashMap<>();
+        if (active != null) {
+            queryParams.put("active", active.toString());
+        }
+        if (connected != null) {
+            queryParams.put("connected", connected.toString());
+        }
+        
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/devices",
+                queryParams.isEmpty() ? null : queryParams,
+                token,
+                true,
+                "Error al obtener dispositivos de la organización"
+        );
+    }
+
+    /**
+     * Obtiene detalle de un dispositivo específico
+     */
+    public JsonObject getOrganizationDevice(String token, String orgId, String deviceId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/devices/" + deviceId,
+                null,
+                token,
+                true,
+                "Error al obtener detalle del dispositivo"
+        );
+    }
+
+    /**
+     * Obtiene historial de streams (conexiones) de un dispositivo
+     */
+    public JsonObject getOrganizationDeviceStreams(String token, String orgId, String deviceId) throws ApiException {
+        return executeGatewayGet(
+                "/orgs/" + orgId + "/devices/" + deviceId + "/streams",
+                null,
+                token,
+                true,
+                "Error al obtener historial de streams del dispositivo"
+        );
+    }
+
+    // Métodos legacy (deprecated - mantener para compatibilidad)
+    @Deprecated
     public JsonObject getCareTeamDevices(String token, String orgId, String teamId) throws ApiException {
         return executeGatewayGet(
                 "/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
@@ -920,6 +974,7 @@ public class ApiClient {
         );
     }
 
+    @Deprecated
     public JsonObject getCareTeamDisconnectedDevices(String token, String orgId, String teamId) throws ApiException {
         return executeGatewayGet(
                 "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
@@ -930,6 +985,7 @@ public class ApiClient {
         );
     }
 
+    @Deprecated
     public JsonObject getCareTeamDeviceStreams(String token, String orgId, String teamId, String deviceId) throws ApiException {
         return executeGatewayGet(
                 "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
