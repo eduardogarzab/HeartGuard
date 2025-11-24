@@ -440,10 +440,8 @@ public class PatientDetailDialog extends JDialog {
                     : null;
             device.hasActiveStream = stream != null && stream.has("is_active") && stream.get("is_active").getAsBoolean();
             
-            // Solo incluir dispositivos con stream activo
-            if (device.hasActiveStream) {
-                patientDevices.add(device);
-            }
+            // Incluir todos los dispositivos del paciente (con o sin stream activo)
+            patientDevices.add(device);
         }
         
         SwingUtilities.invokeLater(this::updateDeviceUI);

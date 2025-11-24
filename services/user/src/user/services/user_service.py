@@ -1365,7 +1365,7 @@ class UserService:
             'model': row.get('model'),
             'active': bool(row.get('active', False)),
             'registered_at': self._serialize_datetime(row.get('registered_at')),
-            'connected': row.get('active_stream_id') is not None,
+            'connected': bool(row.get('active', False)) and row.get('active_stream_id') is not None,
             'type': {
                 'code': row.get('device_type_code'),
                 'label': row.get('device_type_label'),
