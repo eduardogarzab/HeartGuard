@@ -5,7 +5,7 @@
 # =============================================================================
 
 SHELL := /bin/bash
-SERVICES := auth admin user patient media gateway realtime
+SERVICES := auth admin user patient media gateway realtime ai
 PYTHON := python3
 VENV := .venv
 
@@ -17,6 +17,7 @@ PATIENT_PORT := 5004
 MEDIA_PORT := 5005
 GATEWAY_PORT := 8080
 REALTIME_PORT := 5006
+AI_PORT := 5007
 
 # Directorio de logs
 LOG_DIR := /tmp/heartguard-logs
@@ -41,6 +42,7 @@ help:
 	@echo "    make install-media        - Instalar solo media-service"
 	@echo "    make install-gateway      - Instalar solo gateway"
 	@echo "    make install-realtime     - Instalar solo realtime-data-generator"
+	@echo "    make install-ai           - Instalar solo ai-prediction"
 	@echo ""
 	@echo "  🚀 Gestión de Servicios:"
 	@echo "    make start                - Iniciar todos los servicios"
@@ -51,6 +53,7 @@ help:
 	@echo "    make start-media          - Iniciar solo media-service"
 	@echo "    make start-gateway        - Iniciar solo gateway"
 	@echo "    make start-realtime       - Iniciar solo realtime-data-generator"
+	@echo "    make start-ai             - Iniciar solo ai-prediction"
 	@echo ""
 	@echo "  🔄 Control:"
 	@echo "    make restart              - Reiniciar todos los servicios"
@@ -61,6 +64,7 @@ help:
 	@echo "    make restart-media        - Reiniciar solo media-service"
 	@echo "    make restart-gateway      - Reiniciar solo gateway"
 	@echo "    make restart-realtime     - Reiniciar solo realtime-data-generator"
+	@echo "    make restart-ai           - Reiniciar solo ai-prediction"
 	@echo ""
 	@echo "  🛑 Detener:"
 	@echo "    make stop                 - Detener todos los servicios"
@@ -71,6 +75,7 @@ help:
 	@echo "    make stop-media           - Detener solo media-service"
 	@echo "    make stop-gateway         - Detener solo gateway"
 	@echo "    make stop-realtime        - Detener solo realtime-data-generator"
+	@echo "    make stop-ai              - Detener solo ai-prediction"
 	@echo ""
 	@echo "  📊 Monitoreo:"
 	@echo "    make status               - Ver estado de todos los servicios"
@@ -82,6 +87,7 @@ help:
 	@echo "    make logs-media           - Ver logs de media-service"
 	@echo "    make logs-gateway         - Ver logs de gateway"
 	@echo "    make logs-realtime        - Ver logs de realtime-data-generator"
+	@echo "    make logs-ai              - Ver logs de ai-prediction"
 	@echo "    make tail                 - Seguir logs en tiempo real (todos)"
 	@echo "    make tail-auth            - Seguir logs de auth-service"
 	@echo "    make tail-admin           - Seguir logs de admin-service"
@@ -90,6 +96,7 @@ help:
 	@echo "    make tail-media           - Seguir logs de media-service"
 	@echo "    make tail-gateway         - Seguir logs de gateway"
 	@echo "    make tail-realtime        - Seguir logs de realtime-data-generator"
+	@echo "    make tail-ai              - Seguir logs de ai-prediction"
 	@echo ""
 	@echo "  🧪 Testing:"
 	@echo "    make test                 - Ejecutar tests de todos los servicios"
@@ -100,6 +107,7 @@ help:
 	@echo "    make test-media           - Ejecutar tests de media-service"
 	@echo "    make test-gateway         - Ejecutar tests de gateway"
 	@echo "    make test-realtime        - Ejecutar tests de realtime-data-generator"
+	@echo "    make test-ai              - Ejecutar tests de ai-prediction"
 	@echo ""
 	@echo "  🧹 Limpieza:"
 	@echo "    make clean                - Limpiar caches y archivos temporales"
@@ -111,7 +119,7 @@ help:
 # =============================================================================
 # Instalación
 # =============================================================================
-install: install-auth install-admin install-user install-patient install-media install-gateway install-realtime
+install: install-auth install-admin install-user install-patient install-media install-gateway install-realtime install-ai
 	@echo "✓ Todas las dependencias instaladas"
 
 install-auth:
@@ -142,6 +150,10 @@ install-realtime:
 	@echo "📦 Instalando realtime-data-generator..."
 	@cd realtime-data-generator && $(MAKE) install
 
+install-ai:
+	@echo "📦 Instalando ai-prediction..."
+	@cd ai-prediction && $(MAKE) install
+
 # =============================================================================
 # Iniciar Servicios
 # =============================================================================
@@ -151,7 +163,7 @@ $(LOG_DIR):
 $(PID_DIR):
 	@mkdir -p $(PID_DIR)
 
-start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway start-realtime wait-realtime
+start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway start-realtime wait-realtime start-ai wait-ai
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  ✓ Todos los servicios iniciados correctamente"
@@ -227,6 +239,16 @@ start-realtime: $(LOG_DIR) $(PID_DIR)
 			> $(LOG_DIR)/realtime.log 2>&1 & \
 		echo $$! > $(PID_DIR)/realtime.pid
 	@echo "  PID: $$(cat $(PID_DIR)/realtime.pid)"
+
+start-ai: $(LOG_DIR) $(PID_DIR)
+	@echo "🚀 Iniciando ai-prediction en puerto $(AI_PORT)..."
+	@cd ai-prediction && \
+		source $(VENV)/bin/activate && \
+		PYTHONPATH=src FLASK_APP=src.app $(PYTHON) -m flask run \
+			--host=0.0.0.0 --port=$(AI_PORT) --no-reload \
+			> $(LOG_DIR)/ai.log 2>&1 & \
+		echo $$! > $(PID_DIR)/ai.pid
+	@echo "  PID: $$(cat $(PID_DIR)/ai.pid)"
 
 # Esperar a que los servicios estén listos
 wait-auth:
@@ -327,10 +349,24 @@ wait-realtime:
 		sleep 1; \
 	done
 
+wait-ai:
+	@echo "  ⏳ Esperando a que ai-prediction esté listo..."
+	@for i in {1..30}; do \
+		if curl -s http://localhost:$(AI_PORT)/health > /dev/null 2>&1; then \
+			echo "  ✓ AI-prediction respondiendo"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "  ✗ Timeout esperando ai-prediction"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+
 # =============================================================================
 # Detener Servicios
 # =============================================================================
-stop: stop-realtime stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
+stop: stop-ai stop-realtime stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
 	@echo "✓ Todos los servicios detenidos"
 
 stop-auth:
@@ -410,6 +446,17 @@ stop-realtime:
 	@lsof -ti :$(REALTIME_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "  ✓ Realtime-data-generator detenido"
 
+stop-ai:
+	@if [ -f $(PID_DIR)/ai.pid ]; then \
+		echo "🛑 Deteniendo ai-prediction (PID: $$(cat $(PID_DIR)/ai.pid))..."; \
+		kill $$(cat $(PID_DIR)/ai.pid) 2>/dev/null || true; \
+		sleep 1; \
+		kill -9 $$(cat $(PID_DIR)/ai.pid) 2>/dev/null || true; \
+		rm -f $(PID_DIR)/ai.pid; \
+	fi
+	@lsof -ti :$(AI_PORT) | xargs kill -9 2>/dev/null || true
+	@echo "  ✓ AI-prediction detenido"
+
 # =============================================================================
 # Reiniciar Servicios
 # =============================================================================
@@ -435,6 +482,9 @@ restart-gateway: stop-gateway start-gateway wait-gateway
 
 restart-realtime: stop-realtime start-realtime wait-realtime
 	@echo "✓ Realtime-data-generator reiniciado"
+
+restart-ai: stop-ai start-ai wait-ai
+	@echo "✓ AI-prediction reiniciado"
 
 # =============================================================================
 # Estado y Monitoreo
@@ -516,6 +566,16 @@ status:
 	else \
 		printf "  %-20s %-10s %-10s %s\n" "realtime-generator" "$(REALTIME_PORT)" "✗ Stopped" "-"; \
 	fi
+	@if [ -f $(PID_DIR)/ai.pid ]; then \
+		pid=$$(cat $(PID_DIR)/ai.pid); \
+		if ps -p $$pid > /dev/null 2>&1; then \
+			printf "  %-20s %-10s %-10s %s\n" "ai-prediction" "$(AI_PORT)" "✓ Running" "$$pid"; \
+		else \
+			printf "  %-20s %-10s %-10s %s\n" "ai-prediction" "$(AI_PORT)" "✗ Stopped" "-"; \
+		fi; \
+	else \
+		printf "  %-20s %-10s %-10s %s\n" "ai-prediction" "$(AI_PORT)" "✗ Stopped" "-"; \
+	fi
 	@echo ""
 	@echo "  Logs: $(LOG_DIR)/"
 	@echo "  PIDs: $(PID_DIR)/"
@@ -559,6 +619,11 @@ logs:
 	@echo "  Logs - realtime-data-generator"
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@tail -n 50 $(LOG_DIR)/realtime.log 2>/dev/null || echo "  (sin logs)"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Logs - ai-prediction"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@tail -n 50 $(LOG_DIR)/ai.log 2>/dev/null || echo "  (sin logs)"
 
 logs-auth:
 	@tail -n 100 $(LOG_DIR)/auth.log 2>/dev/null || echo "Sin logs de auth-service"
@@ -580,6 +645,9 @@ logs-gateway:
 
 logs-realtime:
 	@tail -n 100 $(LOG_DIR)/realtime.log 2>/dev/null || echo "Sin logs de realtime-data-generator"
+
+logs-ai:
+	@tail -n 100 $(LOG_DIR)/ai.log 2>/dev/null || echo "Sin logs de ai-prediction"
 
 tail:
 	@tail -f $(LOG_DIR)/*.log
@@ -605,10 +673,13 @@ tail-gateway:
 tail-realtime:
 	@tail -f $(LOG_DIR)/realtime.log
 
+tail-ai:
+	@tail -f $(LOG_DIR)/ai.log
+
 # =============================================================================
 # Testing
 # =============================================================================
-test: test-auth test-admin test-user test-patient test-media test-gateway test-realtime
+test: test-auth test-admin test-user test-patient test-media test-gateway test-realtime test-ai
 	@echo "✓ Todos los tests completados"
 
 test-auth:
@@ -653,6 +724,14 @@ test-realtime:
 		cd realtime-data-generator && $(MAKE) test; \
 	else \
 		echo "⚠️  realtime-data-generator no tiene pruebas definidas"; \
+	fi
+
+test-ai:
+	@if [ -d ai-prediction/tests ]; then \
+		echo "🧪 Ejecutando tests de ai-prediction..."; \
+		cd ai-prediction && $(MAKE) test; \
+	else \
+		echo "⚠️  ai-prediction no tiene pruebas definidas"; \
 	fi
 
 # =============================================================================

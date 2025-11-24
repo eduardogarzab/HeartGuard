@@ -52,6 +52,7 @@ services:
       - influxdb_config:/etc/influxdb2
 
   ai-prediction-service:
+    image: heartguard-ai-prediction:latest
     build:
       context: ./services/ai-prediction
       dockerfile: Dockerfile
