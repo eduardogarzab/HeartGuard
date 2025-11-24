@@ -163,11 +163,11 @@ public class OrgDevicesTab extends JPanel {
         // Card 1: Total Dispositivos
         panel.add(createMetricCard("📊 Total Dispositivos", totalDevicesLabel, PRIMARY_BLUE));
         
-        // Card 2: Conectados (solo activos con stream)
-        panel.add(createMetricCard("✅ Conectados (Activos)", connectedDevicesLabel, SECONDARY_GREEN));
+        // Card 2: Conectados
+        panel.add(createMetricCard("✅ Conectados", connectedDevicesLabel, SECONDARY_GREEN));
         
-        // Card 3: Desconectados (solo activos sin stream)
-        panel.add(createMetricCard("⚠️ Desconectados (Activos)", disconnectedDevicesLabel, WARNING_ORANGE));
+        // Card 3: Desconectados (incluye inactivos)
+        panel.add(createMetricCard("⚠️ Desconectados", disconnectedDevicesLabel, WARNING_ORANGE));
         
         return panel;
     }
@@ -320,15 +320,10 @@ public class OrgDevicesTab extends JPanel {
         int disconnected = 0;
         
         for (DeviceRow device : allDevices) {
-            // Solo contar dispositivos activos en el resumen de conectados/desconectados
-            if (!device.isActive) {
-                continue; // Dispositivos inactivos no se cuentan como conectados ni desconectados
-            }
-            
             if (device.isConnected) {
                 connected++;
             } else {
-                disconnected++;
+                disconnected++; // Incluye tanto activos sin stream como inactivos
             }
         }
         

@@ -1275,4 +1275,49 @@ CREATE TRIGGER device_reassignment_trigger
 -- Confirmar creación
 SELECT 'Trigger device_reassignment_trigger creado correctamente' as status;
 
+-- =========================================================
+-- 2. Trigger: Desactivación de Dispositivos
+-- =========================================================
+-- Se ejecuta cuando un dispositivo se desactiva (active: true -> false)
+-- Termina automáticamente todos los streams activos
+
+CREATE OR REPLACE FUNCTION heartguard.deactivate_device_streams()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Si el dispositivo se desactiva (active cambia de true a false)
+    IF NEW.active = false AND OLD.active = true THEN
+        -- Terminar todos los streams activos del dispositivo
+        UPDATE heartguard.signal_streams 
+        SET ended_at = NOW()
+        WHERE device_id = NEW.id 
+          AND ended_at IS NULL;
+        
+        RAISE NOTICE 'Device % deactivated: all active streams terminated', NEW.serial;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger de desactivación
+DROP TRIGGER IF EXISTS device_deactivation_trigger ON heartguard.devices;
+CREATE TRIGGER device_deactivation_trigger
+    AFTER UPDATE OF active ON heartguard.devices
+    FOR EACH ROW
+    EXECUTE FUNCTION heartguard.deactivate_device_streams();
+
+SELECT '✅ Trigger device_deactivation_trigger creado correctamente' as status;
+
+-- =========================================================
+-- Verificación
+-- =========================================================
+SELECT 
+    trigger_name,
+    event_manipulation as event,
+    event_object_table as table,
+    action_statement as function
+FROM information_schema.triggers
+WHERE trigger_schema = 'heartguard'
+  AND event_object_table = 'devices'
+ORDER BY trigger_name;
 
