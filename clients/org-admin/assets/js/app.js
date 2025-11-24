@@ -1415,6 +1415,205 @@
         `.trim();
     };
 
+    const renderVitalSignsCharts = (patientId, devices = []) => {
+        if (!hasItems(devices)) {
+            return `
+                <div class="vital-signs-placeholder">
+                    <p class="muted">📊 No hay dispositivos con datos de signos vitales disponibles</p>
+                </div>
+            `.trim();
+        }
+
+        // ID único para el contenedor
+        const containerId = `vital-signs-${patientId}`;
+        const deviceSelectId = `device-select-${patientId}`;
+        
+        // Si solo hay un dispositivo, lo mostramos directamente
+        const deviceOptions = devices
+            .map((device, idx) => {
+                const label = device.deviceTypeLabel || device.serial || `Dispositivo ${idx + 1}`;
+                return `<option value="${escapeHtml(device.id)}">${escapeHtml(label)} (${escapeHtml(device.serial || 'S/N')})</option>`;
+            })
+            .join('');
+
+        const selectorHtml = devices.length > 1
+            ? `
+                <div class="vital-signs-selector">
+                    <label for="${deviceSelectId}">Seleccionar dispositivo:</label>
+                    <select id="${deviceSelectId}" class="form-select">
+                        ${deviceOptions}
+                    </select>
+                </div>
+            `
+            : '';
+
+        return `
+            <div class="vital-signs-container" id="${containerId}">
+                ${selectorHtml}
+                <div class="vital-signs-charts" id="${containerId}-charts">
+                    <div class="vital-signs-loading">
+                        <p>⏳ Cargando datos de signos vitales...</p>
+                    </div>
+                </div>
+            </div>
+        `.trim();
+    };
+
+    const loadVitalSignsData = async (patientId, deviceId, containerId) => {
+        const chartsContainer = document.querySelector(`#${containerId}-charts`);
+        if (!chartsContainer) return;
+
+        try {
+            chartsContainer.innerHTML = '<div class="vital-signs-loading"><p>⏳ Cargando datos...</p></div>';
+            
+            const response = await Api.admin.getPatientVitalSigns(state.token, patientId, deviceId, 100);
+            
+            if (!response || !response.readings || response.readings.length === 0) {
+                chartsContainer.innerHTML = '<p class="muted">📊 No hay lecturas recientes de signos vitales</p>';
+                return;
+            }
+
+            const readings = response.readings;
+            
+            // Procesar datos por tipo de signo vital
+            const vitalSignsData = {
+                heart_rate: { labels: [], values: [], unit: 'bpm', color: '#ef4444', label: 'Frecuencia Cardíaca' },
+                spo2: { labels: [], values: [], unit: '%', color: '#3b82f6', label: 'SpO₂' },
+                temperature: { labels: [], values: [], unit: '°C', color: '#f97316', label: 'Temperatura' },
+                systolic_bp: { labels: [], values: [], unit: 'mmHg', color: '#8b5cf6', label: 'Presión Sistólica' },
+                diastolic_bp: { labels: [], values: [], unit: 'mmHg', color: '#6366f1', label: 'Presión Diastólica' },
+                respiratory_rate: { labels: [], values: [], unit: 'rpm', color: '#10b981', label: 'Frecuencia Respiratoria' },
+            };
+
+            // Extraer datos de las lecturas
+            readings.forEach(reading => {
+                const timestamp = new Date(reading.time || reading._time);
+                const timeLabel = timestamp.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                
+                Object.keys(vitalSignsData).forEach(key => {
+                    if (reading[key] !== undefined && reading[key] !== null) {
+                        vitalSignsData[key].labels.push(timeLabel);
+                        vitalSignsData[key].values.push(Number(reading[key]));
+                    }
+                });
+            });
+
+            // Renderizar gráficas solo para signos vitales con datos
+            const chartsHtml = Object.entries(vitalSignsData)
+                .filter(([_, data]) => data.values.length > 0)
+                .map(([key, data]) => {
+                    const canvasId = `chart-${patientId}-${deviceId}-${key}`;
+                    const avgValue = (data.values.reduce((a, b) => a + b, 0) / data.values.length).toFixed(1);
+                    const minValue = Math.min(...data.values).toFixed(1);
+                    const maxValue = Math.max(...data.values).toFixed(1);
+                    const latestValue = data.values[data.values.length - 1].toFixed(1);
+                    
+                    return `
+                        <div class="vital-sign-card">
+                            <div class="vital-sign-header">
+                                <h5>${data.label}</h5>
+                                <div class="vital-sign-stats">
+                                    <span class="vital-sign-current" style="color: ${data.color}; font-weight: bold; font-size: 1.2em;">
+                                        ${latestValue} ${data.unit}
+                                    </span>
+                                    <span class="vital-sign-range" style="font-size: 0.85em; color: #6b7280;">
+                                        Min: ${minValue} | Max: ${maxValue} | Prom: ${avgValue}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="vital-sign-chart-wrapper">
+                                <canvas id="${canvasId}"></canvas>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+
+            if (!chartsHtml) {
+                chartsContainer.innerHTML = '<p class="muted">📊 No hay datos de signos vitales para mostrar</p>';
+                return;
+            }
+
+            chartsContainer.innerHTML = `<div class="vital-signs-grid">${chartsHtml}</div>`;
+
+            // Crear gráficas con Chart.js
+            Object.entries(vitalSignsData)
+                .filter(([_, data]) => data.values.length > 0)
+                .forEach(([key, data]) => {
+                    const canvasId = `chart-${patientId}-${deviceId}-${key}`;
+                    const canvas = document.getElementById(canvasId);
+                    if (!canvas) return;
+
+                    const ChartConstructor = window.Chart || Chart;
+                    new ChartConstructor(canvas, {
+                        type: 'line',
+                        data: {
+                            labels: data.labels,
+                            datasets: [{
+                                label: `${data.label} (${data.unit})`,
+                                data: data.values,
+                                borderColor: data.color,
+                                backgroundColor: data.color + '20',
+                                borderWidth: 2,
+                                fill: true,
+                                tension: 0.4,
+                                pointRadius: 3,
+                                pointHoverRadius: 5,
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: {
+                                legend: {
+                                    display: false
+                                },
+                                tooltip: {
+                                    mode: 'index',
+                                    intersect: false,
+                                }
+                            },
+                            scales: {
+                                x: {
+                                    ticks: { 
+                                        color: '#6b7280',
+                                        maxRotation: 45,
+                                        minRotation: 0
+                                    },
+                                    grid: {
+                                        display: false
+                                    }
+                                },
+                                y: {
+                                    ticks: { 
+                                        color: '#6b7280'
+                                    },
+                                    beginAtZero: false,
+                                    grid: {
+                                        color: '#e5e7eb'
+                                    }
+                                }
+                            },
+                            interaction: {
+                                mode: 'nearest',
+                                axis: 'x',
+                                intersect: false
+                            }
+                        }
+                    });
+                });
+
+        } catch (error) {
+            console.error('Error cargando signos vitales:', error);
+            chartsContainer.innerHTML = `
+                <div class="vital-signs-error">
+                    <p class="form-error">❌ Error al cargar los datos de signos vitales</p>
+                    <p class="muted">${escapeHtml(error.message || 'Error desconocido')}</p>
+                </div>
+            `;
+        }
+    };
+
     const renderPatientProfileView = (profile) => {
         if (!profile || !profile.patient) {
             return '<p class="form-error">No se encontró la información del paciente.</p>';
@@ -1598,6 +1797,10 @@
                     </div>
                 </section>
                 ${statsHtml}
+                <section class="profile-section">
+                    <h4>📊 Signos Vitales en Tiempo Real</h4>
+                    ${renderVitalSignsCharts(patient.id, devices)}
+                </section>
                 <section class="profile-section">
                     <h4>Ubicación reciente</h4>
                     ${buildMapSection(latestLocation)}
@@ -1840,6 +2043,31 @@
             const title = profile.patient?.name ? `👤 ${profile.patient.name}` : 'Perfil del paciente';
             setModalTitle(title);
             setModalBody(renderPatientProfileView(profile));
+            
+            // Inicializar signos vitales si hay dispositivos
+            if (profile.devices && profile.devices.length > 0) {
+                const containerId = `vital-signs-${profile.patient.id}`;
+                const deviceSelectId = `device-select-${profile.patient.id}`;
+                const firstDeviceId = profile.devices[0].id;
+                
+                // Cargar datos del primer dispositivo
+                setTimeout(() => {
+                    loadVitalSignsData(profile.patient.id, firstDeviceId, containerId);
+                }, 100);
+                
+                // Si hay selector de dispositivos, agregar evento de cambio
+                if (profile.devices.length > 1) {
+                    setTimeout(() => {
+                        const deviceSelect = document.getElementById(deviceSelectId);
+                        if (deviceSelect) {
+                            deviceSelect.addEventListener('change', (e) => {
+                                const selectedDeviceId = e.target.value;
+                                loadVitalSignsData(profile.patient.id, selectedDeviceId, containerId);
+                            });
+                        }
+                    }, 100);
+                }
+            }
         } catch (error) {
             handleApiError(error);
             if (error?.status === 401 || error?.status === 403) {

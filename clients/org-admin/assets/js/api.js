@@ -835,6 +835,16 @@ const Api = (() => {
                 });
                 return true;
             },
+            
+            // Vital Signs from InfluxDB
+            async getPatientVitalSigns(token, patientId, deviceId = null, limit = 50) {
+                const params = new URLSearchParams({ limit: limit.toString() });
+                if (deviceId) {
+                    params.append('device_id', deviceId);
+                }
+                const path = `/realtime/patients/${patientId}/vital-signs?${params.toString()}`;
+                return requestJson(path, { token });
+            },
         },
     };
 })();
