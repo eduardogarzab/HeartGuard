@@ -38,6 +38,44 @@ predictor = HealthPredictor()
 model_loader = ModelLoader()
 
 
+def _init_model():
+    """Inicializa el modelo al importar el módulo"""
+    logger.info("=" * 60)
+    logger.info("Inicializando HeartGuard AI Prediction Service")
+    logger.info("=" * 60)
+    
+    # Crear directorio de modelos si no existe
+    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
+    
+    # Verificar si el modelo existe
+    if not MODEL_PATH.exists():
+        logger.error(f"❌ Modelo no encontrado en: {MODEL_PATH}")
+        logger.error("Por favor, copia el archivo modelo_salud_randomforest.pkl a:")
+        logger.error(f"   {MODEL_PATH.parent}")
+        logger.warning("⚠️  El servicio iniciará sin modelo cargado")
+        return
+    
+    # Cargar modelo
+    try:
+        model_loader.load_model(MODEL_PATH)
+        logger.info("✅ Modelo cargado exitosamente")
+        
+        info = model_loader.get_model_info()
+        logger.info(f"   - Estimadores: {info['n_estimators']}")
+        logger.info(f"   - Features: {info['n_features']}")
+        logger.info(f"   - Threshold por defecto: {DEFAULT_THRESHOLD}")
+        
+    except Exception as e:
+        logger.exception(f"❌ Error cargando modelo: {e}")
+        logger.warning("⚠️  El servicio iniciará sin modelo cargado")
+    
+    logger.info("=" * 60)
+
+
+# Cargar modelo al importar el módulo
+_init_model()
+
+
 @app.before_request
 def log_request():
     """Log de todas las requests"""
@@ -308,44 +346,14 @@ def internal_error(e):
 
 
 def init_app():
-    """Inicializa la aplicación (carga el modelo)"""
-    logger.info("=" * 60)
-    logger.info("Inicializando HeartGuard AI Prediction Service")
-    logger.info("=" * 60)
-    
-    # Crear directorio de modelos si no existe
-    MODEL_PATH.parent.mkdir(parents=True, exist_ok=True)
-    
-    # Verificar si el modelo existe
-    if not MODEL_PATH.exists():
-        logger.error(f"❌ Modelo no encontrado en: {MODEL_PATH}")
-        logger.error("Por favor, copia el archivo modelo_salud_randomforest.pkl a:")
-        logger.error(f"   {MODEL_PATH.parent}")
-        sys.exit(1)
-    
-    # Cargar modelo
-    try:
-        model_loader.load_model(MODEL_PATH)
-        logger.info("✅ Modelo cargado exitosamente")
-        
-        info = model_loader.get_model_info()
-        logger.info(f"   - Estimadores: {info['n_estimators']}")
-        logger.info(f"   - Features: {info['n_features']}")
-        logger.info(f"   - Threshold por defecto: {DEFAULT_THRESHOLD}")
-        
-    except Exception as e:
-        logger.exception(f"❌ Error cargando modelo: {e}")
-        sys.exit(1)
-    
-    logger.info("=" * 60)
-    logger.info(f"🚀 Servidor iniciando en {FLASK_HOST}:{FLASK_PORT}")
-    logger.info("=" * 60)
+    """Inicializa la aplicación (legacy - ahora se llama en import)"""
+    pass  # La inicialización ahora ocurre automáticamente
 
 
 if __name__ == '__main__':
-    init_app()
     app.run(
         host=FLASK_HOST,
         port=FLASK_PORT,
         debug=FLASK_DEBUG
     )
+

@@ -1,5 +1,8 @@
 .PHONY: help install run test clean dev docker-build docker-run
 
+PYTHON := python3
+VENV := .venv
+
 help:
 	@echo "HeartGuard AI Prediction Service - Makefile"
 	@echo ""
@@ -13,24 +16,37 @@ help:
 	@echo "  make docker-run    - Ejecuta en Docker"
 
 install:
-	pip install -r requirements.txt
+	@echo "📦 Instalando dependencias de ai-prediction..."
+	@if [ ! -d "$(VENV)" ]; then \
+		echo "  Creando entorno virtual..."; \
+		$(PYTHON) -m venv $(VENV); \
+	fi
+	@echo "  Instalando paquetes..."
+	@$(VENV)/bin/pip install --upgrade pip > /dev/null 2>&1
+	@$(VENV)/bin/pip install -r requirements.txt > /dev/null 2>&1
+	@echo "  ✓ Dependencias instaladas"
 
 run:
-	python -m src.app
+	@source $(VENV)/bin/activate && PYTHONPATH=src python -m src.app
 
 dev:
-	FLASK_DEBUG=True python -m src.app
+	@source $(VENV)/bin/activate && FLASK_DEBUG=True PYTHONPATH=src python -m src.app
 
 test:
-	pytest tests/ -v
+	@if [ -d tests ]; then \
+		source $(VENV)/bin/activate && pytest tests/ -v; \
+	else \
+		echo "⚠️  No hay tests definidos"; \
+	fi
 
 clean:
-	find . -type d -name "__pycache__" -exec rm -rf {} +
-	find . -type f -name "*.pyc" -delete
-	find . -type d -name ".pytest_cache" -exec rm -rf {} +
+	find . -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
+	find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	find . -type d -name ".pytest_cache" -exec rm -rf {} + 2>/dev/null || true
+	find . -type d -name "*.egg-info" -exec rm -rf {} + 2>/dev/null || true
 
 docker-build:
 	docker build -t heartguard-ai-prediction:latest .
 
 docker-run:
-	docker run -p 5008:5008 heartguard-ai-prediction:latest
+	docker run -p 5007:5007 heartguard-ai-prediction:latest
