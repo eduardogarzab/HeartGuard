@@ -130,6 +130,28 @@ def org_care_team_patients_locations(org_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/care-team-patients/locations")
 
 
+# ==================== Dispositivos a nivel de organización ====================
+
+@bp.route("/orgs/<string:org_id>/devices", methods=["GET"])
+def org_devices(org_id: str) -> Response:
+	"""Lista TODOS los dispositivos de la organización (sin filtro de care_team)"""
+	return _proxy_user(f"/orgs/{org_id}/devices")
+
+
+@bp.route("/orgs/<string:org_id>/devices/<string:device_id>", methods=["GET"])
+def org_device_detail(org_id: str, device_id: str) -> Response:
+	"""Obtiene detalle de un dispositivo específico"""
+	return _proxy_user(f"/orgs/{org_id}/devices/{device_id}")
+
+
+@bp.route("/orgs/<string:org_id>/devices/<string:device_id>/streams", methods=["GET"])
+def org_device_streams(org_id: str, device_id: str) -> Response:
+	"""Obtiene historial de streams (conexiones) de un dispositivo"""
+	return _proxy_user(f"/orgs/{org_id}/devices/{device_id}/streams")
+
+
+# ==================== Dispositivos por care_team (legacy) ====================
+
 @bp.route("/orgs/<string:org_id>/care-teams/<string:team_id>/devices", methods=["GET"])
 def org_care_team_devices(org_id: str, team_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/care-teams/{team_id}/devices")
