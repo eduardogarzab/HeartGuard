@@ -80,14 +80,23 @@ const Api = (() => {
         if (body && !(body instanceof FormData)) {
             headers.set("Content-Type", headers.get("Content-Type") || "application/json");
         }
+        
+        const url = buildUrl(path);
+        console.log('🌐 Fetch XML:', url);
+        
         const response = await withTimeout(
-            fetch(buildUrl(path), {
+            fetch(url, {
                 method,
                 headers,
                 body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
             })
         );
         const text = await response.text();
+        
+        console.log('📥 Respuesta XML (primeros 1000 chars):', text.substring(0, 1000));
+        console.log('📊 Status:', response.status);
+        console.log('📋 Content-Type:', response.headers.get('Content-Type'));
+        
         if (!response.ok) {
             const synthetic = new Response(text, {
                 status: response.status,
@@ -843,32 +852,20 @@ const Api = (() => {
                     params.append('device_id', deviceId);
                 }
                 const path = `/realtime/patients/${patientId}/vital-signs?${params.toString()}`;
-                const doc = await requestXml(path, { token });
                 
-                // Parse XML response
-                const response = {
-                    patient_id: Xml.text(doc, "response > patient_id"),
-                    device_id: Xml.text(doc, "response > device_id"),
-                    measurement: Xml.text(doc, "response > measurement"),
-                    count: Xml.integer(doc, "response > count"),
-                    readings: Xml.mapNodes(doc, "response > readings > reading", (node) => {
-                        const reading = {};
-                        // Extract all child nodes as properties
-                        Array.from(node.children).forEach(child => {
-                            const key = child.tagName;
-                            const value = child.textContent;
-                            // Try to parse as number if it looks like one
-                            if (value && !isNaN(value) && value.trim() !== '') {
-                                reading[key] = parseFloat(value);
-                            } else {
-                                reading[key] = value;
-                            }
-                        });
-                        return reading;
-                    })
-                };
+                console.log('🌐 Llamando a:', path);
+                console.log('🔑 Token:', token ? 'presente' : 'ausente');
                 
-                return response;
+                try {
+                    // El servicio realtime responde con JSON, no XML
+                    const response = await requestJson(path, { token });
+                    console.log('✅ JSON recibido exitosamente');
+                    console.log('📊 Respuesta parseada:', response);
+                    return response;
+                } catch (error) {
+                    console.error('❌ Error en getPatientVitalSigns:', error);
+                    throw error;
+                }
             },
         },
     };

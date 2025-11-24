@@ -2062,20 +2062,39 @@ table tbody tr.table-row-clickable:hover td:first-child {
 }
 
 .vital-sign-card {
-    background: var(--surface);
-    border: 1px solid rgba(37, 99, 235, 0.08);
-    border-radius: var(--radius-sm);
-    padding: 1rem;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.98) 0%, rgba(255, 255, 255, 1) 100%);
+    border: 1px solid rgba(37, 99, 235, 0.12);
+    border-radius: 12px;
+    padding: 1.25rem;
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    box-shadow: var(--shadow-soft);
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    gap: 1rem;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04), 0 0 0 1px rgba(37, 99, 235, 0.04);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+.vital-sign-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, transparent, rgba(37, 99, 235, 0.3), transparent);
+    opacity: 0;
+    transition: opacity 0.3s ease;
 }
 
 .vital-sign-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+    transform: translateY(-4px);
+    box-shadow: 0 12px 28px rgba(15, 23, 42, 0.1), 0 0 0 1px rgba(37, 99, 235, 0.08);
+    border-color: rgba(37, 99, 235, 0.2);
+}
+
+.vital-sign-card:hover::before {
+    opacity: 1;
 }
 
 .vital-sign-header {
@@ -2109,13 +2128,32 @@ table tbody tr.table-row-clickable:hover td:first-child {
 
 .vital-sign-chart-wrapper {
     position: relative;
-    height: 200px;
+    height: 220px;
     width: 100%;
+    background: rgba(249, 250, 251, 0.5);
+    border-radius: 8px;
+    padding: 8px;
 }
 
 .vital-sign-chart-wrapper canvas {
     width: 100% !important;
     height: 100% !important;
+}
+
+@keyframes pulse {
+    0%, 100% {
+        opacity: 1;
+        transform: scale(1);
+    }
+    50% {
+        opacity: 0.5;
+        transform: scale(1.2);
+    }
+}
+
+.vital-signs-update-indicator {
+    font-weight: 500;
+    user-select: none;
 }
 
 @media (max-width: 768px) {

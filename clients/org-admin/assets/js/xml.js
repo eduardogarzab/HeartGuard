@@ -1,21 +1,32 @@
 const Xml = {
     parse(xmlString) {
         if (!xmlString || typeof xmlString !== "string") {
+            console.error('❌ XML vacío o inválido:', typeof xmlString);
             throw new Error("Respuesta vacía");
         }
+        
+        console.log('🔍 Parseando XML, longitud:', xmlString.length);
+        
         const parser = new window.DOMParser();
         const doc = parser.parseFromString(xmlString, "application/xml");
         const parserError = doc.querySelector("parsererror");
+        
         if (parserError) {
+            console.error('❌ Error de parseo XML:', parserError.textContent);
+            console.error('📄 XML que causó el error:', xmlString.substring(0, 500));
             throw new Error("No se pudo interpretar la respuesta XML");
         }
+        
         if (doc.querySelector("response > error")) {
             const code = doc.querySelector("response > error > code")?.textContent || "error";
             const message = doc.querySelector("response > error > message")?.textContent || "Error en la solicitud";
+            console.error('❌ Error en respuesta XML:', { code, message });
             const err = new Error(message);
             err.code = code;
             throw err;
         }
+        
+        console.log('✅ XML parseado correctamente');
         return doc;
     },
 
