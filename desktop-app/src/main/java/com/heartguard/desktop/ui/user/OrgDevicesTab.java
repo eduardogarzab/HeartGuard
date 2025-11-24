@@ -210,7 +210,6 @@ public class OrgDevicesTab extends JPanel {
         statusFilter.addItem("Todos");
         statusFilter.addItem("Conectados");
         statusFilter.addItem("Desconectados");
-        statusFilter.addItem("Activos");
         statusFilter.addItem("Inactivos");
         statusFilter.addActionListener(e -> applyFilters());
         
@@ -352,11 +351,8 @@ public class OrgDevicesTab extends JPanel {
             if (selectedStatus.equals("Conectados") && !device.isConnected) {
                 continue;
             }
-            if (selectedStatus.equals("Desconectados") && device.isConnected) {
-                continue;
-            }
-            if (selectedStatus.equals("Activos") && !device.isActive) {
-                continue;
+            if (selectedStatus.equals("Desconectados") && (device.isConnected || !device.isActive)) {
+                continue; // Desconectado = activo pero sin stream
             }
             if (selectedStatus.equals("Inactivos") && device.isActive) {
                 continue;

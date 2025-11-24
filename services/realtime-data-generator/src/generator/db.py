@@ -113,17 +113,18 @@ class DatabaseService:
         Returns full JOIN of patients + devices + streams + bindings + tags + locations.
         
         CRITICAL FILTERS:
-        - Only devices that are ASSIGNED to a patient (owner_patient_id IS NOT NULL)
         - Only devices that are ACTIVE (d.active = TRUE)
         - Only streams that are ACTIVE (ended_at IS NULL)
+        - Based on signal_streams.patient_id (NOT device.owner_patient_id)
         
-        This ensures we only generate synthetic data for devices that are:
-        1. Purchased by organization (in devices table)
-        2. Assigned to a specific patient
-        3. Currently active and operational
+        IMPORTANT: A device can have owner_patient_id != stream.patient_id
+        - owner_patient_id: Device owner (can be reassigned)
+        - stream.patient_id: Patient receiving data NOW (active stream)
+        
+        The generator sends data to stream.patient_id, regardless of owner.
         
         Query includes:
-        - Patient metadata (id, name, org, risk_level)
+        - Patient metadata (id, name, org, risk_level) FROM STREAM
         - Device metadata (id, serial, brand, model)
         - Stream metadata (id, signal_type)
         - InfluxDB binding (bucket, measurement, org)
@@ -164,12 +165,10 @@ class DatabaseService:
                     FROM heartguard.patients p
                     LEFT JOIN heartguard.organizations o ON o.id = p.org_id
                     LEFT JOIN heartguard.risk_levels rl ON rl.id = p.risk_level_id
-                    JOIN heartguard.devices d ON d.owner_patient_id = p.id 
-                        AND d.active = TRUE
-                        AND d.owner_patient_id IS NOT NULL
                     JOIN heartguard.signal_streams ss ON ss.patient_id = p.id 
-                        AND ss.device_id = d.id 
                         AND ss.ended_at IS NULL
+                    JOIN heartguard.devices d ON d.id = ss.device_id
+                        AND d.active = TRUE
                     JOIN heartguard.signal_types st ON st.id = ss.signal_type_id
                     JOIN heartguard.timeseries_binding tb ON tb.stream_id = ss.id
                     LEFT JOIN heartguard.timeseries_binding_tag tbt ON tbt.binding_id = tb.id
