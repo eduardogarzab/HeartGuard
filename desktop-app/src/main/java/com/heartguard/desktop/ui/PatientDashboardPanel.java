@@ -249,38 +249,40 @@ public class PatientDashboardPanel extends JPanel {
     private JPanel createVitalSignsSection() {
         JPanel chartContainer = new JPanel(new BorderLayout(0, 12));
         chartContainer.setOpaque(false);
-        
+
         // Panel superior con información
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.setOpaque(false);
         topPanel.setBorder(new EmptyBorder(0, 0, 12, 0));
-        
+
         JLabel desc = new JLabel("Gráficas en tiempo real de signos vitales");
         desc.setFont(new Font("Segoe UI", Font.PLAIN, 14));
         desc.setForeground(TEXT_SECONDARY_COLOR);
         topPanel.add(desc, BorderLayout.WEST);
-        
+
         JLabel updateInfo = new JLabel("Actualización automática cada 10 segundos");
         updateInfo.setFont(CAPTION_FONT);
         updateInfo.setForeground(TEXT_SECONDARY_COLOR);
         topPanel.add(updateInfo, BorderLayout.EAST);
-        
+
         chartContainer.add(topPanel, BorderLayout.NORTH);
-        
+
         // Panel de gráficas
         JPanel chartsPanel = new JPanel(new BorderLayout());
         chartsPanel.setOpaque(false);
         chartsPanel.setPreferredSize(new Dimension(800, 500));
         chartsPanel.setMinimumSize(new Dimension(600, 400));
-        
+
         try {
             // Crear panel de gráficas con actualización automática cada 10 segundos
             VitalSignsChartPanel vitalSignsChart = new VitalSignsChartPanel(
-                patientId, 
-                apiClient, 
+                patientId,
+                apiClient,
                 10 // Actualizar cada 10 segundos
             );
             chartsPanel.add(vitalSignsChart, BorderLayout.CENTER);
+            // Iniciar carga de datos y actualización automática
+            SwingUtilities.invokeLater(vitalSignsChart::startDataLoading);
         } catch (Exception e) {
             e.printStackTrace();
             JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
@@ -291,9 +293,9 @@ public class PatientDashboardPanel extends JPanel {
             errorLabel.setForeground(DANGER_COLOR);
             chartsPanel.add(errorLabel, BorderLayout.CENTER);
         }
-        
+
         chartContainer.add(chartsPanel, BorderLayout.CENTER);
-        
+
         return createCardSection("📈 Signos Vitales en Tiempo Real", chartContainer);
     }
 
