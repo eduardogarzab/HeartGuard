@@ -190,6 +190,7 @@ public class AlertValidationDialog extends JDialog {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setBorder(new EmptyBorder(0, 0, 0, 0));
         
         JLabel title = new JLabel("Selecciona una acción:");
         title.setFont(new Font("Inter", Font.BOLD, 16));
@@ -218,6 +219,8 @@ public class AlertValidationDialog extends JDialog {
         JPanel ackPanel = new JPanel(new BorderLayout());
         ackPanel.setBackground(Color.WHITE);
         ackPanel.setBorder(new LineBorder(BORDER, 2));
+        ackPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        ackPanel.setMaximumSize(new Dimension(820, 100));
         ackPanel.add(acknowledgeRadio, BorderLayout.CENTER);
         
         JLabel ackDesc = new JLabel("Estado pasará de 'pendiente' → 'reconocida'");
@@ -246,6 +249,8 @@ public class AlertValidationDialog extends JDialog {
         JPanel resolvePanel = new JPanel(new BorderLayout());
         resolvePanel.setBackground(Color.WHITE);
         resolvePanel.setBorder(new LineBorder(PRIMARY, 2));
+        resolvePanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        resolvePanel.setMaximumSize(new Dimension(820, 100));
         resolvePanel.add(resolveRadio, BorderLayout.CENTER);
         
         JLabel resolveDesc = new JLabel("Cerrará el caso y creará registro de Ground Truth automáticamente");
@@ -255,7 +260,7 @@ public class AlertValidationDialog extends JDialog {
         resolvePanel.add(resolveDesc, BorderLayout.SOUTH);
         
         panel.add(resolvePanel);
-        panel.add(Box.createVerticalStrut(16));
+        panel.add(Box.createVerticalStrut(12));
         panel.add(resolveOptionsPanel);
         
         return panel;
@@ -265,8 +270,9 @@ public class AlertValidationDialog extends JDialog {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(new Color(240, 248, 255));
-        panel.setBorder(new EmptyBorder(12, 0, 12, 0));
+        panel.setBorder(new EmptyBorder(8, 16, 8, 0));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(820, 150));
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
         title.setFont(new Font("Inter", Font.BOLD, 15));
