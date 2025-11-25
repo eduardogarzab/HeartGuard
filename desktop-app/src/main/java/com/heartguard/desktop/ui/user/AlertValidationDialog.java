@@ -266,15 +266,15 @@ public class AlertValidationDialog extends JDialog {
         panel.setBackground(new Color(240, 248, 255));
         panel.setBorder(new EmptyBorder(12, 0, 12, 0));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.setMaximumSize(new Dimension(850, 200));
+        panel.setMaximumSize(new Dimension(820, 180));
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
         title.setFont(new Font("Inter", Font.BOLD, 15));
         title.setForeground(TEXT_PRIMARY);
-        title.setBorder(new EmptyBorder(0, 0, 8, 0));
+        title.setBorder(new EmptyBorder(0, 0, 10, 0));
         panel.add(title, BorderLayout.NORTH);
         
-        // Panel con 2 columnas para las opciones
+        // Panel con 2 columnas para las opciones - SIN PADDING IZQUIERDO
         JPanel optionsPanel = new JPanel(new GridLayout(1, 2, 12, 0));
         optionsPanel.setBackground(new Color(240, 248, 255));
         optionsPanel.setBorder(null);
@@ -283,45 +283,49 @@ public class AlertValidationDialog extends JDialog {
         group.add(truePositiveRadio);
         group.add(falsePositiveRadio);
         
-        // Panel Verdadero Positivo - COMPACTO
+        // Panel Verdadero Positivo - SIN ESPACIO INTERNO EXCESIVO
         JPanel truePanel = new JPanel();
         truePanel.setLayout(new BoxLayout(truePanel, BoxLayout.Y_AXIS));
         truePanel.setBackground(Color.WHITE);
         truePanel.setBorder(new CompoundBorder(
             new LineBorder(SUCCESS, 2, true),
-            new EmptyBorder(12, 12, 12, 12)
+            new EmptyBorder(10, 10, 10, 10)
         ));
         
-        truePositiveRadio.setFont(new Font("Inter", Font.BOLD, 14));
+        truePositiveRadio.setFont(new Font("Inter", Font.BOLD, 13));
         truePositiveRadio.setForeground(SUCCESS);
         truePositiveRadio.setBackground(Color.WHITE);
         truePositiveRadio.setSelected(true);
+        truePositiveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
         truePanel.add(truePositiveRadio);
-        truePanel.add(Box.createVerticalStrut(6));
+        truePanel.add(Box.createVerticalStrut(5));
         
-        JLabel trueDesc = new JLabel("<html><div style='width:330px;font-size:12px'>Se guardará como verdadero positivo en Ground Truth</div></html>");
-        trueDesc.setFont(new Font("Inter", Font.PLAIN, 12));
+        JLabel trueDesc = new JLabel("<html>Se guardará como verdadero positivo en Ground Truth</html>");
+        trueDesc.setFont(new Font("Inter", Font.PLAIN, 11));
         trueDesc.setForeground(TEXT_SECONDARY);
+        trueDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
         truePanel.add(trueDesc);
         
-        // Panel Falso Positivo - COMPACTO
+        // Panel Falso Positivo - SIN ESPACIO INTERNO EXCESIVO
         JPanel falsePanel = new JPanel();
         falsePanel.setLayout(new BoxLayout(falsePanel, BoxLayout.Y_AXIS));
         falsePanel.setBackground(Color.WHITE);
         falsePanel.setBorder(new CompoundBorder(
             new LineBorder(DANGER, 2, true),
-            new EmptyBorder(12, 12, 12, 12)
+            new EmptyBorder(10, 10, 10, 10)
         ));
         
-        falsePositiveRadio.setFont(new Font("Inter", Font.BOLD, 14));
+        falsePositiveRadio.setFont(new Font("Inter", Font.BOLD, 13));
         falsePositiveRadio.setForeground(DANGER);
         falsePositiveRadio.setBackground(Color.WHITE);
+        falsePositiveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
         falsePanel.add(falsePositiveRadio);
-        falsePanel.add(Box.createVerticalStrut(6));
+        falsePanel.add(Box.createVerticalStrut(5));
         
-        JLabel falseDesc = new JLabel("<html><div style='width:330px;font-size:12px'>Se marcará como error de IA para reentrenamiento</div></html>");
-        falseDesc.setFont(new Font("Inter", Font.PLAIN, 12));
+        JLabel falseDesc = new JLabel("<html>Se marcará como error de IA para reentrenamiento</html>");
+        falseDesc.setFont(new Font("Inter", Font.PLAIN, 11));
         falseDesc.setForeground(TEXT_SECONDARY);
+        falseDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
         falsePanel.add(falseDesc);
         
         optionsPanel.add(truePanel);
