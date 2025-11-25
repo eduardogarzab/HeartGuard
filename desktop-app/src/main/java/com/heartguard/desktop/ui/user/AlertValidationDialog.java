@@ -136,12 +136,18 @@ public class AlertValidationDialog extends JDialog {
         panel.add(typeLabel);
         panel.add(Box.createVerticalStrut(4));
         
-        // Descripción compacta - ancho reducido para que se parta en 2 líneas
-        JLabel descLabel = new JLabel("<html><body style='width: 750px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
-        descLabel.setFont(new Font("Inter", Font.PLAIN, 14));
-        descLabel.setForeground(TEXT_PRIMARY);
-        descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(descLabel);
+        // Descripción con JTextArea para que se parta correctamente
+        JTextArea descArea = new JTextArea("Descripción: " + alert.getDescription());
+        descArea.setFont(new Font("Inter", Font.PLAIN, 14));
+        descArea.setForeground(TEXT_PRIMARY);
+        descArea.setBackground(BG_LIGHT);
+        descArea.setLineWrap(true);
+        descArea.setWrapStyleWord(true);
+        descArea.setEditable(false);
+        descArea.setBorder(null);
+        descArea.setAlignmentX(Component.LEFT_ALIGNMENT);
+        descArea.setMaximumSize(new Dimension(780, 100));
+        panel.add(descArea);
         panel.add(Box.createVerticalStrut(12));
         
         // Grid con información
@@ -192,6 +198,7 @@ public class AlertValidationDialog extends JDialog {
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.setBorder(new EmptyBorder(0, 0, 0, 0));
+        panel.setMaximumSize(new Dimension(820, 400));
         
         JLabel title = new JLabel("Selecciona una acción:");
         title.setFont(new Font("Inter", Font.BOLD, 16));
@@ -353,6 +360,7 @@ public class AlertValidationDialog extends JDialog {
         JPanel panel = new JPanel(new BorderLayout(8, 8));
         panel.setBackground(Color.WHITE);
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(820, 180));
         
         JLabel label = new JLabel("📝 Notas clínicas:");
         label.setFont(new Font("Inter", Font.BOLD, 15));
