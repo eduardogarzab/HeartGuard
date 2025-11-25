@@ -348,6 +348,7 @@ class UserRepository:
         query = """
             SELECT
                 a.id,
+                a.patient_id,
                 a.created_at,
                 a.description,
                 at.code AS alert_type_code,

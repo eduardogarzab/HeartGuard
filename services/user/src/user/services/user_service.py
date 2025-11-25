@@ -1250,6 +1250,7 @@ class UserService:
     def _format_alert(self, record: Dict[str, Any]) -> Dict[str, Any]:
         return {
             'id': str(record['id']),
+            'patient_id': str(record['patient_id']) if record.get('patient_id') else None,
             'created_at': self._serialize_datetime(record.get('created_at')),
             'description': record.get('description'),
             'type': {
