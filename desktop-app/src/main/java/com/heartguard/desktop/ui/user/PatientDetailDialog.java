@@ -125,10 +125,10 @@ public class PatientDetailDialog extends JDialog {
         tabs.addTab("MÉTRICAS", infoScroll);
 
         JList<String> alertsList = new JList<>(alertsModel);
-        alertsList.setFont(BODY_FONT);
+        alertsList.setFont(new Font("Inter", Font.PLAIN, 14));
         alertsList.setBackground(CARD_BG);
         alertsList.setBorder(new EmptyBorder(8, 8, 8, 8));
-        alertsList.setFixedCellHeight(50);
+        alertsList.setFixedCellHeight(80);
         
         // Panel para alertas con botón de validación
         JPanel alertsPanel = new JPanel(new BorderLayout(0, 8));

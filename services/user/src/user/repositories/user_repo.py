@@ -372,8 +372,16 @@ class UserRepository:
 
     @staticmethod
     def acknowledge_patient_alert(alert_id: str, user_id: str, note: str | None = None) -> Dict | None:
-        """Registra un acknowledgement de una alerta."""
-        query = """
+        """Registra un acknowledgement de una alerta y actualiza su estado a 'ack'."""
+        # Actualizar el estado de la alerta a 'ack'
+        update_query = """
+            UPDATE alerts
+            SET status_id = (SELECT id FROM alert_status WHERE lower(code) = 'ack' LIMIT 1)
+            WHERE id = %s
+        """
+        
+        # Insertar el registro de acknowledgement
+        insert_query = """
             INSERT INTO alert_ack (alert_id, ack_by_user_id, note)
             VALUES (%s, %s, %s)
             RETURNING id,
@@ -384,7 +392,10 @@ class UserRepository:
                       (SELECT name FROM users WHERE id = ack_by_user_id) AS ack_by_name
         """
         with get_db_cursor() as cursor:
-            cursor.execute(query, (alert_id, user_id, note))
+            # Primero actualizar el estado
+            cursor.execute(update_query, (alert_id,))
+            # Luego insertar el acknowledgement
+            cursor.execute(insert_query, (alert_id, user_id, note))
             row = cursor.fetchone()
             return dict(row) if row else None
 
@@ -395,8 +406,16 @@ class UserRepository:
         outcome: str | None = None,
         note: str | None = None,
     ) -> Dict | None:
-        """Registra la resolución de una alerta."""
-        query = """
+        """Registra la resolución de una alerta y actualiza su estado a 'resolved'."""
+        # Actualizar el estado de la alerta a 'resolved'
+        update_query = """
+            UPDATE alerts
+            SET status_id = (SELECT id FROM alert_status WHERE lower(code) = 'resolved' LIMIT 1)
+            WHERE id = %s
+        """
+        
+        # Insertar el registro de resolución
+        insert_query = """
             INSERT INTO alert_resolution (alert_id, resolved_by_user_id, outcome, note)
             VALUES (%s, %s, %s, %s)
             RETURNING id,
@@ -408,7 +427,10 @@ class UserRepository:
                       note
         """
         with get_db_cursor() as cursor:
-            cursor.execute(query, (alert_id, user_id, outcome, note))
+            # Primero actualizar el estado
+            cursor.execute(update_query, (alert_id,))
+            # Luego insertar la resolución
+            cursor.execute(insert_query, (alert_id, user_id, outcome, note))
             row = cursor.fetchone()
             return dict(row) if row else None
 

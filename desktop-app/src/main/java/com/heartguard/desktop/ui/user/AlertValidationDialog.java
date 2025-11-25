@@ -6,6 +6,7 @@ import com.heartguard.desktop.config.AppConfig;
 import com.heartguard.desktop.models.alert.*;
 
 import javax.swing.*;
+import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
@@ -251,51 +252,69 @@ public class AlertValidationDialog extends JDialog {
     }
     
     private JPanel createResolveOptionsPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(new Color(240, 248, 255));
         panel.setBorder(new EmptyBorder(16, 20, 16, 20));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
-        title.setFont(new Font("Inter", Font.BOLD, 15));
+        title.setFont(new Font("Inter", Font.BOLD, 16));
         title.setForeground(TEXT_PRIMARY);
-        title.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(title);
-        panel.add(Box.createVerticalStrut(12));
+        panel.add(title, BorderLayout.NORTH);
+        
+        // Panel con 2 columnas para las opciones
+        JPanel optionsPanel = new JPanel(new GridLayout(1, 2, 16, 0));
+        optionsPanel.setBackground(new Color(240, 248, 255));
+        optionsPanel.setBorder(new EmptyBorder(16, 0, 0, 0));
         
         ButtonGroup group = new ButtonGroup();
         group.add(truePositiveRadio);
         group.add(falsePositiveRadio);
         
-        truePositiveRadio.setFont(new Font("Inter", Font.PLAIN, 14));
+        // Panel Verdadero Positivo
+        JPanel truePanel = new JPanel();
+        truePanel.setLayout(new BoxLayout(truePanel, BoxLayout.Y_AXIS));
+        truePanel.setBackground(Color.WHITE);
+        truePanel.setBorder(new CompoundBorder(
+            new LineBorder(SUCCESS, 2, true),
+            new EmptyBorder(16, 16, 16, 16)
+        ));
+        
+        truePositiveRadio.setFont(new Font("Inter", Font.BOLD, 15));
         truePositiveRadio.setForeground(SUCCESS);
-        truePositiveRadio.setBackground(new Color(240, 248, 255));
-        truePositiveRadio.setBorder(new EmptyBorder(8, 8, 4, 8));
+        truePositiveRadio.setBackground(Color.WHITE);
         truePositiveRadio.setSelected(true);
-        truePositiveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(truePositiveRadio);
+        truePanel.add(truePositiveRadio);
+        truePanel.add(Box.createVerticalStrut(8));
         
-        JLabel trueDesc = new JLabel("Se guardará como verdadero positivo en Ground Truth");
-        trueDesc.setFont(new Font("Inter", Font.ITALIC, 12));
+        JLabel trueDesc = new JLabel("<html><div style='width:200px'>Se guardará como verdadero positivo en Ground Truth</div></html>");
+        trueDesc.setFont(new Font("Inter", Font.PLAIN, 13));
         trueDesc.setForeground(TEXT_SECONDARY);
-        trueDesc.setBorder(new EmptyBorder(0, 32, 12, 8));
-        trueDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(trueDesc);
+        truePanel.add(trueDesc);
         
-        falsePositiveRadio.setFont(new Font("Inter", Font.PLAIN, 14));
+        // Panel Falso Positivo
+        JPanel falsePanel = new JPanel();
+        falsePanel.setLayout(new BoxLayout(falsePanel, BoxLayout.Y_AXIS));
+        falsePanel.setBackground(Color.WHITE);
+        falsePanel.setBorder(new CompoundBorder(
+            new LineBorder(DANGER, 2, true),
+            new EmptyBorder(16, 16, 16, 16)
+        ));
+        
+        falsePositiveRadio.setFont(new Font("Inter", Font.BOLD, 15));
         falsePositiveRadio.setForeground(DANGER);
-        falsePositiveRadio.setBackground(new Color(240, 248, 255));
-        falsePositiveRadio.setBorder(new EmptyBorder(8, 8, 4, 8));
-        falsePositiveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(falsePositiveRadio);
+        falsePositiveRadio.setBackground(Color.WHITE);
+        falsePanel.add(falsePositiveRadio);
+        falsePanel.add(Box.createVerticalStrut(8));
         
-        JLabel falseDesc = new JLabel("Se marcará como error de IA para reentrenamiento");
-        falseDesc.setFont(new Font("Inter", Font.ITALIC, 12));
+        JLabel falseDesc = new JLabel("<html><div style='width:200px'>Se marcará como error de IA para reentrenamiento</div></html>");
+        falseDesc.setFont(new Font("Inter", Font.PLAIN, 13));
         falseDesc.setForeground(TEXT_SECONDARY);
-        falseDesc.setBorder(new EmptyBorder(0, 32, 8, 8));
-        falseDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.add(falseDesc);
+        falsePanel.add(falseDesc);
+        
+        optionsPanel.add(truePanel);
+        optionsPanel.add(falsePanel);
+        
+        panel.add(optionsPanel, BorderLayout.CENTER);
         
         return panel;
     }
