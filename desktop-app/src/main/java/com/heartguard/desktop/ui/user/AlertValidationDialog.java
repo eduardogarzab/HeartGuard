@@ -74,7 +74,7 @@ public class AlertValidationDialog extends JDialog {
     
     private void initUI() {
         setLayout(new BorderLayout(0, 0));
-        setSize(900, 750);
+        setSize(900, 850);
         setLocationRelativeTo(getOwner());
         
         JPanel contentPanel = new JPanel();
@@ -112,7 +112,7 @@ public class AlertValidationDialog extends JDialog {
         JScrollPane scrollPane = new JScrollPane(contentPanel);
         scrollPane.setBorder(null);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setMinimumSize(new Dimension(850, 600));
+        scrollPane.setMinimumSize(new Dimension(850, 700));
         add(scrollPane, BorderLayout.CENTER);
         
         // Botones

@@ -435,31 +435,6 @@ class UserRepository:
             WHERE a.id = %s
         """
         
-        # Crear Ground Truth automáticamente si es TRUE_POSITIVE
-        ground_truth_query = """
-            INSERT INTO ground_truth_labels (
-                patient_id,
-                event_type_id,
-                onset,
-                offset_at,
-                annotated_by_user_id,
-                source,
-                note
-            )
-            SELECT 
-                %s, -- patient_id
-                et.id, -- event_type_id
-                %s, -- onset (created_at de la alerta)
-                %s, -- offset_at (resolved_at)
-                %s, -- annotated_by_user_id
-                'alert_resolution', -- source
-                %s -- note
-            FROM event_types et
-            WHERE lower(et.code) = lower(%s)
-            LIMIT 1
-            RETURNING id
-        """
-        
         with get_db_cursor() as cursor:
             # Primero actualizar el estado
             cursor.execute(update_query, (alert_id,))
@@ -469,24 +444,57 @@ class UserRepository:
             
             # Si el outcome es TRUE_POSITIVE, crear Ground Truth automáticamente
             if outcome and outcome.upper() == 'TRUE_POSITIVE':
-                cursor.execute(alert_info_query, (alert_id,))
-                alert_info = cursor.fetchone()
-                
-                if alert_info:
-                    from datetime import datetime
-                    resolved_at = resolution_row['resolved_at'] if resolution_row else datetime.utcnow()
+                try:
+                    cursor.execute(alert_info_query, (alert_id,))
+                    alert_info = cursor.fetchone()
                     
-                    cursor.execute(
-                        ground_truth_query,
-                        (
-                            alert_info['patient_id'],
-                            alert_info['created_at'],  # onset = cuando se creó la alerta
-                            resolved_at,  # offset_at = cuando se resolvió
-                            user_id,
-                            note,  # Incluir la nota clínica
-                            alert_info['alert_type_code'],  # event_type code
+                    if alert_info:
+                        from datetime import datetime
+                        resolved_at = resolution_row['resolved_at'] if resolution_row else datetime.utcnow()
+                        
+                        # Primero verificar que el event_type existe
+                        cursor.execute(
+                            "SELECT id FROM event_types WHERE lower(code) = lower(%s) LIMIT 1",
+                            (alert_info['alert_type_code'],)
                         )
-                    )
+                        event_type_row = cursor.fetchone()
+                        
+                        if event_type_row:
+                            # Crear el Ground Truth con los parámetros en el orden correcto
+                            cursor.execute(
+                                """
+                                INSERT INTO ground_truth_labels (
+                                    patient_id,
+                                    event_type_id,
+                                    onset,
+                                    offset_at,
+                                    annotated_by_user_id,
+                                    source,
+                                    note
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                RETURNING id
+                                """,
+                                (
+                                    alert_info['patient_id'],
+                                    event_type_row['id'],  # event_type_id
+                                    alert_info['created_at'],  # onset
+                                    resolved_at,  # offset_at
+                                    user_id,  # annotated_by_user_id
+                                    'alert_resolution',  # source
+                                    note  # note
+                                )
+                            )
+                            gt_row = cursor.fetchone()
+                            print(f"[Ground Truth] Creado GT #{gt_row['id']} para alerta {alert_id}")
+                        else:
+                            print(f"[Ground Truth] WARN: event_type '{alert_info['alert_type_code']}' no encontrado")
+                    else:
+                        print(f"[Ground Truth] WARN: No se pudo obtener info de alerta {alert_id}")
+                except Exception as e:
+                    print(f"[Ground Truth] ERROR al crear GT: {e}")
+                    import traceback
+                    traceback.print_exc()
             
             return dict(resolution_row) if resolution_row else None
 
