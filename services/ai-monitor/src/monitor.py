@@ -1,158 +1,189 @@
-<<<<<<< Updated upstream
 """
-AI Monitor Worker - Orquesta el flujo completo de monitoreo con IA
+AI Monitor Worker - Monitorea signos vitales y genera alertas
+Lee datos de InfluxDB, los envía al modelo de IA y crea alertas en PostgreSQL
 """
 import logging
 import time
-from datetime import datetime
-from typing import Dict, List
 import signal
 import sys
+from typing import Optional, Dict
+from datetime import datetime
 
-from influx_client import InfluxDBService
-from ai_client import AIServiceClient
-from postgres_client import PostgresClient
-from notification_service import NotificationService
-from auth_client import AuthClient
 import config
-
-# Configurar logging
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ai-monitor.log')
-    ]
-)
+from influx_client import InfluxDBService
+from postgres_client import PostgresClient
+from ai_client import AIServiceClient
 
 logger = logging.getLogger(__name__)
 
 
 class AIMonitorWorker:
-    """Worker principal que monitorea pacientes y genera alertas con IA"""
+    """
+    Worker que monitorea signos vitales de pacientes en tiempo real.
     
-    def __init__(self, use_signals=True):
+    Flujo:
+    1. Obtiene lista de pacientes activos de InfluxDB
+    2. Para cada paciente, obtiene los signos vitales más recientes
+    3. Envía los signos vitales al modelo de IA para predicción
+    4. Si hay anomalía, crea una alerta en PostgreSQL
+    """
+    
+    def __init__(self, use_signals: bool = True):
+        """
+        Inicializa el worker
+        
+        Args:
+            use_signals: Si debe registrar handlers para señales del sistema
+        """
         self.running = False
+        self.use_signals = use_signals
         
-        # Inicializar clientes
-        logger.info("Initializing AI Monitor Worker...")
+        # Clientes
+        self.influx_client: Optional[InfluxDBService] = None
+        self.postgres_client: Optional[PostgresClient] = None
+        self.ai_client: Optional[AIServiceClient] = None
         
-        self.influx_client = InfluxDBService()
-        self.ai_client = AIServiceClient()
-        self.postgres_client = PostgresClient()
-        self.notification_service = NotificationService()
-        self.auth_client = AuthClient()
+        # Configuración
+        self.interval = config.MONITOR_INTERVAL
+        self.lookback_window = config.LOOKBACK_WINDOW // 60  # Convertir a minutos
+        self.batch_size = config.BATCH_SIZE
+        self.threshold = config.AI_PREDICTION_THRESHOLD
         
-        # Registrar handlers para shutdown graceful solo si estamos en main thread
-        if use_signals:
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-        
-        logger.info("AI Monitor Worker initialized successfully")
+        logger.info("=" * 60)
+        logger.info("AI Monitor Worker initialized")
+        logger.info(f"  Monitor interval: {self.interval}s")
+        logger.info(f"  Lookback window: {self.lookback_window}m")
+        logger.info(f"  Batch size: {self.batch_size}")
+        logger.info(f"  AI threshold: {self.threshold}")
+        logger.info("=" * 60)
     
-    def _signal_handler(self, signum, frame):
-        """Maneja señales de shutdown"""
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        self.running = False
-    
-    def start(self):
-        """Inicia el worker"""
-        logger.info("Starting AI Monitor Worker...")
-        
-        # Verificar que el servicio de IA esté disponible
-        if not self.ai_client.health_check():
-            logger.error("AI Service is not healthy, cannot start worker")
+    def _setup_signals(self):
+        """Configura handlers para señales del sistema"""
+        if not self.use_signals:
             return
         
-        # Obtener token de autenticación
-        token = self.auth_client.get_service_token()
-        if token:
-            self.ai_client.set_jwt_token(token)
-        else:
-            logger.warning("Could not get auth token, proceeding without authentication")
+        def signal_handler(signum, frame):
+            logger.info(f"Received signal {signum}, shutting down...")
+            self.running = False
         
-        self.running = True
-        cycle_count = 0
-        
-        logger.info(
-            f"Worker started. Monitoring every {config.MONITOR_INTERVAL} seconds, "
-            f"looking back {config.LOOKBACK_WINDOW} seconds"
-        )
-        
-        while self.running:
-            try:
-                cycle_count += 1
-                logger.info(f"=== Monitoring Cycle #{cycle_count} ===")
-                
-                start_time = time.time()
-                
-                # Procesar pacientes activos
-                stats = self._process_active_patients()
-                
-                elapsed_time = time.time() - start_time
-                
-                logger.info(
-                    f"Cycle #{cycle_count} completed in {elapsed_time:.2f}s - "
-                    f"Patients: {stats['patients_checked']}, "
-                    f"Predictions: {stats['predictions_made']}, "
-                    f"Alerts: {stats['alerts_created']}, "
-                    f"Notifications: {stats['notifications_sent']}"
-                )
-                
-                # Esperar antes del siguiente ciclo
-                if self.running:
-                    time.sleep(config.MONITOR_INTERVAL)
-                    
-            except Exception as e:
-                logger.error(f"Error in monitoring cycle: {e}", exc_info=True)
-                # Continuar después de un error
-                if self.running:
-                    time.sleep(config.MONITOR_INTERVAL)
-        
-        logger.info("Worker stopped")
-        self._cleanup()
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
     
-    def _process_active_patients(self) -> Dict:
+    def _initialize_clients(self) -> bool:
         """
-        Procesa todos los pacientes activos
+        Inicializa los clientes de servicios externos
         
         Returns:
-            Estadísticas del ciclo
+            True si todos los clientes se inicializaron correctamente
         """
-        stats = {
-            "patients_checked": 0,
-            "predictions_made": 0,
-            "alerts_created": 0,
-            "notifications_sent": 0
-        }
+        try:
+            # InfluxDB
+            logger.info("Connecting to InfluxDB...")
+            self.influx_client = InfluxDBService()
+            
+            # PostgreSQL
+            logger.info("Connecting to PostgreSQL...")
+            self.postgres_client = PostgresClient()
+            
+            # AI Service
+            logger.info("Connecting to AI Service...")
+            self.ai_client = AIServiceClient()
+            
+            # Verificar AI Service
+            if not self.ai_client.health_check():
+                logger.warning(
+                    "AI Service no está disponible. "
+                    "Las predicciones no funcionarán hasta que esté activo."
+                )
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error initializing clients: {e}")
+            return False
+    
+    def _cleanup(self):
+        """Limpia recursos al terminar"""
+        logger.info("Cleaning up resources...")
         
-        # Obtener lista de pacientes con datos recientes
-        lookback_minutes = config.LOOKBACK_WINDOW // 60
-        patient_ids = self.influx_client.get_active_patients(lookback_minutes)
+        if self.influx_client:
+            self.influx_client.close()
         
-        logger.info(f"Found {len(patient_ids)} active patients")
+        if self.postgres_client:
+            self.postgres_client.close()
+        
+        if self.ai_client:
+            self.ai_client.close()
+        
+        logger.info("Cleanup completed")
+    
+    def start(self):
+        """Inicia el loop de monitoreo"""
+        self._setup_signals()
+        
+        if not self._initialize_clients():
+            logger.error("Failed to initialize clients, exiting")
+            return
+        
+        self.running = True
+        logger.info("Starting monitoring loop...")
+        
+        try:
+            while self.running:
+                cycle_start = time.time()
+                
+                try:
+                    self._run_monitoring_cycle()
+                except Exception as e:
+                    logger.error(f"Error in monitoring cycle: {e}", exc_info=True)
+                
+                # Esperar hasta el próximo ciclo
+                elapsed = time.time() - cycle_start
+                sleep_time = max(0, self.interval - elapsed)
+                
+                if sleep_time > 0:
+                    logger.debug(f"Sleeping for {sleep_time:.1f}s until next cycle")
+                    time.sleep(sleep_time)
+                    
+        finally:
+            self._cleanup()
+    
+    def _run_monitoring_cycle(self):
+        """Ejecuta un ciclo completo de monitoreo"""
+        logger.info("-" * 40)
+        logger.info(f"Starting monitoring cycle at {datetime.now().isoformat()}")
+        
+        # Obtener pacientes activos
+        active_patients = self.influx_client.get_active_patients(
+            lookback_minutes=self.lookback_window
+        )
+        
+        if not active_patients:
+            logger.info("No active patients found")
+            return
+        
+        logger.info(f"Processing {len(active_patients)} active patients")
         
         # Procesar en batches
-        for i in range(0, len(patient_ids), config.BATCH_SIZE):
-            batch = patient_ids[i:i + config.BATCH_SIZE]
-            
-            for patient_id in batch:
-                try:
-                    patient_stats = self._process_patient(patient_id)
-                    
-                    stats["patients_checked"] += 1
-                    stats["predictions_made"] += patient_stats.get("predictions", 0)
-                    stats["alerts_created"] += patient_stats.get("alerts", 0)
-                    stats["notifications_sent"] += patient_stats.get("notifications", 0)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing patient {patient_id}: {e}")
-                    continue
+        alerts_created = 0
+        patients_processed = 0
         
-        return stats
+        for patient_id in active_patients:
+            try:
+                alert_created = self._process_patient(patient_id)
+                if alert_created:
+                    alerts_created += 1
+                patients_processed += 1
+                
+            except Exception as e:
+                logger.error(f"Error processing patient {patient_id}: {e}")
+        
+        logger.info(
+            f"Cycle completed: {patients_processed} patients processed, "
+            f"{alerts_created} alerts created"
+        )
     
-    def _process_patient(self, patient_id: str) -> Dict:
+    def _process_patient(self, patient_id: str) -> bool:
         """
         Procesa un paciente individual
         
@@ -160,564 +191,123 @@ class AIMonitorWorker:
             patient_id: UUID del paciente
             
         Returns:
-            Estadísticas del procesamiento
+            True si se creó una alerta
         """
-        stats = {"predictions": 0, "alerts": 0, "notifications": 0}
-        
-        # 1. Obtener signos vitales más recientes de InfluxDB
-        lookback_minutes = config.LOOKBACK_WINDOW // 60
+        # Obtener signos vitales
         vital_signs = self.influx_client.get_latest_vital_signs(
-            patient_id, 
-            lookback_minutes
+            patient_id=patient_id,
+            lookback_minutes=self.lookback_window
         )
         
         if not vital_signs:
-            logger.debug(f"No recent vital signs for patient {patient_id}")
-            return stats
+            logger.debug(f"No vital signs found for patient {patient_id}")
+            return False
         
-        # 2. Llamar al modelo de IA para predicción
+        # Obtener predicción del modelo de IA
         prediction = self.ai_client.predict_health(vital_signs)
         
         if not prediction:
-            logger.warning(f"Could not get prediction for patient {patient_id}")
-            return stats
+            logger.warning(f"No prediction received for patient {patient_id}")
+            return False
         
-        stats["predictions"] = 1
+        # Evaluar predicción
+        risk_probability = prediction.get("probability", 0)
+        predicted_class = prediction.get("predicted_class", 0)
         
-        # 3. Si hay problema detectado, crear alertas
-        has_problem = prediction.get("has_problem", False)
-        if has_problem:
-            probability = prediction.get("probability", 0)
-            
-            logger.info(
-                f"Health problem detected for patient {patient_id} "
-                f"(probability: {probability:.2%})"
-            )
-            
-            alerts = prediction.get("alerts", [])
-            created_alert_ids = []
-            
-            for alert in alerts:
-                alert_id = self._create_alert(patient_id, alert, prediction)
-                
-                if alert_id:
-                    created_alert_ids.append(alert_id)
-                    stats["alerts"] += 1
-            
-            # 4. Notificar a caregivers si se crearon alertas
-            if created_alert_ids:
-                notifications_sent = self._notify_caregivers(
-                    patient_id, 
-                    alerts,
-                    prediction
-                )
-                stats["notifications"] = notifications_sent
-        else:
-            logger.debug(
-                f"No health problems detected for patient {patient_id} "
-                f"(probability: {prediction.get('probability', 0):.2%})"
-            )
+        logger.debug(
+            f"Patient {patient_id}: probability={risk_probability:.3f}, "
+            f"class={predicted_class}"
+        )
         
-        return stats
-    
-    def _create_alert(
-        self, 
-        patient_id: str, 
-        alert: Dict, 
-        prediction: Dict
-    ) -> str:
-        """
-        Crea una alerta en PostgreSQL
-        
-        Args:
-            patient_id: UUID del paciente
-            alert: Información de la alerta del modelo
-            prediction: Predicción completa del modelo
-            
-        Returns:
-            UUID de la alerta creada o None
-        """
-        try:
-            alert_id = self.postgres_client.create_alert(
+        # Crear alerta si supera el threshold
+        if risk_probability >= self.threshold and predicted_class == 1:
+            return self._create_alert_from_prediction(
                 patient_id=patient_id,
-                alert_type=alert["type"],
-                severity=alert["severity"],
-                description=alert["message"],
-                timestamp=prediction["timestamp"],
-                gps_latitude=prediction["gps_latitude"],
-                gps_longitude=prediction["gps_longitude"],
-                model_id=None  # TODO: Obtener model_id desde configuración
+                vital_signs=vital_signs,
+                prediction=prediction
             )
-            
-            return alert_id
-            
-        except Exception as e:
-            logger.error(f"Error creating alert: {e}")
-            return None
+        
+        return False
     
-    def _notify_caregivers(
+    def _create_alert_from_prediction(
         self, 
-        patient_id: str, 
-        alerts: List[Dict],
+        patient_id: str,
+        vital_signs: Dict,
         prediction: Dict
-    ) -> int:
+    ) -> bool:
         """
-        Notifica a los cuidadores del paciente
+        Crea una alerta basada en la predicción del modelo
         
         Args:
             patient_id: UUID del paciente
-            alerts: Lista de alertas generadas
-            prediction: Predicción del modelo
+            vital_signs: Signos vitales del paciente
+            prediction: Predicción del modelo de IA
             
         Returns:
-            Número de notificaciones enviadas
+            True si la alerta se creó correctamente
         """
-        try:
-            # Obtener caregivers del paciente
-            caregivers = self.postgres_client.get_patient_caregivers(patient_id)
-            
-            if not caregivers:
-                logger.warning(f"No caregivers found for patient {patient_id}")
-                return 0
-            
+        probability = prediction.get("probability", 0)
+        
+        # Determinar severidad basada en probabilidad
+        if probability >= 0.9:
+            severity = "critical"
+            alert_type = "AI_CRITICAL"
+        elif probability >= 0.8:
+            severity = "high"
+            alert_type = "AI_HIGH_RISK"
+        elif probability >= 0.7:
+            severity = "medium"
+            alert_type = "AI_MEDIUM_RISK"
+        else:
+            severity = "low"
+            alert_type = "AI_LOW_RISK"
+        
+        # Construir descripción
+        description = (
+            f"Anomalía detectada por IA (probabilidad: {probability:.1%}). "
+            f"FC: {vital_signs.get('heart_rate')} bpm, "
+            f"SpO2: {vital_signs.get('spo2')}%, "
+            f"PA: {vital_signs.get('systolic_bp')}/{vital_signs.get('diastolic_bp')} mmHg, "
+            f"Temp: {vital_signs.get('temperature'):.1f}°C"
+        )
+        
+        # Crear alerta en PostgreSQL
+        alert_id = self.postgres_client.create_alert(
+            patient_id=patient_id,
+            alert_type=alert_type,
+            severity=severity,
+            description=description,
+            timestamp=vital_signs.get("timestamp", datetime.now().isoformat()),
+            gps_latitude=vital_signs.get("gps_latitude", 0),
+            gps_longitude=vital_signs.get("gps_longitude", 0)
+        )
+        
+        if alert_id:
             logger.info(
-                f"Notifying {len(caregivers)} caregivers for patient {patient_id}"
+                f"🚨 Alert created: {alert_id} - {alert_type} ({severity}) "
+                f"for patient {patient_id}"
             )
-            
-            # Preparar información de la alerta para notificación
-            # Usar la alerta más severa para el resumen
-            most_severe = max(
-                alerts, 
-                key=lambda a: {
-                    "low": 1, "medium": 2, "high": 3, "critical": 4
-                }.get(a.get("severity", "low"), 0)
-            )
-            
-            alert_info = {
-                "patient_id": patient_id,
-                "alert_type": most_severe["type"],
-                "severity": most_severe["severity"],
-                "description": most_severe["message"],
-                "timestamp": prediction["timestamp"],
-                "probability": prediction.get("probability", 0),
-                "total_alerts": len(alerts)
-            }
-            
-            # Enviar notificaciones
-            sent_count = self.notification_service.send_alert_notifications(
-                caregivers,
-                alert_info
-            )
-            
-            return sent_count
-            
-        except Exception as e:
-            logger.error(f"Error notifying caregivers: {e}")
-            return 0
-    
-    def _cleanup(self):
-        """Limpia recursos antes de cerrar"""
-        logger.info("Cleaning up resources...")
+            return True
         
-        try:
-            self.influx_client.close()
-        except:
-            pass
-        
-        try:
-            self.ai_client.close()
-        except:
-            pass
-        
-        try:
-            self.postgres_client.close()
-        except:
-            pass
-        
-        try:
-            self.notification_service.close()
-        except:
-            pass
-        
-        try:
-            self.auth_client.close()
-        except:
-            pass
-        
-        logger.info("Cleanup complete")
+        return False
 
 
 def main():
-    """Función principal"""
-    logger.info("=" * 60)
-    logger.info("AI Monitor Service - HeartGuard")
-    logger.info("=" * 60)
+    """Entry point para ejecución standalone"""
+    # Configurar logging
+    logging.basicConfig(
+        level=getattr(logging, config.LOG_LEVEL),
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[logging.StreamHandler(sys.stdout)]
+    )
     
-    worker = AIMonitorWorker()
+    logger.info("Starting AI Monitor Service (standalone mode)")
+    
+    worker = AIMonitorWorker(use_signals=True)
     worker.start()
+    
+    logger.info("AI Monitor Service stopped")
 
 
 if __name__ == "__main__":
     main()
-=======
-"""
-AI Monitor Worker - Orquesta el flujo completo de monitoreo con IA
-"""
-import logging
-import time
-from datetime import datetime
-from typing import Dict, List
-import signal
-import sys
-
-from influx_client import InfluxDBService
-from ai_client import AIServiceClient
-from postgres_client import PostgresClient
-from notification_service import NotificationService
-from auth_client import AuthClient
-import config
-
-# Configurar logging
-logging.basicConfig(
-    level=getattr(logging, config.LOG_LEVEL),
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(sys.stdout),
-        logging.FileHandler('ai-monitor.log')
-    ]
-)
-
-logger = logging.getLogger(__name__)
-
-
-class AIMonitorWorker:
-    """Worker principal que monitorea pacientes y genera alertas con IA"""
-    
-    def __init__(self, use_signals=True):
-        self.running = False
-        
-        # Inicializar clientes
-        logger.info("Initializing AI Monitor Worker...")
-        
-        self.influx_client = InfluxDBService()
-        self.ai_client = AIServiceClient()
-        self.postgres_client = PostgresClient()
-        self.notification_service = NotificationService()
-        self.auth_client = AuthClient()
-        
-        # Registrar handlers para shutdown graceful solo si estamos en main thread
-        if use_signals:
-            signal.signal(signal.SIGINT, self._signal_handler)
-            signal.signal(signal.SIGTERM, self._signal_handler)
-        
-        logger.info("AI Monitor Worker initialized successfully")
-    
-    def _signal_handler(self, signum, frame):
-        """Maneja señales de shutdown"""
-        logger.info(f"Received signal {signum}, shutting down gracefully...")
-        self.running = False
-    
-    def start(self):
-        """Inicia el worker"""
-        logger.info("Starting AI Monitor Worker...")
-        
-        # Verificar que el servicio de IA esté disponible
-        if not self.ai_client.health_check():
-            logger.error("AI Service is not healthy, cannot start worker")
-            return
-        
-        # Obtener token de autenticación
-        token = self.auth_client.get_service_token()
-        if token:
-            self.ai_client.set_jwt_token(token)
-        else:
-            logger.warning("Could not get auth token, proceeding without authentication")
-        
-        self.running = True
-        cycle_count = 0
-        
-        logger.info(
-            f"Worker started. Monitoring every {config.MONITOR_INTERVAL} seconds, "
-            f"looking back {config.LOOKBACK_WINDOW} seconds"
-        )
-        
-        while self.running:
-            try:
-                cycle_count += 1
-                logger.info(f"=== Monitoring Cycle #{cycle_count} ===")
-                
-                start_time = time.time()
-                
-                # Procesar pacientes activos
-                stats = self._process_active_patients()
-                
-                elapsed_time = time.time() - start_time
-                
-                logger.info(
-                    f"Cycle #{cycle_count} completed in {elapsed_time:.2f}s - "
-                    f"Patients: {stats['patients_checked']}, "
-                    f"Predictions: {stats['predictions_made']}, "
-                    f"Alerts: {stats['alerts_created']}, "
-                    f"Notifications: {stats['notifications_sent']}"
-                )
-                
-                # Esperar antes del siguiente ciclo
-                if self.running:
-                    time.sleep(config.MONITOR_INTERVAL)
-                    
-            except Exception as e:
-                logger.error(f"Error in monitoring cycle: {e}", exc_info=True)
-                # Continuar después de un error
-                if self.running:
-                    time.sleep(config.MONITOR_INTERVAL)
-        
-        logger.info("Worker stopped")
-        self._cleanup()
-    
-    def _process_active_patients(self) -> Dict:
-        """
-        Procesa todos los pacientes activos
-        
-        Returns:
-            Estadísticas del ciclo
-        """
-        stats = {
-            "patients_checked": 0,
-            "predictions_made": 0,
-            "alerts_created": 0,
-            "notifications_sent": 0
-        }
-        
-        # Obtener lista de pacientes con datos recientes
-        lookback_minutes = config.LOOKBACK_WINDOW // 60
-        patient_ids = self.influx_client.get_active_patients(lookback_minutes)
-        
-        logger.info(f"Found {len(patient_ids)} active patients")
-        
-        # Procesar en batches
-        for i in range(0, len(patient_ids), config.BATCH_SIZE):
-            batch = patient_ids[i:i + config.BATCH_SIZE]
-            
-            for patient_id in batch:
-                try:
-                    patient_stats = self._process_patient(patient_id)
-                    
-                    stats["patients_checked"] += 1
-                    stats["predictions_made"] += patient_stats.get("predictions", 0)
-                    stats["alerts_created"] += patient_stats.get("alerts", 0)
-                    stats["notifications_sent"] += patient_stats.get("notifications", 0)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing patient {patient_id}: {e}")
-                    continue
-        
-        return stats
-    
-    def _process_patient(self, patient_id: str) -> Dict:
-        """
-        Procesa un paciente individual
-        
-        Args:
-            patient_id: UUID del paciente
-            
-        Returns:
-            Estadísticas del procesamiento
-        """
-        stats = {"predictions": 0, "alerts": 0, "notifications": 0}
-        
-        # 1. Obtener signos vitales más recientes de InfluxDB
-        lookback_minutes = config.LOOKBACK_WINDOW // 60
-        vital_signs = self.influx_client.get_latest_vital_signs(
-            patient_id, 
-            lookback_minutes
-        )
-        
-        if not vital_signs:
-            logger.debug(f"No recent vital signs for patient {patient_id}")
-            return stats
-        
-        # 2. Llamar al modelo de IA para predicción
-        prediction = self.ai_client.predict_health(vital_signs)
-        
-        if not prediction:
-            logger.warning(f"Could not get prediction for patient {patient_id}")
-            return stats
-        
-        stats["predictions"] = 1
-        
-        # 3. Si hay problema detectado, crear alertas
-        has_problem = prediction.get("has_problem", False)
-        if has_problem:
-            probability = prediction.get("probability", 0)
-            
-            logger.info(
-                f"Health problem detected for patient {patient_id} "
-                f"(probability: {probability:.2%})"
-            )
-            
-            alerts = prediction.get("alerts", [])
-            created_alert_ids = []
-            
-            for alert in alerts:
-                alert_id = self._create_alert(patient_id, alert, prediction)
-                
-                if alert_id:
-                    created_alert_ids.append(alert_id)
-                    stats["alerts"] += 1
-            
-            # 4. Notificar a caregivers si se crearon alertas
-            if created_alert_ids:
-                notifications_sent = self._notify_caregivers(
-                    patient_id, 
-                    alerts,
-                    prediction
-                )
-                stats["notifications"] = notifications_sent
-        else:
-            logger.debug(
-                f"No health problems detected for patient {patient_id} "
-                f"(probability: {prediction.get('probability', 0):.2%})"
-            )
-        
-        return stats
-    
-    def _create_alert(
-        self, 
-        patient_id: str, 
-        alert: Dict, 
-        prediction: Dict
-    ) -> str:
-        """
-        Crea una alerta en PostgreSQL
-        
-        Args:
-            patient_id: UUID del paciente
-            alert: Información de la alerta del modelo
-            prediction: Predicción completa del modelo
-            
-        Returns:
-            UUID de la alerta creada o None
-        """
-        try:
-            alert_id = self.postgres_client.create_alert(
-                patient_id=patient_id,
-                alert_type=alert["type"],
-                severity=alert["severity"],
-                description=alert["message"],
-                timestamp=prediction["timestamp"],
-                gps_latitude=prediction["gps_latitude"],
-                gps_longitude=prediction["gps_longitude"],
-                model_id=None  # TODO: Obtener model_id desde configuración
-            )
-            
-            return alert_id
-            
-        except Exception as e:
-            logger.error(f"Error creating alert: {e}")
-            return None
-    
-    def _notify_caregivers(
-        self, 
-        patient_id: str, 
-        alerts: List[Dict],
-        prediction: Dict
-    ) -> int:
-        """
-        Notifica a los cuidadores del paciente
-        
-        Args:
-            patient_id: UUID del paciente
-            alerts: Lista de alertas generadas
-            prediction: Predicción del modelo
-            
-        Returns:
-            Número de notificaciones enviadas
-        """
-        try:
-            # Obtener caregivers del paciente
-            caregivers = self.postgres_client.get_patient_caregivers(patient_id)
-            
-            if not caregivers:
-                logger.warning(f"No caregivers found for patient {patient_id}")
-                return 0
-            
-            logger.info(
-                f"Notifying {len(caregivers)} caregivers for patient {patient_id}"
-            )
-            
-            # Preparar información de la alerta para notificación
-            # Usar la alerta más severa para el resumen
-            most_severe = max(
-                alerts, 
-                key=lambda a: {
-                    "low": 1, "medium": 2, "high": 3, "critical": 4
-                }.get(a.get("severity", "low"), 0)
-            )
-            
-            alert_info = {
-                "patient_id": patient_id,
-                "alert_type": most_severe["type"],
-                "severity": most_severe["severity"],
-                "description": most_severe["message"],
-                "timestamp": prediction["timestamp"],
-                "probability": prediction.get("probability", 0),
-                "total_alerts": len(alerts)
-            }
-            
-            # Enviar notificaciones
-            sent_count = self.notification_service.send_alert_notifications(
-                caregivers,
-                alert_info
-            )
-            
-            return sent_count
-            
-        except Exception as e:
-            logger.error(f"Error notifying caregivers: {e}")
-            return 0
-    
-    def _cleanup(self):
-        """Limpia recursos antes de cerrar"""
-        logger.info("Cleaning up resources...")
-        
-        try:
-            self.influx_client.close()
-        except:
-            pass
-        
-        try:
-            self.ai_client.close()
-        except:
-            pass
-        
-        try:
-            self.postgres_client.close()
-        except:
-            pass
-        
-        try:
-            self.notification_service.close()
-        except:
-            pass
-        
-        try:
-            self.auth_client.close()
-        except:
-            pass
-        
-        logger.info("Cleanup complete")
-
-
-def main():
-    """Función principal"""
-    logger.info("=" * 60)
-    logger.info("AI Monitor Service - HeartGuard")
-    logger.info("=" * 60)
-    
-    worker = AIMonitorWorker()
-    worker.start()
-
-
-if __name__ == "__main__":
-    main()
->>>>>>> Stashed changes

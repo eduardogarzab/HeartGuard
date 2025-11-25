@@ -220,8 +220,9 @@ class HealthPredictor:
                 "type": "HYPERTENSION",
                 "severity": "high" if sbp >= 160 or dbp >= 100 else "medium",
                 "message": ALERT_TYPES["HYPERTENSION"],
-                "value": f"{sbp}/{dbp}",
-                "unit": "mmHg"
+                "value": float(sbp),
+                "unit": "mmHg",
+                "details": f"{sbp}/{dbp}"
             })
         
         # Hipotensión
@@ -230,8 +231,9 @@ class HealthPredictor:
                 "type": "HYPOTENSION",
                 "severity": "high",
                 "message": ALERT_TYPES["HYPOTENSION"],
-                "value": f"{sbp}/{dbp}",
-                "unit": "mmHg"
+                "value": float(sbp),
+                "unit": "mmHg",
+                "details": f"{sbp}/{dbp}"
             })
         
         # Fiebre

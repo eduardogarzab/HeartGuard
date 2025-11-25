@@ -10,7 +10,7 @@ from flask import Response
 
 logger = logging.getLogger(__name__)
 
-AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://ai-prediction-service:5008")
+AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:5007")
 
 
 def forward_request(
@@ -36,12 +36,16 @@ def forward_request(
     url = f"{AI_SERVICE_URL}{path}"
     
     # Filtrar headers que no deben reenviarse
-    excluded_headers = {"host", "content-length", "connection"}
+    excluded_headers = {"host", "content-length", "connection", "authorization"}
     filtered_headers = {
         key: value
         for key, value in (headers or {}).items()
         if key.lower() not in excluded_headers
     }
+    
+    # Añadir X-Internal-Key para autenticación service-to-service
+    internal_key = os.getenv("INTERNAL_SERVICE_KEY", "dev_internal_key")
+    filtered_headers["X-Internal-Key"] = internal_key
     
     try:
         logger.info(f"Forwarding {method} request to AI service: {url}")
