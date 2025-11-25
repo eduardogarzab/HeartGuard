@@ -108,9 +108,11 @@ public class AlertValidationDialog extends JDialog {
         contentPanel.add(createNotesPanel());
         
         // Envolver contentPanel en JScrollPane para permitir scroll
+        // Establecer tamaño mínimo para que el diálogo pueda expandirse correctamente
         JScrollPane scrollPane = new JScrollPane(contentPanel);
         scrollPane.setBorder(null);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        scrollPane.setMinimumSize(new Dimension(850, 600));
         add(scrollPane, BorderLayout.CENTER);
         
         // Botones

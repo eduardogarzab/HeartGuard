@@ -426,13 +426,69 @@ class UserRepository:
                       outcome,
                       note
         """
+        
+        # Obtener información de la alerta para crear Ground Truth
+        alert_info_query = """
+            SELECT a.patient_id, a.created_at, at.code as alert_type_code
+            FROM alerts a
+            JOIN alert_types at ON at.id = a.type_id
+            WHERE a.id = %s
+        """
+        
+        # Crear Ground Truth automáticamente si es TRUE_POSITIVE
+        ground_truth_query = """
+            INSERT INTO ground_truth_labels (
+                patient_id,
+                event_type_id,
+                onset,
+                offset_at,
+                annotated_by_user_id,
+                source,
+                note
+            )
+            SELECT 
+                %s, -- patient_id
+                et.id, -- event_type_id
+                %s, -- onset (created_at de la alerta)
+                %s, -- offset_at (resolved_at)
+                %s, -- annotated_by_user_id
+                'alert_resolution', -- source
+                %s -- note
+            FROM event_types et
+            WHERE lower(et.code) = lower(%s)
+            LIMIT 1
+            RETURNING id
+        """
+        
         with get_db_cursor() as cursor:
             # Primero actualizar el estado
             cursor.execute(update_query, (alert_id,))
             # Luego insertar la resolución
             cursor.execute(insert_query, (alert_id, user_id, outcome, note))
-            row = cursor.fetchone()
-            return dict(row) if row else None
+            resolution_row = cursor.fetchone()
+            
+            # Si el outcome es TRUE_POSITIVE, crear Ground Truth automáticamente
+            if outcome and outcome.upper() == 'TRUE_POSITIVE':
+                cursor.execute(alert_info_query, (alert_id,))
+                alert_info = cursor.fetchone()
+                
+                if alert_info:
+                    from datetime import datetime
+                    resolved_at = resolution_row['resolved_at'] if resolution_row else datetime.utcnow()
+                    
+                    cursor.execute(
+                        ground_truth_query,
+                        (
+                            alert_info['patient_id'],
+                            alert_info['created_at'],  # onset = cuando se creó la alerta
+                            resolved_at,  # offset_at = cuando se resolvió
+                            user_id,
+                            note,  # Incluir la nota clínica
+                            alert_info['alert_type_code'],  # event_type code
+                        )
+                    )
+            
+            return dict(resolution_row) if resolution_row else None
 
     @staticmethod
     def get_alert_with_patient(alert_id: str) -> Dict | None:
