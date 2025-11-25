@@ -24,6 +24,10 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "dev_change_me")
 AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:5007")
 AI_PREDICTION_THRESHOLD = float(os.getenv("AI_PREDICTION_THRESHOLD", "0.6"))
 
+# AI Model Configuration
+# UUID del modelo RandomForest en PostgreSQL
+AI_MODEL_ID = os.getenv("AI_MODEL_ID", "988e1fee-e18e-4eb9-9b9d-72ae7d48d8bc")
+
 # Internal Service Authentication
 # Clave compartida para comunicación entre microservicios
 INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "dev_internal_key")

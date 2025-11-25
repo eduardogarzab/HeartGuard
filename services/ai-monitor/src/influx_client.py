@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import List, Dict, Optional
 from influxdb_client import InfluxDBClient, Point
 from influxdb_client.client.query_api import QueryApi
-import config
+from . import config
 
 logger = logging.getLogger(__name__)
 
@@ -40,21 +40,23 @@ class InfluxDBService:
         """
         try:
             # Query para obtener el último conjunto completo de signos vitales
+            # Los datos están almacenados como: measurement=signal_name, field=value
             query = f'''
                 from(bucket: "{config.INFLUXDB_BUCKET}")
                   |> range(start: -{lookback_minutes}m)
                   |> filter(fn: (r) => r["patient_id"] == "{patient_id}")
+                  |> filter(fn: (r) => r["_field"] == "value")
                   |> filter(fn: (r) => 
-                      r["_field"] == "heart_rate" or 
-                      r["_field"] == "spo2" or
-                      r["_field"] == "systolic_bp" or
-                      r["_field"] == "diastolic_bp" or
-                      r["_field"] == "temperature" or
-                      r["_field"] == "gps_latitude" or
-                      r["_field"] == "gps_longitude"
+                      r["_measurement"] == "heart_rate" or 
+                      r["_measurement"] == "spo2" or
+                      r["_measurement"] == "systolic_bp" or
+                      r["_measurement"] == "diastolic_bp" or
+                      r["_measurement"] == "temperature" or
+                      r["_measurement"] == "gps_latitude" or
+                      r["_measurement"] == "gps_longitude"
                   )
                   |> last()
-                  |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+                  |> pivot(rowKey:["_time"], columnKey: ["_measurement"], valueColumn: "_value")
             '''
             
             tables = self.query_api.query(query)
@@ -66,6 +68,9 @@ class InfluxDBService:
             # Procesar el resultado
             for table in tables:
                 for record in table.records:
+                    # Log para debugging
+                    logger.info(f"DEBUG - Record values for patient {patient_id}: {list(record.values.keys())}")
+                    
                     vital_signs = {
                         "patient_id": patient_id,
                         "timestamp": record.get_time().isoformat(),
@@ -77,6 +82,8 @@ class InfluxDBService:
                         "gps_latitude": record.values.get("gps_latitude"),
                         "gps_longitude": record.values.get("gps_longitude")
                     }
+                    
+                    logger.info(f"DEBUG - Vital signs extracted: {vital_signs}")
                     
                     # Validar que tengamos todos los campos necesarios
                     if all(vital_signs.get(k) is not None for k in [
@@ -110,7 +117,8 @@ class InfluxDBService:
             query = f'''
                 from(bucket: "{config.INFLUXDB_BUCKET}")
                   |> range(start: -{lookback_minutes}m)
-                  |> filter(fn: (r) => r["_field"] == "heart_rate")
+                  |> filter(fn: (r) => r["_measurement"] == "heart_rate")
+                  |> filter(fn: (r) => r["_field"] == "value")
                   |> group(columns: ["patient_id"])
                   |> distinct(column: "patient_id")
             '''

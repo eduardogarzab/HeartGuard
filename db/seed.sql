@@ -576,6 +576,15 @@ VALUES
     's3://heartguard-models/oxymap/v0.9.2',
     '{"min_spo2":0.9}'::jsonb,
     NOW() - INTERVAL '80 days'
+  ),
+  (
+    '988e1fee-e18e-4eb9-9b9d-72ae7d48d8bc'::uuid,
+    'HeartGuard RandomForest',
+    '1.0.0',
+    'health_anomaly_detection',
+    's3://heartguard-models/randomforest/v1.0.0',
+    '{"n_estimators":100,"max_depth":10,"min_samples_split":5}'::jsonb,
+    NOW() - INTERVAL '30 days'
   )
 ON CONFLICT (id) DO NOTHING;
 

@@ -8,8 +8,8 @@ import threading
 from flask import Flask, jsonify
 from flask_cors import CORS
 
-import config
-from monitor import AIMonitorWorker
+from . import config
+from .monitor import AIMonitorWorker
 
 # Configurar logging
 logging.basicConfig(

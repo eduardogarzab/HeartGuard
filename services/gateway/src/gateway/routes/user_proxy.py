@@ -8,7 +8,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..services.user_client import UserClient, UserClientError
 
-bp = Blueprint("user", __name__)
+bp = Blueprint("user", __name__, url_prefix="/user")
 
 
 def _get_user_client() -> UserClient:
@@ -182,6 +182,18 @@ def org_patient_alerts(org_id: str, patient_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/alerts")
 
 
+@bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/alerts/<string:alert_id>/acknowledge", methods=["POST"])
+def org_patient_alert_acknowledge(org_id: str, patient_id: str, alert_id: str) -> Response:
+	"""Reconoce una alerta de un paciente en contexto de organización."""
+	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/alerts/{alert_id}/acknowledge")
+
+
+@bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/alerts/<string:alert_id>/resolve", methods=["POST"])
+def org_patient_alert_resolve(org_id: str, patient_id: str, alert_id: str) -> Response:
+	"""Resuelve una alerta de un paciente en contexto de organización."""
+	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/alerts/{alert_id}/resolve")
+
+
 @bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/notes", methods=["GET"])
 def org_patient_notes(org_id: str, patient_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/notes")
@@ -220,6 +232,18 @@ def caregiver_patient_detail(patient_id: str) -> Response:
 @bp.route("/caregiver/patients/<string:patient_id>/alerts", methods=["GET"])
 def caregiver_patient_alerts(patient_id: str) -> Response:
 	return _proxy_user(f"/caregiver/patients/{patient_id}/alerts")
+
+
+@bp.route("/caregiver/patients/<string:patient_id>/alerts/<string:alert_id>/acknowledge", methods=["POST"])
+def caregiver_patient_alert_acknowledge(patient_id: str, alert_id: str) -> Response:
+	"""Reconoce una alerta de un paciente en contexto de caregiver."""
+	return _proxy_user(f"/caregiver/patients/{patient_id}/alerts/{alert_id}/acknowledge")
+
+
+@bp.route("/caregiver/patients/<string:patient_id>/alerts/<string:alert_id>/resolve", methods=["POST"])
+def caregiver_patient_alert_resolve(patient_id: str, alert_id: str) -> Response:
+	"""Resuelve una alerta de un paciente en contexto de caregiver."""
+	return _proxy_user(f"/caregiver/patients/{patient_id}/alerts/{alert_id}/resolve")
 
 
 @bp.route("/caregiver/patients/<string:patient_id>/notes", methods=["GET", "POST"])

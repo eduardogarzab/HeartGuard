@@ -54,50 +54,26 @@ public class AlertService {
     }
     
     /**
-     * Obtiene todas las alertas de una organización
-     * GET /admin/organizations/{org_id}/alerts
+     * Obtiene todas las alertas de un paciente en una organización
+     * GET /user/orgs/{org_id}/patients/{patient_id}/alerts
+     * 
+     * NOTA: Desktop-app usa user-service, NO admin-service.
+     * User-service devuelve JSON, NO XML.
      */
-    public List<Alert> getOrganizationAlerts(String orgId) throws ApiException {
-        return getOrganizationAlerts(orgId, null, null);
+    public List<Alert> getPatientAlertsInOrg(String orgId, String patientId) throws ApiException {
+        return getPatientAlertsInOrg(orgId, patientId, 100, 0);
     }
     
     /**
-     * Obtiene alertas de una organización con filtros opcionales
-     * GET /admin/organizations/{org_id}/alerts?status=created,notified&level=high,critical
+     * Obtiene alertas de un paciente con paginación
+     * GET /user/orgs/{org_id}/patients/{patient_id}/alerts?limit=100&offset=0
      */
-    public List<Alert> getOrganizationAlerts(String orgId, List<AlertStatus> statuses, List<AlertLevel> levels) throws ApiException {
-        StringBuilder urlBuilder = new StringBuilder(gatewayUrl);
-        urlBuilder.append("/admin/organizations/").append(orgId).append("/alerts");
+    public List<Alert> getPatientAlertsInOrg(String orgId, String patientId, int limit, int offset) throws ApiException {
+        String finalUrl = gatewayUrl + "/user/orgs/" + orgId + "/patients/" + patientId + "/alerts" +
+                         "?limit=" + limit + "&offset=" + offset;
         
-        List<String> queryParams = new ArrayList<>();
-        if (statuses != null && !statuses.isEmpty()) {
-            StringBuilder statusCodes = new StringBuilder();
-            for (int i = 0; i < statuses.size(); i++) {
-                if (i > 0) statusCodes.append(",");
-                statusCodes.append(statuses.get(i).getCode());
-            }
-            queryParams.add("status=" + statusCodes.toString());
-        }
-        if (levels != null && !levels.isEmpty()) {
-            StringBuilder levelCodes = new StringBuilder();
-            for (int i = 0; i < levels.size(); i++) {
-                if (i > 0) levelCodes.append(",");
-                levelCodes.append(levels.get(i).getCode());
-            }
-            queryParams.add("level=" + levelCodes.toString());
-        }
-        
-        if (!queryParams.isEmpty()) {
-            urlBuilder.append("?");
-            for (int i = 0; i < queryParams.size(); i++) {
-                if (i > 0) urlBuilder.append("&");
-                urlBuilder.append(queryParams.get(i));
-            }
-        }
-        
-        String finalUrl = urlBuilder.toString();
         System.out.println("[AlertService] 🌐 GET " + finalUrl);
-        System.out.println("[AlertService] 🔑 org_id = " + orgId);
+        System.out.println("[AlertService] 🔑 org_id=" + orgId + " patient_id=" + patientId);
         
         Request request = new Request.Builder()
                 .url(finalUrl)
@@ -116,8 +92,18 @@ public class AlertService {
                 throw new ApiException("Error al obtener alertas: " + response.code() + " - " + responseBody);
             }
             
-            // El backend devuelve XML, no JSON
-            List<Alert> alerts = parseXmlAlertList(responseBody);
+            // User-service devuelve JSON con estructura {success, data: {alerts: [...], ...}}
+            JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
+            
+            if (!jsonResponse.has("data")) {
+                System.err.println("[AlertService] ❌ Respuesta sin campo 'data'");
+                throw new ApiException("Formato de respuesta inválido");
+            }
+            
+            JsonObject data = jsonResponse.getAsJsonObject("data");
+            JsonArray alertsArray = data.has("alerts") ? data.getAsJsonArray("alerts") : new JsonArray();
+            
+            List<Alert> alerts = parseJsonAlertList(alertsArray);
             
             System.out.println("[AlertService] 📊 Alertas parseadas: " + alerts.size());
             
@@ -193,19 +179,21 @@ public class AlertService {
     
     /**
      * Reconoce una alerta (marca como acknowledged)
-     * PUT /alerts/{alert_id}/acknowledge
+     * POST /user/orgs/{org_id}/patients/{patient_id}/alerts/{alert_id}/acknowledge
      */
-    public Alert acknowledgeAlert(String alertId, String userId) throws ApiException {
-        String url = gatewayUrl + "/alerts/" + alertId + "/acknowledge";
+    public Alert acknowledgeAlert(String orgId, String patientId, String alertId, String userId, String note) throws ApiException {
+        String url = gatewayUrl + "/user/orgs/" + orgId + "/patients/" + patientId + "/alerts/" + alertId + "/acknowledge";
         
         JsonObject payload = new JsonObject();
-        payload.addProperty("user_id", userId);
+        if (note != null && !note.trim().isEmpty()) {
+            payload.addProperty("note", note.trim());
+        }
         
         RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
         Request request = new Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer " + accessToken)
-                .put(body)
+                .post(body)
                 .build();
         
         try (Response response = httpClient.newCall(request).execute()) {
@@ -215,10 +203,20 @@ public class AlertService {
                 throw new ApiException("Error al reconocer alerta: " + response.code() + " - " + responseBody);
             }
             
+            // Parsear respuesta JSON del user-service
             JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
-            JsonObject alertObject = jsonResponse.has("alert") ? jsonResponse.getAsJsonObject("alert") : jsonResponse;
+            if (!jsonResponse.has("data")) {
+                throw new ApiException("Respuesta inválida del servidor: falta campo 'data'");
+            }
             
-            return parseAlert(alertObject);
+            JsonObject data = jsonResponse.getAsJsonObject("data");
+            JsonObject alertObject = data.has("alert") ? data.getAsJsonObject("alert") : null;
+            
+            if (alertObject == null) {
+                throw new ApiException("Respuesta inválida: falta información de la alerta");
+            }
+            
+            return parseJsonAlert(alertObject);
         } catch (IOException e) {
             throw new ApiException("Error de conexión al reconocer alerta: " + e.getMessage(), e);
         }
@@ -226,22 +224,24 @@ public class AlertService {
     
     /**
      * Resuelve una alerta
-     * PUT /alerts/{alert_id}/resolve
+     * POST /user/orgs/{org_id}/patients/{patient_id}/alerts/{alert_id}/resolve
      */
-    public Alert resolveAlert(String alertId, String userId, String notes) throws ApiException {
-        String url = gatewayUrl + "/alerts/" + alertId + "/resolve";
+    public Alert resolveAlert(String orgId, String patientId, String alertId, String userId, String outcome, String note) throws ApiException {
+        String url = gatewayUrl + "/user/orgs/" + orgId + "/patients/" + patientId + "/alerts/" + alertId + "/resolve";
         
         JsonObject payload = new JsonObject();
-        payload.addProperty("user_id", userId);
-        if (notes != null && !notes.isEmpty()) {
-            payload.addProperty("notes", notes);
+        if (outcome != null && !outcome.trim().isEmpty()) {
+            payload.addProperty("outcome", outcome.trim());
+        }
+        if (note != null && !note.trim().isEmpty()) {
+            payload.addProperty("note", note.trim());
         }
         
         RequestBody body = RequestBody.create(gson.toJson(payload), JSON);
         Request request = new Request.Builder()
                 .url(url)
                 .header("Authorization", "Bearer " + accessToken)
-                .put(body)
+                .post(body)
                 .build();
         
         try (Response response = httpClient.newCall(request).execute()) {
@@ -251,10 +251,20 @@ public class AlertService {
                 throw new ApiException("Error al resolver alerta: " + response.code() + " - " + responseBody);
             }
             
+            // Parsear respuesta JSON del user-service
             JsonObject jsonResponse = gson.fromJson(responseBody, JsonObject.class);
-            JsonObject alertObject = jsonResponse.has("alert") ? jsonResponse.getAsJsonObject("alert") : jsonResponse;
+            if (!jsonResponse.has("data")) {
+                throw new ApiException("Respuesta inválida del servidor: falta campo 'data'");
+            }
             
-            return parseAlert(alertObject);
+            JsonObject data = jsonResponse.getAsJsonObject("data");
+            JsonObject alertObject = data.has("alert") ? data.getAsJsonObject("alert") : null;
+            
+            if (alertObject == null) {
+                throw new ApiException("Respuesta inválida: falta información de la alerta");
+            }
+            
+            return parseJsonAlert(alertObject);
         } catch (IOException e) {
             throw new ApiException("Error de conexión al resolver alerta: " + e.getMessage(), e);
         }
@@ -324,7 +334,97 @@ public class AlertService {
     
     /**
      * Parsea un JsonArray de alertas a una lista de objetos Alert
+     * Formato del user-service: {data: {alerts: [{id, description, type: {code, label}, level: {code, label}, status: {code, label}, created_at}]}}
      */
+    private List<Alert> parseJsonAlertList(JsonArray alertsArray) {
+        List<Alert> alerts = new ArrayList<>();
+        for (JsonElement element : alertsArray) {
+            JsonObject alertJson = element.getAsJsonObject();
+            Alert alert = parseJsonAlert(alertJson);
+            if (alert != null) {
+                alerts.add(alert);
+            }
+        }
+        return alerts;
+    }
+    
+    /**
+     * Parsea un JsonObject a un objeto Alert (formato user-service)
+     * Estructura: {id, description, type: {code, label}, level: {code, label}, status: {code, label}, created_at}
+     */
+    private Alert parseJsonAlert(JsonObject json) {
+        try {
+            Alert.Builder builder = Alert.builder();
+            
+            // Campos directos
+            if (json.has("id") && !json.get("id").isJsonNull()) {
+                builder.id(json.get("id").getAsString());
+            }
+            if (json.has("patient_id") && !json.get("patient_id").isJsonNull()) {
+                builder.patientId(json.get("patient_id").getAsString());
+            }
+            if (json.has("description") && !json.get("description").isJsonNull()) {
+                builder.description(json.get("description").getAsString());
+            }
+            if (json.has("created_at") && !json.get("created_at").isJsonNull()) {
+                String createdAtStr = json.get("created_at").getAsString();
+                try {
+                    builder.createdAt(Instant.parse(createdAtStr));
+                } catch (Exception e) {
+                    System.err.println("[AlertService] ⚠️ Error parseando created_at: " + createdAtStr);
+                }
+            }
+            
+            // Objeto type: {code, label}
+            if (json.has("type") && json.get("type").isJsonObject()) {
+                JsonObject typeObj = json.getAsJsonObject("type");
+                if (typeObj.has("code") && !typeObj.get("code").isJsonNull()) {
+                    String typeCode = typeObj.get("code").getAsString();
+                    AlertType type = AlertType.fromCode(typeCode);
+                    if (type != null) {
+                        builder.type(type);
+                    }
+                }
+            }
+            
+            // Objeto level: {code, label}
+            if (json.has("level") && json.get("level").isJsonObject()) {
+                JsonObject levelObj = json.getAsJsonObject("level");
+                if (levelObj.has("code") && !levelObj.get("code").isJsonNull()) {
+                    String levelCode = levelObj.get("code").getAsString();
+                    AlertLevel level = AlertLevel.fromCode(levelCode);
+                    if (level != null) {
+                        builder.alertLevel(level);
+                    }
+                }
+            }
+            
+            // Objeto status: {code, label}
+            if (json.has("status") && json.get("status").isJsonObject()) {
+                JsonObject statusObj = json.getAsJsonObject("status");
+                if (statusObj.has("code") && !statusObj.get("code").isJsonNull()) {
+                    String statusCode = statusObj.get("code").getAsString();
+                    AlertStatus status = AlertStatus.fromCode(statusCode);
+                    if (status != null) {
+                        builder.status(status);
+                    }
+                }
+            }
+            
+            return builder.build();
+            
+        } catch (Exception e) {
+            System.err.println("[AlertService] ❌ Error parseando alerta JSON: " + e.getMessage());
+            e.printStackTrace();
+            return null;
+        }
+    }
+    
+    /**
+     * Parsea un JsonArray de alertas a una lista de objetos Alert
+     * @deprecated Usar parseJsonAlertList() - este método es para formato viejo
+     */
+    @Deprecated
     private List<Alert> parseAlertList(JsonArray alertsArray) {
         List<Alert> alerts = new ArrayList<>();
         for (JsonElement element : alertsArray) {
@@ -335,8 +435,10 @@ public class AlertService {
     }
     
     /**
-     * Parsea un JsonObject a un objeto Alert
+     * Parsea un JsonObject a un objeto Alert (formato viejo/directo)
+     * @deprecated Usar parseJsonAlert() - este método es para formato viejo
      */
+    @Deprecated
     private Alert parseAlert(JsonObject json) {
         Alert.Builder builder = Alert.builder();
         

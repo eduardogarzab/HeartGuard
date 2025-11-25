@@ -370,6 +370,77 @@ class UserRepository:
             return list(rows)
 
     @staticmethod
+    def acknowledge_patient_alert(alert_id: str, user_id: str, note: str | None = None) -> Dict | None:
+        """Registra un acknowledgement de una alerta."""
+        query = """
+            INSERT INTO alert_ack (alert_id, ack_by_user_id, note)
+            VALUES (%s, %s, %s)
+            RETURNING id,
+                      alert_id,
+                      ack_at,
+                      note,
+                      ack_by_user_id,
+                      (SELECT name FROM users WHERE id = ack_by_user_id) AS ack_by_name
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (alert_id, user_id, note))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def resolve_patient_alert(
+        alert_id: str,
+        user_id: str,
+        outcome: str | None = None,
+        note: str | None = None,
+    ) -> Dict | None:
+        """Registra la resolución de una alerta."""
+        query = """
+            INSERT INTO alert_resolution (alert_id, resolved_by_user_id, outcome, note)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id,
+                      alert_id,
+                      resolved_at,
+                      resolved_by_user_id,
+                      (SELECT name FROM users WHERE id = resolved_by_user_id) AS resolved_by_name,
+                      outcome,
+                      note
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (alert_id, user_id, outcome, note))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def get_alert_with_patient(alert_id: str) -> Dict | None:
+        """Obtiene información de una alerta incluyendo el patient_id y org_id."""
+        query = """
+            SELECT
+                a.id,
+                a.patient_id,
+                p.org_id,
+                a.created_at,
+                a.description,
+                at.code AS alert_type_code,
+                at.description AS alert_type_label,
+                al.code AS level_code,
+                al.label AS level_label,
+                ast.code AS status_code,
+                ast.description AS status_label,
+                p.person_name AS patient_name
+            FROM alerts a
+            JOIN patients p ON p.id = a.patient_id
+            JOIN alert_types at ON at.id = a.type_id
+            JOIN alert_levels al ON al.id = a.alert_level_id
+            JOIN alert_status ast ON ast.id = a.status_id
+            WHERE a.id = %s
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (alert_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
     def list_patient_notes(patient_id: str, limit: int) -> List[Dict]:
         query = """
             SELECT

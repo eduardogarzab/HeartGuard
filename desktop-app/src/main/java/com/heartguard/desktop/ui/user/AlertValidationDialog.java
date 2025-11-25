@@ -328,7 +328,14 @@ public class AlertValidationDialog extends JDialog {
                 }
                 
                 // Resolver la alerta
-                alertService.resolveAlert(alert.getId(), userId, notes);
+                alertService.resolveAlert(
+                    organizationId,
+                    alert.getPatientId(),
+                    alert.getId(),
+                    userId,
+                    truePositiveRadio.isSelected() ? "true_positive" : "false_positive",
+                    notes
+                );
                 
                 SwingUtilities.invokeLater(() -> {
                     validated = true;

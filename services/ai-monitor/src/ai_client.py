@@ -5,7 +5,7 @@ Usa INTERNAL_SERVICE_KEY para autenticación entre microservicios
 import logging
 import requests
 from typing import Dict, Optional
-import config
+from . import config
 
 logger = logging.getLogger(__name__)
 

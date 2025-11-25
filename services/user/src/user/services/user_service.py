@@ -387,6 +387,83 @@ class UserService:
             'notes': [self._format_note(row) for row in notes],
         }
 
+    def acknowledge_org_patient_alert(
+        self,
+        org_id: str,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Reconoce una alerta de un paciente (contexto de organización)."""
+        # Validar que el usuario tenga membresía en la org
+        membership = self._ensure_membership(org_id, user_id)
+        
+        # Validar que el paciente exista en la org
+        patient_record = self.repo.get_patient(org_id, patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado en la organización indicada")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        if alert_info.get('org_id') != org_id:
+            raise PermissionError("La alerta no pertenece a la organización especificada")
+        
+        # Registrar el acknowledgement
+        ack = self.repo.acknowledge_patient_alert(alert_id, user_id, note)
+        if not ack:
+            raise RuntimeError("No se pudo registrar el acknowledgement de la alerta")
+        
+        return {
+            'organization': membership,
+            'patient': self._format_patient_summary(patient_record),
+            'acknowledgement': self._format_acknowledgement(ack),
+            'alert': self._format_alert(alert_info),
+        }
+
+    def resolve_org_patient_alert(
+        self,
+        org_id: str,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        outcome: str | None = None,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Resuelve una alerta de un paciente (contexto de organización)."""
+        # Validar que el usuario tenga membresía en la org
+        membership = self._ensure_membership(org_id, user_id)
+        
+        # Validar que el paciente exista en la org
+        patient_record = self.repo.get_patient(org_id, patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado en la organización indicada")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        if alert_info.get('org_id') != org_id:
+            raise PermissionError("La alerta no pertenece a la organización especificada")
+        
+        # Registrar la resolución
+        resolution = self.repo.resolve_patient_alert(alert_id, user_id, outcome, note)
+        if not resolution:
+            raise RuntimeError("No se pudo registrar la resolución de la alerta")
+        
+        return {
+            'organization': membership,
+            'patient': self._format_patient_summary(patient_record),
+            'resolution': self._format_resolution(resolution),
+            'alert': self._format_alert(alert_info),
+        }
+
     def get_org_metrics(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
         overview = self.repo.get_org_overview(org_id, user_id)
@@ -457,6 +534,77 @@ class UserService:
             'patient': self._format_patient_summary(patient_record),
             'relationship': self._format_relationship(relationship),
             'notes': [self._format_note(row) for row in notes],
+        }
+
+    def acknowledge_caregiver_patient_alert(
+        self,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Reconoce una alerta de un paciente (contexto de caregiver)."""
+        # Validar que el caregiver tenga acceso al paciente
+        relationship = self._ensure_caregiver_access(patient_id, user_id)
+        
+        # Validar que el paciente exista
+        patient_record = self.repo.get_patient_by_id(patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        
+        # Registrar el acknowledgement
+        ack = self.repo.acknowledge_patient_alert(alert_id, user_id, note)
+        if not ack:
+            raise RuntimeError("No se pudo registrar el acknowledgement de la alerta")
+        
+        return {
+            'patient': self._format_patient_summary(patient_record),
+            'relationship': self._format_relationship(relationship),
+            'acknowledgement': self._format_acknowledgement(ack),
+            'alert': self._format_alert(alert_info),
+        }
+
+    def resolve_caregiver_patient_alert(
+        self,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        outcome: str | None = None,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Resuelve una alerta de un paciente (contexto de caregiver)."""
+        # Validar que el caregiver tenga acceso al paciente
+        relationship = self._ensure_caregiver_access(patient_id, user_id)
+        
+        # Validar que el paciente exista
+        patient_record = self.repo.get_patient_by_id(patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        
+        # Registrar la resolución
+        resolution = self.repo.resolve_patient_alert(alert_id, user_id, outcome, note)
+        if not resolution:
+            raise RuntimeError("No se pudo registrar la resolución de la alerta")
+        
+        return {
+            'patient': self._format_patient_summary(patient_record),
+            'relationship': self._format_relationship(relationship),
+            'resolution': self._format_resolution(resolution),
+            'alert': self._format_alert(alert_info),
         }
 
     def add_caregiver_patient_note(
@@ -1132,6 +1280,33 @@ class UserService:
             'annotated_by': {
                 'user_id': str(record['annotated_by_user_id']) if record.get('annotated_by_user_id') else None,
                 'name': record.get('annotated_by_name'),
+            },
+        }
+
+    def _format_acknowledgement(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Formatea un acknowledgement de alerta."""
+        return {
+            'id': str(record['id']),
+            'alert_id': str(record['alert_id']),
+            'ack_at': self._serialize_datetime(record.get('ack_at')),
+            'note': record.get('note'),
+            'ack_by': {
+                'user_id': str(record['ack_by_user_id']) if record.get('ack_by_user_id') else None,
+                'name': record.get('ack_by_name'),
+            },
+        }
+
+    def _format_resolution(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Formatea una resolución de alerta."""
+        return {
+            'id': str(record['id']),
+            'alert_id': str(record['alert_id']),
+            'resolved_at': self._serialize_datetime(record.get('resolved_at')),
+            'outcome': record.get('outcome'),
+            'note': record.get('note'),
+            'resolved_by': {
+                'user_id': str(record['resolved_by_user_id']) if record.get('resolved_by_user_id') else None,
+                'name': record.get('resolved_by_name'),
             },
         }
 

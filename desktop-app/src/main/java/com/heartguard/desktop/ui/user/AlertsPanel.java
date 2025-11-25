@@ -205,12 +205,41 @@ public class AlertsPanel extends JPanel {
         refreshButton.setEnabled(false);
         refreshButton.setText("⏳ Cargando...");
         
-        System.out.println("[AlertsPanel] Cargando alertas para org: " + organizationId);
+        System.out.println("[AlertsPanel] FIXME: Este panel está mal diseñado");
+        System.err.println("[AlertsPanel] ❌ ERROR DE ARQUITECTURA:");
+        System.err.println("[AlertsPanel]    - User-service NO tiene endpoint para listar TODAS las alertas de una org");
+        System.err.println("[AlertsPanel]    - Solo admin-service tiene ese endpoint (XML)");
+        System.err.println("[AlertsPanel]    - Desktop-app NO debe usar admin-service");
+        System.err.println("[AlertsPanel]    - Solución: Eliminar este panel o rediseñarlo para mostrar alertas por paciente");
         
+        // TODO: Rediseñar este panel para:
+        //  1. Obtener lista de pacientes del usuario (care team o caregiver)
+        //  2. Para cada paciente, obtener sus alertas usando: /user/orgs/{org_id}/patients/{patient_id}/alerts
+        //  3. Agregar todas las alertas en una lista
+        
+        SwingUtilities.invokeLater(() -> {
+            tableModel.setAlerts(new ArrayList<>());
+            updateStats();
+            refreshButton.setEnabled(true);
+            refreshButton.setText("🔄 Actualizar");
+            statsLabel.setText("⚠️ Este panel necesita ser rediseñado");
+            JOptionPane.showMessageDialog(
+                this,
+                "Este panel de alertas necesita ser actualizado.\n" +
+                "Por favor usa el detalle de cada paciente para ver sus alertas.",
+                "Función no disponible",
+                JOptionPane.WARNING_MESSAGE
+            );
+        });
+        
+        /* CÓDIGO ANTERIOR INCORRECTO:
         // Cargar TODAS las alertas (sin filtro de status inicial)
         // El usuario puede filtrar después usando el dropdown
         CompletableFuture.supplyAsync(() -> {
             try {
+                // ❌ INCORRECTO: Este método ya no existe y no debe usarse
+                // getOrganizationAlerts() llamaba a /admin/organizations/{id}/alerts (XML)
+                // Desktop-app NO debe usar endpoints de admin
                 List<Alert> alerts = alertService.getOrganizationAlerts(organizationId, null, null);
                 System.out.println("[AlertsPanel] ✅ Cargadas " + alerts.size() + " alertas");
                 return alerts;
@@ -236,6 +265,7 @@ public class AlertsPanel extends JPanel {
                 System.out.println("[AlertsPanel] Tabla actualizada con " + tableModel.getRowCount() + " filas");
             });
         });
+        */
     }
     
     private void applyFilters() {
@@ -288,41 +318,15 @@ public class AlertsPanel extends JPanel {
     }
     
     private void acknowledgeSelectedAlerts() {
-        int selectedRow = alertsTable.getSelectedRow();
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Seleccione una alerta primero", "Aviso", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        
-        int modelRow = alertsTable.convertRowIndexToModel(selectedRow);
-        Alert alert = tableModel.getAlert(modelRow);
-        
-        acknowledgeAlert(alert);
-    }
-    
-    private void acknowledgeAlert(Alert alert) {
-        int confirm = JOptionPane.showConfirmDialog(
+        JOptionPane.showMessageDialog(
             this,
-            "¿Reconocer la alerta de " + alert.getPatientName() + "?",
-            "Confirmar",
-            JOptionPane.YES_NO_OPTION
+            "La función de reconocer alertas no está disponible en este panel.\n\n" +
+            "Este panel muestra todas las alertas de la organización,\n" +
+            "pero para reconocer una alerta se requiere el contexto de un paciente específico.\n\n" +
+            "Use la vista de detalle de paciente para gestionar sus alertas.",
+            "Función no disponible",
+            JOptionPane.INFORMATION_MESSAGE
         );
-        
-        if (confirm == JOptionPane.YES_OPTION) {
-            CompletableFuture.runAsync(() -> {
-                try {
-                    alertService.acknowledgeAlert(alert.getId(), userId);
-                    SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(this, "Alerta reconocida", "Éxito", JOptionPane.INFORMATION_MESSAGE);
-                        loadAlerts();
-                    });
-                } catch (ApiException e) {
-                    SwingUtilities.invokeLater(() -> {
-                        JOptionPane.showMessageDialog(this, "Error: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-                    });
-                }
-            });
-        }
     }
     
     void validateAlert(Alert alert) {

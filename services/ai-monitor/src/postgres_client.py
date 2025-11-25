@@ -6,7 +6,7 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 from typing import Dict, List, Optional
 from datetime import datetime
-import config
+from . import config
 
 logger = logging.getLogger(__name__)
 

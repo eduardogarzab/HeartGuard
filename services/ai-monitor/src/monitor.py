@@ -9,10 +9,10 @@ import sys
 from typing import Optional, Dict
 from datetime import datetime
 
-import config
-from influx_client import InfluxDBService
-from postgres_client import PostgresClient
-from ai_client import AIServiceClient
+from . import config
+from .influx_client import InfluxDBService
+from .postgres_client import PostgresClient
+from .ai_client import AIServiceClient
 
 logger = logging.getLogger(__name__)
 
@@ -213,14 +213,16 @@ class AIMonitorWorker:
         # Evaluar predicción
         risk_probability = prediction.get("probability", 0)
         predicted_class = prediction.get("predicted_class", 0)
+        has_problem = prediction.get("has_problem", False)
         
-        logger.debug(
+        logger.info(
             f"Patient {patient_id}: probability={risk_probability:.3f}, "
-            f"class={predicted_class}"
+            f"class={predicted_class}, has_problem={has_problem}, "
+            f"alerts_count={len(prediction.get('alerts', []))}"
         )
         
-        # Crear alerta si supera el threshold
-        if risk_probability >= self.threshold and predicted_class == 1:
+        # Crear alertas si hay problema detectado
+        if has_problem and risk_probability >= self.threshold:
             return self._create_alert_from_prediction(
                 patient_id=patient_id,
                 vital_signs=vital_signs,
@@ -236,7 +238,8 @@ class AIMonitorWorker:
         prediction: Dict
     ) -> bool:
         """
-        Crea una alerta basada en la predicción del modelo
+        Crea alertas basadas en la predicción del modelo.
+        Crea una alerta por cada tipo específico detectado por el modelo.
         
         Args:
             patient_id: UUID del paciente
@@ -244,52 +247,68 @@ class AIMonitorWorker:
             prediction: Predicción del modelo de IA
             
         Returns:
-            True si la alerta se creó correctamente
+            True si se creó al menos una alerta correctamente
         """
-        probability = prediction.get("probability", 0)
+        alerts_created = 0
+        ai_alerts = prediction.get("alerts", [])
         
-        # Determinar severidad basada en probabilidad
-        if probability >= 0.9:
-            severity = "critical"
-            alert_type = "AI_CRITICAL"
-        elif probability >= 0.8:
-            severity = "high"
-            alert_type = "AI_HIGH_RISK"
-        elif probability >= 0.7:
-            severity = "medium"
-            alert_type = "AI_MEDIUM_RISK"
-        else:
-            severity = "low"
-            alert_type = "AI_LOW_RISK"
+        if not ai_alerts:
+            logger.warning(f"No alerts in prediction for patient {patient_id}")
+            return False
         
-        # Construir descripción
-        description = (
-            f"Anomalía detectada por IA (probabilidad: {probability:.1%}). "
-            f"FC: {vital_signs.get('heart_rate')} bpm, "
-            f"SpO2: {vital_signs.get('spo2')}%, "
-            f"PA: {vital_signs.get('systolic_bp')}/{vital_signs.get('diastolic_bp')} mmHg, "
-            f"Temp: {vital_signs.get('temperature'):.1f}°C"
-        )
-        
-        # Crear alerta en PostgreSQL
-        alert_id = self.postgres_client.create_alert(
-            patient_id=patient_id,
-            alert_type=alert_type,
-            severity=severity,
-            description=description,
-            timestamp=vital_signs.get("timestamp", datetime.now().isoformat()),
-            gps_latitude=vital_signs.get("gps_latitude", 0),
-            gps_longitude=vital_signs.get("gps_longitude", 0)
-        )
-        
-        if alert_id:
-            logger.info(
-                f"🚨 Alert created: {alert_id} - {alert_type} ({severity}) "
-                f"for patient {patient_id}"
+        # Crear una alerta por cada tipo específico detectado
+        for ai_alert in ai_alerts:
+            alert_type = ai_alert.get("type", "GENERAL_RISK")
+            severity = ai_alert.get("severity", "medium")
+            message = ai_alert.get("message", "Anomalía detectada")
+            
+            # Construir descripción detallada
+            description_parts = [message]
+            
+            if "value" in ai_alert and "unit" in ai_alert:
+                description_parts.append(
+                    f"Valor: {ai_alert['value']}{ai_alert['unit']}"
+                )
+            
+            if "probability" in ai_alert:
+                description_parts.append(
+                    f"Probabilidad: {ai_alert['probability']:.1%}"
+                )
+            
+            # Agregar signos vitales completos
+            description_parts.append(
+                f"Signos vitales: FC={vital_signs.get('heart_rate')} bpm, "
+                f"SpO2={vital_signs.get('spo2')}%, "
+                f"PA={vital_signs.get('systolic_bp')}/{vital_signs.get('diastolic_bp')} mmHg, "
+                f"Temp={vital_signs.get('temperature'):.1f}°C"
             )
-            return True
+            
+            description = ". ".join(description_parts)
+            
+            # Crear alerta en PostgreSQL con el model_id
+            alert_id = self.postgres_client.create_alert(
+                patient_id=patient_id,
+                alert_type=alert_type,
+                severity=severity,
+                description=description,
+                timestamp=vital_signs.get("timestamp", datetime.now().isoformat()),
+                gps_latitude=vital_signs.get("gps_latitude", 0),
+                gps_longitude=vital_signs.get("gps_longitude", 0),
+                model_id=config.AI_MODEL_ID  # ✅ Pasar el model_id
+            )
+            
+            if alert_id:
+                logger.info(
+                    f"🚨 Alert created: {alert_id} - {alert_type} ({severity}) "
+                    f"for patient {patient_id}"
+                )
+                alerts_created += 1
+            else:
+                logger.error(
+                    f"❌ Failed to create alert {alert_type} for patient {patient_id}"
+                )
         
-        return False
+        return alerts_created > 0
 
 
 def main():
