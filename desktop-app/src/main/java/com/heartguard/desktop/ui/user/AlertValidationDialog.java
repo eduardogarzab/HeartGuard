@@ -264,19 +264,20 @@ public class AlertValidationDialog extends JDialog {
     private JPanel createResolveOptionsPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(new Color(240, 248, 255));
-        panel.setBorder(new EmptyBorder(12, 16, 12, 16));
+        panel.setBorder(new EmptyBorder(12, 0, 12, 0));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.setMaximumSize(new Dimension(820, 200));
+        panel.setMaximumSize(new Dimension(850, 200));
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
         title.setFont(new Font("Inter", Font.BOLD, 15));
         title.setForeground(TEXT_PRIMARY);
+        title.setBorder(new EmptyBorder(0, 0, 8, 0));
         panel.add(title, BorderLayout.NORTH);
         
         // Panel con 2 columnas para las opciones
         JPanel optionsPanel = new JPanel(new GridLayout(1, 2, 12, 0));
         optionsPanel.setBackground(new Color(240, 248, 255));
-        optionsPanel.setBorder(new EmptyBorder(12, 0, 0, 0));
+        optionsPanel.setBorder(null);
         
         ButtonGroup group = new ButtonGroup();
         group.add(truePositiveRadio);
