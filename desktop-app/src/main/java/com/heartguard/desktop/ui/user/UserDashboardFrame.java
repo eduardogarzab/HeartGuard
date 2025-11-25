@@ -532,8 +532,7 @@ public class UserDashboardFrame extends JFrame {
      * Limpia recursos antes de cerrar la ventana
      */
     private void cleanup() {
-        if (mainDashboardPanel != null) {
-            mainDashboardPanel.cleanup();
-        }
+        // MainDashboardPanel ya no tiene recursos que limpiar
+        // (AlertsPanel fue eliminado)
     }
 }

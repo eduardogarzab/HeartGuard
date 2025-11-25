@@ -5,7 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
-import com.heartguard.desktop.models.alerts.Alert;
+import com.heartguard.desktop.models.alert.Alert;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;

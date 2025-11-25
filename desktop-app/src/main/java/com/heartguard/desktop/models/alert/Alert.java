@@ -1,5 +1,7 @@
 package com.heartguard.desktop.models.alert;
 
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
 import java.time.Instant;
 import java.util.Objects;
 
@@ -151,6 +153,77 @@ public class Alert {
     
     public static Builder builder() {
         return new Builder();
+    }
+    
+    /**
+     * Crea un objeto Alert desde un JsonObject
+     */
+    public static Alert fromJson(JsonObject json) {
+        Builder builder = new Builder()
+                .id(safeGetString(json, "id"))
+                .patientId(safeGetString(json, "patient_id"))
+                .description(safeGetString(json, "description"));
+        
+        // Parsear type
+        if (json.has("type") && json.get("type").isJsonObject()) {
+            JsonObject typeObj = json.getAsJsonObject("type");
+            String typeCode = safeGetString(typeObj, "code");
+            if (typeCode != null) {
+                builder.type(AlertType.fromCode(typeCode));
+            }
+        }
+        
+        // Parsear level
+        if (json.has("level") && json.get("level").isJsonObject()) {
+            JsonObject levelObj = json.getAsJsonObject("level");
+            String levelCode = safeGetString(levelObj, "code");
+            if (levelCode != null) {
+                builder.alertLevel(AlertLevel.fromCode(levelCode));
+            }
+        }
+        
+        // Parsear status
+        if (json.has("status") && json.get("status").isJsonObject()) {
+            JsonObject statusObj = json.getAsJsonObject("status");
+            String statusCode = safeGetString(statusObj, "code");
+            if (statusCode != null) {
+                builder.status(AlertStatus.fromCode(statusCode));
+            }
+        }
+        
+        // Parsear timestamps
+        if (json.has("created_at") && !json.get("created_at").isJsonNull()) {
+            builder.createdAt(Instant.parse(json.get("created_at").getAsString()));
+        }
+        if (json.has("acknowledged_at") && !json.get("acknowledged_at").isJsonNull()) {
+            builder.acknowledgedAt(Instant.parse(json.get("acknowledged_at").getAsString()));
+        }
+        if (json.has("resolved_at") && !json.get("resolved_at").isJsonNull()) {
+            builder.resolvedAt(Instant.parse(json.get("resolved_at").getAsString()));
+        }
+        
+        // Campos opcionales
+        builder.createdByModelId(safeGetString(json, "created_by_model_id"));
+        builder.sourceInferenceId(safeGetString(json, "source_inference_id"));
+        
+        if (json.has("latitude") && !json.get("latitude").isJsonNull()) {
+            builder.latitude(json.get("latitude").getAsDouble());
+        }
+        if (json.has("longitude") && !json.get("longitude").isJsonNull()) {
+            builder.longitude(json.get("longitude").getAsDouble());
+        }
+        
+        builder.acknowledgedByUserId(safeGetString(json, "acknowledged_by_user_id"));
+        builder.resolvedByUserId(safeGetString(json, "resolved_by_user_id"));
+        
+        return builder.build();
+    }
+    
+    private static String safeGetString(JsonObject json, String key) {
+        if (json.has(key) && !json.get(key).isJsonNull()) {
+            return json.get(key).getAsString();
+        }
+        return null;
     }
     
     public static class Builder {
