@@ -10,7 +10,7 @@ load_dotenv()
 class Config:
     """Configuración base del servicio"""
 
-    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://heartguard_app:dev_change_me@136.115.53.140:5432/heartguard')
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://heartguard_app:dev_change_me@134.199.204.58:5432/heartguard')
     JWT_SECRET = os.getenv('JWT_SECRET', 'change-me-secret-key-12345')
     JWT_ALGORITHM = 'HS256'
     PORT = int(os.getenv('PORT', 5003))
