@@ -234,7 +234,7 @@ public class Alert {
         if (timestamp == null) return null;
         
         // Si no tiene zona horaria, agregar Z
-        if (!timestamp.endsWith("Z") && !timestamp.contains("+") && !timestamp.contains("-", 10)) {
+        if (!timestamp.endsWith("Z") && !timestamp.contains("+") && timestamp.indexOf("-", 10) < 0) {
             timestamp = timestamp + "Z";
         }
         
