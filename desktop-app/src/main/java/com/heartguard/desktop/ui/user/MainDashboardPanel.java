@@ -41,7 +41,6 @@ public class MainDashboardPanel extends JPanel {
     private final JTabbedPane mainTabs;
     private CaregiverDashboardPanel caregiverPanel;
     private OrganizationsContainerPanel organizationsPanel;
-    private AlertsPanel alertsPanel;
     
     public MainDashboardPanel(
             ApiClient apiClient,
@@ -87,18 +86,6 @@ public class MainDashboardPanel extends JPanel {
         );
         mainTabs.addTab("🏥 Organizaciones", organizationsPanel);
         
-        // Tab 3: Alertas de IA (nuevo)
-        // Usar la primera organización del usuario, o permitir cambiar
-        String defaultOrgId = !memberships.isEmpty() ? memberships.get(0).getOrgId() : null;
-        if (defaultOrgId != null && userProfile != null) {
-            alertsPanel = new AlertsPanel(
-                    defaultOrgId,
-                    userProfile.getId(),
-                    accessToken
-            );
-            mainTabs.addTab("🚨 Alertas IA", alertsPanel);
-        }
-        
         add(mainTabs, BorderLayout.CENTER);
         
         // Cargar datos iniciales
@@ -138,8 +125,6 @@ public class MainDashboardPanel extends JPanel {
         } else if (selectedIndex == 1) {
             // Tab Organizaciones
             organizationsPanel.refreshCurrentOrganization();
-        } else if (selectedIndex == 2 && alertsPanel != null) {
-            // Tab Alertas - No hacer nada, se actualiza automáticamente cada 30s
         }
     }
     
@@ -152,8 +137,6 @@ public class MainDashboardPanel extends JPanel {
         
         // Refrescar Organizaciones
         organizationsPanel.refreshCurrentOrganization();
-        
-        // Alertas se refrescan automáticamente
     }
     
     /**
@@ -168,23 +151,5 @@ public class MainDashboardPanel extends JPanel {
      */
     public void switchToCaregiver() {
         mainTabs.setSelectedIndex(0);
-    }
-    
-    /**
-     * Cambia al tab de alertas
-     */
-    public void switchToAlerts() {
-        if (alertsPanel != null) {
-            mainTabs.setSelectedIndex(2);
-        }
-    }
-    
-    /**
-     * Detiene el auto-refresh del panel de alertas cuando se cierra la ventana
-     */
-    public void cleanup() {
-        if (alertsPanel != null) {
-            alertsPanel.stopAutoRefresh();
-        }
     }
 }

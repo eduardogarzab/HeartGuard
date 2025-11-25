@@ -5,6 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
+import com.heartguard.desktop.models.alerts.Alert;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
@@ -47,6 +48,9 @@ public class PatientDetailDialog extends JDialog {
     private final DefaultListModel<String> alertsModel = new DefaultListModel<>();
     private final DefaultListModel<String> notesModel = new DefaultListModel<>();
     private VitalSignsChartPanel chartPanel;
+    
+    // Alertas cargadas con metadata completa
+    private JsonArray loadedAlerts = new JsonArray();
     
     // Dispositivos del paciente
     private java.util.List<DeviceInfo> patientDevices = new java.util.ArrayList<>();
@@ -125,9 +129,26 @@ public class PatientDetailDialog extends JDialog {
         alertsList.setBackground(CARD_BG);
         alertsList.setBorder(new EmptyBorder(8, 8, 8, 8));
         alertsList.setFixedCellHeight(50);
+        
+        // Panel para alertas con botón de validación
+        JPanel alertsPanel = new JPanel(new BorderLayout(0, 8));
+        alertsPanel.setOpaque(false);
+        
         JScrollPane alertsScroll = new JScrollPane(alertsList);
         alertsScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
-        tabs.addTab("ALERTAS", alertsScroll);
+        alertsPanel.add(alertsScroll, BorderLayout.CENTER);
+        
+        // Botón para validar alerta seleccionada
+        JButton validateAlertButton = new JButton("🔍 Validar Alerta Seleccionada");
+        validateAlertButton.setFont(new Font("Inter", Font.BOLD, 13));
+        validateAlertButton.setBackground(PRIMARY_BLUE);
+        validateAlertButton.setForeground(Color.WHITE);
+        validateAlertButton.setFocusPainted(false);
+        validateAlertButton.setBorder(new EmptyBorder(10, 16, 10, 16));
+        validateAlertButton.addActionListener(e -> validateSelectedAlert(alertsList.getSelectedIndex()));
+        alertsPanel.add(validateAlertButton, BorderLayout.SOUTH);
+        
+        tabs.addTab("ALERTAS", alertsPanel);
 
         JList<String> notesList = new JList<>(notesModel);
         notesList.setFont(BODY_FONT);
@@ -317,6 +338,9 @@ public class PatientDetailDialog extends JDialog {
 
     private void updateAlerts(JsonArray alerts) {
         SwingUtilities.invokeLater(() -> {
+            // Guardar las alertas completas para usarlas después
+            loadedAlerts = alerts != null ? alerts : new JsonArray();
+            
             alertsModel.clear();
             if (alerts == null || alerts.isEmpty()) {
                 alertsModel.addElement("Sin alertas registradas");
@@ -375,6 +399,36 @@ public class PatientDetailDialog extends JDialog {
         return element.getAsString();
     }
 
+    /**
+     * Valida una alerta seleccionada abriendo el diálogo de validación
+     */
+    private void validateSelectedAlert(int selectedIndex) {
+        if (selectedIndex < 0 || selectedIndex >= loadedAlerts.size()) {
+            JOptionPane.showMessageDialog(this,
+                    "Por favor selecciona una alerta de la lista",
+                    "Selección requerida",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        JsonObject alertJson = loadedAlerts.get(selectedIndex).getAsJsonObject();
+        Alert alert = Alert.fromJson(alertJson);
+        
+        AlertValidationDialog dialog = new AlertValidationDialog(
+                this,
+                alert,
+                orgId,
+                null, // userId lo toma del token
+                token
+        );
+        dialog.setVisible(true);
+        
+        // Recargar alertas después de validar
+        if (dialog.isValidated()) {
+            loadData();
+        }
+    }
+    
     /**
      * Limpiar recursos al cerrar el diálogo
      */
