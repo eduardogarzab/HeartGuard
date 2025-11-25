@@ -274,8 +274,11 @@ class PatientService:
         return status_map.get(status, status or 'N/A')
     
     def _format_alert(self, alert: Dict) -> Dict:
-        """Formatea una alerta para respuesta"""
-        return {
+        """
+        Formatea una alerta para respuesta
+        Incluye información de IA y ground truth
+        """
+        formatted = {
             'id': str(alert['id']),
             'type': alert['type'],
             'level': alert['level'],
@@ -287,8 +290,27 @@ class PatientService:
             'location': {
                 'lat': float(alert['latitude']) if alert.get('latitude') else None,
                 'lng': float(alert['longitude']) if alert.get('longitude') else None
-            } if alert.get('latitude') and alert.get('longitude') else None
+            } if alert.get('latitude') and alert.get('longitude') else None,
+            # ✨ NUEVO: Información de IA
+            'created_by_model_id': str(alert['created_by_model_id']) if alert.get('created_by_model_id') else None,
+            'model_name': alert.get('model_name'),
+            'source_inference_id': str(alert['source_inference_id']) if alert.get('source_inference_id') else None,
         }
+        
+        # ✨ NUEVO: Información de Ground Truth (validación médica)
+        if alert.get('ground_truth_id'):
+            formatted['ground_truth_validated'] = True
+            formatted['ground_truth_id'] = str(alert['ground_truth_id'])
+            formatted['ground_truth_event_code'] = alert.get('ground_truth_event_code')
+            formatted['ground_truth_event_label'] = alert.get('ground_truth_event_label')
+            formatted['ground_truth_doctor'] = alert.get('ground_truth_doctor')
+            formatted['ground_truth_doctor_id'] = str(alert['ground_truth_doctor_id']) if alert.get('ground_truth_doctor_id') else None
+            formatted['ground_truth_note'] = alert.get('ground_truth_note')
+            formatted['ground_truth_created_at'] = alert['ground_truth_created_at'].isoformat() if alert.get('ground_truth_created_at') else None
+        else:
+            formatted['ground_truth_validated'] = False
+        
+        return formatted
     
     @staticmethod
     def _format_device(device: Dict) -> Dict:

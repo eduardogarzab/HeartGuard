@@ -765,6 +765,24 @@ public class PatientDashboardPanel extends JPanel {
         metaRow.setOpaque(false);
         metaRow.add(dateLabel);
         metaRow.add(statusChip);
+        
+        // ✨ NUEVO: Indicador de IA y Ground Truth
+        boolean isAIGenerated = alert.has("created_by_model_id") && 
+                                !alert.get("created_by_model_id").isJsonNull();
+        
+        if (isAIGenerated) {
+            JLabel aiChip = new JLabel(" 🤖 IA ");
+            aiChip.setFont(CAPTION_FONT);
+            aiChip.setForeground(new Color(103, 58, 183)); // Deep purple
+            aiChip.setOpaque(true);
+            aiChip.setBackground(new Color(103, 58, 183, 30));
+            aiChip.setBorder(new CompoundBorder(
+                    new MatteBorder(1, 1, 1, 1, new Color(103, 58, 183)),
+                    new EmptyBorder(4, 10, 4, 10)
+            ));
+            aiChip.setToolTipText("Alerta generada por modelo de Inteligencia Artificial");
+            metaRow.add(aiChip);
+        }
 
         JPanel infoPanel = new JPanel();
         infoPanel.setOpaque(false);
@@ -779,10 +797,212 @@ public class PatientDashboardPanel extends JPanel {
         infoPanel.add(descLabel);
         infoPanel.add(Box.createVerticalStrut(10));
         infoPanel.add(metaRow);
+        
+        // ✨ NUEVO: Panel de información de IA y Ground Truth
+        if (isAIGenerated) {
+            JPanel aiInfoPanel = createAIInfoPanel(alert);
+            if (aiInfoPanel != null) {
+                aiInfoPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                infoPanel.add(Box.createVerticalStrut(12));
+                infoPanel.add(aiInfoPanel);
+            }
+        }
 
         cardWrapper.add(infoPanel, BorderLayout.CENTER);
 
         return cardWrapper;
+    }
+    
+    /**
+     * ✨ NUEVO: Crea un panel con información de IA y validación médica
+     */
+    private JPanel createAIInfoPanel(JsonObject alert) {
+        JPanel panel = new JPanel();
+        panel.setOpaque(true);
+        panel.setBackground(new Color(248, 250, 252)); // Light gray-blue
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(new CompoundBorder(
+                new MatteBorder(1, 1, 1, 1, new Color(226, 232, 240)),
+                new EmptyBorder(10, 12, 10, 12)
+        ));
+        
+        boolean hasContent = false;
+        
+        // Extraer probabilidad de la descripción si está disponible
+        String description = alert.has("description") && !alert.get("description").isJsonNull()
+                ? alert.get("description").getAsString() : "";
+        
+        Double probability = extractProbabilityFromDescription(description);
+        if (probability != null) {
+            JPanel probPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            probPanel.setOpaque(false);
+            
+            JLabel probLabel = new JLabel("Probabilidad de IA:");
+            probLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            probLabel.setForeground(new Color(71, 85, 105)); // Slate-600
+            
+            JLabel probValue = new JLabel(String.format("%.1f%%", probability * 100));
+            probValue.setFont(new Font("Segoe UI", Font.BOLD, 13));
+            probValue.setForeground(getProbabilityColor(probability));
+            
+            probPanel.add(probLabel);
+            probPanel.add(probValue);
+            
+            probPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(probPanel);
+            hasContent = true;
+        }
+        
+        // Información del modelo
+        if (alert.has("created_by_model_id") && !alert.get("created_by_model_id").isJsonNull()) {
+            if (hasContent) {
+                panel.add(Box.createVerticalStrut(6));
+            }
+            
+            JPanel modelPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            modelPanel.setOpaque(false);
+            
+            JLabel modelLabel = new JLabel("Modelo:");
+            modelLabel.setFont(CAPTION_FONT);
+            modelLabel.setForeground(TEXT_SECONDARY_COLOR);
+            
+            JLabel modelValue = new JLabel("RandomForest");
+            modelValue.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+            modelValue.setForeground(new Color(100, 116, 139)); // Slate-500
+            
+            modelPanel.add(modelLabel);
+            modelPanel.add(modelValue);
+            
+            modelPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(modelPanel);
+            hasContent = true;
+        }
+        
+        // Estado de validación médica (Ground Truth)
+        if (alert.has("ground_truth_validated") && alert.get("ground_truth_validated").getAsBoolean()) {
+            if (hasContent) {
+                panel.add(Box.createVerticalStrut(8));
+            }
+            
+            JSeparator separator = new JSeparator();
+            separator.setForeground(new Color(226, 232, 240));
+            separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+            panel.add(separator);
+            panel.add(Box.createVerticalStrut(8));
+            
+            JPanel gtPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            gtPanel.setOpaque(false);
+            
+            JLabel gtIcon = new JLabel("✅");
+            gtIcon.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            
+            JLabel gtLabel = new JLabel("Validado por médico");
+            gtLabel.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            gtLabel.setForeground(new Color(22, 163, 74)); // Green-600
+            
+            gtPanel.add(gtIcon);
+            gtPanel.add(gtLabel);
+            
+            if (alert.has("ground_truth_doctor") && !alert.get("ground_truth_doctor").isJsonNull()) {
+                JLabel doctorLabel = new JLabel("(" + alert.get("ground_truth_doctor").getAsString() + ")");
+                doctorLabel.setFont(CAPTION_FONT);
+                doctorLabel.setForeground(TEXT_SECONDARY_COLOR);
+                gtPanel.add(doctorLabel);
+            }
+            
+            gtPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(gtPanel);
+            
+            if (alert.has("ground_truth_note") && !alert.get("ground_truth_note").isJsonNull()) {
+                panel.add(Box.createVerticalStrut(4));
+                JLabel noteLabel = new JLabel("Nota: " + alert.get("ground_truth_note").getAsString());
+                noteLabel.setFont(CAPTION_FONT);
+                noteLabel.setForeground(TEXT_SECONDARY_COLOR);
+                noteLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+                panel.add(noteLabel);
+            }
+            
+            hasContent = true;
+        } else if (alert.has("created_by_model_id") && !alert.get("created_by_model_id").isJsonNull()) {
+            // Alerta de IA no validada aún
+            if (hasContent) {
+                panel.add(Box.createVerticalStrut(8));
+            }
+            
+            JSeparator separator = new JSeparator();
+            separator.setForeground(new Color(226, 232, 240));
+            separator.setMaximumSize(new Dimension(Integer.MAX_VALUE, 1));
+            panel.add(separator);
+            panel.add(Box.createVerticalStrut(8));
+            
+            JPanel pendingPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 0));
+            pendingPanel.setOpaque(false);
+            
+            JLabel pendingIcon = new JLabel("⏳");
+            pendingIcon.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            
+            JLabel pendingLabel = new JLabel("Pendiente de validación médica");
+            pendingLabel.setFont(new Font("Segoe UI", Font.ITALIC, 12));
+            pendingLabel.setForeground(new Color(180, 83, 9)); // Amber-700
+            
+            pendingPanel.add(pendingIcon);
+            pendingPanel.add(pendingLabel);
+            
+            pendingPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+            panel.add(pendingPanel);
+            hasContent = true;
+        }
+        
+        return hasContent ? panel : null;
+    }
+    
+    /**
+     * ✨ NUEVO: Extrae la probabilidad de la descripción de la alerta
+     */
+    private Double extractProbabilityFromDescription(String description) {
+        if (description == null || description.isEmpty()) {
+            return null;
+        }
+        
+        // Buscar patrones como "Probabilidad: 0.85" o "85%" en la descripción
+        java.util.regex.Pattern pattern1 = java.util.regex.Pattern.compile("Probabilidad[:\\s]+([0-9]*\\.?[0-9]+)");
+        java.util.regex.Matcher matcher1 = pattern1.matcher(description);
+        if (matcher1.find()) {
+            try {
+                return Double.parseDouble(matcher1.group(1));
+            } catch (NumberFormatException e) {
+                // Ignorar
+            }
+        }
+        
+        // Buscar patrón de porcentaje
+        java.util.regex.Pattern pattern2 = java.util.regex.Pattern.compile("([0-9]+(?:\\.[0-9]+)?)%");
+        java.util.regex.Matcher matcher2 = pattern2.matcher(description);
+        if (matcher2.find()) {
+            try {
+                double percent = Double.parseDouble(matcher2.group(1));
+                return percent / 100.0;
+            } catch (NumberFormatException e) {
+                // Ignorar
+            }
+        }
+        
+        return null;
+    }
+    
+    /**
+     * ✨ NUEVO: Obtiene el color según la probabilidad
+     */
+    private Color getProbabilityColor(double probability) {
+        if (probability >= 0.8) {
+            return new Color(220, 38, 38); // Red-600 - Alta probabilidad
+        } else if (probability >= 0.6) {
+            return new Color(234, 88, 12); // Orange-600 - Media-alta
+        } else if (probability >= 0.4) {
+            return new Color(202, 138, 4); // Yellow-600 - Media
+        } else {
+            return new Color(22, 163, 74); // Green-600 - Baja
+        }
     }
 
     private Color getAlertLevelColor(String level) {
