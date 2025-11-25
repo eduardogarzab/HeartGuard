@@ -111,7 +111,7 @@ public class PatientDetailDialog extends JDialog {
         tabs.setFont(new Font("Inter", Font.PLAIN, 14));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
-        tabs.setPreferredSize(new Dimension(0, 350)); // Aumentado para mejor visualización de alertas
+        tabs.setPreferredSize(new Dimension(0, 220)); // Balance entre alertas y gráficas
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -494,7 +494,8 @@ public class PatientDetailDialog extends JDialog {
                     alert,
                     orgId,
                     null, // userId lo toma del token
-                    token
+                    token,
+                    patientName // Pasar el nombre del paciente
             );
             dialog.setVisible(true);
             

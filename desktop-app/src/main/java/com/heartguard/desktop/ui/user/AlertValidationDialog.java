@@ -32,6 +32,7 @@ public class AlertValidationDialog extends JDialog {
     private final String organizationId;
     private final String userId;
     private final String accessToken;
+    private final String patientName;
     
     private final AlertService alertService;
     
@@ -46,13 +47,14 @@ public class AlertValidationDialog extends JDialog {
     
     private boolean validated = false;
     
-    public AlertValidationDialog(Window owner, Alert alert, String organizationId, String userId, String accessToken) {
+    public AlertValidationDialog(Window owner, Alert alert, String organizationId, String userId, String accessToken, String patientName) {
         super(owner, "Gestionar Alerta", ModalityType.APPLICATION_MODAL);
         
         this.alert = alert;
         this.organizationId = organizationId;
         this.userId = userId;
         this.accessToken = accessToken;
+        this.patientName = patientName;
         
         String gatewayUrl = AppConfig.getInstance().getGatewayBaseUrl();
         this.alertService = new AlertService(gatewayUrl);
@@ -105,7 +107,11 @@ public class AlertValidationDialog extends JDialog {
         // Notas
         contentPanel.add(createNotesPanel());
         
-        add(contentPanel, BorderLayout.CENTER);
+        // Envolver contentPanel en JScrollPane para permitir scroll
+        JScrollPane scrollPane = new JScrollPane(contentPanel);
+        scrollPane.setBorder(null);
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        add(scrollPane, BorderLayout.CENTER);
         
         // Botones
         add(createButtonsPanel(), BorderLayout.SOUTH);
@@ -139,7 +145,7 @@ public class AlertValidationDialog extends JDialog {
         JPanel gridPanel = new JPanel(new GridLayout(0, 2, 24, 12));
         gridPanel.setOpaque(false);
         
-        addInfoField(gridPanel, "👤 Paciente", alert.getPatientName() != null ? alert.getPatientName() : "Desconocido");
+        addInfoField(gridPanel, "👤 Paciente", patientName != null ? patientName : "Desconocido");
         addInfoField(gridPanel, "📊 Nivel", alert.getAlertLevel().getDisplayName());
         addInfoField(gridPanel, "🕐 Fecha/Hora", formatter.format(alert.getCreatedAt()));
         addInfoField(gridPanel, "📍 Estado", alert.getStatus().getDisplayName());
