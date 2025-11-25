@@ -2,7 +2,6 @@ package com.heartguard.desktop.ui.user;
 
 import com.heartguard.desktop.api.AlertService;
 import com.heartguard.desktop.api.ApiException;
-import com.heartguard.desktop.api.GroundTruthService;
 import com.heartguard.desktop.config.AppConfig;
 import com.heartguard.desktop.models.alert.*;
 
@@ -15,16 +14,18 @@ import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
 
 /**
- * Diálogo para validar alertas como verdadero/falso positivo
- * Permite crear registros de ground truth
+ * Diálogo para gestionar alertas: Reconocer o Resolver
+ * Sigue el flujo: pending → acknowledged → resolved (con ground truth automático)
  */
 public class AlertValidationDialog extends JDialog {
     private static final Color PRIMARY = new Color(0, 120, 215);
     private static final Color SUCCESS = new Color(40, 167, 69);
+    private static final Color WARNING = new Color(255, 193, 7);
     private static final Color DANGER = new Color(220, 53, 69);
     private static final Color TEXT_PRIMARY = new Color(46, 58, 89);
     private static final Color TEXT_SECONDARY = new Color(96, 103, 112);
     private static final Color BORDER = new Color(223, 227, 230);
+    private static final Color BG_LIGHT = new Color(247, 249, 251);
     
     private final Alert alert;
     private final String organizationId;
@@ -32,18 +33,20 @@ public class AlertValidationDialog extends JDialog {
     private final String accessToken;
     
     private final AlertService alertService;
-    private final GroundTruthService groundTruthService;
     
     private final JTextArea notesArea;
+    private final JRadioButton acknowledgeRadio;
+    private final JRadioButton resolveRadio;
     private final JRadioButton truePositiveRadio;
     private final JRadioButton falsePositiveRadio;
+    private final JPanel resolveOptionsPanel;
     private final JButton submitButton;
     private final JButton cancelButton;
     
     private boolean validated = false;
     
     public AlertValidationDialog(Window owner, Alert alert, String organizationId, String userId, String accessToken) {
-        super(owner, "Validar Alerta", ModalityType.APPLICATION_MODAL);
+        super(owner, "Gestionar Alerta", ModalityType.APPLICATION_MODAL);
         
         this.alert = alert;
         this.organizationId = organizationId;
@@ -53,50 +56,53 @@ public class AlertValidationDialog extends JDialog {
         String gatewayUrl = AppConfig.getInstance().getGatewayBaseUrl();
         this.alertService = new AlertService(gatewayUrl);
         this.alertService.setAccessToken(accessToken);
-        this.groundTruthService = new GroundTruthService(gatewayUrl);
-        this.groundTruthService.setAccessToken(accessToken);
         
-        this.notesArea = new JTextArea(5, 40);
-        this.truePositiveRadio = new JRadioButton("Verdadero Positivo - El evento es REAL");
-        this.falsePositiveRadio = new JRadioButton("Falso Positivo - La IA se equivocó");
-        this.submitButton = new JButton("✓ Validar y Resolver");
+        this.notesArea = new JTextArea(6, 50);
+        this.acknowledgeRadio = new JRadioButton("<html><b>Reconocer</b> - Confirmo que vi la alerta y la estoy revisando</html>");
+        this.resolveRadio = new JRadioButton("<html><b>Resolver</b> - Ya atendí el caso y quiero cerrarlo</html>");
+        this.truePositiveRadio = new JRadioButton("✅ Verdadero Positivo - El evento fue REAL");
+        this.falsePositiveRadio = new JRadioButton("❌ Falso Positivo - La IA se equivocó");
+        this.resolveOptionsPanel = createResolveOptionsPanel();
+        this.submitButton = new JButton("Enviar");
         this.cancelButton = new JButton("Cancelar");
         
         initUI();
     }
     
     private void initUI() {
-        setLayout(new BorderLayout(16, 16));
-        setSize(700, 600);
+        setLayout(new BorderLayout(0, 0));
+        setSize(900, 750);
         setLocationRelativeTo(getOwner());
         
         JPanel contentPanel = new JPanel();
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
-        contentPanel.setBorder(new EmptyBorder(24, 24, 24, 24));
+        contentPanel.setBorder(new EmptyBorder(28, 32, 28, 32));
         contentPanel.setBackground(Color.WHITE);
         
-        // Título
-        JLabel titleLabel = new JLabel("🔍 Validación de Alerta de IA");
-        titleLabel.setFont(new Font("Inter", Font.BOLD, 20));
+        // Header con título grande
+        JLabel titleLabel = new JLabel("🚨 Gestión de Alerta");
+        titleLabel.setFont(new Font("Inter", Font.BOLD, 26));
         titleLabel.setForeground(TEXT_PRIMARY);
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         contentPanel.add(titleLabel);
-        contentPanel.add(Box.createVerticalStrut(20));
         
-        // Información de la alerta
+        JLabel subtitleLabel = new JLabel("Reconoce o resuelve esta alerta generada por IA");
+        subtitleLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+        subtitleLabel.setForeground(TEXT_SECONDARY);
+        subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        contentPanel.add(subtitleLabel);
+        contentPanel.add(Box.createVerticalStrut(24));
+        
+        // Información de la alerta (más grande y prominente)
         contentPanel.add(createAlertInfoPanel());
-        contentPanel.add(Box.createVerticalStrut(20));
+        contentPanel.add(Box.createVerticalStrut(24));
         
-        // Opciones de validación
-        contentPanel.add(createValidationOptionsPanel());
+        // Selector de acción: Reconocer vs Resolver
+        contentPanel.add(createActionSelectorPanel());
         contentPanel.add(Box.createVerticalStrut(20));
         
         // Notas
         contentPanel.add(createNotesPanel());
-        contentPanel.add(Box.createVerticalStrut(20));
-        
-        // Explicación de Ground Truth
-        contentPanel.add(createGroundTruthExplanation());
         
         add(contentPanel, BorderLayout.CENTER);
         
@@ -107,98 +113,192 @@ public class AlertValidationDialog extends JDialog {
     private JPanel createAlertInfoPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(new Color(247, 249, 251));
-        panel.setBorder(new EmptyBorder(16, 16, 16, 16));
+        panel.setBackground(BG_LIGHT);
+        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
                 .withZone(ZoneId.systemDefault());
         
-        addInfoRow(panel, "Paciente:", alert.getPatientName() != null ? alert.getPatientName() : "Desconocido");
-        addInfoRow(panel, "Tipo de Alerta:", alert.getType().getEmoji() + " " + alert.getType().getDisplayName());
-        addInfoRow(panel, "Nivel de Severidad:", alert.getAlertLevel().getDisplayName(), alert.getAlertLevel().getColor());
-        addInfoRow(panel, "Descripción:", alert.getDescription());
-        addInfoRow(panel, "Fecha y Hora:", formatter.format(alert.getCreatedAt()));
+        // Tipo de alerta grande y prominente
+        JLabel typeLabel = new JLabel(alert.getType().getEmoji() + " " + alert.getType().getDisplayName());
+        typeLabel.setFont(new Font("Inter", Font.BOLD, 22));
+        typeLabel.setForeground(alert.getType().getColor());
+        panel.add(typeLabel);
+        panel.add(Box.createVerticalStrut(8));
+        
+        // Descripción
+        JLabel descLabel = new JLabel("<html><body style='width: 750px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
+        descLabel.setFont(new Font("Inter", Font.PLAIN, 15));
+        descLabel.setForeground(TEXT_PRIMARY);
+        panel.add(descLabel);
+        panel.add(Box.createVerticalStrut(16));
+        
+        // Grid con información
+        JPanel gridPanel = new JPanel(new GridLayout(0, 2, 24, 12));
+        gridPanel.setOpaque(false);
+        
+        addInfoField(gridPanel, "👤 Paciente", alert.getPatientName() != null ? alert.getPatientName() : "Desconocido");
+        addInfoField(gridPanel, "📊 Nivel", alert.getAlertLevel().getDisplayName());
+        addInfoField(gridPanel, "🕐 Fecha/Hora", formatter.format(alert.getCreatedAt()));
+        addInfoField(gridPanel, "📍 Estado", alert.getStatus().getDisplayName());
         
         if (alert.hasLocation()) {
-            addInfoRow(panel, "Ubicación GPS:", 
+            addInfoField(gridPanel, "🌍 Ubicación GPS", 
                 String.format("%.4f, %.4f", alert.getLatitude(), alert.getLongitude()));
         }
         
         if (alert.isCreatedByAI()) {
-            JLabel aiLabel = new JLabel("🤖 Esta alerta fue generada por el modelo de IA");
-            aiLabel.setFont(new Font("Inter", Font.ITALIC, 12));
-            aiLabel.setForeground(PRIMARY);
-            aiLabel.setBorder(new EmptyBorder(8, 0, 0, 0));
-            panel.add(aiLabel);
+            addInfoField(gridPanel, "🤖 Origen", "Generada por Inteligencia Artificial");
         }
+        
+        panel.add(gridPanel);
         
         return panel;
     }
     
-    private void addInfoRow(JPanel panel, String label, String value) {
-        addInfoRow(panel, label, value, TEXT_PRIMARY);
-    }
-    
-    private void addInfoRow(JPanel panel, String label, String value, Color valueColor) {
-        JPanel row = new JPanel(new FlowLayout(FlowLayout.LEFT, 0, 4));
-        row.setOpaque(false);
+    private void addInfoField(JPanel panel, String label, String value) {
+        JPanel fieldPanel = new JPanel(new BorderLayout(8, 0));
+        fieldPanel.setOpaque(false);
         
         JLabel labelComp = new JLabel(label);
-        labelComp.setFont(new Font("Inter", Font.BOLD, 13));
+        labelComp.setFont(new Font("Inter", Font.BOLD, 14));
         labelComp.setForeground(TEXT_SECONDARY);
-        labelComp.setPreferredSize(new Dimension(160, 20));
         
         JLabel valueComp = new JLabel(value);
-        valueComp.setFont(new Font("Inter", Font.PLAIN, 13));
-        valueComp.setForeground(valueColor);
+        valueComp.setFont(new Font("Inter", Font.PLAIN, 14));
+        valueComp.setForeground(TEXT_PRIMARY);
         
-        row.add(labelComp);
-        row.add(valueComp);
-        panel.add(row);
+        fieldPanel.add(labelComp, BorderLayout.WEST);
+        fieldPanel.add(valueComp, BorderLayout.CENTER);
+        
+        panel.add(fieldPanel);
     }
     
-    private JPanel createValidationOptionsPanel() {
+    private JPanel createActionSelectorPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(Color.WHITE);
-        panel.setBorder(new LineBorder(BORDER, 1));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        
+        JLabel title = new JLabel("Selecciona una acción:");
+        title.setFont(new Font("Inter", Font.BOLD, 16));
+        title.setForeground(TEXT_PRIMARY);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(title);
+        panel.add(Box.createVerticalStrut(12));
+        
+        ButtonGroup actionGroup = new ButtonGroup();
+        actionGroup.add(acknowledgeRadio);
+        actionGroup.add(resolveRadio);
+        
+        // Reconocer
+        acknowledgeRadio.setFont(new Font("Inter", Font.PLAIN, 15));
+        acknowledgeRadio.setForeground(TEXT_PRIMARY);
+        acknowledgeRadio.setBackground(Color.WHITE);
+        acknowledgeRadio.setBorder(new EmptyBorder(12, 16, 12, 16));
+        acknowledgeRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
+        acknowledgeRadio.addActionListener(e -> {
+            resolveOptionsPanel.setVisible(false);
+            submitButton.setText("✓ Reconocer Alerta");
+            submitButton.setBackground(WARNING);
+            revalidate();
+        });
+        
+        JPanel ackPanel = new JPanel(new BorderLayout());
+        ackPanel.setBackground(Color.WHITE);
+        ackPanel.setBorder(new LineBorder(BORDER, 2));
+        ackPanel.add(acknowledgeRadio, BorderLayout.CENTER);
+        
+        JLabel ackDesc = new JLabel("Estado pasará de 'pendiente' → 'reconocida'");
+        ackDesc.setFont(new Font("Inter", Font.ITALIC, 13));
+        ackDesc.setForeground(TEXT_SECONDARY);
+        ackDesc.setBorder(new EmptyBorder(0, 52, 12, 16));
+        ackPanel.add(ackDesc, BorderLayout.SOUTH);
+        
+        panel.add(ackPanel);
+        panel.add(Box.createVerticalStrut(12));
+        
+        // Resolver
+        resolveRadio.setFont(new Font("Inter", Font.PLAIN, 15));
+        resolveRadio.setForeground(TEXT_PRIMARY);
+        resolveRadio.setBackground(Color.WHITE);
+        resolveRadio.setBorder(new EmptyBorder(12, 16, 12, 16));
+        resolveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
+        resolveRadio.setSelected(true);
+        resolveRadio.addActionListener(e -> {
+            resolveOptionsPanel.setVisible(true);
+            submitButton.setText("✓ Resolver y Crear Ground Truth");
+            submitButton.setBackground(SUCCESS);
+            revalidate();
+        });
+        
+        JPanel resolvePanel = new JPanel(new BorderLayout());
+        resolvePanel.setBackground(Color.WHITE);
+        resolvePanel.setBorder(new LineBorder(PRIMARY, 2));
+        resolvePanel.add(resolveRadio, BorderLayout.CENTER);
+        
+        JLabel resolveDesc = new JLabel("Cerrará el caso y creará registro de Ground Truth automáticamente");
+        resolveDesc.setFont(new Font("Inter", Font.ITALIC, 13));
+        resolveDesc.setForeground(TEXT_SECONDARY);
+        resolveDesc.setBorder(new EmptyBorder(0, 52, 12, 16));
+        resolvePanel.add(resolveDesc, BorderLayout.SOUTH);
+        
+        panel.add(resolvePanel);
+        panel.add(Box.createVerticalStrut(16));
+        panel.add(resolveOptionsPanel);
+        
+        return panel;
+    }
+    
+    private JPanel createResolveOptionsPanel() {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBackground(new Color(240, 248, 255));
+        panel.setBorder(new EmptyBorder(16, 20, 16, 20));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
-        title.setFont(new Font("Inter", Font.BOLD, 14));
+        title.setFont(new Font("Inter", Font.BOLD, 15));
         title.setForeground(TEXT_PRIMARY);
-        title.setBorder(new EmptyBorder(12, 12, 8, 12));
         title.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(title);
+        panel.add(Box.createVerticalStrut(12));
         
         ButtonGroup group = new ButtonGroup();
         group.add(truePositiveRadio);
         group.add(falsePositiveRadio);
         
-        truePositiveRadio.setFont(new Font("Inter", Font.PLAIN, 13));
+        truePositiveRadio.setFont(new Font("Inter", Font.PLAIN, 14));
         truePositiveRadio.setForeground(SUCCESS);
-        truePositiveRadio.setBackground(Color.WHITE);
-        truePositiveRadio.setBorder(new EmptyBorder(8, 12, 8, 12));
+        truePositiveRadio.setBackground(new Color(240, 248, 255));
+        truePositiveRadio.setBorder(new EmptyBorder(8, 8, 4, 8));
         truePositiveRadio.setSelected(true);
+        truePositiveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(truePositiveRadio);
         
-        JLabel trueDesc = new JLabel("Se creará un registro de ground truth confirmando el evento");
-        trueDesc.setFont(new Font("Inter", Font.ITALIC, 11));
+        JLabel trueDesc = new JLabel("Se guardará como verdadero positivo en Ground Truth");
+        trueDesc.setFont(new Font("Inter", Font.ITALIC, 12));
         trueDesc.setForeground(TEXT_SECONDARY);
-        trueDesc.setBorder(new EmptyBorder(0, 40, 12, 12));
+        trueDesc.setBorder(new EmptyBorder(0, 32, 12, 8));
+        trueDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(trueDesc);
         
-        falsePositiveRadio.setFont(new Font("Inter", Font.PLAIN, 13));
+        falsePositiveRadio.setFont(new Font("Inter", Font.PLAIN, 14));
         falsePositiveRadio.setForeground(DANGER);
-        falsePositiveRadio.setBackground(Color.WHITE);
-        falsePositiveRadio.setBorder(new EmptyBorder(8, 12, 8, 12));
+        falsePositiveRadio.setBackground(new Color(240, 248, 255));
+        falsePositiveRadio.setBorder(new EmptyBorder(8, 8, 4, 8));
+        falsePositiveRadio.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(falsePositiveRadio);
         
-        JLabel falseDesc = new JLabel("Se marcará la alerta como falso positivo para mejorar el modelo");
-        falseDesc.setFont(new Font("Inter", Font.ITALIC, 11));
+        JLabel falseDesc = new JLabel("Se marcará como error de IA para reentrenamiento");
+        falseDesc.setFont(new Font("Inter", Font.ITALIC, 12));
         falseDesc.setForeground(TEXT_SECONDARY);
-        falseDesc.setBorder(new EmptyBorder(0, 40, 12, 12));
+        falseDesc.setBorder(new EmptyBorder(0, 32, 8, 8));
+        falseDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(falseDesc);
+        
+        return panel;
+    }
         panel.add(falseDesc);
         
         return panel;
@@ -209,17 +309,19 @@ public class AlertValidationDialog extends JDialog {
         panel.setBackground(Color.WHITE);
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         
-        JLabel label = new JLabel("Notas clínicas (opcional):");
-        label.setFont(new Font("Inter", Font.BOLD, 13));
+        JLabel label = new JLabel("📝 Notas clínicas:");
+        label.setFont(new Font("Inter", Font.BOLD, 15));
         label.setForeground(TEXT_PRIMARY);
         
-        notesArea.setFont(new Font("Inter", Font.PLAIN, 12));
+        notesArea.setFont(new Font("Inter", Font.PLAIN, 14));
         notesArea.setLineWrap(true);
         notesArea.setWrapStyleWord(true);
-        notesArea.setBorder(new EmptyBorder(8, 8, 8, 8));
+        notesArea.setBorder(new EmptyBorder(12, 12, 12, 12));
+        notesArea.setBackground(BG_LIGHT);
         
         JScrollPane scrollPane = new JScrollPane(notesArea);
         scrollPane.setBorder(new LineBorder(BORDER, 1));
+        scrollPane.setPreferredSize(new Dimension(800, 120));
         
         panel.add(label, BorderLayout.NORTH);
         panel.add(scrollPane, BorderLayout.CENTER);
@@ -227,65 +329,27 @@ public class AlertValidationDialog extends JDialog {
         return panel;
     }
     
-    private JPanel createGroundTruthExplanation() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBackground(new Color(232, 244, 253));
-        panel.setBorder(new EmptyBorder(12, 12, 12, 12));
-        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        
-        JLabel title = new JLabel("ℹ️ ¿Qué es Ground Truth?");
-        title.setFont(new Font("Inter", Font.BOLD, 12));
-        title.setForeground(TEXT_PRIMARY);
-        panel.add(title);
-        
-        JLabel desc1 = new JLabel("<html><body style='width: 580px'>" +
-            "Ground Truth son etiquetas validadas por personal médico que confirman si un evento fue real o no. " +
-            "Esta información es crítica para:" +
-            "</body></html>");
-        desc1.setFont(new Font("Inter", Font.PLAIN, 11));
-        desc1.setForeground(TEXT_SECONDARY);
-        desc1.setBorder(new EmptyBorder(4, 0, 4, 0));
-        panel.add(desc1);
-        
-        String[] points = {
-            "✅ Medir la precisión del modelo de IA (% de aciertos)",
-            "✅ Reentrenar el modelo con datos validados",
-            "✅ Auditoría médica y legal",
-            "✅ Estadísticas de calidad del servicio"
-        };
-        
-        for (String point : points) {
-            JLabel pointLabel = new JLabel(point);
-            pointLabel.setFont(new Font("Inter", Font.PLAIN, 11));
-            pointLabel.setForeground(TEXT_PRIMARY);
-            pointLabel.setBorder(new EmptyBorder(2, 16, 2, 0));
-            panel.add(pointLabel);
-        }
-        
-        return panel;
-    }
-    
     private JPanel createButtonsPanel() {
-        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 12, 12));
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 16, 16));
         panel.setBackground(Color.WHITE);
         panel.setBorder(new LineBorder(BORDER, 1, false));
         
-        cancelButton.setFont(new Font("Inter", Font.PLAIN, 13));
+        cancelButton.setFont(new Font("Inter", Font.PLAIN, 14));
         cancelButton.setForeground(TEXT_PRIMARY);
         cancelButton.setBackground(Color.WHITE);
-        cancelButton.setBorder(new LineBorder(BORDER, 1));
+        cancelButton.setBorder(new LineBorder(BORDER, 2));
         cancelButton.setFocusPainted(false);
-        cancelButton.setPreferredSize(new Dimension(100, 36));
+        cancelButton.setPreferredSize(new Dimension(120, 42));
         cancelButton.addActionListener(e -> dispose());
         
-        submitButton.setFont(new Font("Inter", Font.BOLD, 13));
+        submitButton.setFont(new Font("Inter", Font.BOLD, 14));
         submitButton.setForeground(Color.WHITE);
         submitButton.setBackground(SUCCESS);
         submitButton.setFocusPainted(false);
         submitButton.setBorderPainted(false);
-        submitButton.setPreferredSize(new Dimension(180, 36));
-        submitButton.addActionListener(e -> submitValidation());
+        submitButton.setPreferredSize(new Dimension(280, 42));
+        submitButton.setText("✓ Resolver y Crear Ground Truth");
+        submitButton.addActionListener(e -> submitAction());
         
         panel.add(cancelButton);
         panel.add(submitButton);
@@ -293,68 +357,81 @@ public class AlertValidationDialog extends JDialog {
         return panel;
     }
     
-    private void submitValidation() {
+    private void submitAction() {
         submitButton.setEnabled(false);
+        cancelButton.setEnabled(false);
         submitButton.setText("⏳ Procesando...");
         
-        boolean isTruePositive = truePositiveRadio.isSelected();
         String notes = notesArea.getText().trim();
+        boolean isResolve = resolveRadio.isSelected();
         
         CompletableFuture.runAsync(() -> {
             try {
-                if (isTruePositive) {
-                    // Crear registro de ground truth (verdadero positivo)
-                    EventType eventType = alert.getType().getCode().equals("GENERAL_RISK") 
-                        ? EventType.GENERAL_RISK 
-                        : EventType.fromCode(alert.getType().getCode());
+                if (isResolve) {
+                    // RESOLVER: Cambia estado a resolved y crea Ground Truth automáticamente
+                    String outcome = truePositiveRadio.isSelected() ? "TRUE_POSITIVE" : "FALSE_POSITIVE";
                     
-                    groundTruthService.validateAsTruePositive(
+                    alertService.resolveAlert(
                         organizationId,
-                        alert.getId(),
                         alert.getPatientId(),
-                        eventType,
-                        alert.getCreatedAt(),
-                        null, // offset_at (fin del evento) - puede ser null
-                        userId,
-                        notes.isEmpty() ? "Evento confirmado por personal médico" : notes
-                    );
-                } else {
-                    // Marcar como falso positivo
-                    groundTruthService.validateAsFalsePositive(
                         alert.getId(),
                         userId,
-                        notes.isEmpty() ? "Falso positivo confirmado por personal médico" : notes
+                        outcome,
+                        notes.isEmpty() ? null : notes
                     );
+                    
+                    SwingUtilities.invokeLater(() -> {
+                        validated = true;
+                        JOptionPane.showMessageDialog(
+                            this,
+                            "<html><body style='width: 350px'>" +
+                            "<h3>✅ Alerta Resuelta</h3>" +
+                            "<p>La alerta ha sido marcada como <b>" + outcome + "</b></p>" +
+                            "<p>El registro de Ground Truth se creó automáticamente en la base de datos.</p>" +
+                            "<p><i>Este dato se usará para mejorar el modelo de IA.</i></p>" +
+                            "</body></html>",
+                            "Éxito",
+                            JOptionPane.INFORMATION_MESSAGE
+                        );
+                        dispose();
+                    });
+                } else {
+                    // RECONOCER: Solo cambia estado a acknowledged
+                    alertService.acknowledgeAlert(
+                        organizationId,
+                        alert.getPatientId(),
+                        alert.getId(),
+                        userId,
+                        notes.isEmpty() ? null : notes
+                    );
+                    
+                    SwingUtilities.invokeLater(() -> {
+                        validated = true;
+                        JOptionPane.showMessageDialog(
+                            this,
+                            "<html><body style='width: 350px'>" +
+                            "<h3>✅ Alerta Reconocida</h3>" +
+                            "<p>La alerta cambió de estado <b>pendiente → reconocida</b></p>" +
+                            "<p>Recuerda resolverla una vez que hayas atendido el caso.</p>" +
+                            "</body></html>",
+                            "Éxito",
+                            JOptionPane.INFORMATION_MESSAGE
+                        );
+                        dispose();
+                    });
                 }
-                
-                // Resolver la alerta
-                alertService.resolveAlert(
-                    organizationId,
-                    alert.getPatientId(),
-                    alert.getId(),
-                    userId,
-                    truePositiveRadio.isSelected() ? "true_positive" : "false_positive",
-                    notes
-                );
-                
-                SwingUtilities.invokeLater(() -> {
-                    validated = true;
-                    JOptionPane.showMessageDialog(
-                        this,
-                        "Alerta validada y resuelta correctamente",
-                        "Éxito",
-                        JOptionPane.INFORMATION_MESSAGE
-                    );
-                    dispose();
-                });
                 
             } catch (ApiException e) {
                 SwingUtilities.invokeLater(() -> {
                     submitButton.setEnabled(true);
-                    submitButton.setText("✓ Validar y Resolver");
+                    cancelButton.setEnabled(true);
+                    submitButton.setText(isResolve ? "✓ Resolver y Crear Ground Truth" : "✓ Reconocer Alerta");
                     JOptionPane.showMessageDialog(
                         this,
-                        "Error al validar: " + e.getMessage(),
+                        "<html><body style='width: 300px'>" +
+                        "<h3>❌ Error</h3>" +
+                        "<p>" + e.getMessage() + "</p>" +
+                        "</body></html>",
                         "Error",
                         JOptionPane.ERROR_MESSAGE
                     );
