@@ -74,45 +74,43 @@ public class AlertValidationDialog extends JDialog {
     
     private void initUI() {
         setLayout(new BorderLayout(0, 0));
-        setSize(900, 850);
+        setSize(900, 800);
         setLocationRelativeTo(getOwner());
         
         JPanel contentPanel = new JPanel();
         contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
-        contentPanel.setBorder(new EmptyBorder(28, 32, 28, 32));
+        contentPanel.setBorder(new EmptyBorder(20, 24, 20, 24));
         contentPanel.setBackground(Color.WHITE);
         
-        // Header con título grande
+        // Header con título
         JLabel titleLabel = new JLabel("🚨 Gestión de Alerta");
-        titleLabel.setFont(new Font("Inter", Font.BOLD, 26));
+        titleLabel.setFont(new Font("Inter", Font.BOLD, 24));
         titleLabel.setForeground(TEXT_PRIMARY);
         titleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         contentPanel.add(titleLabel);
         
         JLabel subtitleLabel = new JLabel("Reconoce o resuelve esta alerta generada por IA");
-        subtitleLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+        subtitleLabel.setFont(new Font("Inter", Font.PLAIN, 13));
         subtitleLabel.setForeground(TEXT_SECONDARY);
         subtitleLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         contentPanel.add(subtitleLabel);
-        contentPanel.add(Box.createVerticalStrut(24));
+        contentPanel.add(Box.createVerticalStrut(16));
         
-        // Información de la alerta (más grande y prominente)
+        // Información de la alerta
         contentPanel.add(createAlertInfoPanel());
-        contentPanel.add(Box.createVerticalStrut(24));
+        contentPanel.add(Box.createVerticalStrut(16));
         
         // Selector de acción: Reconocer vs Resolver
         contentPanel.add(createActionSelectorPanel());
-        contentPanel.add(Box.createVerticalStrut(20));
+        contentPanel.add(Box.createVerticalStrut(12));
         
         // Notas
         contentPanel.add(createNotesPanel());
         
         // Envolver contentPanel en JScrollPane para permitir scroll
-        // Establecer tamaño mínimo para que el diálogo pueda expandirse correctamente
         JScrollPane scrollPane = new JScrollPane(contentPanel);
         scrollPane.setBorder(null);
         scrollPane.getVerticalScrollBar().setUnitIncrement(16);
-        scrollPane.setMinimumSize(new Dimension(850, 700));
         add(scrollPane, BorderLayout.CENTER);
         
         // Botones
@@ -123,29 +121,33 @@ public class AlertValidationDialog extends JDialog {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(BG_LIGHT);
-        panel.setBorder(new EmptyBorder(20, 20, 20, 20));
+        panel.setBorder(new EmptyBorder(16, 16, 16, 16));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
         
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
                 .withZone(ZoneId.systemDefault());
         
-        // Tipo de alerta grande y prominente
+        // Tipo de alerta y descripción juntos sin espacio excesivo
         JLabel typeLabel = new JLabel(alert.getType().getEmoji() + " " + alert.getType().getDisplayName());
-        typeLabel.setFont(new Font("Inter", Font.BOLD, 22));
+        typeLabel.setFont(new Font("Inter", Font.BOLD, 20));
         typeLabel.setForeground(alert.getType().getColor());
+        typeLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(typeLabel);
-        panel.add(Box.createVerticalStrut(8));
+        panel.add(Box.createVerticalStrut(4));
         
-        // Descripción
-        JLabel descLabel = new JLabel("<html><body style='width: 750px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
-        descLabel.setFont(new Font("Inter", Font.PLAIN, 15));
+        // Descripción compacta
+        JLabel descLabel = new JLabel("<html><body style='width: 780px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
+        descLabel.setFont(new Font("Inter", Font.PLAIN, 14));
         descLabel.setForeground(TEXT_PRIMARY);
+        descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
         panel.add(descLabel);
-        panel.add(Box.createVerticalStrut(16));
+        panel.add(Box.createVerticalStrut(12));
         
         // Grid con información
-        JPanel gridPanel = new JPanel(new GridLayout(0, 2, 24, 12));
+        JPanel gridPanel = new JPanel(new GridLayout(0, 2, 20, 8));
         gridPanel.setOpaque(false);
+        gridPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        gridPanel.setMaximumSize(new Dimension(800, 200));
         
         addInfoField(gridPanel, "👤 Paciente", patientName != null ? patientName : "Desconocido");
         addInfoField(gridPanel, "📊 Nivel", alert.getAlertLevel().getDisplayName());
@@ -262,60 +264,62 @@ public class AlertValidationDialog extends JDialog {
     private JPanel createResolveOptionsPanel() {
         JPanel panel = new JPanel(new BorderLayout());
         panel.setBackground(new Color(240, 248, 255));
-        panel.setBorder(new EmptyBorder(16, 20, 16, 20));
+        panel.setBorder(new EmptyBorder(12, 16, 12, 16));
+        panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(820, 200));
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
-        title.setFont(new Font("Inter", Font.BOLD, 16));
+        title.setFont(new Font("Inter", Font.BOLD, 15));
         title.setForeground(TEXT_PRIMARY);
         panel.add(title, BorderLayout.NORTH);
         
         // Panel con 2 columnas para las opciones
-        JPanel optionsPanel = new JPanel(new GridLayout(1, 2, 16, 0));
+        JPanel optionsPanel = new JPanel(new GridLayout(1, 2, 12, 0));
         optionsPanel.setBackground(new Color(240, 248, 255));
-        optionsPanel.setBorder(new EmptyBorder(16, 0, 0, 0));
+        optionsPanel.setBorder(new EmptyBorder(12, 0, 0, 0));
         
         ButtonGroup group = new ButtonGroup();
         group.add(truePositiveRadio);
         group.add(falsePositiveRadio);
         
-        // Panel Verdadero Positivo
+        // Panel Verdadero Positivo - COMPACTO
         JPanel truePanel = new JPanel();
         truePanel.setLayout(new BoxLayout(truePanel, BoxLayout.Y_AXIS));
         truePanel.setBackground(Color.WHITE);
         truePanel.setBorder(new CompoundBorder(
             new LineBorder(SUCCESS, 2, true),
-            new EmptyBorder(16, 16, 16, 16)
+            new EmptyBorder(12, 12, 12, 12)
         ));
         
-        truePositiveRadio.setFont(new Font("Inter", Font.BOLD, 15));
+        truePositiveRadio.setFont(new Font("Inter", Font.BOLD, 14));
         truePositiveRadio.setForeground(SUCCESS);
         truePositiveRadio.setBackground(Color.WHITE);
         truePositiveRadio.setSelected(true);
         truePanel.add(truePositiveRadio);
-        truePanel.add(Box.createVerticalStrut(8));
+        truePanel.add(Box.createVerticalStrut(6));
         
-        JLabel trueDesc = new JLabel("<html><div style='width:200px'>Se guardará como verdadero positivo en Ground Truth</div></html>");
-        trueDesc.setFont(new Font("Inter", Font.PLAIN, 13));
+        JLabel trueDesc = new JLabel("<html><div style='width:330px;font-size:12px'>Se guardará como verdadero positivo en Ground Truth</div></html>");
+        trueDesc.setFont(new Font("Inter", Font.PLAIN, 12));
         trueDesc.setForeground(TEXT_SECONDARY);
         truePanel.add(trueDesc);
         
-        // Panel Falso Positivo
+        // Panel Falso Positivo - COMPACTO
         JPanel falsePanel = new JPanel();
         falsePanel.setLayout(new BoxLayout(falsePanel, BoxLayout.Y_AXIS));
         falsePanel.setBackground(Color.WHITE);
         falsePanel.setBorder(new CompoundBorder(
             new LineBorder(DANGER, 2, true),
-            new EmptyBorder(16, 16, 16, 16)
+            new EmptyBorder(12, 12, 12, 12)
         ));
         
-        falsePositiveRadio.setFont(new Font("Inter", Font.BOLD, 15));
+        falsePositiveRadio.setFont(new Font("Inter", Font.BOLD, 14));
         falsePositiveRadio.setForeground(DANGER);
         falsePositiveRadio.setBackground(Color.WHITE);
         falsePanel.add(falsePositiveRadio);
-        falsePanel.add(Box.createVerticalStrut(8));
+        falsePanel.add(Box.createVerticalStrut(6));
         
-        JLabel falseDesc = new JLabel("<html><div style='width:200px'>Se marcará como error de IA para reentrenamiento</div></html>");
-        falseDesc.setFont(new Font("Inter", Font.PLAIN, 13));
+        JLabel falseDesc = new JLabel("<html><div style='width:330px;font-size:12px'>Se marcará como error de IA para reentrenamiento</div></html>");
+        falseDesc.setFont(new Font("Inter", Font.PLAIN, 12));
         falseDesc.setForeground(TEXT_SECONDARY);
         falsePanel.add(falseDesc);
         
