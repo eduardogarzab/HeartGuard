@@ -135,11 +135,12 @@ public class AlertValidationDialog extends JDialog {
         panel.add(typeLabel);
         panel.add(Box.createVerticalStrut(4));
         
-        // Descripción compacta
-        JLabel descLabel = new JLabel("<html><body style='width: 780px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
+        // Descripción compacta en máximo 2 líneas
+        JLabel descLabel = new JLabel("<html><body style='width: 820px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
         descLabel.setFont(new Font("Inter", Font.PLAIN, 14));
         descLabel.setForeground(TEXT_PRIMARY);
         descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        descLabel.setMaximumSize(new Dimension(850, 60));
         panel.add(descLabel);
         panel.add(Box.createVerticalStrut(12));
         
