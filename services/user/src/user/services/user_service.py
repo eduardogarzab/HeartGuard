@@ -453,7 +453,9 @@ class UserService:
             raise PermissionError("La alerta no pertenece a la organización especificada")
         
         # Registrar la resolución
+        print(f"🔧 [SERVICE] Llamando resolve_patient_alert: alert_id={alert_id}, user_id={user_id}, outcome={outcome}, note={note[:50] if note else 'None'}...")
         resolution = self.repo.resolve_patient_alert(alert_id, user_id, outcome, note)
+        print(f"🔧 [SERVICE] resolve_patient_alert retornó: {resolution}")
         if not resolution:
             raise RuntimeError("No se pudo registrar la resolución de la alerta")
         

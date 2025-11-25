@@ -407,6 +407,8 @@ class UserRepository:
         note: str | None = None,
     ) -> Dict | None:
         """Registra la resolución de una alerta y actualiza su estado a 'resolved'."""
+        print(f"🔧 [DEBUG] resolve_patient_alert llamado: alert_id={alert_id}, outcome={outcome}, note={note[:50] if note else 'None'}...")
+        
         # Actualizar el estado de la alerta a 'resolved'
         update_query = """
             UPDATE alerts
