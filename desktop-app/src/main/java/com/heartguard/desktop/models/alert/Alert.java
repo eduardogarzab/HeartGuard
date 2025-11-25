@@ -191,15 +191,15 @@ public class Alert {
             }
         }
         
-        // Parsear timestamps
+        // Parsear timestamps (Python backend envía con microsegundos)
         if (json.has("created_at") && !json.get("created_at").isJsonNull()) {
-            builder.createdAt(Instant.parse(json.get("created_at").getAsString()));
+            builder.createdAt(parseTimestamp(json.get("created_at").getAsString()));
         }
         if (json.has("acknowledged_at") && !json.get("acknowledged_at").isJsonNull()) {
-            builder.acknowledgedAt(Instant.parse(json.get("acknowledged_at").getAsString()));
+            builder.acknowledgedAt(parseTimestamp(json.get("acknowledged_at").getAsString()));
         }
         if (json.has("resolved_at") && !json.get("resolved_at").isJsonNull()) {
-            builder.resolvedAt(Instant.parse(json.get("resolved_at").getAsString()));
+            builder.resolvedAt(parseTimestamp(json.get("resolved_at").getAsString()));
         }
         
         // Campos opcionales
@@ -224,6 +224,35 @@ public class Alert {
             return json.get(key).getAsString();
         }
         return null;
+    }
+    
+    /**
+     * Parsea timestamps de Python que pueden tener microsegundos
+     * Formato: 2025-11-25T03:31:19.902051 → 2025-11-25T03:31:19.902051Z
+     */
+    private static Instant parseTimestamp(String timestamp) {
+        if (timestamp == null) return null;
+        
+        // Si no tiene zona horaria, agregar Z
+        if (!timestamp.endsWith("Z") && !timestamp.contains("+") && !timestamp.contains("-", 10)) {
+            timestamp = timestamp + "Z";
+        }
+        
+        // Si tiene más de 6 decimales (nanosegundos), truncar a milisegundos
+        int dotIndex = timestamp.indexOf('.');
+        if (dotIndex > 0) {
+            int zIndex = timestamp.indexOf('Z', dotIndex);
+            if (zIndex < 0) zIndex = timestamp.length();
+            
+            String fractional = timestamp.substring(dotIndex + 1, zIndex);
+            if (fractional.length() > 6) {
+                // Truncar a milisegundos (3 dígitos)
+                fractional = fractional.substring(0, 3);
+                timestamp = timestamp.substring(0, dotIndex + 1) + fractional + "Z";
+            }
+        }
+        
+        return Instant.parse(timestamp);
     }
     
     public static class Builder {

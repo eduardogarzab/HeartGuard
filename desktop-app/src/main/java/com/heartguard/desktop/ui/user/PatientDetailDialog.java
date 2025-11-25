@@ -411,21 +411,33 @@ public class PatientDetailDialog extends JDialog {
             return;
         }
         
-        JsonObject alertJson = loadedAlerts.get(selectedIndex).getAsJsonObject();
-        Alert alert = Alert.fromJson(alertJson);
-        
-        AlertValidationDialog dialog = new AlertValidationDialog(
-                this,
-                alert,
-                orgId,
-                null, // userId lo toma del token
-                token
-        );
-        dialog.setVisible(true);
-        
-        // Recargar alertas después de validar
-        if (dialog.isValidated()) {
-            loadData();
+        try {
+            JsonObject alertJson = loadedAlerts.get(selectedIndex).getAsJsonObject();
+            Alert alert = Alert.fromJson(alertJson);
+            
+            AlertValidationDialog dialog = new AlertValidationDialog(
+                    this,
+                    alert,
+                    orgId,
+                    null, // userId lo toma del token
+                    token
+            );
+            dialog.setVisible(true);
+            
+            // Recargar alertas después de validar
+            if (dialog.isValidated()) {
+                loadData();
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    "<html><body style='width: 300px'>" +
+                    "<h3>❌ Error al abrir diálogo</h3>" +
+                    "<p>" + ex.getMessage() + "</p>" +
+                    "<p><i>Revisa la consola para más detalles</i></p>" +
+                    "</body></html>",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
         }
     }
     
