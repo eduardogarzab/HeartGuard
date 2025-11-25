@@ -299,10 +299,6 @@ public class AlertValidationDialog extends JDialog {
         
         return panel;
     }
-        panel.add(falseDesc);
-        
-        return panel;
-    }
     
     private JPanel createNotesPanel() {
         JPanel panel = new JPanel(new BorderLayout(8, 8));
