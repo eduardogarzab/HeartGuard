@@ -123,6 +123,7 @@ public class AlertValidationDialog extends JDialog {
         panel.setBackground(BG_LIGHT);
         panel.setBorder(new EmptyBorder(16, 16, 16, 16));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.setMaximumSize(new Dimension(820, 300));
         
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm:ss")
                 .withZone(ZoneId.systemDefault());
@@ -135,12 +136,11 @@ public class AlertValidationDialog extends JDialog {
         panel.add(typeLabel);
         panel.add(Box.createVerticalStrut(4));
         
-        // Descripción compacta en máximo 2 líneas
-        JLabel descLabel = new JLabel("<html><body style='width: 820px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
+        // Descripción compacta - ancho reducido para que se parta en 2 líneas
+        JLabel descLabel = new JLabel("<html><body style='width: 750px'><b>Descripción:</b> " + alert.getDescription() + "</body></html>");
         descLabel.setFont(new Font("Inter", Font.PLAIN, 14));
         descLabel.setForeground(TEXT_PRIMARY);
         descLabel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        descLabel.setMaximumSize(new Dimension(850, 60));
         panel.add(descLabel);
         panel.add(Box.createVerticalStrut(12));
         
@@ -148,7 +148,7 @@ public class AlertValidationDialog extends JDialog {
         JPanel gridPanel = new JPanel(new GridLayout(0, 2, 20, 8));
         gridPanel.setOpaque(false);
         gridPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        gridPanel.setMaximumSize(new Dimension(800, 200));
+        gridPanel.setMaximumSize(new Dimension(780, 200));
         
         addInfoField(gridPanel, "👤 Paciente", patientName != null ? patientName : "Desconocido");
         addInfoField(gridPanel, "📊 Nivel", alert.getAlertLevel().getDisplayName());

@@ -445,12 +445,15 @@ class UserRepository:
             # Si el outcome es TRUE_POSITIVE, crear Ground Truth automáticamente
             if outcome and outcome.upper() == 'TRUE_POSITIVE':
                 try:
+                    print(f"[Ground Truth] Iniciando creación de GT para alerta {alert_id}")
                     cursor.execute(alert_info_query, (alert_id,))
                     alert_info = cursor.fetchone()
                     
                     if alert_info:
+                        print(f"[Ground Truth] Info alerta: patient_id={alert_info['patient_id']}, type={alert_info['alert_type_code']}, created_at={alert_info['created_at']}")
                         from datetime import datetime
                         resolved_at = resolution_row['resolved_at'] if resolution_row else datetime.utcnow()
+                        print(f"[Ground Truth] resolved_at={resolved_at}, note={note}")
                         
                         # Primero verificar que el event_type existe
                         cursor.execute(
@@ -460,6 +463,7 @@ class UserRepository:
                         event_type_row = cursor.fetchone()
                         
                         if event_type_row:
+                            print(f"[Ground Truth] event_type_id encontrado: {event_type_row['id']}")
                             # Crear el Ground Truth con los parámetros en el orden correcto
                             cursor.execute(
                                 """
@@ -486,15 +490,17 @@ class UserRepository:
                                 )
                             )
                             gt_row = cursor.fetchone()
-                            print(f"[Ground Truth] Creado GT #{gt_row['id']} para alerta {alert_id}")
+                            print(f"[Ground Truth] ✅ CREADO GT #{gt_row['id']} para alerta {alert_id} con nota: '{note}'")
                         else:
-                            print(f"[Ground Truth] WARN: event_type '{alert_info['alert_type_code']}' no encontrado")
+                            print(f"[Ground Truth] ⚠️ WARN: event_type '{alert_info['alert_type_code']}' no encontrado")
                     else:
-                        print(f"[Ground Truth] WARN: No se pudo obtener info de alerta {alert_id}")
+                        print(f"[Ground Truth] ⚠️ WARN: No se pudo obtener info de alerta {alert_id}")
                 except Exception as e:
-                    print(f"[Ground Truth] ERROR al crear GT: {e}")
+                    print(f"[Ground Truth] ❌ ERROR al crear GT: {e}")
                     import traceback
                     traceback.print_exc()
+            else:
+                print(f"[Ground Truth] Outcome={outcome}, no se creará GT (solo para TRUE_POSITIVE)")
             
             return dict(resolution_row) if resolution_row else None
 
