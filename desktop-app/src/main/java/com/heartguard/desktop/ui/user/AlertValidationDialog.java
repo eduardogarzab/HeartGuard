@@ -262,28 +262,30 @@ public class AlertValidationDialog extends JDialog {
     }
     
     private JPanel createResolveOptionsPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         panel.setBackground(new Color(240, 248, 255));
         panel.setBorder(new EmptyBorder(12, 0, 12, 0));
         panel.setAlignmentX(Component.LEFT_ALIGNMENT);
-        panel.setMaximumSize(new Dimension(820, 180));
         
         JLabel title = new JLabel("¿El evento detectado por la IA fue real?");
         title.setFont(new Font("Inter", Font.BOLD, 15));
         title.setForeground(TEXT_PRIMARY);
-        title.setBorder(new EmptyBorder(0, 0, 10, 0));
-        panel.add(title, BorderLayout.NORTH);
+        title.setAlignmentX(Component.LEFT_ALIGNMENT);
+        panel.add(title);
+        panel.add(Box.createVerticalStrut(10));
         
-        // Panel con 2 columnas para las opciones - SIN PADDING IZQUIERDO
-        JPanel optionsPanel = new JPanel(new GridLayout(1, 2, 12, 0));
+        // Panel horizontal para las dos opciones
+        JPanel optionsPanel = new JPanel();
+        optionsPanel.setLayout(new BoxLayout(optionsPanel, BoxLayout.X_AXIS));
         optionsPanel.setBackground(new Color(240, 248, 255));
-        optionsPanel.setBorder(null);
+        optionsPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
         
         ButtonGroup group = new ButtonGroup();
         group.add(truePositiveRadio);
         group.add(falsePositiveRadio);
         
-        // Panel Verdadero Positivo - SIN ESPACIO INTERNO EXCESIVO
+        // Panel Verdadero Positivo
         JPanel truePanel = new JPanel();
         truePanel.setLayout(new BoxLayout(truePanel, BoxLayout.Y_AXIS));
         truePanel.setBackground(Color.WHITE);
@@ -291,6 +293,7 @@ public class AlertValidationDialog extends JDialog {
             new LineBorder(SUCCESS, 2, true),
             new EmptyBorder(10, 10, 10, 10)
         ));
+        truePanel.setMaximumSize(new Dimension(380, 80));
         
         truePositiveRadio.setFont(new Font("Inter", Font.BOLD, 13));
         truePositiveRadio.setForeground(SUCCESS);
@@ -306,7 +309,7 @@ public class AlertValidationDialog extends JDialog {
         trueDesc.setAlignmentX(Component.LEFT_ALIGNMENT);
         truePanel.add(trueDesc);
         
-        // Panel Falso Positivo - SIN ESPACIO INTERNO EXCESIVO
+        // Panel Falso Positivo
         JPanel falsePanel = new JPanel();
         falsePanel.setLayout(new BoxLayout(falsePanel, BoxLayout.Y_AXIS));
         falsePanel.setBackground(Color.WHITE);
@@ -314,6 +317,7 @@ public class AlertValidationDialog extends JDialog {
             new LineBorder(DANGER, 2, true),
             new EmptyBorder(10, 10, 10, 10)
         ));
+        falsePanel.setMaximumSize(new Dimension(380, 80));
         
         falsePositiveRadio.setFont(new Font("Inter", Font.BOLD, 13));
         falsePositiveRadio.setForeground(DANGER);
@@ -329,9 +333,11 @@ public class AlertValidationDialog extends JDialog {
         falsePanel.add(falseDesc);
         
         optionsPanel.add(truePanel);
+        optionsPanel.add(Box.createHorizontalStrut(12));
         optionsPanel.add(falsePanel);
+        optionsPanel.add(Box.createHorizontalGlue());
         
-        panel.add(optionsPanel, BorderLayout.CENTER);
+        panel.add(optionsPanel);
         
         return panel;
     }
