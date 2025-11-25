@@ -608,12 +608,12 @@ public class ApiClient {
     // ---------------------------- Usuarios ---------------------------------
 
     public JsonObject getCurrentUserProfile(String token) throws ApiException {
-        return executeGatewayGet("/users/me", null, token, true, "Error al obtener perfil de usuario");
+        return executeGatewayGet("/user/users/me", null, token, true, "Error al obtener perfil de usuario");
     }
 
     public JsonArray getCurrentUserMemberships(String token) throws ApiException {
         JsonObject response = executeGatewayGet(
-                "/users/me/org-memberships",
+                "/user/users/me/org-memberships",
                 null,
                 token,
                 true,
