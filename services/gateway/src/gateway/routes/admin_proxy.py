@@ -290,10 +290,10 @@ def ground_truth_event_types(org_id: str):
     return _proxy_request(f"/admin/organizations/{org_id}/ground-truth/event-types", "GET")
 
 
-@bp.route("/organizations/<org_id>/patients/<patient_id>/ground-truth", methods=["GET", "POST"])
+@bp.route("/organizations/<org_id>/patients/<patient_id>/ground-truth/", methods=["GET", "POST"])
 def patient_ground_truth(org_id: str, patient_id: str):
     """Gestión de ground truth labels de un paciente."""
-    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/ground-truth", request.method)
+    return _proxy_request(f"/admin/organizations/{org_id}/patients/{patient_id}/ground-truth/", request.method)
 
 
 @bp.route("/organizations/<org_id>/patients/<patient_id>/ground-truth/<label_id>", methods=["GET", "PATCH", "DELETE"])

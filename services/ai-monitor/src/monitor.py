@@ -184,7 +184,8 @@ class AIMonitorWorker:
         stats["predictions"] = 1
         
         # 3. Si hay problema detectado, crear alertas
-        if prediction.get("prediction") == 1:
+        has_problem = prediction.get("has_problem", False)
+        if has_problem:
             probability = prediction.get("probability", 0)
             
             logger.info(

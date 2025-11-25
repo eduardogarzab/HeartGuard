@@ -23,6 +23,9 @@ FLASK_DEBUG = os.getenv("FLASK_DEBUG", "False").lower() == "true"
 JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
 JWT_ALGORITHM = "HS256"
 
+# Internal Service Authentication
+INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "dev_internal_key")
+
 # Features del modelo (orden IMPORTANTE - debe coincidir con el entrenamiento)
 MODEL_FEATURES = [
     "GPS_longitude",

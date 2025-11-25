@@ -46,9 +46,12 @@ class AIServiceClient:
             
             # Headers con autenticación
             headers = {
-                "Content-Type": "application/json"
+                "Content-Type": "application/json",
+                "X-Internal-Key": config.INTERNAL_SERVICE_KEY
             }
-            if self.jwt_token:
+            # El internal key tiene precedencia sobre JWT
+            # Si no hay internal key, usar JWT si está disponible
+            if not config.INTERNAL_SERVICE_KEY and self.jwt_token:
                 headers["Authorization"] = f"Bearer {self.jwt_token}"
             
             # Llamar al servicio de IA

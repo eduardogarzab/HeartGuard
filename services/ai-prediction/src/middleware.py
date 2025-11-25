@@ -7,7 +7,7 @@ from functools import wraps
 from flask import request, jsonify
 from typing import Callable
 
-from .config import JWT_SECRET, JWT_ALGORITHM
+from .config import JWT_SECRET, JWT_ALGORITHM, INTERNAL_SERVICE_KEY
 
 logger = logging.getLogger(__name__)
 
@@ -17,17 +17,32 @@ def require_auth(f: Callable) -> Callable:
     Decorador para requerir autenticación JWT en endpoints
     
     Espera header: Authorization: Bearer <token>
+    O header: X-Internal-Key: <internal_service_key> para servicios internos
     """
     @wraps(f)
     def decorated_function(*args, **kwargs):
+        # Verificar si es una llamada de servicio interno
+        internal_key = request.headers.get('X-Internal-Key')
+        if internal_key:
+            if internal_key == INTERNAL_SERVICE_KEY:
+                logger.info("Autenticación de servicio interno exitosa")
+                request.jwt_payload = {"sub": "internal-service", "is_internal": True}
+                return f(*args, **kwargs)
+            else:
+                logger.warning("Internal service key inválida")
+                return jsonify({
+                    "error": "Invalid internal key",
+                    "message": "Clave de servicio interno inválida"
+                }), 401
+        
         # Obtener token del header
         auth_header = request.headers.get('Authorization')
         
         if not auth_header:
-            logger.warning("Request sin header Authorization")
+            logger.warning("Request sin header Authorization ni X-Internal-Key")
             return jsonify({
                 "error": "No authorization header",
-                "message": "Se requiere token de autenticación"
+                "message": "Se requiere token de autenticación o clave de servicio"
             }), 401
         
         # Validar formato "Bearer <token>"
