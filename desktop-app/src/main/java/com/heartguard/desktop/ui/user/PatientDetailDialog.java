@@ -111,7 +111,7 @@ public class PatientDetailDialog extends JDialog {
         tabs.setFont(new Font("Inter", Font.PLAIN, 14));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
-        tabs.setPreferredSize(new Dimension(0, 150)); // Muy reducido para maximizar gráficas
+        tabs.setPreferredSize(new Dimension(0, 350)); // Aumentado para mejor visualización de alertas
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -130,6 +130,48 @@ public class PatientDetailDialog extends JDialog {
         alertsList.setBorder(new EmptyBorder(8, 8, 8, 8));
         alertsList.setFixedCellHeight(80);
         
+        // Renderer personalizado para colorear alertas según su estado
+        alertsList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                
+                if (index < loadedAlerts.size()) {
+                    JsonObject alert = loadedAlerts.get(index).getAsJsonObject();
+                    String statusCode = alert.has("status") && alert.get("status").isJsonObject()
+                        ? alert.getAsJsonObject("status").has("code")
+                            ? alert.getAsJsonObject("status").get("code").getAsString()
+                            : "created"
+                        : "created";
+                    
+                    // Colorear según el estado
+                    if (isSelected) {
+                        c.setBackground(PRIMARY_BLUE);
+                        c.setForeground(Color.WHITE);
+                    } else if ("resolved".equalsIgnoreCase(statusCode) || "closed".equalsIgnoreCase(statusCode)) {
+                        // Alertas resueltas/cerradas - fondo gris claro
+                        c.setBackground(new Color(240, 240, 240));
+                        c.setForeground(new Color(120, 120, 120));
+                    } else if ("ack".equalsIgnoreCase(statusCode)) {
+                        // Alertas reconocidas - fondo amarillo suave
+                        c.setBackground(new Color(255, 248, 220));
+                        c.setForeground(new Color(139, 90, 0));
+                    } else {
+                        // Alertas abiertas (created, notified) - fondo rojo suave
+                        c.setBackground(new Color(255, 240, 240));
+                        c.setForeground(new Color(200, 50, 50));
+                    }
+                }
+                
+                if (c instanceof JLabel) {
+                    ((JLabel) c).setBorder(new EmptyBorder(8, 12, 8, 12));
+                }
+                
+                return c;
+            }
+        });
+        
         // Panel para alertas con botón de validación
         JPanel alertsPanel = new JPanel(new BorderLayout(0, 8));
         alertsPanel.setOpaque(false);
@@ -145,6 +187,38 @@ public class PatientDetailDialog extends JDialog {
         validateAlertButton.setForeground(Color.WHITE);
         validateAlertButton.setFocusPainted(false);
         validateAlertButton.setBorder(new EmptyBorder(10, 16, 10, 16));
+        
+        // Listener para habilitar/deshabilitar el botón según el estado de la alerta
+        alertsList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                int selectedIndex = alertsList.getSelectedIndex();
+                if (selectedIndex >= 0 && selectedIndex < loadedAlerts.size()) {
+                    JsonObject alert = loadedAlerts.get(selectedIndex).getAsJsonObject();
+                    String statusCode = alert.has("status") && alert.get("status").isJsonObject()
+                        ? alert.getAsJsonObject("status").has("code")
+                            ? alert.getAsJsonObject("status").get("code").getAsString()
+                            : "created"
+                        : "created";
+                    
+                    // Deshabilitar si ya está resuelta o cerrada
+                    boolean isResolved = "resolved".equalsIgnoreCase(statusCode) || "closed".equalsIgnoreCase(statusCode);
+                    validateAlertButton.setEnabled(!isResolved);
+                    
+                    if (isResolved) {
+                        validateAlertButton.setText("✓ Alerta Ya Resuelta");
+                        validateAlertButton.setBackground(new Color(160, 160, 160));
+                    } else {
+                        validateAlertButton.setText("🔍 Validar Alerta Seleccionada");
+                        validateAlertButton.setBackground(PRIMARY_BLUE);
+                    }
+                } else {
+                    validateAlertButton.setEnabled(true);
+                    validateAlertButton.setText("🔍 Validar Alerta Seleccionada");
+                    validateAlertButton.setBackground(PRIMARY_BLUE);
+                }
+            }
+        });
+        
         validateAlertButton.addActionListener(e -> validateSelectedAlert(alertsList.getSelectedIndex()));
         alertsPanel.add(validateAlertButton, BorderLayout.SOUTH);
         
