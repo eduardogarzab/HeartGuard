@@ -641,7 +641,7 @@ public class ApiClient {
 
     public JsonArray getPendingInvitations(String token) throws ApiException {
         JsonObject response = executeGatewayGet(
-                "/users/me/invitations",
+                "/user/users/me/invitations",
                 null,
                 token,
                 true,
@@ -670,7 +670,7 @@ public class ApiClient {
         }
         return executeGatewayRequest(
                 "PATCH",
-                "/users/me",
+                "/user/users/me",
                 payload,
                 null,
                 token,
@@ -682,7 +682,7 @@ public class ApiClient {
     public JsonObject acceptInvitation(String token, String invitationId) throws ApiException {
         return executeGatewayRequest(
                 "POST",
-                "/users/me/invitations/" + invitationId + "/accept",
+                "/user/users/me/invitations/" + invitationId + "/accept",
                 new JsonObject(),
                 null,
                 token,
@@ -694,7 +694,7 @@ public class ApiClient {
     public JsonObject rejectInvitation(String token, String invitationId) throws ApiException {
         return executeGatewayRequest(
                 "POST",
-                "/users/me/invitations/" + invitationId + "/reject",
+                "/user/users/me/invitations/" + invitationId + "/reject",
                 new JsonObject(),
                 null,
                 token,
@@ -707,7 +707,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationDashboard(String token, String orgId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/dashboard",
+                "/user/orgs/" + orgId + "/dashboard",
                 null,
                 token,
                 true,
@@ -717,7 +717,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationMetrics(String token, String orgId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/metrics",
+                "/user/orgs/" + orgId + "/metrics",
                 null,
                 token,
                 true,
@@ -727,7 +727,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationCareTeams(String token, String orgId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-teams",
+                "/user/orgs/" + orgId + "/care-teams",
                 null,
                 token,
                 true,
@@ -737,7 +737,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationCareTeamDevices(String token, String orgId, String careTeamId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-teams/" + careTeamId + "/devices",
+                "/user/orgs/" + orgId + "/care-teams/" + careTeamId + "/devices",
                 null,
                 token,
                 true,
@@ -747,7 +747,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationCareTeamPatients(String token, String orgId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-team-patients",
+                "/user/orgs/" + orgId + "/care-team-patients",
                 null,
                 token,
                 true,
@@ -757,7 +757,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationPatientDetail(String token, String orgId, String patientId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/patients/" + patientId,
+                "/user/orgs/" + orgId + "/patients/" + patientId,
                 null,
                 token,
                 true,
@@ -769,7 +769,7 @@ public class ApiClient {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("limit", String.valueOf(Math.max(1, limit)));
         return executeGatewayGet(
-                "/orgs/" + orgId + "/patients/" + patientId + "/alerts",
+                "/user/orgs/" + orgId + "/patients/" + patientId + "/alerts",
                 params,
                 token,
                 true,
@@ -781,7 +781,7 @@ public class ApiClient {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("limit", String.valueOf(Math.max(1, limit)));
         return executeGatewayGet(
-                "/orgs/" + orgId + "/patients/" + patientId + "/notes",
+                "/user/orgs/" + orgId + "/patients/" + patientId + "/notes",
                 params,
                 token,
                 true,
@@ -793,7 +793,7 @@ public class ApiClient {
 
     public JsonObject getCaregiverPatients(String token) throws ApiException {
         return executeGatewayGet(
-                "/caregiver/patients",
+                "/user/caregiver/patients",
                 null,
                 token,
                 true,
@@ -803,7 +803,7 @@ public class ApiClient {
 
     public JsonObject getEventTypes() throws ApiException {
         return executeGatewayGet(
-                "/event-types",
+                "/user/event-types",
                 null,
                 null,
                 false,
@@ -813,7 +813,7 @@ public class ApiClient {
 
     public JsonObject getCaregiverPatientDetail(String token, String patientId) throws ApiException {
         return executeGatewayGet(
-                "/caregiver/patients/" + patientId,
+                "/user/caregiver/patients/" + patientId,
                 null,
                 token,
                 true,
@@ -825,7 +825,7 @@ public class ApiClient {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("limit", String.valueOf(Math.max(1, limit)));
         return executeGatewayGet(
-                "/caregiver/patients/" + patientId + "/alerts",
+                "/user/caregiver/patients/" + patientId + "/alerts",
                 params,
                 token,
                 true,
@@ -837,7 +837,7 @@ public class ApiClient {
         Map<String, String> params = new LinkedHashMap<>();
         params.put("limit", String.valueOf(Math.max(1, limit)));
         return executeGatewayGet(
-                "/caregiver/patients/" + patientId + "/notes",
+                "/user/caregiver/patients/" + patientId + "/notes",
                 params,
                 token,
                 true,
@@ -847,7 +847,7 @@ public class ApiClient {
 
     public JsonObject getCaregiverPatientDevices(String token, String patientId) throws ApiException {
         return executeGatewayGet(
-                "/caregiver/patients/" + patientId + "/devices",
+                "/user/caregiver/patients/" + patientId + "/devices",
                 null,
                 token,
                 true,
@@ -857,7 +857,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationPatientDevices(String token, String orgId, String patientId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/patients/" + patientId + "/devices",
+                "/user/orgs/" + orgId + "/patients/" + patientId + "/devices",
                 null,
                 token,
                 true,
@@ -868,7 +868,7 @@ public class ApiClient {
     public JsonObject createCaregiverPatientNote(String token, String patientId, JsonObject noteData) throws ApiException {
         return executeGatewayRequest(
                 "POST",
-                "/caregiver/patients/" + patientId + "/notes",
+                "/user/caregiver/patients/" + patientId + "/notes",
                 noteData,
                 null,
                 token,
@@ -881,7 +881,7 @@ public class ApiClient {
 
     public JsonObject getCareTeamLocations(String token, Map<String, String> params) throws ApiException {
         return executeGatewayGet(
-                "/care-team/locations",
+                "/user/care-team/locations",
                 params,
                 token,
                 true,
@@ -891,7 +891,7 @@ public class ApiClient {
 
     public JsonObject getCaregiverPatientLocations(String token, Map<String, String> params) throws ApiException {
         return executeGatewayGet(
-                "/caregiver/patients/locations",
+                "/user/caregiver/patients/locations",
                 params,
                 token,
                 true,
@@ -901,7 +901,7 @@ public class ApiClient {
 
     public JsonObject getOrganizationCareTeamPatientsLocations(String token, String orgId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-team-patients/locations",
+                "/user/orgs/" + orgId + "/care-team-patients/locations",
                 null,
                 token,
                 true,
@@ -929,7 +929,7 @@ public class ApiClient {
         }
         
         return executeGatewayGet(
-                "/orgs/" + orgId + "/devices",
+                "/user/orgs/" + orgId + "/devices",
                 queryParams.isEmpty() ? null : queryParams,
                 token,
                 true,
@@ -942,7 +942,7 @@ public class ApiClient {
      */
     public JsonObject getOrganizationDevice(String token, String orgId, String deviceId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/devices/" + deviceId,
+                "/user/orgs/" + orgId + "/devices/" + deviceId,
                 null,
                 token,
                 true,
@@ -955,7 +955,7 @@ public class ApiClient {
      */
     public JsonObject getOrganizationDeviceStreams(String token, String orgId, String deviceId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/devices/" + deviceId + "/streams",
+                "/user/orgs/" + orgId + "/devices/" + deviceId + "/streams",
                 null,
                 token,
                 true,
@@ -967,7 +967,7 @@ public class ApiClient {
     @Deprecated
     public JsonObject getCareTeamDevices(String token, String orgId, String teamId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
+                "/user/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
                 null,
                 token,
                 true,
@@ -978,7 +978,7 @@ public class ApiClient {
     @Deprecated
     public JsonObject getCareTeamDisconnectedDevices(String token, String orgId, String teamId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
+                "/user/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
                 null,
                 token,
                 true,
@@ -989,7 +989,7 @@ public class ApiClient {
     @Deprecated
     public JsonObject getCareTeamDeviceStreams(String token, String orgId, String teamId, String deviceId) throws ApiException {
         return executeGatewayGet(
-                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
+                "/user/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
                 null,
                 token,
                 true,
@@ -1001,7 +1001,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getOrganizationDashboardAsync(String token, String orgId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/dashboard",
+                "/user/orgs/" + orgId + "/dashboard",
                 null,
                 token,
                 true,
@@ -1011,7 +1011,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getOrganizationMetricsAsync(String token, String orgId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/metrics",
+                "/user/orgs/" + orgId + "/metrics",
                 null,
                 token,
                 true,
@@ -1021,7 +1021,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getOrganizationCareTeamsAsync(String token, String orgId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/care-teams",
+                "/user/orgs/" + orgId + "/care-teams",
                 null,
                 token,
                 true,
@@ -1031,7 +1031,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getOrganizationCareTeamPatientsAsync(String token, String orgId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/care-team-patients",
+                "/user/orgs/" + orgId + "/care-team-patients",
                 null,
                 token,
                 true,
@@ -1041,7 +1041,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getCaregiverPatientsAsync(String token) {
         return executeGatewayGetAsync(
-                "/caregiver/patients",
+                "/user/caregiver/patients",
                 null,
                 token,
                 true,
@@ -1051,7 +1051,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getCareTeamLocationsAsync(String token, Map<String, String> params) {
         return executeGatewayGetAsync(
-                "/care-team/locations",
+                "/user/care-team/locations",
                 params,
                 token,
                 true,
@@ -1061,7 +1061,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getCaregiverPatientLocationsAsync(String token, Map<String, String> params) {
         return executeGatewayGetAsync(
-                "/caregiver/patients/locations",
+                "/user/caregiver/patients/locations",
                 params,
                 token,
                 true,
@@ -1071,7 +1071,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getOrganizationCareTeamPatientsLocationsAsync(String token, String orgId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/care-team-patients/locations",
+                "/user/orgs/" + orgId + "/care-team-patients/locations",
                 null,
                 token,
                 true,
@@ -1081,7 +1081,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getCareTeamDevicesAsync(String token, String orgId, String teamId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
+                "/user/orgs/" + orgId + "/care-teams/" + teamId + "/devices",
                 null,
                 token,
                 true,
@@ -1091,7 +1091,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getCareTeamDisconnectedDevicesAsync(String token, String orgId, String teamId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
+                "/user/orgs/" + orgId + "/care-teams/" + teamId + "/devices/disconnected",
                 null,
                 token,
                 true,
@@ -1101,7 +1101,7 @@ public class ApiClient {
 
     public CompletableFuture<JsonObject> getCareTeamDeviceStreamsAsync(String token, String orgId, String teamId, String deviceId) {
         return executeGatewayGetAsync(
-                "/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
+                "/user/orgs/" + orgId + "/care-teams/" + teamId + "/devices/" + deviceId + "/streams",
                 null,
                 token,
                 true,
