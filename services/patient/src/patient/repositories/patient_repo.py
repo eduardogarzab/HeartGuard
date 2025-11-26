@@ -98,14 +98,13 @@ class PatientRepository:
     def get_recent_alerts(patient_id: str, limit: int = 5) -> List[Dict]:
         """
         Obtiene las alertas más recientes del paciente
-        Incluye información de IA y validación de ground truth
         
         Args:
             patient_id: UUID del paciente
             limit: Número máximo de alertas a retornar
             
         Returns:
-            Lista de alertas con información de IA y ground truth
+            Lista de alertas
         """
         with get_db_cursor() as cursor:
             cursor.execute("""
@@ -117,33 +116,11 @@ class PatientRepository:
                     a.created_at,
                     ast.code as status,
                     ST_Y(a.location) as latitude,
-                    ST_X(a.location) as longitude,
-                    -- ✨ NUEVO: Información de IA
-                    a.created_by_model_id,
-                    m.name as model_name,
-                    a.source_inference_id,
-                    -- ✨ NUEVO: Información de Ground Truth
-                    gt.id as ground_truth_id,
-                    gt.event_type_id as ground_truth_event_type,
-                    et.code as ground_truth_event_code,
-                    et.label as ground_truth_event_label,
-                    gt.annotated_by_user_id as ground_truth_doctor_id,
-                    u.name as ground_truth_doctor,
-                    gt.note as ground_truth_note,
-                    gt.created_at as ground_truth_created_at
+                    ST_X(a.location) as longitude
                 FROM alerts a
                 LEFT JOIN alert_types at ON a.type_id = at.id
                 LEFT JOIN alert_levels al ON a.alert_level_id = al.id
                 LEFT JOIN alert_status ast ON a.status_id = ast.id
-                LEFT JOIN models m ON a.created_by_model_id = m.id
-                -- ✨ NUEVO: Join con ground truth basado en paciente, tipo de evento y timestamp cercano
-                LEFT JOIN ground_truth_labels gt ON (
-                    gt.patient_id = a.patient_id 
-                    AND gt.onset >= (a.created_at - INTERVAL '10 minutes')
-                    AND gt.onset <= (a.created_at + INTERVAL '10 minutes')
-                )
-                LEFT JOIN event_types et ON gt.event_type_id = et.id
-                LEFT JOIN users u ON gt.annotated_by_user_id = u.id
                 WHERE a.patient_id = %s
                 ORDER BY a.created_at DESC
                 LIMIT %s
@@ -154,7 +131,6 @@ class PatientRepository:
     def get_alerts(patient_id: str, status: Optional[str] = None, limit: int = 20, offset: int = 0) -> tuple:
         """
         Obtiene alertas del paciente con paginación
-        Incluye información de IA y validación de ground truth
         
         Args:
             patient_id: UUID del paciente
@@ -176,33 +152,11 @@ class PatientRepository:
                     a.created_at,
                     ast.code as status,
                     ST_Y(a.location) as latitude,
-                    ST_X(a.location) as longitude,
-                    -- ✨ NUEVO: Información de IA
-                    a.created_by_model_id,
-                    m.name as model_name,
-                    a.source_inference_id,
-                    -- ✨ NUEVO: Información de Ground Truth
-                    gt.id as ground_truth_id,
-                    gt.event_type_id as ground_truth_event_type,
-                    et.code as ground_truth_event_code,
-                    et.label as ground_truth_event_label,
-                    gt.annotated_by_user_id as ground_truth_doctor_id,
-                    u.name as ground_truth_doctor,
-                    gt.note as ground_truth_note,
-                    gt.created_at as ground_truth_created_at
+                    ST_X(a.location) as longitude
                 FROM alerts a
                 LEFT JOIN alert_types at ON a.type_id = at.id
                 LEFT JOIN alert_levels al ON a.alert_level_id = al.id
                 LEFT JOIN alert_status ast ON a.status_id = ast.id
-                LEFT JOIN models m ON a.created_by_model_id = m.id
-                -- ✨ NUEVO: Join con ground truth
-                LEFT JOIN ground_truth_labels gt ON (
-                    gt.patient_id = a.patient_id 
-                    AND gt.onset >= (a.created_at - INTERVAL '10 minutes')
-                    AND gt.onset <= (a.created_at + INTERVAL '10 minutes')
-                )
-                LEFT JOIN event_types et ON gt.event_type_id = et.id
-                LEFT JOIN users u ON gt.annotated_by_user_id = u.id
                 WHERE a.patient_id = %s
             """
             params = [patient_id]
