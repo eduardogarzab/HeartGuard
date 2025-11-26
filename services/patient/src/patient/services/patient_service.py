@@ -32,8 +32,8 @@ class PatientService:
         # Obtener estadísticas
         stats = self.repo.get_patient_stats(patient_id)
         
-        # Obtener alertas recientes
-        recent_alerts = self.repo.get_recent_alerts(patient_id, limit=5)
+        # Obtener alertas recientes (aumentado a 50 para mostrar más con scroll)
+        recent_alerts = self.repo.get_recent_alerts(patient_id, limit=50)
         
         # Obtener equipo de cuidado
         care_team_raw = self.repo.get_care_team(patient_id)
@@ -274,8 +274,8 @@ class PatientService:
         return status_map.get(status, status or 'N/A')
     
     def _format_alert(self, alert: Dict) -> Dict:
-        """Formatea una alerta para respuesta"""
-        return {
+        """Formatea una alerta para respuesta, incluyendo información de IA y ground truth"""
+        formatted = {
             'id': str(alert['id']),
             'type': alert['type'],
             'level': alert['level'],
@@ -289,6 +289,36 @@ class PatientService:
                 'lng': float(alert['longitude']) if alert.get('longitude') else None
             } if alert.get('latitude') and alert.get('longitude') else None
         }
+        
+        # Agregar información del modelo de IA si existe
+        if alert.get('created_by_model_id'):
+            formatted['created_by_model_id'] = str(alert['created_by_model_id'])
+            if alert.get('model_name'):
+                formatted['model_name'] = alert['model_name']
+            if alert.get('model_version'):
+                formatted['model_version'] = alert['model_version']
+        
+        # Agregar información de resolución si existe
+        if alert.get('resolution_outcome'):
+            formatted['resolution'] = {
+                'outcome': alert['resolution_outcome'],
+                'note': alert.get('resolution_note'),
+                'resolved_at': alert['resolved_at'].isoformat() if alert.get('resolved_at') else None,
+                'resolved_by': alert.get('resolved_by_name')
+            }
+        
+        # Agregar información de ground truth (validación médica) si existe
+        if alert.get('ground_truth_id'):
+            formatted['ground_truth_id'] = str(alert['ground_truth_id'])
+            formatted['ground_truth'] = {
+                'event_type': alert.get('gt_event_type'),
+                'onset': alert['gt_onset'].isoformat() if alert.get('gt_onset') else None,
+                'offset': alert['gt_offset'].isoformat() if alert.get('gt_offset') else None,
+                'note': alert.get('gt_note'),
+                'validated_by': alert.get('validated_by_name')
+            }
+        
+        return formatted
     
     @staticmethod
     def _format_device(device: Dict) -> Dict:

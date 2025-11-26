@@ -2,6 +2,7 @@ package com.heartguard.desktop.ui;
 
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
+import com.heartguard.desktop.ui.patient.AlertDetailDialog;
 import com.heartguard.desktop.ui.patient.PatientEmbeddedMapPanel;
 import com.heartguard.desktop.ui.patient.ProfilePhotoPanel;
 import com.heartguard.desktop.ui.user.VitalSignsChartPanel;
@@ -300,7 +301,17 @@ public class PatientDashboardPanel extends JPanel {
         alertsPanel.setLayout(new BoxLayout(alertsPanel, BoxLayout.Y_AXIS));
         alertsPanel.setOpaque(false);
 
-        return createCardSection("🚨 Alertas Recientes", alertsPanel);
+        // Envolver en un JScrollPane para permitir scroll
+        JScrollPane alertsScrollPane = new JScrollPane(alertsPanel);
+        alertsScrollPane.setBorder(null);
+        alertsScrollPane.setOpaque(false);
+        alertsScrollPane.getViewport().setOpaque(false);
+        alertsScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        alertsScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        alertsScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        alertsScrollPane.setPreferredSize(new Dimension(0, 400)); // Altura fija para scroll
+
+        return createCardSection("🚨 Alertas Recientes", alertsScrollPane);
     }
 
     private JPanel createCareTeamSection() {
@@ -731,6 +742,25 @@ public class PatientDashboardPanel extends JPanel {
                 new EmptyBorder(16, 20, 16, 20)
         ));
         cardWrapper.setLayout(new BorderLayout(12, 8));
+        
+        // Hacer la tarjeta clickeable
+        cardWrapper.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cardWrapper.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                showAlertDetail(alert);
+            }
+            
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                cardWrapper.setBackground(new Color(245, 247, 250));
+            }
+            
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                cardWrapper.setBackground(SURFACE_COLOR);
+            }
+        });
 
         String level = alert.get("level_label").getAsString();
         String type = alert.has("type") && !alert.get("type").isJsonNull()
@@ -765,6 +795,62 @@ public class PatientDashboardPanel extends JPanel {
         metaRow.setOpaque(false);
         metaRow.add(dateLabel);
         metaRow.add(statusChip);
+
+        // ✅ Indicador de IA - Verificar si fue generada por un modelo
+        boolean createdByAI = alert.has("created_by_model_id") 
+                && !alert.get("created_by_model_id").isJsonNull()
+                && !alert.get("created_by_model_id").getAsString().isEmpty();
+        
+        if (createdByAI) {
+            JLabel aiChip = new JLabel(" 🤖 IA ");
+            aiChip.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            aiChip.setForeground(new Color(103, 58, 183)); // Púrpura
+            aiChip.setOpaque(true);
+            aiChip.setBackground(new Color(103, 58, 183, 30));
+            aiChip.setBorder(new CompoundBorder(
+                    new MatteBorder(1, 1, 1, 1, new Color(103, 58, 183)),
+                    new EmptyBorder(4, 8, 4, 8)
+            ));
+            aiChip.setToolTipText("Alerta generada por modelo de IA");
+            metaRow.add(aiChip);
+            
+            // Mostrar nombre del modelo si está disponible
+            if (alert.has("model_name") && !alert.get("model_name").isJsonNull()) {
+                String modelName = alert.get("model_name").getAsString();
+                String modelVersion = alert.has("model_version") && !alert.get("model_version").isJsonNull()
+                        ? alert.get("model_version").getAsString() : "";
+                String modelInfo = modelName + (modelVersion.isEmpty() ? "" : " v" + modelVersion);
+                aiChip.setToolTipText("Generada por: " + modelInfo);
+            }
+        }
+        
+        // ✅ Indicador de Ground Truth - Verificar si fue validada por un médico
+        boolean hasGroundTruth = alert.has("ground_truth_id") 
+                && !alert.get("ground_truth_id").isJsonNull()
+                && !alert.get("ground_truth_id").getAsString().isEmpty();
+        
+        if (hasGroundTruth) {
+            JLabel gtChip = new JLabel(" ✓ VALIDADA ");
+            gtChip.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            gtChip.setForeground(new Color(46, 125, 50)); // Verde médico
+            gtChip.setOpaque(true);
+            gtChip.setBackground(new Color(46, 125, 50, 30));
+            gtChip.setBorder(new CompoundBorder(
+                    new MatteBorder(1, 1, 1, 1, new Color(46, 125, 50)),
+                    new EmptyBorder(4, 8, 4, 8)
+            ));
+            gtChip.setToolTipText("Alerta validada por profesional médico");
+            metaRow.add(gtChip);
+            
+            // Mostrar quién validó si está disponible
+            if (alert.has("ground_truth")) {
+                JsonObject gt = alert.getAsJsonObject("ground_truth");
+                if (gt.has("validated_by") && !gt.get("validated_by").isJsonNull()) {
+                    String validatedBy = gt.get("validated_by").getAsString();
+                    gtChip.setToolTipText("Validada por: " + validatedBy);
+                }
+            }
+        }
 
         JPanel infoPanel = new JPanel();
         infoPanel.setOpaque(false);
@@ -1522,6 +1608,15 @@ public class PatientDashboardPanel extends JPanel {
             window.dispose();
             new LoginFrame().setVisible(true);
         }
+    }
+    
+    /**
+     * Muestra el diálogo de detalle de una alerta
+     */
+    private void showAlertDetail(JsonObject alert) {
+        Window parentWindow = SwingUtilities.getWindowAncestor(this);
+        AlertDetailDialog dialog = new AlertDetailDialog(parentWindow, alert);
+        dialog.setVisible(true);
     }
 
     // Clase interna para almacenar información de dispositivos
