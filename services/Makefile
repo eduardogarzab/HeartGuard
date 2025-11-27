@@ -404,7 +404,7 @@ wait-aimonitor:
 # =============================================================================
 # Detener Servicios
 # =============================================================================
-stop: stop-aimonitor stop-ai stop-realtime stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
+stop: stop-aimonitor stop-ai stop-influxdb stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
 	@echo "✓ Todos los servicios detenidos"
 
 stop-auth:
