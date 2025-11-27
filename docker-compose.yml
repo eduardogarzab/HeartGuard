@@ -1,5 +1,14 @@
 version: "3.9"
 
+# =============================================================================
+# HeartGuard - Docker Compose
+# =============================================================================
+# Este archivo solo levanta los servicios de infraestructura (bases de datos).
+# Los microservicios (auth, admin, user, patient, gateway, ai-*, etc.)
+# se levantan en el servidor de microservicios (129.212.181.53) con:
+#   cd services && make restart
+# =============================================================================
+
 services:
   postgres:
     image: postgis/postgis:14-3.2

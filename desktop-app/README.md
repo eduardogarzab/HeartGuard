@@ -1,6 +1,41 @@
 # HeartGuard Desktop App
 
-Aplicación de escritorio Java Swing para el sistema HeartGuard, incluyendo visualización de signos vitales en tiempo real.
+Aplicación de escritorio Java Swing para el sistema HeartGuard, incluyendo:
+- 📊 Visualización de signos vitales en tiempo real
+- 🚨 **Sistema de Alertas de IA con Ground Truth** (NUEVO)
+- 👥 Gestión de pacientes y equipos de cuidado
+- 🏥 Panel de control organizacional
+
+## 🚨 Nuevo: Sistema de Alertas de IA
+
+Esta aplicación ahora incluye un sistema completo de alertas generadas por IA con validación de ground truth para usuarios no pacientes (caregivers, médicos, enfermeras).
+
+### Características Principales
+
+✅ **Panel de Alertas en Tiempo Real**
+- Ver alertas de todos los pacientes de la organización
+- Filtros por estado (Creada, Notificada, Reconocida, Resuelta)
+- Filtros por nivel (Crítico, Alto, Medio, Bajo)
+- Búsqueda por nombre de paciente
+- Auto-refresh cada 30 segundos
+
+✅ **Validación de Ground Truth**
+- Marcar alertas como Verdadero Positivo (evento real)
+- Marcar alertas como Falso Positivo (error del modelo)
+- Agregar notas clínicas
+- Medir precisión del modelo de IA
+
+✅ **Gestión de Ciclo de Vida**
+- Reconocer alertas (acknowledge)
+- Resolver alertas
+- Cerrar casos
+
+### Documentación de Alertas
+
+- 📖 [Guía de Uso Completa](README_ALERTAS_IA.md)
+- 📋 [Resumen de Implementación](IMPLEMENTACION_RESUMEN.md)
+- 🔧 [Ejemplos de API Backend](BACKEND_API_EXAMPLES.md)
+- 🚀 [Guía de Compilación](COMPILAR_Y_EJECUTAR.md)
 
 ## Requisitos
 
@@ -228,7 +263,7 @@ java -jar target/heartguard-desktop-1.0-SNAPSHOT.jar
 ### No se muestran datos en las gráficas
 
 **Verificar**:
-1. El servicio realtime-data-generator está corriendo
+1. El servicio influxdb-service está corriendo
 2. InfluxDB es accesible desde tu máquina
 3. El token de InfluxDB es correcto
 4. Hay datos para el paciente seleccionado

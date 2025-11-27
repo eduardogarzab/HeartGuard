@@ -80,14 +80,23 @@ const Api = (() => {
         if (body && !(body instanceof FormData)) {
             headers.set("Content-Type", headers.get("Content-Type") || "application/json");
         }
+        
+        const url = buildUrl(path);
+        console.log('🌐 Fetch XML:', url);
+        
         const response = await withTimeout(
-            fetch(buildUrl(path), {
+            fetch(url, {
                 method,
                 headers,
                 body: body ? (body instanceof FormData ? body : JSON.stringify(body)) : undefined,
             })
         );
         const text = await response.text();
+        
+        console.log('📥 Respuesta XML (primeros 1000 chars):', text.substring(0, 1000));
+        console.log('📊 Status:', response.status);
+        console.log('📋 Content-Type:', response.headers.get('Content-Type'));
+        
         if (!response.ok) {
             const synthetic = new Response(text, {
                 status: response.status,
@@ -834,6 +843,29 @@ const Api = (() => {
                     token,
                 });
                 return true;
+            },
+            
+            // Vital Signs from InfluxDB
+            async getPatientVitalSigns(token, patientId, deviceId = null, limit = 50) {
+                const params = new URLSearchParams({ limit: limit.toString() });
+                if (deviceId) {
+                    params.append('device_id', deviceId);
+                }
+                const path = `/realtime/patients/${patientId}/vital-signs?${params.toString()}`;
+                
+                console.log('🌐 Llamando a:', path);
+                console.log('🔑 Token:', token ? 'presente' : 'ausente');
+                
+                try {
+                    // El servicio realtime responde con JSON, no XML
+                    const response = await requestJson(path, { token });
+                    console.log('✅ JSON recibido exitosamente');
+                    console.log('📊 Respuesta parseada:', response);
+                    return response;
+                } catch (error) {
+                    console.error('❌ Error en getPatientVitalSigns:', error);
+                    throw error;
+                }
             },
         },
     };

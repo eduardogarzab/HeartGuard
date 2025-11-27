@@ -82,25 +82,34 @@ INSERT INTO alert_status(code, description, step_order) VALUES
 ON CONFLICT (code) DO NOTHING;
 
 -- Tipos de alerta (rango de severidad por nivel)
+-- Incluye todos los tipos que el modelo de IA puede generar
 INSERT INTO alert_types(code, description, severity_min_id, severity_max_id)
 SELECT x.code, x.description,
        (SELECT id FROM alert_levels WHERE code = x.min_code),
        (SELECT id FROM alert_levels WHERE code = x.max_code)
 FROM (VALUES
-  ('ARRHYTHMIA','Ritmo cardiaco anómalo','medium','critical'),
+  ('GENERAL_RISK','Riesgo general de salud','low','critical'),
+  ('ARRHYTHMIA','Arritmia - Ritmo cardiaco anómalo','medium','critical'),
   ('DESAT','Desaturación de oxígeno','low','critical'),
-  ('HYPERTENSION','Presión arterial elevada','medium','critical')
+  ('HYPERTENSION','Hipertensión arterial','medium','critical'),
+  ('HYPOTENSION','Hipotensión arterial','medium','critical'),
+  ('FEVER','Fiebre','low','high'),
+  ('HYPOTHERMIA','Hipotermia','medium','critical')
 ) AS x(code,description,min_code,max_code)
 ON CONFLICT (code) DO NOTHING;
 
 -- Tipos de evento (severidad por defecto)
+-- Incluye todos los tipos que el modelo de IA puede detectar
 INSERT INTO event_types(code, description, severity_default_id)
 SELECT x.code, x.description, (SELECT id FROM alert_levels WHERE code = x.def_level)
 FROM (VALUES
-  ('AFIB','Fibrilación auricular','high'),
-  ('TACHY','Taquicardia','medium'),
-  ('DESAT','Desaturación O2','high'),
-  ('HYPERTENSION','Hipertensión','medium')
+  ('GENERAL_RISK','Riesgo general de salud detectado por IA','medium'),
+  ('ARRHYTHMIA','Arritmia - Frecuencia cardiaca anormal','high'),
+  ('DESAT','Desaturación de oxígeno','high'),
+  ('HYPERTENSION','Hipertensión arterial','medium'),
+  ('HYPOTENSION','Hipotensión arterial','high'),
+  ('FEVER','Fiebre - Temperatura elevada','medium'),
+  ('HYPOTHERMIA','Hipotermia - Temperatura baja','high')
 ) AS x(code,description,def_level)
 ON CONFLICT (code) DO NOTHING;
 
@@ -524,8 +533,8 @@ VALUES
   (
     '86eee85e-de79-4414-9986-15d2930271aa',
     'f171d21c-a837-4d03-8233-9d80a20911ca',
-    'heartguard-lab',
-    'telemetria',
+    'heartguard',
+    'timeseries',
     'ecg_waveform',
     '30d',
     NOW() - INTERVAL '7 days'
@@ -533,13 +542,13 @@ VALUES
   (
     '333d08ad-b521-4d3b-9259-9013ff6aa360',
     '7470ea38-4d6d-4519-9bb8-766d2dee575a',
-    'heartguard-lab',
-    'telemetria',
+    'heartguard',
+    'timeseries',
     'spo2_series',
     '14d',
     NOW() - INTERVAL '3 days'
   )
-ON CONFLICT (id) DO NOTHING;
+ON CONFLICT (id) DO UPDATE SET influx_org = EXCLUDED.influx_org, influx_bucket = EXCLUDED.influx_bucket;
 
 INSERT INTO timeseries_binding_tag (id, binding_id, tag_key, tag_value)
 VALUES
@@ -567,6 +576,15 @@ VALUES
     's3://heartguard-models/oxymap/v0.9.2',
     '{"min_spo2":0.9}'::jsonb,
     NOW() - INTERVAL '80 days'
+  ),
+  (
+    '988e1fee-e18e-4eb9-9b9d-72ae7d48d8bc'::uuid,
+    'HeartGuard RandomForest',
+    '1.0.0',
+    'health_anomaly_detection',
+    's3://heartguard-models/randomforest/v1.0.0',
+    '{"n_estimators":100,"max_depth":10,"min_samples_split":5}'::jsonb,
+    NOW() - INTERVAL '30 days'
   )
 ON CONFLICT (id) DO NOTHING;
 
@@ -842,6 +860,147 @@ DELETE FROM signal_streams ss WHERE ss.device_id = (SELECT id FROM devices WHERE
 
 
 -- =========================================================
+-- SINCRONIZACIÓN INFLUXDB-POSTGRESQL
+-- =========================================================
+-- Este script crea automáticamente streams y bindings para dispositivos
+-- que están ASIGNADOS a pacientes y ACTIVOS.
+-- 
+-- Flujo de trabajo:
+-- 1. Organización compra dispositivo (INSERT en devices con owner_patient_id=NULL)
+-- 2. Administrador asigna dispositivo a paciente (UPDATE devices SET owner_patient_id=X)
+-- 3. Este trigger automáticamente crea:
+--    - signal_stream (para captura de datos)
+--    - timeseries_binding (vinculación con InfluxDB)
+--    - timeseries_binding_tag (tags custom: location, floor, GPS)
+
+-- Trigger para crear automáticamente stream y binding cuando se asigna un dispositivo
+CREATE OR REPLACE FUNCTION create_stream_on_device_assignment()
+RETURNS TRIGGER AS $$
+DECLARE
+  v_signal_type_id UUID;
+  v_stream_id UUID;
+  v_binding_id UUID;
+  v_location_geom GEOMETRY;
+  v_gps_long DOUBLE PRECISION;
+  v_gps_lat DOUBLE PRECISION;
+BEGIN
+  -- Solo procesar si:
+  -- 1. El dispositivo se está asignando a un paciente (owner_patient_id cambió a NOT NULL)
+  -- 2. El dispositivo está activo
+  IF NEW.owner_patient_id IS NOT NULL AND NEW.active = TRUE AND 
+     (TG_OP = 'INSERT' OR (TG_OP = 'UPDATE' AND OLD.owner_patient_id IS DISTINCT FROM NEW.owner_patient_id)) THEN
+    
+    -- Obtener signal_type para vital signs (HR = Heart Rate, genérico para signos vitales)
+    SELECT id INTO v_signal_type_id FROM signal_types WHERE code = 'HR' LIMIT 1;
+    
+    IF v_signal_type_id IS NULL THEN
+      RAISE WARNING 'Signal type HR not found, cannot create stream for device %', NEW.serial;
+      RETURN NEW;
+    END IF;
+
+    -- Verificar si ya existe un stream activo para este dispositivo
+    SELECT id INTO v_stream_id
+    FROM signal_streams
+    WHERE device_id = NEW.id
+      AND patient_id = NEW.owner_patient_id
+      AND ended_at IS NULL
+    LIMIT 1;
+
+    -- Si no existe stream, crearlo
+    IF v_stream_id IS NULL THEN
+      INSERT INTO signal_streams (
+        patient_id,
+        device_id,
+        signal_type_id,
+        sample_rate_hz,
+        started_at,
+        ended_at
+      ) VALUES (
+        NEW.owner_patient_id,
+        NEW.id,
+        v_signal_type_id,
+        1.0, -- 1 Hz (1 lectura por segundo)
+        NOW(),
+        NULL -- Stream activo
+      ) RETURNING id INTO v_stream_id;
+
+      RAISE NOTICE 'Stream created for device % assigned to patient %', NEW.serial, NEW.owner_patient_id;
+
+      -- Crear binding a InfluxDB
+      INSERT INTO timeseries_binding (
+        stream_id,
+        influx_org,
+        influx_bucket,
+        measurement,
+        retention_hint
+      ) VALUES (
+        v_stream_id,
+        'heartguard',
+        'timeseries',
+        'vital_signs',
+        '30d'
+      ) RETURNING id INTO v_binding_id;
+
+      RAISE NOTICE 'InfluxDB binding created for stream %', v_stream_id;
+
+      -- Obtener ubicación GPS del paciente (última conocida)
+      SELECT geom INTO v_location_geom
+      FROM patient_locations
+      WHERE patient_id = NEW.owner_patient_id
+      ORDER BY ts DESC
+      LIMIT 1;
+
+      -- Crear tags custom
+      IF v_location_geom IS NOT NULL THEN
+        v_gps_long := ST_X(v_location_geom);
+        v_gps_lat := ST_Y(v_location_geom);
+
+        INSERT INTO timeseries_binding_tag (binding_id, tag_key, tag_value) VALUES
+          (v_binding_id, 'gps_longitude', v_gps_long::TEXT),
+          (v_binding_id, 'gps_latitude', v_gps_lat::TEXT),
+          (v_binding_id, 'location', 'hospital_main'),
+          (v_binding_id, 'floor', '3');
+      ELSE
+        INSERT INTO timeseries_binding_tag (binding_id, tag_key, tag_value) VALUES
+          (v_binding_id, 'location', 'hospital_main'),
+          (v_binding_id, 'floor', '3');
+      END IF;
+
+      RAISE NOTICE 'Tags created for binding %', v_binding_id;
+    END IF;
+  END IF;
+
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger en la tabla devices
+DROP TRIGGER IF EXISTS trg_device_assignment ON devices;
+CREATE TRIGGER trg_device_assignment
+  AFTER INSERT OR UPDATE OF owner_patient_id, active ON devices
+  FOR EACH ROW
+  EXECUTE FUNCTION create_stream_on_device_assignment();
+
+-- Ejecutar la lógica para dispositivos ya asignados (migración de datos existentes)
+DO $$
+DECLARE
+  v_device RECORD;
+BEGIN
+  RAISE NOTICE '✓ Trigger de sincronización automática creado';
+  
+  FOR v_device IN 
+    SELECT id, owner_patient_id FROM devices 
+    WHERE owner_patient_id IS NOT NULL AND active = TRUE
+  LOOP
+    -- Esto disparará el trigger para crear streams si no existen
+    UPDATE devices SET active = active WHERE id = v_device.id;
+  END LOOP;
+  
+  RAISE NOTICE '✓ Streams creados para dispositivos existentes asignados';
+END $$;
+
+
+-- =========================================================
 -- Datos adicionales para MTTR, volumen de inferencias y alertas sin asignar
 -- =========================================================
 
@@ -1045,5 +1204,138 @@ VALUES (
   '⚡ PRUEBA: 10 minutos'
 );
 
+-- =========================================================
+-- Trigger: Reasignación Automática de Dispositivos
+-- =========================================================
+-- Ejecutar con: PGPASSWORD='postgres123' psql -h 134.199.204.58 -U postgres -d heartguard -f trigger_device_reassignment.sql
 
+-- Función que se ejecuta cuando cambia owner_patient_id
+CREATE OR REPLACE FUNCTION heartguard.reassign_device_stream()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_signal_type_id UUID;
+    v_new_stream_id UUID;
+    v_old_measurement TEXT;
+    v_old_bucket TEXT;
+    v_old_org TEXT;
+BEGIN
+    -- Solo actuar si cambió el owner_patient_id y no es NULL
+    IF NEW.owner_patient_id IS DISTINCT FROM OLD.owner_patient_id 
+       AND NEW.owner_patient_id IS NOT NULL THEN
+        
+        -- Obtener el measurement del stream anterior para replicarlo
+        SELECT tb.measurement, tb.influx_bucket, tb.influx_org
+        INTO v_old_measurement, v_old_bucket, v_old_org
+        FROM heartguard.signal_streams ss
+        JOIN heartguard.timeseries_binding tb ON tb.stream_id = ss.id
+        WHERE ss.device_id = NEW.id 
+          AND ss.ended_at IS NULL
+        LIMIT 1;
+        
+        -- Si no hay stream anterior, usar valores por defecto
+        IF v_old_measurement IS NULL THEN
+            v_old_measurement := 'vital_signs';
+            v_old_bucket := 'timeseries';
+            v_old_org := 'heartguard';
+        END IF;
+        
+        -- Terminar todos los streams activos del dispositivo
+        UPDATE heartguard.signal_streams 
+        SET ended_at = NOW()
+        WHERE device_id = NEW.id 
+          AND ended_at IS NULL;
+        
+        -- Obtener el signal_type_id del stream anterior o usar el primero disponible
+        SELECT ss.signal_type_id INTO v_signal_type_id
+        FROM heartguard.signal_streams ss
+        WHERE ss.device_id = NEW.id
+        ORDER BY ss.started_at DESC
+        LIMIT 1;
+        
+        -- Si no hay signal_type previo, buscar uno por defecto (HR o el primero)
+        IF v_signal_type_id IS NULL THEN
+            SELECT id INTO v_signal_type_id
+            FROM heartguard.signal_types
+            WHERE code = 'HR'
+            LIMIT 1;
+            
+            IF v_signal_type_id IS NULL THEN
+                SELECT id INTO v_signal_type_id
+                FROM heartguard.signal_types
+                LIMIT 1;
+            END IF;
+        END IF;
+        
+        -- Crear nuevo stream para el nuevo owner
+        INSERT INTO heartguard.signal_streams (device_id, patient_id, signal_type_id, started_at)
+        VALUES (NEW.id, NEW.owner_patient_id, v_signal_type_id, NOW())
+        RETURNING id INTO v_new_stream_id;
+        
+        -- Crear timeseries_binding para el nuevo stream
+        INSERT INTO heartguard.timeseries_binding (stream_id, influx_bucket, influx_org, measurement)
+        VALUES (v_new_stream_id, v_old_bucket, v_old_org, v_old_measurement);
+        
+        RAISE NOTICE 'Device % reassigned: stream % created for patient %', 
+            NEW.serial, v_new_stream_id, NEW.owner_patient_id;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger (elimina el anterior si existe)
+DROP TRIGGER IF EXISTS device_reassignment_trigger ON heartguard.devices;
+CREATE TRIGGER device_reassignment_trigger
+    AFTER UPDATE OF owner_patient_id ON heartguard.devices
+    FOR EACH ROW
+    EXECUTE FUNCTION heartguard.reassign_device_stream();
+
+-- Confirmar creación
+SELECT 'Trigger device_reassignment_trigger creado correctamente' as status;
+
+-- =========================================================
+-- 2. Trigger: Desactivación de Dispositivos
+-- =========================================================
+-- Se ejecuta cuando un dispositivo se desactiva (active: true -> false)
+-- Termina automáticamente todos los streams activos
+
+CREATE OR REPLACE FUNCTION heartguard.deactivate_device_streams()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Si el dispositivo se desactiva (active cambia de true a false)
+    IF NEW.active = false AND OLD.active = true THEN
+        -- Terminar todos los streams activos del dispositivo
+        UPDATE heartguard.signal_streams 
+        SET ended_at = NOW()
+        WHERE device_id = NEW.id 
+          AND ended_at IS NULL;
+        
+        RAISE NOTICE 'Device % deactivated: all active streams terminated', NEW.serial;
+    END IF;
+    
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+-- Crear trigger de desactivación
+DROP TRIGGER IF EXISTS device_deactivation_trigger ON heartguard.devices;
+CREATE TRIGGER device_deactivation_trigger
+    AFTER UPDATE OF active ON heartguard.devices
+    FOR EACH ROW
+    EXECUTE FUNCTION heartguard.deactivate_device_streams();
+
+SELECT '✅ Trigger device_deactivation_trigger creado correctamente' as status;
+
+-- =========================================================
+-- Verificación
+-- =========================================================
+SELECT 
+    trigger_name,
+    event_manipulation as event,
+    event_object_table as table,
+    action_statement as function
+FROM information_schema.triggers
+WHERE trigger_schema = 'heartguard'
+  AND event_object_table = 'devices'
+ORDER BY trigger_name;
 

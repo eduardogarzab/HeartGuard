@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test - Signos Vitales</title>
+    <link rel="stylesheet" href="assets/css/app.css">
+    <style>
+        body {
+            padding: 2rem;
+            background: #f8fafc;
+        }
+        .test-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 2rem;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+        }
+        .test-header {
+            margin-bottom: 2rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .test-status {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        .test-error {
+            background: #fef2f2;
+            border: 1px solid #fca5a5;
+            padding: 1rem;
+            border-radius: 6px;
+            color: #991b1b;
+        }
+    </style>
+</head>
+<body>
+    <div class="test-container">
+        <div class="test-header">
+            <h1>🧪 Prueba de Signos Vitales</h1>
+            <p>Esta página prueba la visualización de signos vitales de InfluxDB</p>
+        </div>
+
+        <div id="testStatus" class="test-status">
+            <p><strong>Estado:</strong> Inicializando...</p>
+        </div>
+
+        <div class="profile-section">
+            <h4>📊 Signos Vitales en Tiempo Real</h4>
+            <div id="vitalSignsContainer"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.js"></script>
+    <script>
+        // Verificar que Chart.js esté cargado
+        window.addEventListener('load', () => {
+            const status = document.getElementById('testStatus');
+            
+            if (typeof Chart === 'undefined') {
+                status.className = 'test-error';
+                status.innerHTML = '<p><strong>❌ Error:</strong> Chart.js no está cargado</p>';
+                return;
+            }
+            
+            status.innerHTML = `
+                <p><strong>✅ Chart.js cargado correctamente</strong></p>
+                <p>Versión: ${Chart.version || 'Desconocida'}</p>
+            `;
+            
+            // Crear datos de prueba
+            const testData = {
+                labels: ['10:00', '10:05', '10:10', '10:15', '10:20', '10:25', '10:30'],
+                values: [72, 75, 70, 78, 73, 76, 74]
+            };
+            
+            // Renderizar gráfica de prueba
+            const container = document.getElementById('vitalSignsContainer');
+            container.innerHTML = `
+                <div class="vital-signs-grid">
+                    <div class="vital-sign-card">
+                        <div class="vital-sign-header">
+                            <h5>Frecuencia Cardíaca</h5>
+                            <div class="vital-sign-stats">
+                                <span class="vital-sign-current" style="color: #ef4444; font-weight: bold; font-size: 1.2em;">
+                                    74 bpm
+                                </span>
+                                <span class="vital-sign-range" style="font-size: 0.85em; color: #6b7280;">
+                                    Min: 70 | Max: 78 | Prom: 74
+                                </span>
+                            </div>
+                        </div>
+                        <div class="vital-sign-chart-wrapper">
+                            <canvas id="testChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            // Crear gráfica
+            const canvas = document.getElementById('testChart');
+            new Chart(canvas, {
+                type: 'line',
+                data: {
+                    labels: testData.labels,
+                    datasets: [{
+                        label: 'Frecuencia Cardíaca (bpm)',
+                        data: testData.values,
+                        borderColor: '#ef4444',
+                        backgroundColor: '#ef444420',
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 3,
+                        pointHoverRadius: 5,
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false,
+                        }
+                    },
+                    scales: {
+                        x: {
+                            ticks: { 
+                                color: '#6b7280',
+                                maxRotation: 45,
+                                minRotation: 0
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            ticks: { 
+                                color: '#6b7280'
+                            },
+                            beginAtZero: false,
+                            grid: {
+                                color: '#e5e7eb'
+                            }
+                        }
+                    },
+                    interaction: {
+                        mode: 'nearest',
+                        axis: 'x',
+                        intersect: false
+                    }
+                }
+            });
+            
+            console.log('✅ Gráfica de prueba renderizada correctamente');
+        });
+    </script>
+</body>
+</html>

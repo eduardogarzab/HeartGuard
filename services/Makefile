@@ -5,7 +5,7 @@
 # =============================================================================
 
 SHELL := /bin/bash
-SERVICES := auth admin user patient media gateway realtime
+SERVICES := auth admin user patient media gateway influxdb ai aimonitor
 PYTHON := python3
 VENV := .venv
 
@@ -17,6 +17,8 @@ PATIENT_PORT := 5004
 MEDIA_PORT := 5005
 GATEWAY_PORT := 8080
 REALTIME_PORT := 5006
+AI_PORT := 5007
+AIMONITOR_PORT := 5008
 
 # Directorio de logs
 LOG_DIR := /tmp/heartguard-logs
@@ -40,7 +42,9 @@ help:
 	@echo "    make install-patient      - Instalar solo patient-service"
 	@echo "    make install-media        - Instalar solo media-service"
 	@echo "    make install-gateway      - Instalar solo gateway"
-	@echo "    make install-realtime     - Instalar solo realtime-data-generator"
+	@echo "    make install-influxdb     - Instalar solo influxdb-service"
+	@echo "    make install-ai           - Instalar solo ai-prediction"
+	@echo "    make install-aimonitor    - Instalar solo ai-monitor"
 	@echo ""
 	@echo "  🚀 Gestión de Servicios:"
 	@echo "    make start                - Iniciar todos los servicios"
@@ -50,7 +54,9 @@ help:
 	@echo "    make start-patient        - Iniciar solo patient-service"
 	@echo "    make start-media          - Iniciar solo media-service"
 	@echo "    make start-gateway        - Iniciar solo gateway"
-	@echo "    make start-realtime       - Iniciar solo realtime-data-generator"
+	@echo "    make start-influxdb       - Iniciar solo influxdb-service"
+	@echo "    make start-ai             - Iniciar solo ai-prediction"
+	@echo "    make start-aimonitor      - Iniciar solo ai-monitor"
 	@echo ""
 	@echo "  🔄 Control:"
 	@echo "    make restart              - Reiniciar todos los servicios"
@@ -60,7 +66,9 @@ help:
 	@echo "    make restart-patient      - Reiniciar solo patient-service"
 	@echo "    make restart-media        - Reiniciar solo media-service"
 	@echo "    make restart-gateway      - Reiniciar solo gateway"
-	@echo "    make restart-realtime     - Reiniciar solo realtime-data-generator"
+	@echo "    make restart-influxdb     - Reiniciar solo influxdb-service"
+	@echo "    make restart-ai           - Reiniciar solo ai-prediction"
+	@echo "    make restart-aimonitor    - Reiniciar solo ai-monitor"
 	@echo ""
 	@echo "  🛑 Detener:"
 	@echo "    make stop                 - Detener todos los servicios"
@@ -70,7 +78,9 @@ help:
 	@echo "    make stop-patient         - Detener solo patient-service"
 	@echo "    make stop-media           - Detener solo media-service"
 	@echo "    make stop-gateway         - Detener solo gateway"
-	@echo "    make stop-realtime        - Detener solo realtime-data-generator"
+	@echo "    make stop-influxdb        - Detener solo influxdb-service"
+	@echo "    make stop-ai              - Detener solo ai-prediction"
+	@echo "    make stop-aimonitor       - Detener solo ai-monitor"
 	@echo ""
 	@echo "  📊 Monitoreo:"
 	@echo "    make status               - Ver estado de todos los servicios"
@@ -81,7 +91,9 @@ help:
 	@echo "    make logs-patient         - Ver logs de patient-service"
 	@echo "    make logs-media           - Ver logs de media-service"
 	@echo "    make logs-gateway         - Ver logs de gateway"
-	@echo "    make logs-realtime        - Ver logs de realtime-data-generator"
+	@echo "    make logs-influxdb        - Ver logs de influxdb-service"
+	@echo "    make logs-ai              - Ver logs de ai-prediction"
+	@echo "    make logs-aimonitor       - Ver logs de ai-monitor"
 	@echo "    make tail                 - Seguir logs en tiempo real (todos)"
 	@echo "    make tail-auth            - Seguir logs de auth-service"
 	@echo "    make tail-admin           - Seguir logs de admin-service"
@@ -89,7 +101,9 @@ help:
 	@echo "    make tail-patient         - Seguir logs de patient-service"
 	@echo "    make tail-media           - Seguir logs de media-service"
 	@echo "    make tail-gateway         - Seguir logs de gateway"
-	@echo "    make tail-realtime        - Seguir logs de realtime-data-generator"
+	@echo "    make tail-influxdb        - Seguir logs de influxdb-service"
+	@echo "    make tail-ai              - Seguir logs de ai-prediction"
+	@echo "    make tail-aimonitor       - Seguir logs de ai-monitor"
 	@echo ""
 	@echo "  🧪 Testing:"
 	@echo "    make test                 - Ejecutar tests de todos los servicios"
@@ -99,7 +113,9 @@ help:
 	@echo "    make test-patient         - Ejecutar tests de patient-service"
 	@echo "    make test-media           - Ejecutar tests de media-service"
 	@echo "    make test-gateway         - Ejecutar tests de gateway"
-	@echo "    make test-realtime        - Ejecutar tests de realtime-data-generator"
+	@echo "    make test-influxdb        - Ejecutar tests de influxdb-service"
+	@echo "    make test-ai              - Ejecutar tests de ai-prediction"
+	@echo "    make test-aimonitor       - Ejecutar tests de ai-monitor"
 	@echo ""
 	@echo "  🧹 Limpieza:"
 	@echo "    make clean                - Limpiar caches y archivos temporales"
@@ -111,7 +127,7 @@ help:
 # =============================================================================
 # Instalación
 # =============================================================================
-install: install-auth install-admin install-user install-patient install-media install-gateway install-realtime
+install: install-auth install-admin install-user install-patient install-media install-gateway install-influxdb install-ai install-aimonitor
 	@echo "✓ Todas las dependencias instaladas"
 
 install-auth:
@@ -138,9 +154,17 @@ install-gateway:
 	@echo "📦 Instalando gateway..."
 	@cd gateway && $(MAKE) install
 
-install-realtime:
-	@echo "📦 Instalando realtime-data-generator..."
-	@cd realtime-data-generator && $(MAKE) install
+install-influxdb:
+	@echo "📦 Instalando influxdb-service..."
+	@cd influxdb-service && $(MAKE) install
+
+install-ai:
+	@echo "📦 Instalando ai-prediction..."
+	@cd ai-prediction && $(MAKE) install
+
+install-aimonitor:
+	@echo "📦 Instalando ai-monitor..."
+	@cd ai-monitor && $(MAKE) install
 
 # =============================================================================
 # Iniciar Servicios
@@ -151,7 +175,7 @@ $(LOG_DIR):
 $(PID_DIR):
 	@mkdir -p $(PID_DIR)
 
-start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway start-realtime wait-realtime
+start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway start-influxdb wait-influxdb start-ai wait-ai start-aimonitor wait-aimonitor
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  ✓ Todos los servicios iniciados correctamente"
@@ -218,15 +242,35 @@ start-gateway: $(LOG_DIR) $(PID_DIR)
 		echo $$! > $(PID_DIR)/gateway.pid
 	@echo "  PID: $$(cat $(PID_DIR)/gateway.pid)"
 
-start-realtime: $(LOG_DIR) $(PID_DIR)
-	@echo "🚀 Iniciando realtime-data-generator en puerto $(REALTIME_PORT)..."
-	@cd realtime-data-generator && \
+start-influxdb: $(LOG_DIR) $(PID_DIR)
+	@echo "🚀 Iniciando influxdb-service en puerto $(REALTIME_PORT)..."
+	@cd influxdb-service && \
 		source $(VENV)/bin/activate && \
 		PYTHONPATH=src FLASK_APP=generator.app $(PYTHON) -m flask run \
 			--host=0.0.0.0 --port=$(REALTIME_PORT) --no-reload \
 			> $(LOG_DIR)/realtime.log 2>&1 & \
 		echo $$! > $(PID_DIR)/realtime.pid
 	@echo "  PID: $$(cat $(PID_DIR)/realtime.pid)"
+
+start-ai: $(LOG_DIR) $(PID_DIR)
+	@echo "🚀 Iniciando ai-prediction en puerto $(AI_PORT)..."
+	@cd ai-prediction && \
+		source $(VENV)/bin/activate && \
+		PYTHONPATH=src FLASK_APP=src.app $(PYTHON) -m flask run \
+			--host=0.0.0.0 --port=$(AI_PORT) --no-reload \
+			> $(LOG_DIR)/ai.log 2>&1 & \
+		echo $$! > $(PID_DIR)/ai.pid
+	@echo "  PID: $$(cat $(PID_DIR)/ai.pid)"
+
+start-aimonitor: $(LOG_DIR) $(PID_DIR)
+	@echo "🚀 Iniciando ai-monitor en puerto $(AIMONITOR_PORT)..."
+	@cd ai-monitor && \
+		source $(VENV)/bin/activate && \
+		PYTHONPATH=src FLASK_APP=src.app $(PYTHON) -m flask run \
+			--host=0.0.0.0 --port=$(AIMONITOR_PORT) --no-reload \
+			> $(LOG_DIR)/aimonitor.log 2>&1 & \
+		echo $$! > $(PID_DIR)/aimonitor.pid
+	@echo "  PID: $$(cat $(PID_DIR)/aimonitor.pid)"
 
 # Esperar a que los servicios estén listos
 wait-auth:
@@ -313,24 +357,54 @@ wait-gateway:
 		sleep 1; \
 	done
 
-wait-realtime:
-	@echo "  ⏳ Esperando a que realtime-data-generator esté listo..."
+wait-influxdb:
+	@echo "  ⏳ Esperando a que influxdb-service esté listo..."
 	@for i in {1..30}; do \
 		if curl -s http://localhost:$(REALTIME_PORT)/health > /dev/null 2>&1; then \
-			echo "  ✓ Realtime-data-generator respondiendo"; \
+			echo "  ✓ InfluxDB-service respondiendo"; \
 			break; \
 		fi; \
 		if [ $$i -eq 30 ]; then \
-			echo "  ✗ Timeout esperando realtime-data-generator"; \
+			echo "  ✗ Timeout esperando influxdb-service"; \
 			exit 1; \
 		fi; \
 		sleep 1; \
 	done
 
+wait-ai:
+	@echo "  ⏳ Esperando a que ai-prediction esté listo..."
+	@for i in {1..30}; do \
+		if curl -s http://localhost:$(AI_PORT)/health > /dev/null 2>&1; then \
+			echo "  ✓ AI-prediction respondiendo"; \
+			break; \
+		fi; \
+		if [ $$i -eq 30 ]; then \
+			echo "  ✗ Timeout esperando ai-prediction"; \
+			exit 1; \
+		fi; \
+		sleep 1; \
+	done
+
+wait-aimonitor:
+	@echo "  ⏳ Esperando a que ai-monitor esté listo..."
+	@sleep 2
+	@if [ -f $(PID_DIR)/aimonitor.pid ]; then \
+		pid=$$(cat $(PID_DIR)/aimonitor.pid); \
+		if ps -p $$pid > /dev/null 2>&1; then \
+			echo "  ✓ AI-monitor respondiendo"; \
+		else \
+			echo "  ✗ AI-monitor no inició correctamente"; \
+			exit 1; \
+		fi; \
+	else \
+		echo "  ✗ AI-monitor PID file not found"; \
+		exit 1; \
+	fi
+
 # =============================================================================
 # Detener Servicios
 # =============================================================================
-stop: stop-realtime stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
+stop: stop-aimonitor stop-ai stop-influxdb stop-gateway stop-media stop-patient stop-user stop-admin stop-auth
 	@echo "✓ Todos los servicios detenidos"
 
 stop-auth:
@@ -399,16 +473,38 @@ stop-gateway:
 	@lsof -ti :$(GATEWAY_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "  ✓ Gateway detenido"
 
-stop-realtime:
+stop-influxdb:
 	@if [ -f $(PID_DIR)/realtime.pid ]; then \
-		echo "🛑 Deteniendo realtime-data-generator (PID: $$(cat $(PID_DIR)/realtime.pid))..."; \
+		echo "🛑 Deteniendo influxdb-service (PID: $$(cat $(PID_DIR)/realtime.pid))..."; \
 		kill $$(cat $(PID_DIR)/realtime.pid) 2>/dev/null || true; \
 		sleep 1; \
 		kill -9 $$(cat $(PID_DIR)/realtime.pid) 2>/dev/null || true; \
 		rm -f $(PID_DIR)/realtime.pid; \
 	fi
 	@lsof -ti :$(REALTIME_PORT) | xargs kill -9 2>/dev/null || true
-	@echo "  ✓ Realtime-data-generator detenido"
+	@echo "  ✓ InfluxDB-service detenido"
+
+stop-ai:
+	@if [ -f $(PID_DIR)/ai.pid ]; then \
+		echo "🛑 Deteniendo ai-prediction (PID: $$(cat $(PID_DIR)/ai.pid))..."; \
+		kill $$(cat $(PID_DIR)/ai.pid) 2>/dev/null || true; \
+		sleep 1; \
+		kill -9 $$(cat $(PID_DIR)/ai.pid) 2>/dev/null || true; \
+		rm -f $(PID_DIR)/ai.pid; \
+	fi
+	@lsof -ti :$(AI_PORT) | xargs kill -9 2>/dev/null || true
+	@echo "  ✓ AI-prediction detenido"
+
+stop-aimonitor:
+	@if [ -f $(PID_DIR)/aimonitor.pid ]; then \
+		echo "🛑 Deteniendo ai-monitor (PID: $$(cat $(PID_DIR)/aimonitor.pid))..."; \
+		kill $$(cat $(PID_DIR)/aimonitor.pid) 2>/dev/null || true; \
+		sleep 1; \
+		kill -9 $$(cat $(PID_DIR)/aimonitor.pid) 2>/dev/null || true; \
+		rm -f $(PID_DIR)/aimonitor.pid; \
+	fi
+	@lsof -ti :$(AIMONITOR_PORT) | xargs kill -9 2>/dev/null || true
+	@echo "  ✓ AI-monitor detenido"
 
 # =============================================================================
 # Reiniciar Servicios
@@ -433,8 +529,14 @@ restart-media: stop-media start-media wait-media
 restart-gateway: stop-gateway start-gateway wait-gateway
 	@echo "✓ Gateway reiniciado"
 
-restart-realtime: stop-realtime start-realtime wait-realtime
-	@echo "✓ Realtime-data-generator reiniciado"
+restart-influxdb: stop-influxdb start-influxdb wait-influxdb
+	@echo "✓ InfluxDB-service reiniciado"
+
+restart-ai: stop-ai start-ai wait-ai
+	@echo "✓ AI-prediction reiniciado"
+
+restart-aimonitor: stop-aimonitor start-aimonitor wait-aimonitor
+	@echo "✓ AI-monitor reiniciado"
 
 # =============================================================================
 # Estado y Monitoreo
@@ -516,6 +618,26 @@ status:
 	else \
 		printf "  %-20s %-10s %-10s %s\n" "realtime-generator" "$(REALTIME_PORT)" "✗ Stopped" "-"; \
 	fi
+	@if [ -f $(PID_DIR)/ai.pid ]; then \
+		pid=$$(cat $(PID_DIR)/ai.pid); \
+		if ps -p $$pid > /dev/null 2>&1; then \
+			printf "  %-20s %-10s %-10s %s\n" "ai-prediction" "$(AI_PORT)" "✓ Running" "$$pid"; \
+		else \
+			printf "  %-20s %-10s %-10s %s\n" "ai-prediction" "$(AI_PORT)" "✗ Stopped" "-"; \
+		fi; \
+	else \
+		printf "  %-20s %-10s %-10s %s\n" "ai-prediction" "$(AI_PORT)" "✗ Stopped" "-"; \
+	fi
+	@if [ -f $(PID_DIR)/aimonitor.pid ]; then \
+		pid=$$(cat $(PID_DIR)/aimonitor.pid); \
+		if ps -p $$pid > /dev/null 2>&1; then \
+			printf "  %-20s %-10s %-10s %s\n" "ai-monitor" "$(AIMONITOR_PORT)" "✓ Running" "$$pid"; \
+		else \
+			printf "  %-20s %-10s %-10s %s\n" "ai-monitor" "$(AIMONITOR_PORT)" "✗ Stopped" "-"; \
+		fi; \
+	else \
+		printf "  %-20s %-10s %-10s %s\n" "ai-monitor" "$(AIMONITOR_PORT)" "✗ Stopped" "-"; \
+	fi
 	@echo ""
 	@echo "  Logs: $(LOG_DIR)/"
 	@echo "  PIDs: $(PID_DIR)/"
@@ -555,10 +677,20 @@ logs:
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@tail -n 50 $(LOG_DIR)/gateway.log 2>/dev/null || echo "  (sin logs)"
 	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "  Logs - realtime-data-generator"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Logs - influxdb-service"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@tail -n 50 $(LOG_DIR)/realtime.log 2>/dev/null || echo "  (sin logs)"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Logs - ai-prediction"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@tail -n 50 $(LOG_DIR)/ai.log 2>/dev/null || echo "  (sin logs)"
+	@echo ""
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Logs - ai-monitor"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@tail -n 50 $(LOG_DIR)/aimonitor.log 2>/dev/null || echo "  (sin logs)"
 
 logs-auth:
 	@tail -n 100 $(LOG_DIR)/auth.log 2>/dev/null || echo "Sin logs de auth-service"
@@ -578,8 +710,14 @@ logs-media:
 logs-gateway:
 	@tail -n 100 $(LOG_DIR)/gateway.log 2>/dev/null || echo "Sin logs de gateway"
 
-logs-realtime:
-	@tail -n 100 $(LOG_DIR)/realtime.log 2>/dev/null || echo "Sin logs de realtime-data-generator"
+logs-influxdb:
+	@tail -n 100 $(LOG_DIR)/realtime.log 2>/dev/null || echo "Sin logs de influxdb-service"
+
+logs-ai:
+	@tail -n 100 $(LOG_DIR)/ai.log 2>/dev/null || echo "Sin logs de ai-prediction"
+
+logs-aimonitor:
+	@tail -n 100 $(LOG_DIR)/aimonitor.log 2>/dev/null || echo "Sin logs de ai-monitor"
 
 tail:
 	@tail -f $(LOG_DIR)/*.log
@@ -602,13 +740,19 @@ tail-media:
 tail-gateway:
 	@tail -f $(LOG_DIR)/gateway.log
 
-tail-realtime:
+tail-influxdb:
 	@tail -f $(LOG_DIR)/realtime.log
+
+tail-ai:
+	@tail -f $(LOG_DIR)/ai.log
+
+tail-aimonitor:
+	@tail -f $(LOG_DIR)/aimonitor.log
 
 # =============================================================================
 # Testing
 # =============================================================================
-test: test-auth test-admin test-user test-patient test-media test-gateway test-realtime
+test: test-auth test-admin test-user test-patient test-media test-gateway test-influxdb test-ai test-aimonitor
 	@echo "✓ Todos los tests completados"
 
 test-auth:
@@ -647,12 +791,28 @@ test-gateway:
 	@echo "🧪 Ejecutando tests de gateway..."
 	@cd gateway && ./test_gateway.sh
 
-test-realtime:
-	@if [ -d realtime-data-generator/tests ]; then \
-		echo "🧪 Ejecutando tests de realtime-data-generator..."; \
-		cd realtime-data-generator && $(MAKE) test; \
+test-influxdb:
+	@if [ -d influxdb-service/tests ]; then \
+		echo "🧪 Ejecutando tests de influxdb-service..."; \
+		cd influxdb-service && $(MAKE) test; \
 	else \
-		echo "⚠️  realtime-data-generator no tiene pruebas definidas"; \
+		echo "⚠️  influxdb-service no tiene pruebas definidas"; \
+	fi
+
+test-ai:
+	@if [ -d ai-prediction/tests ]; then \
+		echo "🧪 Ejecutando tests de ai-prediction..."; \
+		cd ai-prediction && $(MAKE) test; \
+	else \
+		echo "⚠️  ai-prediction no tiene pruebas definidas"; \
+	fi
+
+test-aimonitor:
+	@if [ -d ai-monitor/tests ]; then \
+		echo "🧪 Ejecutando tests de ai-monitor..."; \
+		cd ai-monitor && $(MAKE) test; \
+	else \
+		echo "⚠️  ai-monitor no tiene pruebas definidas"; \
 	fi
 
 # =============================================================================

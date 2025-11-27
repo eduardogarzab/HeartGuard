@@ -104,7 +104,7 @@ class PatientRepository:
             limit: Número máximo de alertas a retornar
             
         Returns:
-            Lista de alertas
+            Lista de alertas con información de IA y ground truth
         """
         with get_db_cursor() as cursor:
             cursor.execute("""
@@ -116,11 +116,33 @@ class PatientRepository:
                     a.created_at,
                     ast.code as status,
                     ST_Y(a.location) as latitude,
-                    ST_X(a.location) as longitude
+                    ST_X(a.location) as longitude,
+                    a.created_by_model_id,
+                    m.name as model_name,
+                    m.version as model_version,
+                    ar.outcome as resolution_outcome,
+                    ar.note as resolution_note,
+                    ar.resolved_at,
+                    u_resolver.name as resolved_by_name,
+                    gt.id as ground_truth_id,
+                    gt.onset as gt_onset,
+                    gt.offset_at as gt_offset,
+                    gt.note as gt_note,
+                    et.code as gt_event_type,
+                    u_annotator.name as validated_by_name
                 FROM alerts a
                 LEFT JOIN alert_types at ON a.type_id = at.id
                 LEFT JOIN alert_levels al ON a.alert_level_id = al.id
                 LEFT JOIN alert_status ast ON a.status_id = ast.id
+                LEFT JOIN models m ON a.created_by_model_id = m.id
+                LEFT JOIN alert_resolution ar ON ar.alert_id = a.id
+                LEFT JOIN users u_resolver ON u_resolver.id = ar.resolved_by_user_id
+                LEFT JOIN ground_truth_labels gt ON gt.patient_id = a.patient_id 
+                    AND gt.onset >= a.created_at - INTERVAL '5 minutes'
+                    AND gt.onset <= a.created_at + INTERVAL '5 minutes'
+                    AND gt.source = 'alert_resolution'
+                LEFT JOIN event_types et ON gt.event_type_id = et.id
+                LEFT JOIN users u_annotator ON gt.annotated_by_user_id = u_annotator.id
                 WHERE a.patient_id = %s
                 ORDER BY a.created_at DESC
                 LIMIT %s
@@ -139,7 +161,7 @@ class PatientRepository:
             offset: Desplazamiento para paginación
             
         Returns:
-            Tupla (alertas, total)
+            Tupla (alertas, total) con información de IA y ground truth
         """
         with get_db_cursor() as cursor:
             # Query base
@@ -152,11 +174,33 @@ class PatientRepository:
                     a.created_at,
                     ast.code as status,
                     ST_Y(a.location) as latitude,
-                    ST_X(a.location) as longitude
+                    ST_X(a.location) as longitude,
+                    a.created_by_model_id,
+                    m.name as model_name,
+                    m.version as model_version,
+                    ar.outcome as resolution_outcome,
+                    ar.note as resolution_note,
+                    ar.resolved_at,
+                    u_resolver.name as resolved_by_name,
+                    gt.id as ground_truth_id,
+                    gt.onset as gt_onset,
+                    gt.offset_at as gt_offset,
+                    gt.note as gt_note,
+                    et.code as gt_event_type,
+                    u_annotator.name as validated_by_name
                 FROM alerts a
                 LEFT JOIN alert_types at ON a.type_id = at.id
                 LEFT JOIN alert_levels al ON a.alert_level_id = al.id
                 LEFT JOIN alert_status ast ON a.status_id = ast.id
+                LEFT JOIN models m ON a.created_by_model_id = m.id
+                LEFT JOIN alert_resolution ar ON ar.alert_id = a.id
+                LEFT JOIN users u_resolver ON u_resolver.id = ar.resolved_by_user_id
+                LEFT JOIN ground_truth_labels gt ON gt.patient_id = a.patient_id 
+                    AND gt.onset >= a.created_at - INTERVAL '5 minutes'
+                    AND gt.onset <= a.created_at + INTERVAL '5 minutes'
+                    AND gt.source = 'alert_resolution'
+                LEFT JOIN event_types et ON gt.event_type_id = et.id
+                LEFT JOIN users u_annotator ON gt.annotated_by_user_id = u_annotator.id
                 WHERE a.patient_id = %s
             """
             params = [patient_id]

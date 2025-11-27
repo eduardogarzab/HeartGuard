@@ -94,3 +94,16 @@ def get_status() -> Response:
 def get_patients() -> Response:
     """Proxy: Obtiene la lista de pacientes siendo monitoreados."""
     return _proxy_request("/patients", "GET")
+
+
+@bp.route("/patients/<patient_id>/vital-signs", methods=["GET"])
+def get_patient_vital_signs(patient_id: str) -> Response:
+    """
+    Proxy: Obtiene los signos vitales más recientes de un paciente desde InfluxDB.
+    
+    Query Parameters:
+        - device_id (optional): Filtrar por dispositivo específico
+        - limit (optional): Número de registros a retornar (default: 10, max: 100)
+        - measurement (optional): Nombre de la medición en InfluxDB (default: vital_signs)
+    """
+    return _proxy_request(f"/patients/{patient_id}/vital-signs", "GET")

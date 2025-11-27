@@ -1,7 +1,9 @@
 package com.heartguard.desktop.ui.user;
 
-import com.heartguard.desktop.api.InfluxDBService;
-import com.heartguard.desktop.api.InfluxDBService.VitalSignsReading;
+import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonObject;
+import com.heartguard.desktop.api.ApiClient;
 import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
@@ -64,7 +66,8 @@ public class VitalSignsChartPanel extends JPanel {
     private static final Color SHADOW_COLOR = new Color(0, 0, 0, 8);
 
     private final String patientId;
-    private final InfluxDBService influxService;
+    private final String deviceId; // Nuevo: filtrar por dispositivo específico
+    private final ApiClient apiClient;
     private Timer updateTimer;
     private final int updateIntervalSeconds;
 
@@ -86,12 +89,25 @@ public class VitalSignsChartPanel extends JPanel {
      * Constructor
      * 
      * @param patientId ID del paciente
-     * @param influxService Servicio de InfluxDB
+     * @param apiClient Cliente API para comunicación con el gateway
      * @param updateIntervalSeconds Intervalo de actualización en segundos
      */
-    public VitalSignsChartPanel(String patientId, InfluxDBService influxService, int updateIntervalSeconds) {
+    public VitalSignsChartPanel(String patientId, ApiClient apiClient, int updateIntervalSeconds) {
+        this(patientId, null, apiClient, updateIntervalSeconds);
+    }
+    
+    /**
+     * Constructor con filtro de dispositivo específico
+     * 
+     * @param patientId ID del paciente
+     * @param deviceId ID del dispositivo (opcional, si es null se consultan todos los dispositivos)
+     * @param apiClient Cliente API para comunicación con el gateway
+     * @param updateIntervalSeconds Intervalo de actualización en segundos
+     */
+    public VitalSignsChartPanel(String patientId, String deviceId, ApiClient apiClient, int updateIntervalSeconds) {
         this.patientId = patientId;
-        this.influxService = influxService;
+        this.deviceId = deviceId;
+        this.apiClient = apiClient;
         this.updateIntervalSeconds = updateIntervalSeconds;
 
         // Crear series de tiempo
@@ -101,12 +117,13 @@ public class VitalSignsChartPanel extends JPanel {
         diastolicBpSeries = new TimeSeries("Presión Diastólica (mmHg)");
         temperatureSeries = new TimeSeries("Temperatura (°C)");
 
-        // Limitar el número de puntos en la serie (ventana deslizante)
-        heartRateSeries.setMaximumItemCount(50);
-        spo2Series.setMaximumItemCount(50);
-        systolicBpSeries.setMaximumItemCount(50);
-        diastolicBpSeries.setMaximumItemCount(50);
-        temperatureSeries.setMaximumItemCount(50);
+        // OPTIMIZACIÓN: Limitar a 30 puntos (ventana deslizante) para mejor rendimiento
+        // Con updates cada 10 segundos = ~5 minutos de historia visible
+        heartRateSeries.setMaximumItemCount(30);
+        spo2Series.setMaximumItemCount(30);
+        systolicBpSeries.setMaximumItemCount(30);
+        diastolicBpSeries.setMaximumItemCount(30);
+        temperatureSeries.setMaximumItemCount(30);
 
         // Labels para valores actuales
         heartRateLabel = new JLabel("--");
@@ -116,16 +133,16 @@ public class VitalSignsChartPanel extends JPanel {
         lastUpdateLabel = new JLabel("Cargando...");
 
         initComponents();
-        loadInitialData();
-        startAutoUpdate();
+        // OPTIMIZACIÓN: No cargar datos en constructor - hacerlo después para creación instantánea
+        // loadInitialData y startAutoUpdate se llaman desde loadChartsForDevice
     }
 
     private void initComponents() {
         setLayout(new BorderLayout(16, 16));
         setBackground(CARD_BG);
-        setBorder(new EmptyBorder(20, 20, 20, 20));
+        setBorder(new EmptyBorder(16, 20, 16, 20));  // Reducido padding
 
-        // Panel superior con valores actuales
+        // Panel superior con valores actuales - más grande
         JPanel currentValuesPanel = createCurrentValuesPanel();
         add(currentValuesPanel, BorderLayout.NORTH);
 
@@ -136,9 +153,9 @@ public class VitalSignsChartPanel extends JPanel {
         // Panel inferior con estado
         JPanel statusPanel = new JPanel(new BorderLayout());
         statusPanel.setOpaque(false);
-        statusPanel.setBorder(new EmptyBorder(12, 0, 0, 0));
+        statusPanel.setBorder(new EmptyBorder(8, 0, 0, 0));  // Reducido
 
-        lastUpdateLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lastUpdateLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         lastUpdateLabel.setForeground(TEXT_SECONDARY);
         statusPanel.add(lastUpdateLabel, BorderLayout.WEST);
 
@@ -148,7 +165,8 @@ public class VitalSignsChartPanel extends JPanel {
     private JPanel createCurrentValuesPanel() {
         JPanel panel = new JPanel(new GridLayout(1, 4, 16, 0));
         panel.setOpaque(false);
-        panel.setBorder(new EmptyBorder(0, 0, 20, 0));
+        panel.setBorder(new EmptyBorder(0, 0, 16, 0));
+        panel.setPreferredSize(new Dimension(0, 110)); // Altura reducida para maximizar gráficas
 
         // Card de frecuencia cardíaca
         panel.add(createValueCard("❤️  Frecuencia Cardíaca", heartRateLabel, "bpm", HEART_COLOR));
@@ -200,7 +218,7 @@ public class VitalSignsChartPanel extends JPanel {
 
         // Title label
         JLabel titleLabel = new JLabel(title);
-        titleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        titleLabel.setFont(new Font("Segoe UI", Font.PLAIN, 13));
         titleLabel.setForeground(TEXT_SECONDARY);
         card.add(titleLabel, BorderLayout.NORTH);
 
@@ -208,14 +226,14 @@ public class VitalSignsChartPanel extends JPanel {
         JPanel valuePanel = new JPanel(new BorderLayout(8, 0));
         valuePanel.setOpaque(false);
 
-        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 32));
+        valueLabel.setFont(new Font("Segoe UI", Font.BOLD, 36)); // Compacto pero legible
         valueLabel.setForeground(accentColor);
         valuePanel.add(valueLabel, BorderLayout.CENTER);
 
         JLabel unitLabel = new JLabel(unit);
-        unitLabel.setFont(new Font("Segoe UI", Font.PLAIN, 16));
+        unitLabel.setFont(new Font("Segoe UI", Font.PLAIN, 15));
         unitLabel.setForeground(TEXT_SECONDARY);
-        unitLabel.setBorder(new EmptyBorder(10, 0, 0, 0));
+        unitLabel.setBorder(new EmptyBorder(14, 0, 0, 0));
         valuePanel.add(unitLabel, BorderLayout.EAST);
 
         card.add(valuePanel, BorderLayout.CENTER);
@@ -225,9 +243,9 @@ public class VitalSignsChartPanel extends JPanel {
 
     private JTabbedPane createChartTabs() {
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setFont(new Font("Segoe UI", Font.BOLD, 13));
+        tabs.setFont(new Font("Segoe UI", Font.BOLD, 14)); // Más grande
         tabs.setBackground(CARD_BG);
-        tabs.setBorder(new EmptyBorder(8, 0, 0, 0));
+        tabs.setBorder(new EmptyBorder(12, 0, 0, 0));
 
         // Crear gráficas individuales para cada parámetro
         tabs.addTab("❤️ Frecuencia Cardíaca", createHeartRateChart());
@@ -576,20 +594,20 @@ public class VitalSignsChartPanel extends JPanel {
         renderer.setDefaultShapesVisible(false); // Hide data point markers for cleaner look
         plot.setRenderer(renderer);
 
-        // Style domain axis (time)
+        // Style domain axis (time) - fuentes más grandes
         DateAxis domainAxis = (DateAxis) plot.getDomainAxis();
         domainAxis.setDateFormatOverride(new SimpleDateFormat("HH:mm:ss"));
-        domainAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 12));
-        domainAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 11));
+        domainAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 14));
+        domainAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 13));
         domainAxis.setLabelPaint(TEXT_SECONDARY);
         domainAxis.setTickLabelPaint(TEXT_SECONDARY);
         domainAxis.setAxisLinePaint(BORDER_LIGHT);
         domainAxis.setTickMarkPaint(BORDER_LIGHT);
         
-        // Style range axis (values)
+        // Style range axis (values) - fuentes más grandes
         NumberAxis rangeAxis = (NumberAxis) plot.getRangeAxis();
-        rangeAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 12));
-        rangeAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 11));
+        rangeAxis.setLabelFont(new Font("Segoe UI", Font.PLAIN, 14));
+        rangeAxis.setTickLabelFont(new Font("Segoe UI", Font.PLAIN, 13));
         rangeAxis.setLabelPaint(TEXT_SECONDARY);
         rangeAxis.setTickLabelPaint(TEXT_SECONDARY);
         rangeAxis.setAxisLinePaint(BORDER_LIGHT);
@@ -600,13 +618,15 @@ public class VitalSignsChartPanel extends JPanel {
         SwingWorker<List<VitalSignsReading>, Void> worker = new SwingWorker<>() {
             @Override
             protected List<VitalSignsReading> doInBackground() {
-                System.out.println("[VitalSignsChart] Loading initial vital signs data for patient: " + patientId);
+                String deviceInfo = deviceId != null ? " from device " + deviceId : "";
+                System.out.println("[VitalSignsChart] Loading initial vital signs data for patient: " + patientId + deviceInfo);
                 try {
-                    // Asegurar conexión a InfluxDB
-                    influxService.connect();
-                    System.out.println("[VitalSignsChart] InfluxDB connected successfully");
+                    // Consultar datos a través del gateway
+                    JsonObject response = apiClient.getPatientVitalSigns(patientId, deviceId, 10);
+                    System.out.println("[VitalSignsChart] Gateway API connected successfully");
                     
-                    List<VitalSignsReading> readings = influxService.getLatestPatientVitalSigns(patientId, 50);
+                    // Convertir respuesta JSON a lista de VitalSignsReading
+                    List<VitalSignsReading> readings = parseVitalSignsFromJson(response);
                     System.out.println("[VitalSignsChart] Loaded " + (readings != null ? readings.size() : 0) + " initial readings");
                     return readings != null ? readings : new ArrayList<>();
                 } catch (Exception e) {
@@ -626,15 +646,9 @@ public class VitalSignsChartPanel extends JPanel {
                         System.out.println("[VitalSignsChart] Updating charts with " + readings.size() + " readings");
                         updateChartsWithReadings(readings);
                         
-                        // Verificar si son datos de prueba (todos tienen el mismo patrón)
-                        boolean isMockData = checkIfMockData(readings);
-                        if (isMockData) {
-                            lastUpdateLabel.setText("⚠ Datos de demostración (InfluxDB no accesible) - " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
-                            lastUpdateLabel.setForeground(new Color(255, 152, 0)); // Naranja
-                        } else {
-                            lastUpdateLabel.setText("✓ Última actualización: " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
-                            lastUpdateLabel.setForeground(new Color(40, 167, 69));
-                        }
+                        // Datos cargados exitosamente desde el gateway
+                        lastUpdateLabel.setText("✓ Última actualización: " + new SimpleDateFormat("HH:mm:ss").format(new Date()));
+                        lastUpdateLabel.setForeground(new Color(40, 167, 69));
                     } else {
                         System.out.println("[VitalSignsChart] No data available for patient " + patientId);
                         lastUpdateLabel.setText("⚠ No hay datos de signos vitales para este paciente");
@@ -690,7 +704,13 @@ public class VitalSignsChartPanel extends JPanel {
                 @Override
                 protected List<VitalSignsReading> doInBackground() {
                     // Obtener solo los últimos 10 registros para actualización incremental
-                    return influxService.getLatestPatientVitalSigns(patientId, 10);
+                    try {
+                        JsonObject response = apiClient.getPatientVitalSigns(patientId, deviceId, 10);
+                        return parseVitalSignsFromJson(response);
+                    } catch (Exception ex) {
+                        System.err.println("[VitalSignsChart] Error in auto-update: " + ex.getMessage());
+                        return new ArrayList<>();
+                    }
                 }
 
                 @Override
@@ -717,16 +737,6 @@ public class VitalSignsChartPanel extends JPanel {
             updateTimer.stop();
         }
     }
-
-    /**
-     * Verificar si los datos son mock (de prueba)
-     */
-    private boolean checkIfMockData(List<VitalSignsReading> readings) {
-        if (readings == null || readings.isEmpty()) return false;
-        // Si los datos tienen valores muy uniformes, probablemente son mock
-        // Esta es una heurística simple
-        return readings.size() >= 5 && readings.get(0).heartRate >= 65 && readings.get(0).heartRate <= 80;
-    }
     
     /**
      * Mostrar mensaje cuando no hay datos disponibles
@@ -741,11 +751,84 @@ public class VitalSignsChartPanel extends JPanel {
     }
 
     /**
+     * Iniciar carga de datos y actualizaciones automáticas
+     * Llamar después de que el panel sea visible para mejor rendimiento
+     */
+    public void startDataLoading() {
+        if (updateTimer == null) {
+            loadInitialData();
+            startAutoUpdate();
+        }
+    }
+    
+    /**
      * Limpiar recursos al cerrar
      */
     public void cleanup() {
         System.out.println("[VitalSignsChart] Cleaning up resources for patient " + patientId);
         stopAutoUpdate();
-        influxService.disconnect();
+    }
+    
+    /**
+     * Parsear respuesta JSON del gateway a lista de VitalSignsReading
+     */
+    private List<VitalSignsReading> parseVitalSignsFromJson(JsonObject response) {
+        List<VitalSignsReading> readings = new ArrayList<>();
+        
+        try {
+            if (response.has("readings") && response.get("readings").isJsonArray()) {
+                JsonArray readingsArray = response.getAsJsonArray("readings");
+                
+                for (JsonElement element : readingsArray) {
+                    JsonObject readingObj = element.getAsJsonObject();
+                    
+                    VitalSignsReading reading = new VitalSignsReading();
+                    reading.timestamp = readingObj.has("timestamp") && !readingObj.get("timestamp").isJsonNull()
+                            ? Instant.parse(readingObj.get("timestamp").getAsString())
+                            : Instant.now();
+                    reading.heartRate = readingObj.has("heart_rate") && !readingObj.get("heart_rate").isJsonNull()
+                            ? readingObj.get("heart_rate").getAsInt()
+                            : 0;
+                    reading.spo2 = readingObj.has("spo2") && !readingObj.get("spo2").isJsonNull()
+                            ? readingObj.get("spo2").getAsInt()
+                            : 0;
+                    reading.systolicBp = readingObj.has("systolic_bp") && !readingObj.get("systolic_bp").isJsonNull()
+                            ? readingObj.get("systolic_bp").getAsInt()
+                            : 0;
+                    reading.diastolicBp = readingObj.has("diastolic_bp") && !readingObj.get("diastolic_bp").isJsonNull()
+                            ? readingObj.get("diastolic_bp").getAsInt()
+                            : 0;
+                    reading.temperature = readingObj.has("temperature") && !readingObj.get("temperature").isJsonNull()
+                            ? readingObj.get("temperature").getAsDouble()
+                            : 0.0;
+                    
+                    readings.add(reading);
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[VitalSignsChart] Error parsing JSON response: " + e.getMessage());
+            e.printStackTrace();
+        }
+        
+        return readings;
+    }
+    
+    /**
+     * Clase interna para representar una lectura de signos vitales
+     */
+    public static class VitalSignsReading {
+        public Instant timestamp;
+        public int heartRate;
+        public int spo2;
+        public int systolicBp;
+        public int diastolicBp;
+        public double temperature;
+
+        @Override
+        public String toString() {
+            return String.format("VitalSigns[time=%s, HR=%d, SpO2=%d, BP=%d/%d, Temp=%.2f°C]",
+                    timestamp, heartRate, spo2, systolicBp, diastolicBp, temperature);
+        }
     }
 }
+

@@ -2,6 +2,7 @@ package com.heartguard.desktop.api;
 
 import com.influxdb.client.InfluxDBClient;
 import com.influxdb.client.InfluxDBClientFactory;
+import com.influxdb.client.InfluxDBClientOptions;
 import com.influxdb.query.FluxRecord;
 import com.influxdb.query.FluxTable;
 
@@ -23,8 +24,9 @@ public class InfluxDBService {
     private final String bucket;
     private InfluxDBClient client;
 
-    private static final int CONNECTION_TIMEOUT_SECONDS = 5;
-    private static final int READ_TIMEOUT_SECONDS = 10;
+    private static final int CONNECTION_TIMEOUT_SECONDS = 30;
+    private static final int READ_TIMEOUT_SECONDS = 30;
+    private static final int WRITE_TIMEOUT_SECONDS = 30;
     private boolean useMockData = false;
     
     public InfluxDBService(String url, String token, String org, String bucket) {
@@ -45,11 +47,24 @@ public class InfluxDBService {
             System.out.println("[InfluxDB] Timeout: " + CONNECTION_TIMEOUT_SECONDS + "s");
             
             try {
-                // Crear cliente InfluxDB con configuración básica
-                client = InfluxDBClientFactory.create(url, token.toCharArray(), org, bucket);
+                // Crear cliente InfluxDB con timeouts personalizados usando InfluxDBClientOptions
+                okhttp3.OkHttpClient.Builder okHttpBuilder = new okhttp3.OkHttpClient.Builder()
+                    .connectTimeout(CONNECTION_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .readTimeout(READ_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS)
+                    .writeTimeout(WRITE_TIMEOUT_SECONDS, java.util.concurrent.TimeUnit.SECONDS);
+                
+                InfluxDBClientOptions options = InfluxDBClientOptions.builder()
+                    .url(url)
+                    .authenticateToken(token.toCharArray())
+                    .org(org)
+                    .bucket(bucket)
+                    .okHttpClient(okHttpBuilder)
+                    .build();
+                
+                client = InfluxDBClientFactory.create(options);
                 
                 // Verificar conexión con una query simple
-                System.out.println("[InfluxDB] Testing connection...");
+                System.out.println("[InfluxDB] Testing connection with " + CONNECTION_TIMEOUT_SECONDS + "s timeout...");
                 try {
                     client.getQueryApi().query("buckets()", org);
                     System.out.println("[InfluxDB] ✓ Connection established and verified successfully");
@@ -160,6 +175,18 @@ public class InfluxDBService {
      * @return Lista de lecturas de signos vitales
      */
     public List<VitalSignsReading> getLatestPatientVitalSigns(String patientId, int limit) {
+        return getLatestPatientVitalSigns(patientId, null, limit);
+    }
+    
+    /**
+     * Obtener los últimos N registros de signos vitales de un paciente desde un dispositivo específico.
+     * 
+     * @param patientId ID del paciente
+     * @param deviceId ID del dispositivo (opcional, si es null se consultan todos los dispositivos)
+     * @param limit Número máximo de registros a obtener
+     * @return Lista de lecturas de signos vitales
+     */
+    public List<VitalSignsReading> getLatestPatientVitalSigns(String patientId, String deviceId, int limit) {
         List<VitalSignsReading> readings = new ArrayList<>();
 
         if (client == null) {
@@ -173,16 +200,22 @@ public class InfluxDBService {
             return generateMockData(patientId, limit);
         }
         
-        System.out.println("[InfluxDB] Querying for patient: " + patientId + " (last " + limit + " readings)");
+        String deviceFilter = deviceId != null ? " (device: " + deviceId + ")" : " (all devices)";
+        System.out.println("[InfluxDB] Querying for patient: " + patientId + deviceFilter + " (last " + limit + " readings)");
 
         try {
+            // Filtro adicional por device_id si se especifica
+            String deviceIdFilter = deviceId != null 
+                ? String.format("  |> filter(fn: (r) => r[\"device_id\"] == \"%s\")\n", deviceId)
+                : "";
+            
             // Flux query para obtener los últimos N registros
             String flux = String.format("""
                 from(bucket: "%s")
                   |> range(start: -24h)
                   |> filter(fn: (r) => r["_measurement"] == "vital_signs")
                   |> filter(fn: (r) => r["patient_id"] == "%s")
-                  |> filter(fn: (r) => 
+                %s  |> filter(fn: (r) => 
                       r["_field"] == "heart_rate" or
                       r["_field"] == "spo2" or
                       r["_field"] == "systolic_bp" or
@@ -194,7 +227,7 @@ public class InfluxDBService {
                   |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
                   |> sort(columns: ["_time"], desc: true)
                   |> limit(n: %d)
-                """, bucket, patientId, limit);
+                """, bucket, patientId, deviceIdFilter, limit);
 
             System.out.println("[InfluxDB] Executing Flux query:");
             System.out.println(flux);
@@ -233,7 +266,7 @@ public class InfluxDBService {
             // Revertir para tener orden cronológico ascendente
             readings.sort((a, b) -> a.timestamp.compareTo(b.timestamp));
             
-            System.out.println("[InfluxDB] Successfully retrieved " + readings.size() + " readings for patient " + patientId);
+            System.out.println("[InfluxDB] Successfully retrieved " + readings.size() + " readings for patient " + patientId + deviceFilter);
         } catch (Exception e) {
             System.err.println("[InfluxDB] ERROR querying: " + e.getMessage());
             e.printStackTrace();

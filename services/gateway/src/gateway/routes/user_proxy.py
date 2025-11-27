@@ -8,7 +8,7 @@ from flask import Blueprint, Response, current_app, jsonify, request
 
 from ..services.user_client import UserClient, UserClientError
 
-bp = Blueprint("user", __name__)
+bp = Blueprint("user", __name__, url_prefix="/user")
 
 
 def _get_user_client() -> UserClient:
@@ -130,6 +130,28 @@ def org_care_team_patients_locations(org_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/care-team-patients/locations")
 
 
+# ==================== Dispositivos a nivel de organización ====================
+
+@bp.route("/orgs/<string:org_id>/devices", methods=["GET"])
+def org_devices(org_id: str) -> Response:
+	"""Lista TODOS los dispositivos de la organización (sin filtro de care_team)"""
+	return _proxy_user(f"/orgs/{org_id}/devices")
+
+
+@bp.route("/orgs/<string:org_id>/devices/<string:device_id>", methods=["GET"])
+def org_device_detail(org_id: str, device_id: str) -> Response:
+	"""Obtiene detalle de un dispositivo específico"""
+	return _proxy_user(f"/orgs/{org_id}/devices/{device_id}")
+
+
+@bp.route("/orgs/<string:org_id>/devices/<string:device_id>/streams", methods=["GET"])
+def org_device_streams(org_id: str, device_id: str) -> Response:
+	"""Obtiene historial de streams (conexiones) de un dispositivo"""
+	return _proxy_user(f"/orgs/{org_id}/devices/{device_id}/streams")
+
+
+# ==================== Dispositivos por care_team (legacy) ====================
+
 @bp.route("/orgs/<string:org_id>/care-teams/<string:team_id>/devices", methods=["GET"])
 def org_care_team_devices(org_id: str, team_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/care-teams/{team_id}/devices")
@@ -160,9 +182,26 @@ def org_patient_alerts(org_id: str, patient_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/alerts")
 
 
+@bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/alerts/<string:alert_id>/acknowledge", methods=["POST"])
+def org_patient_alert_acknowledge(org_id: str, patient_id: str, alert_id: str) -> Response:
+	"""Reconoce una alerta de un paciente en contexto de organización."""
+	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/alerts/{alert_id}/acknowledge")
+
+
+@bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/alerts/<string:alert_id>/resolve", methods=["POST"])
+def org_patient_alert_resolve(org_id: str, patient_id: str, alert_id: str) -> Response:
+	"""Resuelve una alerta de un paciente en contexto de organización."""
+	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/alerts/{alert_id}/resolve")
+
+
 @bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/notes", methods=["GET"])
 def org_patient_notes(org_id: str, patient_id: str) -> Response:
 	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/notes")
+
+
+@bp.route("/orgs/<string:org_id>/patients/<string:patient_id>/devices", methods=["GET"])
+def org_patient_devices(org_id: str, patient_id: str) -> Response:
+	return _proxy_user(f"/orgs/{org_id}/patients/{patient_id}/devices")
 
 
 @bp.route("/orgs/<string:org_id>/metrics", methods=["GET"])
@@ -195,9 +234,26 @@ def caregiver_patient_alerts(patient_id: str) -> Response:
 	return _proxy_user(f"/caregiver/patients/{patient_id}/alerts")
 
 
+@bp.route("/caregiver/patients/<string:patient_id>/alerts/<string:alert_id>/acknowledge", methods=["POST"])
+def caregiver_patient_alert_acknowledge(patient_id: str, alert_id: str) -> Response:
+	"""Reconoce una alerta de un paciente en contexto de caregiver."""
+	return _proxy_user(f"/caregiver/patients/{patient_id}/alerts/{alert_id}/acknowledge")
+
+
+@bp.route("/caregiver/patients/<string:patient_id>/alerts/<string:alert_id>/resolve", methods=["POST"])
+def caregiver_patient_alert_resolve(patient_id: str, alert_id: str) -> Response:
+	"""Resuelve una alerta de un paciente en contexto de caregiver."""
+	return _proxy_user(f"/caregiver/patients/{patient_id}/alerts/{alert_id}/resolve")
+
+
 @bp.route("/caregiver/patients/<string:patient_id>/notes", methods=["GET", "POST"])
 def caregiver_patient_notes(patient_id: str) -> Response:
 	return _proxy_user(f"/caregiver/patients/{patient_id}/notes")
+
+
+@bp.route("/caregiver/patients/<string:patient_id>/devices", methods=["GET"])
+def caregiver_patient_devices(patient_id: str) -> Response:
+	return _proxy_user(f"/caregiver/patients/{patient_id}/devices")
 
 
 @bp.route("/caregiver/metrics", methods=["GET"])

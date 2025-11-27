@@ -387,6 +387,85 @@ class UserService:
             'notes': [self._format_note(row) for row in notes],
         }
 
+    def acknowledge_org_patient_alert(
+        self,
+        org_id: str,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Reconoce una alerta de un paciente (contexto de organización)."""
+        # Validar que el usuario tenga membresía en la org
+        membership = self._ensure_membership(org_id, user_id)
+        
+        # Validar que el paciente exista en la org
+        patient_record = self.repo.get_patient(org_id, patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado en la organización indicada")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        if alert_info.get('org_id') != org_id:
+            raise PermissionError("La alerta no pertenece a la organización especificada")
+        
+        # Registrar el acknowledgement
+        ack = self.repo.acknowledge_patient_alert(alert_id, user_id, note)
+        if not ack:
+            raise RuntimeError("No se pudo registrar el acknowledgement de la alerta")
+        
+        return {
+            'organization': membership,
+            'patient': self._format_patient_summary(patient_record),
+            'acknowledgement': self._format_acknowledgement(ack),
+            'alert': self._format_alert(alert_info),
+        }
+
+    def resolve_org_patient_alert(
+        self,
+        org_id: str,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        outcome: str | None = None,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Resuelve una alerta de un paciente (contexto de organización)."""
+        # Validar que el usuario tenga membresía en la org
+        membership = self._ensure_membership(org_id, user_id)
+        
+        # Validar que el paciente exista en la org
+        patient_record = self.repo.get_patient(org_id, patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado en la organización indicada")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        if alert_info.get('org_id') != org_id:
+            raise PermissionError("La alerta no pertenece a la organización especificada")
+        
+        # Registrar la resolución
+        print(f"🔧 [SERVICE] Llamando resolve_patient_alert: alert_id={alert_id}, user_id={user_id}, outcome={outcome}, note={note[:50] if note else 'None'}...")
+        resolution = self.repo.resolve_patient_alert(alert_id, user_id, outcome, note)
+        print(f"🔧 [SERVICE] resolve_patient_alert retornó: {resolution}")
+        if not resolution:
+            raise RuntimeError("No se pudo registrar la resolución de la alerta")
+        
+        return {
+            'organization': membership,
+            'patient': self._format_patient_summary(patient_record),
+            'resolution': self._format_resolution(resolution),
+            'alert': self._format_alert(alert_info),
+        }
+
     def get_org_metrics(self, org_id: str, user_id: str) -> Dict[str, Any]:
         membership = self._ensure_membership(org_id, user_id)
         overview = self.repo.get_org_overview(org_id, user_id)
@@ -459,6 +538,77 @@ class UserService:
             'notes': [self._format_note(row) for row in notes],
         }
 
+    def acknowledge_caregiver_patient_alert(
+        self,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Reconoce una alerta de un paciente (contexto de caregiver)."""
+        # Validar que el caregiver tenga acceso al paciente
+        relationship = self._ensure_caregiver_access(patient_id, user_id)
+        
+        # Validar que el paciente exista
+        patient_record = self.repo.get_patient_by_id(patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        
+        # Registrar el acknowledgement
+        ack = self.repo.acknowledge_patient_alert(alert_id, user_id, note)
+        if not ack:
+            raise RuntimeError("No se pudo registrar el acknowledgement de la alerta")
+        
+        return {
+            'patient': self._format_patient_summary(patient_record),
+            'relationship': self._format_relationship(relationship),
+            'acknowledgement': self._format_acknowledgement(ack),
+            'alert': self._format_alert(alert_info),
+        }
+
+    def resolve_caregiver_patient_alert(
+        self,
+        patient_id: str,
+        alert_id: str,
+        user_id: str,
+        outcome: str | None = None,
+        note: str | None = None,
+    ) -> Dict[str, Any]:
+        """Resuelve una alerta de un paciente (contexto de caregiver)."""
+        # Validar que el caregiver tenga acceso al paciente
+        relationship = self._ensure_caregiver_access(patient_id, user_id)
+        
+        # Validar que el paciente exista
+        patient_record = self.repo.get_patient_by_id(patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado")
+        
+        # Validar que la alerta pertenezca al paciente
+        alert_info = self.repo.get_alert_with_patient(alert_id)
+        if not alert_info:
+            raise ValueError("Alerta no encontrada")
+        if alert_info.get('patient_id') != patient_id:
+            raise PermissionError("La alerta no pertenece al paciente especificado")
+        
+        # Registrar la resolución
+        resolution = self.repo.resolve_patient_alert(alert_id, user_id, outcome, note)
+        if not resolution:
+            raise RuntimeError("No se pudo registrar la resolución de la alerta")
+        
+        return {
+            'patient': self._format_patient_summary(patient_record),
+            'relationship': self._format_relationship(relationship),
+            'resolution': self._format_resolution(resolution),
+            'alert': self._format_alert(alert_info),
+        }
+
     def add_caregiver_patient_note(
         self,
         patient_id: str,
@@ -521,9 +671,127 @@ class UserService:
             ]
         }
 
+    def list_caregiver_patient_devices(self, patient_id: str, user_id: str) -> Dict[str, Any]:
+        """Lista los dispositivos activos asignados a un paciente (endpoint de caregiver)."""
+        relationship = self._ensure_caregiver_access(patient_id, user_id)
+        patient_record = self.repo.get_patient_by_id(patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado")
+        devices = self.repo.list_patient_devices(patient_id)
+        return {
+            'patient': self._format_patient_summary(patient_record),
+            'relationship': self._format_relationship(relationship),
+            'devices': [self._format_patient_device(row) for row in devices],
+            'count': len(devices),
+        }
+
+    def list_org_patient_devices(self, org_id: str, patient_id: str, user_id: str) -> Dict[str, Any]:
+        """Lista los dispositivos activos asignados a un paciente (endpoint de organización)."""
+        membership = self._ensure_membership(org_id, user_id)
+        patient_record = self.repo.get_patient(org_id, patient_id)
+        if not patient_record:
+            raise ValueError("Paciente no encontrado en la organización indicada")
+        
+        devices = self.repo.list_patient_devices(patient_id)
+        return {
+            'organization': membership,
+            'patient': self._format_patient_summary(patient_record),
+            'devices': [self._format_patient_device(row) for row in devices],
+            'count': len(devices),
+        }
+
     # ------------------------------------------------------------------
     # Dispositivos clínicos
     # ------------------------------------------------------------------
+    def list_org_devices(
+        self,
+        org_id: str,
+        user_id: str,
+        params: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Lista dispositivos de una organización (sin filtro de care_team)."""
+        membership = self._ensure_membership(org_id, user_id)
+
+        active = self._parse_bool(params.get('active'), field='active') if 'active' in params else None
+        connected = self._parse_bool(params.get('connected'), field='connected') if 'connected' in params else None
+        patient_value = params.get('patient_id')
+        patient_id = self._normalize_uuid(patient_value, field='patient_id') if patient_value else None
+        limit = self._parse_limit(params.get('limit'), default=200, maximum=500, field='limit')
+        offset = self._parse_offset(params.get('offset'), field='offset')
+
+        rows = self.repo.list_org_devices(
+            org_id,
+            patient_id=patient_id,
+            active=active,
+            connected=connected,
+            limit=limit,
+            offset=offset,
+        )
+        devices = [self._format_org_device(row) for row in rows]
+
+        return {
+            'organization': membership,
+            'devices': devices,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'returned': len(devices),
+            },
+        }
+
+    def get_org_device_detail(
+        self,
+        org_id: str,
+        device_id: str,
+        user_id: str,
+    ) -> Dict[str, Any]:
+        """Obtiene detalle de un dispositivo de la organización."""
+        membership = self._ensure_membership(org_id, user_id)
+        record = self.repo.get_org_device(org_id, device_id)
+        if not record:
+            raise ValueError(f"Dispositivo {device_id} no encontrado en la organización {org_id}")
+
+        return {
+            'organization': membership,
+            'device': self._format_org_device(record),
+        }
+
+    def list_device_streams(
+        self,
+        org_id: str,
+        device_id: str,
+        user_id: str,
+        params: Mapping[str, Any],
+    ) -> Dict[str, Any]:
+        """Lista historial de streams de un dispositivo."""
+        membership = self._ensure_membership(org_id, user_id)
+        
+        # Verificar que el dispositivo pertenece a la org
+        device = self.repo.get_org_device(org_id, device_id)
+        if not device:
+            raise ValueError(f"Dispositivo {device_id} no encontrado en la organización {org_id}")
+
+        limit = self._parse_limit(params.get('limit'), default=50, maximum=200, field='limit')
+        offset = self._parse_offset(params.get('offset'), field='offset')
+
+        rows = self.repo.list_device_streams(
+            device_id,
+            limit=limit,
+            offset=offset,
+        )
+        streams = [self._format_device_stream(row) for row in rows]
+
+        return {
+            'organization': membership,
+            'device': self._format_org_device(device),
+            'streams': streams,
+            'pagination': {
+                'limit': limit,
+                'offset': offset,
+                'returned': len(streams),
+            },
+        }
+
     def list_care_team_devices(
         self,
         org_id: str,
@@ -984,6 +1252,7 @@ class UserService:
     def _format_alert(self, record: Dict[str, Any]) -> Dict[str, Any]:
         return {
             'id': str(record['id']),
+            'patient_id': str(record['patient_id']) if record.get('patient_id') else None,
             'created_at': self._serialize_datetime(record.get('created_at')),
             'description': record.get('description'),
             'type': {
@@ -1015,6 +1284,53 @@ class UserService:
                 'user_id': str(record['annotated_by_user_id']) if record.get('annotated_by_user_id') else None,
                 'name': record.get('annotated_by_name'),
             },
+        }
+
+    def _format_acknowledgement(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Formatea un acknowledgement de alerta."""
+        return {
+            'id': str(record['id']),
+            'alert_id': str(record['alert_id']),
+            'ack_at': self._serialize_datetime(record.get('ack_at')),
+            'note': record.get('note'),
+            'ack_by': {
+                'user_id': str(record['ack_by_user_id']) if record.get('ack_by_user_id') else None,
+                'name': record.get('ack_by_name'),
+            },
+        }
+
+    def _format_resolution(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Formatea una resolución de alerta."""
+        return {
+            'id': str(record['id']),
+            'alert_id': str(record['alert_id']),
+            'resolved_at': self._serialize_datetime(record.get('resolved_at')),
+            'outcome': record.get('outcome'),
+            'note': record.get('note'),
+            'resolved_by': {
+                'user_id': str(record['resolved_by_user_id']) if record.get('resolved_by_user_id') else None,
+                'name': record.get('resolved_by_name'),
+            },
+        }
+
+    def _format_patient_device(self, record: Dict[str, Any]) -> Dict[str, Any]:
+        """Formatea un dispositivo asignado a un paciente."""
+        return {
+            'id': str(record['device_id']),
+            'serial': record.get('serial'),
+            'brand': record.get('brand'),
+            'model': record.get('model'),
+            'device_type': {
+                'code': record.get('device_type_code'),
+                'label': record.get('device_type_label'),
+            },
+            'registered_at': self._serialize_datetime(record.get('registered_at')),
+            'stream': {
+                'id': str(record['stream_id']) if record.get('stream_id') else None,
+                'started_at': self._serialize_datetime(record.get('stream_started_at')),
+                'ended_at': self._serialize_datetime(record.get('stream_ended_at')),
+                'is_active': record.get('stream_id') is not None and record.get('stream_ended_at') is None,
+            } if record.get('stream_id') else None,
         }
 
     def _format_org_overview(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1210,6 +1526,44 @@ class UserService:
             'last_alert': alert,
         }
 
+    def _format_org_device(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Formatea un dispositivo con información de owner y conexión actual.
+        - owner: paciente owner_patient_id
+        - current_patient: paciente con stream activo (puede ser diferente)
+        - connected: boolean basado en active_stream_id
+        """
+        owner_id = row.get('owner_patient_id')
+        current_patient_id = row.get('current_patient_id')
+        
+        return {
+            'id': str(row['id']),
+            'serial': row.get('serial'),
+            'brand': row.get('brand'),
+            'model': row.get('model'),
+            'active': bool(row.get('active', False)),
+            'registered_at': self._serialize_datetime(row.get('registered_at')),
+            'connected': bool(row.get('active', False)) and row.get('active_stream_id') is not None,
+            'type': {
+                'code': row.get('device_type_code'),
+                'label': row.get('device_type_label'),
+            },
+            'owner': {
+                'id': str(owner_id) if owner_id else None,
+                'name': row.get('owner_patient_name'),
+                'email': row.get('owner_patient_email'),
+            },
+            'current_connection': {
+                'patient_id': str(current_patient_id) if current_patient_id else None,
+                'patient_name': row.get('current_patient_name'),
+                'started_at': self._serialize_datetime(row.get('connection_started_at')),
+            } if current_patient_id else None,
+            'streams': {
+                'total': int(row.get('total_streams') or 0),
+                'last_started_at': self._serialize_datetime(row.get('last_started_at')),
+            },
+        }
+
     def _format_care_team_device(self, row: Dict[str, Any]) -> Dict[str, Any]:
         owner_id = row.get('owner_patient_id')
         return {
@@ -1236,17 +1590,18 @@ class UserService:
         }
 
     def _format_device_stream(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        patient_id = row.get('patient_id')
         return {
             'id': str(row['id']),
-            'patient_id': str(row['patient_id']) if row.get('patient_id') else None,
             'device_id': str(row['device_id']) if row.get('device_id') else None,
+            'status': row.get('status'),
+            'patient': {
+                'id': str(patient_id) if patient_id else None,
+                'name': row.get('patient_name'),
+                'email': row.get('patient_email'),
+            },
             'started_at': self._serialize_datetime(row.get('started_at')),
             'ended_at': self._serialize_datetime(row.get('ended_at')),
-            'sample_rate_hz': self._coerce_float(row.get('sample_rate_hz')),
-            'signal_type': {
-                'code': row.get('signal_type_code'),
-                'label': row.get('signal_type_label'),
-            },
         }
 
     def _format_push_device(self, record: Dict[str, Any]) -> Dict[str, Any]:

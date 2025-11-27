@@ -348,6 +348,7 @@ class UserRepository:
         query = """
             SELECT
                 a.id,
+                a.patient_id,
                 a.created_at,
                 a.description,
                 at.code AS alert_type_code,
@@ -368,6 +369,171 @@ class UserRepository:
             cursor.execute(query, (patient_id, limit, offset))
             rows = cursor.fetchall() or []
             return list(rows)
+
+    @staticmethod
+    def acknowledge_patient_alert(alert_id: str, user_id: str, note: str | None = None) -> Dict | None:
+        """Registra un acknowledgement de una alerta y actualiza su estado a 'ack'."""
+        # Actualizar el estado de la alerta a 'ack'
+        update_query = """
+            UPDATE alerts
+            SET status_id = (SELECT id FROM alert_status WHERE lower(code) = 'ack' LIMIT 1)
+            WHERE id = %s
+        """
+        
+        # Insertar el registro de acknowledgement
+        insert_query = """
+            INSERT INTO alert_ack (alert_id, ack_by_user_id, note)
+            VALUES (%s, %s, %s)
+            RETURNING id,
+                      alert_id,
+                      ack_at,
+                      note,
+                      ack_by_user_id,
+                      (SELECT name FROM users WHERE id = ack_by_user_id) AS ack_by_name
+        """
+        with get_db_cursor() as cursor:
+            # Primero actualizar el estado
+            cursor.execute(update_query, (alert_id,))
+            # Luego insertar el acknowledgement
+            cursor.execute(insert_query, (alert_id, user_id, note))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def resolve_patient_alert(
+        alert_id: str,
+        user_id: str,
+        outcome: str | None = None,
+        note: str | None = None,
+    ) -> Dict | None:
+        """Registra la resolución de una alerta y actualiza su estado a 'resolved'."""
+        print(f"🔧 [DEBUG] resolve_patient_alert llamado: alert_id={alert_id}, outcome={outcome}, note={note[:50] if note else 'None'}...")
+        
+        # Actualizar el estado de la alerta a 'resolved'
+        update_query = """
+            UPDATE alerts
+            SET status_id = (SELECT id FROM alert_status WHERE lower(code) = 'resolved' LIMIT 1)
+            WHERE id = %s
+        """
+        
+        # Insertar el registro de resolución
+        insert_query = """
+            INSERT INTO alert_resolution (alert_id, resolved_by_user_id, outcome, note)
+            VALUES (%s, %s, %s, %s)
+            RETURNING id,
+                      alert_id,
+                      resolved_at,
+                      resolved_by_user_id,
+                      (SELECT name FROM users WHERE id = resolved_by_user_id) AS resolved_by_name,
+                      outcome,
+                      note
+        """
+        
+        # Obtener información de la alerta para crear Ground Truth
+        alert_info_query = """
+            SELECT a.patient_id, a.created_at, at.code as alert_type_code
+            FROM alerts a
+            JOIN alert_types at ON at.id = a.type_id
+            WHERE a.id = %s
+        """
+        
+        with get_db_cursor() as cursor:
+            # Primero actualizar el estado
+            cursor.execute(update_query, (alert_id,))
+            # Luego insertar la resolución
+            cursor.execute(insert_query, (alert_id, user_id, outcome, note))
+            resolution_row = cursor.fetchone()
+            
+            # Si el outcome es TRUE_POSITIVE, crear Ground Truth automáticamente
+            if outcome and outcome.upper() == 'TRUE_POSITIVE':
+                try:
+                    print(f"[Ground Truth] Iniciando creación de GT para alerta {alert_id}")
+                    cursor.execute(alert_info_query, (alert_id,))
+                    alert_info = cursor.fetchone()
+                    
+                    if alert_info:
+                        print(f"[Ground Truth] Info alerta: patient_id={alert_info['patient_id']}, type={alert_info['alert_type_code']}, created_at={alert_info['created_at']}")
+                        from datetime import datetime
+                        resolved_at = resolution_row['resolved_at'] if resolution_row else datetime.utcnow()
+                        print(f"[Ground Truth] resolved_at={resolved_at}, note={note}")
+                        
+                        # Primero verificar que el event_type existe
+                        cursor.execute(
+                            "SELECT id FROM event_types WHERE lower(code) = lower(%s) LIMIT 1",
+                            (alert_info['alert_type_code'],)
+                        )
+                        event_type_row = cursor.fetchone()
+                        
+                        if event_type_row:
+                            print(f"[Ground Truth] event_type_id encontrado: {event_type_row['id']}")
+                            # Crear el Ground Truth con los parámetros en el orden correcto
+                            cursor.execute(
+                                """
+                                INSERT INTO ground_truth_labels (
+                                    patient_id,
+                                    event_type_id,
+                                    onset,
+                                    offset_at,
+                                    annotated_by_user_id,
+                                    source,
+                                    note
+                                )
+                                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                                RETURNING id
+                                """,
+                                (
+                                    alert_info['patient_id'],
+                                    event_type_row['id'],  # event_type_id
+                                    alert_info['created_at'],  # onset
+                                    resolved_at,  # offset_at
+                                    user_id,  # annotated_by_user_id
+                                    'alert_resolution',  # source
+                                    note  # note
+                                )
+                            )
+                            gt_row = cursor.fetchone()
+                            print(f"[Ground Truth] ✅ CREADO GT #{gt_row['id']} para alerta {alert_id} con nota: '{note}'")
+                        else:
+                            print(f"[Ground Truth] ⚠️ WARN: event_type '{alert_info['alert_type_code']}' no encontrado")
+                    else:
+                        print(f"[Ground Truth] ⚠️ WARN: No se pudo obtener info de alerta {alert_id}")
+                except Exception as e:
+                    print(f"[Ground Truth] ❌ ERROR al crear GT: {e}")
+                    import traceback
+                    traceback.print_exc()
+            else:
+                print(f"[Ground Truth] Outcome={outcome}, no se creará GT (solo para TRUE_POSITIVE)")
+            
+            return dict(resolution_row) if resolution_row else None
+
+    @staticmethod
+    def get_alert_with_patient(alert_id: str) -> Dict | None:
+        """Obtiene información de una alerta incluyendo el patient_id y org_id."""
+        query = """
+            SELECT
+                a.id,
+                a.patient_id,
+                p.org_id,
+                a.created_at,
+                a.description,
+                at.code AS alert_type_code,
+                at.description AS alert_type_label,
+                al.code AS level_code,
+                al.label AS level_label,
+                ast.code AS status_code,
+                ast.description AS status_label,
+                p.person_name AS patient_name
+            FROM alerts a
+            JOIN patients p ON p.id = a.patient_id
+            JOIN alert_types at ON at.id = a.type_id
+            JOIN alert_levels al ON al.id = a.alert_level_id
+            JOIN alert_status ast ON ast.id = a.status_id
+            WHERE a.id = %s
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (alert_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
 
     @staticmethod
     def list_patient_notes(patient_id: str, limit: int) -> List[Dict]:
@@ -1051,6 +1217,178 @@ class UserRepository:
     # Dispositivos clínicos
     # ------------------------------------------------------------------
     @staticmethod
+    def list_org_devices(
+        org_id: str,
+        *,
+        patient_id: Optional[str],
+        active: Optional[bool],
+        connected: Optional[bool],
+        limit: int,
+        offset: int,
+    ) -> List[Dict]:
+        """
+        Lista todos los dispositivos de una organización.
+        - patient_id: filtrar por paciente owner
+        - active: filtrar por campo active del device
+        - connected: True=con stream activo, False=sin stream activo, None=todos
+        """
+        conditions = ["d.org_id = %s"]
+        params: List[Any] = [org_id]
+
+        if patient_id:
+            conditions.append("d.owner_patient_id = %s")
+            params.append(patient_id)
+
+        if active is not None:
+            conditions.append("d.active = %s")
+            params.append(active)
+
+        if connected is True:
+            conditions.append("active_stream.stream_id IS NOT NULL")
+        elif connected is False:
+            conditions.append("active_stream.stream_id IS NULL")
+
+        where_clause = " AND ".join(conditions)
+        params.extend([limit, offset])
+
+        query = f"""
+            WITH active_stream AS (
+                SELECT
+                    ss.id AS stream_id,
+                    ss.device_id,
+                    ss.patient_id AS current_patient_id,
+                    ss.started_at
+                FROM signal_streams ss
+                WHERE ss.ended_at IS NULL
+            ),
+            all_streams_count AS (
+                SELECT
+                    device_id,
+                    COUNT(*)::int AS total_streams,
+                    MAX(started_at) AS last_started_at
+                FROM signal_streams
+                GROUP BY device_id
+            )
+            SELECT
+                d.id,
+                d.serial,
+                d.brand,
+                d.model,
+                d.active,
+                d.registered_at,
+                d.owner_patient_id,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                owner_p.person_name AS owner_patient_name,
+                owner_p.email AS owner_patient_email,
+                active_stream.stream_id AS active_stream_id,
+                active_stream.current_patient_id,
+                current_p.person_name AS current_patient_name,
+                active_stream.started_at AS connection_started_at,
+                COALESCE(sc.total_streams, 0) AS total_streams,
+                sc.last_started_at
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN patients owner_p ON owner_p.id = d.owner_patient_id
+            LEFT JOIN active_stream ON active_stream.device_id = d.id
+            LEFT JOIN patients current_p ON current_p.id = active_stream.current_patient_id
+            LEFT JOIN all_streams_count sc ON sc.device_id = d.id
+            WHERE {where_clause}
+            ORDER BY d.serial ASC
+            LIMIT %s OFFSET %s
+        """
+
+        with get_db_cursor() as cursor:
+            cursor.execute(query, tuple(params))
+            rows = cursor.fetchall() or []
+            return list(rows)
+
+    @staticmethod
+    def get_org_device(org_id: str, device_id: str) -> Optional[Dict]:
+        """Obtiene detalles de un dispositivo de la organización."""
+        query = """
+            WITH active_stream AS (
+                SELECT
+                    ss.id AS stream_id,
+                    ss.device_id,
+                    ss.patient_id AS current_patient_id,
+                    ss.started_at
+                FROM signal_streams ss
+                WHERE ss.ended_at IS NULL AND ss.device_id = %s
+            ),
+            all_streams_count AS (
+                SELECT
+                    device_id,
+                    COUNT(*)::int AS total_streams,
+                    MAX(started_at) AS last_started_at
+                FROM signal_streams
+                WHERE device_id = %s
+                GROUP BY device_id
+            )
+            SELECT
+                d.id,
+                d.serial,
+                d.brand,
+                d.model,
+                d.active,
+                d.registered_at,
+                d.owner_patient_id,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                owner_p.person_name AS owner_patient_name,
+                owner_p.email AS owner_patient_email,
+                active_stream.stream_id AS active_stream_id,
+                active_stream.current_patient_id,
+                current_p.person_name AS current_patient_name,
+                active_stream.started_at AS connection_started_at,
+                COALESCE(sc.total_streams, 0) AS total_streams,
+                sc.last_started_at
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN patients owner_p ON owner_p.id = d.owner_patient_id
+            LEFT JOIN active_stream ON active_stream.device_id = d.id
+            LEFT JOIN patients current_p ON current_p.id = active_stream.current_patient_id
+            LEFT JOIN all_streams_count sc ON sc.device_id = d.id
+            WHERE d.org_id = %s AND d.id = %s
+            LIMIT 1
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (device_id, device_id, org_id, device_id))
+            return cursor.fetchone()
+
+    @staticmethod
+    def list_device_streams(
+        device_id: str,
+        *,
+        limit: int,
+        offset: int,
+    ) -> List[Dict]:
+        """Lista todos los signal_streams de un dispositivo (historial completo)."""
+        query = """
+            SELECT
+                ss.id,
+                ss.device_id,
+                ss.patient_id,
+                p.person_name AS patient_name,
+                p.email AS patient_email,
+                ss.started_at,
+                ss.ended_at,
+                CASE
+                    WHEN ss.ended_at IS NULL THEN 'active'
+                    ELSE 'ended'
+                END AS status
+            FROM signal_streams ss
+            JOIN patients p ON p.id = ss.patient_id
+            WHERE ss.device_id = %s
+            ORDER BY ss.started_at DESC
+            LIMIT %s OFFSET %s
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (device_id, limit, offset))
+            rows = cursor.fetchall() or []
+            return list(rows)
+
+    @staticmethod
     def get_care_team_membership(org_id: str, care_team_id: str, user_id: str) -> Optional[Dict]:
         query = """
             SELECT
@@ -1454,3 +1792,33 @@ class UserRepository:
             cursor.execute(query, (user_id, device_id))
             deleted = cursor.fetchone()
             return bool(deleted)
+
+    @staticmethod
+    def list_patient_devices(patient_id: str) -> List[Dict[str, Any]]:
+        """
+        Retorna lista de dispositivos activos asignados a un paciente.
+        Incluye información del dispositivo y del stream activo si existe.
+        """
+        query = """
+            SELECT
+                d.id AS device_id,
+                d.serial,
+                d.brand,
+                d.model,
+                dt.code AS device_type_code,
+                dt.label AS device_type_label,
+                d.registered_at,
+                ss.id AS stream_id,
+                ss.started_at AS stream_started_at,
+                ss.ended_at AS stream_ended_at
+            FROM devices d
+            JOIN device_types dt ON dt.id = d.device_type_id
+            LEFT JOIN signal_streams ss ON ss.device_id = d.id AND ss.ended_at IS NULL
+            WHERE d.owner_patient_id = %s
+              AND d.active = TRUE
+            ORDER BY d.registered_at DESC
+        """
+        with get_db_cursor() as cursor:
+            cursor.execute(query, (patient_id,))
+            rows = cursor.fetchall() or []
+            return list(rows)

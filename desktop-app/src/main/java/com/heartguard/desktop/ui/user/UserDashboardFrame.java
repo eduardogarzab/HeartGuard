@@ -76,6 +76,14 @@ public class UserDashboardFrame extends JFrame {
         setLayout(new BorderLayout());
         setMinimumSize(new Dimension(1200, 800));
         getContentPane().setBackground(GLOBAL_BACKGROUND);
+        
+        // Agregar listener para limpiar recursos al cerrar
+        addWindowListener(new java.awt.event.WindowAdapter() {
+            @Override
+            public void windowClosing(java.awt.event.WindowEvent windowEvent) {
+                cleanup();
+            }
+        });
 
         // Encabezado superior fijo
         add(createTopBar(), BorderLayout.NORTH);
@@ -518,5 +526,13 @@ public class UserDashboardFrame extends JFrame {
         } else {
             showSnackbar("Error " + apiException.getStatusCode() + ": " + apiException.getMessage(), false);
         }
+    }
+    
+    /**
+     * Limpia recursos antes de cerrar la ventana
+     */
+    private void cleanup() {
+        // MainDashboardPanel ya no tiene recursos que limpiar
+        // (AlertsPanel fue eliminado)
     }
 }

@@ -69,7 +69,7 @@ class InfluxDBService:
             query = f'''
             from(bucket: "{self.bucket}")
                 |> range(start: -{hours}h)
-                |> filter(fn: (r) => r["_measurement"] == "patient_vitals")
+                |> filter(fn: (r) => r["_measurement"] == "vital_signs")
                 |> filter(fn: (r) => r["patient_id"] == "{patient_id}")
                 |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
                 |> sort(columns: ["_time"], desc: true)
@@ -93,7 +93,7 @@ class InfluxDBService:
                         'spo2': record.values.get('spo2'),
                         'systolic_bp': record.values.get('systolic_bp'),
                         'diastolic_bp': record.values.get('diastolic_bp'),
-                        'body_temperature': record.values.get('body_temperature'),
+                        'body_temperature': record.values.get('temperature'),
                         'heart_rate_alert': int(record.values.get('heart_rate_alert', 0)),
                         'spo2_alert': int(record.values.get('spo2_alert', 0)),
                         'bp_alert': int(record.values.get('bp_alert', 0)),
@@ -122,7 +122,7 @@ class InfluxDBService:
             query = f'''
             from(bucket: "{self.bucket}")
                 |> range(start: -24h)
-                |> filter(fn: (r) => r["_measurement"] == "patient_vitals")
+                |> filter(fn: (r) => r["_measurement"] == "vital_signs")
                 |> filter(fn: (r) => r["patient_id"] == "{patient_id}")
                 |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
                 |> sort(columns: ["_time"], desc: true)
@@ -141,7 +141,7 @@ class InfluxDBService:
                         'spo2': record.values.get('spo2'),
                         'systolic_bp': record.values.get('systolic_bp'),
                         'diastolic_bp': record.values.get('diastolic_bp'),
-                        'body_temperature': record.values.get('body_temperature'),
+                        'body_temperature': record.values.get('temperature'),
                         'heart_rate_alert': int(record.values.get('heart_rate_alert', 0)),
                         'spo2_alert': int(record.values.get('spo2_alert', 0)),
                         'bp_alert': int(record.values.get('bp_alert', 0)),
@@ -173,14 +173,14 @@ class InfluxDBService:
             query = f'''
             from(bucket: "{self.bucket}")
                 |> range(start: -{hours}h)
-                |> filter(fn: (r) => r["_measurement"] == "patient_vitals")
+                |> filter(fn: (r) => r["_measurement"] == "vital_signs")
                 |> filter(fn: (r) => r["patient_id"] == "{patient_id}")
                 |> filter(fn: (r) => 
                     r["_field"] == "heart_rate" or 
                     r["_field"] == "spo2" or 
                     r["_field"] == "systolic_bp" or 
                     r["_field"] == "diastolic_bp" or
-                    r["_field"] == "body_temperature"
+                    r["_field"] == "temperature"
                 )
                 |> group(columns: ["_field"])
             '''

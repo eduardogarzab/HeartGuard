@@ -7,6 +7,10 @@ import io.github.cdimascio.dotenv.Dotenv;
  * Lee valores desde archivo .env o variables de entorno del sistema.
  * 
  * NO incluye valores hardcodeados - todo viene de .env
+ * 
+ * ARQUITECTURA: El desktop app se comunica SOLO con el gateway.
+ * El gateway se encarga de enrutar a los microservicios (auth, user, patient, media, realtime, etc.)
+ * NO se conecta directamente a InfluxDB - usa el endpoint /realtime/patients/{id}/vital-signs
  */
 public class AppConfig {
     private static AppConfig instance;
@@ -14,12 +18,6 @@ public class AppConfig {
     
     // Gateway Configuration
     private final String gatewayBaseUrl;
-    
-    // InfluxDB Configuration
-    private final String influxdbUrl;
-    private final String influxdbToken;
-    private final String influxdbOrg;
-    private final String influxdbBucket;
     
     private AppConfig() {
         // Intentar cargar el archivo .env desde el directorio actual
@@ -38,16 +36,7 @@ public class AppConfig {
         // Cargar configuración del Gateway
         this.gatewayBaseUrl = getEnv("GATEWAY_BASE_URL", "http://localhost:8080");
         
-        // Cargar configuración de InfluxDB
-        this.influxdbUrl = getEnv("INFLUXDB_URL", null);
-        this.influxdbToken = getEnv("INFLUXDB_TOKEN", null);
-        this.influxdbOrg = getEnv("INFLUXDB_ORG", "heartguard");
-        this.influxdbBucket = getEnv("INFLUXDB_BUCKET", "timeseries");
-        
-        // Validar configuración requerida
-        validateConfig();
-        
-        // Log de configuración (sin exponer valores sensibles)
+        // Log de configuración
         logConfig();
     }
     
@@ -86,48 +75,15 @@ public class AppConfig {
     }
     
     /**
-     * Validar que las configuraciones requeridas estén presentes
-     */
-    private void validateConfig() {
-        if (influxdbUrl == null || influxdbUrl.isEmpty()) {
-            throw new IllegalStateException(
-                "INFLUXDB_URL is required. Please set it in .env file or environment variables."
-            );
-        }
-        
-        if (influxdbToken == null || influxdbToken.isEmpty()) {
-            throw new IllegalStateException(
-                "INFLUXDB_TOKEN is required. Please set it in .env file or environment variables."
-            );
-        }
-    }
-    
-    /**
-     * Log de configuración cargada (sin exponer datos sensibles)
+     * Log de configuración cargada
      */
     private void logConfig() {
         System.out.println("=".repeat(60));
         System.out.println("HeartGuard Desktop App - Configuration Loaded");
         System.out.println("=".repeat(60));
         System.out.println("Gateway URL: " + gatewayBaseUrl);
-        System.out.println("InfluxDB URL: " + influxdbUrl);
-        System.out.println("InfluxDB Org: " + influxdbOrg);
-        System.out.println("InfluxDB Bucket: " + influxdbBucket);
-        System.out.println("InfluxDB Token: " + maskSensitiveData(influxdbToken));
+        System.out.println("Note: All data queries go through Gateway");
         System.out.println("=".repeat(60));
-    }
-    
-    /**
-     * Enmascarar datos sensibles para logs
-     */
-    private String maskSensitiveData(String data) {
-        if (data == null || data.isEmpty()) {
-            return "[NOT SET]";
-        }
-        if (data.length() <= 8) {
-            return "***";
-        }
-        return data.substring(0, 4) + "..." + data.substring(data.length() - 4);
     }
     
     // Getters
@@ -135,20 +91,5 @@ public class AppConfig {
     public String getGatewayBaseUrl() {
         return gatewayBaseUrl;
     }
-    
-    public String getInfluxdbUrl() {
-        return influxdbUrl;
-    }
-    
-    public String getInfluxdbToken() {
-        return influxdbToken;
-    }
-    
-    public String getInfluxdbOrg() {
-        return influxdbOrg;
-    }
-    
-    public String getInfluxdbBucket() {
-        return influxdbBucket;
-    }
 }
+

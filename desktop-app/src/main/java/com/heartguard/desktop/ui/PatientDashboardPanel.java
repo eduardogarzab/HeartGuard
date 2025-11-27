@@ -2,8 +2,10 @@ package com.heartguard.desktop.ui;
 
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
+import com.heartguard.desktop.ui.patient.AlertDetailDialog;
 import com.heartguard.desktop.ui.patient.PatientEmbeddedMapPanel;
 import com.heartguard.desktop.ui.patient.ProfilePhotoPanel;
+import com.heartguard.desktop.ui.user.VitalSignsChartPanel;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
@@ -28,6 +30,13 @@ import java.util.concurrent.ExecutionException;
  * Muestra información personal, estadísticas, alertas recientes y equipo de cuidado
  */
 public class PatientDashboardPanel extends JPanel {
+        // Campos para selector y paneles de dispositivos
+        private JPanel vitalSignsChartContainerPanel;
+        private JComboBox<String> deviceSelector;
+        private JLabel deviceInfoLabel;
+        private java.util.List<DeviceInfo> patientDevices = new java.util.ArrayList<>();
+        private final java.util.Map<String, VitalSignsChartPanel> chartPanelCache = new java.util.HashMap<>();
+        private VitalSignsChartPanel chartPanel;
     private static final Color BACKGROUND_COLOR = new Color(240, 244, 249);
     private static final Color SURFACE_COLOR = Color.WHITE;
     private static final Color PRIMARY_COLOR = new Color(33, 150, 243);
@@ -158,19 +167,23 @@ public class PatientDashboardPanel extends JPanel {
         panel.add(createStatsSection());
         panel.add(Box.createVerticalStrut(SECTION_SPACING));
 
-        // Sección 3: Alertas Recientes
+        // Sección 3: Signos Vitales en Tiempo Real
+        panel.add(createVitalSignsSection());
+        panel.add(Box.createVerticalStrut(SECTION_SPACING));
+
+        // Sección 4: Alertas Recientes
         panel.add(createAlertsSection());
         panel.add(Box.createVerticalStrut(SECTION_SPACING));
 
-        // Sección 4: Equipo de Cuidado
+        // Sección 5: Equipo de Cuidado
         panel.add(createCareTeamSection());
         panel.add(Box.createVerticalStrut(SECTION_SPACING));
 
-        // Sección 5: Cuidadores (Caregivers)
+        // Sección 6: Cuidadores (Caregivers)
         panel.add(createCaregiversSection());
         panel.add(Box.createVerticalStrut(SECTION_SPACING));
 
-        // Sección 6: Ubicación Reciente
+        // Sección 7: Ubicación Reciente
         panel.add(createLocationSection());
 
         return panel;
@@ -241,12 +254,64 @@ public class PatientDashboardPanel extends JPanel {
         return createCardSection("📊 Indicadores Clave", grid);
     }
 
+    private JPanel createVitalSignsSection() {
+        JPanel chartContainer = new JPanel(new BorderLayout(0, 12));
+        chartContainer.setOpaque(false);
+
+        // Panel superior con información y selector
+        JPanel topPanel = new JPanel(new BorderLayout());
+        topPanel.setOpaque(false);
+        topPanel.setBorder(new EmptyBorder(0, 0, 12, 0));
+
+        JLabel desc = new JLabel("Gráficas en tiempo real de signos vitales");
+        desc.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+        desc.setForeground(TEXT_SECONDARY_COLOR);
+        topPanel.add(desc, BorderLayout.WEST);
+
+        JPanel devicePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        devicePanel.setOpaque(false);
+        deviceInfoLabel = new JLabel("");
+        deviceInfoLabel.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        deviceInfoLabel.setForeground(TEXT_SECONDARY_COLOR);
+        devicePanel.add(deviceInfoLabel);
+        deviceSelector = new JComboBox<>();
+        deviceSelector.setFont(new Font("Segoe UI", Font.PLAIN, 13));
+        deviceSelector.setVisible(false);
+        deviceSelector.addActionListener(e -> onDeviceSelected());
+        devicePanel.add(deviceSelector);
+        topPanel.add(devicePanel, BorderLayout.EAST);
+
+        chartContainer.add(topPanel, BorderLayout.NORTH);
+
+        // Panel de gráficas
+        vitalSignsChartContainerPanel = new JPanel(new BorderLayout());
+        vitalSignsChartContainerPanel.setOpaque(false);
+        vitalSignsChartContainerPanel.setPreferredSize(new Dimension(800, 500));
+        vitalSignsChartContainerPanel.setMinimumSize(new Dimension(600, 400));
+        chartContainer.add(vitalSignsChartContainerPanel, BorderLayout.CENTER);
+
+        // Cargar dispositivos y mostrar panel
+        loadDevicesForVitalSigns();
+
+        return createCardSection("📈 Signos Vitales en Tiempo Real", chartContainer);
+    }
+
     private JPanel createAlertsSection() {
         alertsPanel = new JPanel();
         alertsPanel.setLayout(new BoxLayout(alertsPanel, BoxLayout.Y_AXIS));
         alertsPanel.setOpaque(false);
 
-        return createCardSection("🚨 Alertas Recientes", alertsPanel);
+        // Envolver en un JScrollPane para permitir scroll
+        JScrollPane alertsScrollPane = new JScrollPane(alertsPanel);
+        alertsScrollPane.setBorder(null);
+        alertsScrollPane.setOpaque(false);
+        alertsScrollPane.getViewport().setOpaque(false);
+        alertsScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_AS_NEEDED);
+        alertsScrollPane.setHorizontalScrollBarPolicy(JScrollPane.HORIZONTAL_SCROLLBAR_NEVER);
+        alertsScrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        alertsScrollPane.setPreferredSize(new Dimension(0, 400)); // Altura fija para scroll
+
+        return createCardSection("🚨 Alertas Recientes", alertsScrollPane);
     }
 
     private JPanel createCareTeamSection() {
@@ -677,6 +742,25 @@ public class PatientDashboardPanel extends JPanel {
                 new EmptyBorder(16, 20, 16, 20)
         ));
         cardWrapper.setLayout(new BorderLayout(12, 8));
+        
+        // Hacer la tarjeta clickeable
+        cardWrapper.setCursor(new Cursor(Cursor.HAND_CURSOR));
+        cardWrapper.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                showAlertDetail(alert);
+            }
+            
+            @Override
+            public void mouseEntered(java.awt.event.MouseEvent e) {
+                cardWrapper.setBackground(new Color(245, 247, 250));
+            }
+            
+            @Override
+            public void mouseExited(java.awt.event.MouseEvent e) {
+                cardWrapper.setBackground(SURFACE_COLOR);
+            }
+        });
 
         String level = alert.get("level_label").getAsString();
         String type = alert.has("type") && !alert.get("type").isJsonNull()
@@ -711,6 +795,62 @@ public class PatientDashboardPanel extends JPanel {
         metaRow.setOpaque(false);
         metaRow.add(dateLabel);
         metaRow.add(statusChip);
+
+        // ✅ Indicador de IA - Verificar si fue generada por un modelo
+        boolean createdByAI = alert.has("created_by_model_id") 
+                && !alert.get("created_by_model_id").isJsonNull()
+                && !alert.get("created_by_model_id").getAsString().isEmpty();
+        
+        if (createdByAI) {
+            JLabel aiChip = new JLabel(" 🤖 IA ");
+            aiChip.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            aiChip.setForeground(new Color(103, 58, 183)); // Púrpura
+            aiChip.setOpaque(true);
+            aiChip.setBackground(new Color(103, 58, 183, 30));
+            aiChip.setBorder(new CompoundBorder(
+                    new MatteBorder(1, 1, 1, 1, new Color(103, 58, 183)),
+                    new EmptyBorder(4, 8, 4, 8)
+            ));
+            aiChip.setToolTipText("Alerta generada por modelo de IA");
+            metaRow.add(aiChip);
+            
+            // Mostrar nombre del modelo si está disponible
+            if (alert.has("model_name") && !alert.get("model_name").isJsonNull()) {
+                String modelName = alert.get("model_name").getAsString();
+                String modelVersion = alert.has("model_version") && !alert.get("model_version").isJsonNull()
+                        ? alert.get("model_version").getAsString() : "";
+                String modelInfo = modelName + (modelVersion.isEmpty() ? "" : " v" + modelVersion);
+                aiChip.setToolTipText("Generada por: " + modelInfo);
+            }
+        }
+        
+        // ✅ Indicador de Ground Truth - Verificar si fue validada por un médico
+        boolean hasGroundTruth = alert.has("ground_truth_id") 
+                && !alert.get("ground_truth_id").isJsonNull()
+                && !alert.get("ground_truth_id").getAsString().isEmpty();
+        
+        if (hasGroundTruth) {
+            JLabel gtChip = new JLabel(" ✓ VALIDADA ");
+            gtChip.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            gtChip.setForeground(new Color(46, 125, 50)); // Verde médico
+            gtChip.setOpaque(true);
+            gtChip.setBackground(new Color(46, 125, 50, 30));
+            gtChip.setBorder(new CompoundBorder(
+                    new MatteBorder(1, 1, 1, 1, new Color(46, 125, 50)),
+                    new EmptyBorder(4, 8, 4, 8)
+            ));
+            gtChip.setToolTipText("Alerta validada por profesional médico");
+            metaRow.add(gtChip);
+            
+            // Mostrar quién validó si está disponible
+            if (alert.has("ground_truth")) {
+                JsonObject gt = alert.getAsJsonObject("ground_truth");
+                if (gt.has("validated_by") && !gt.get("validated_by").isJsonNull()) {
+                    String validatedBy = gt.get("validated_by").getAsString();
+                    gtChip.setToolTipText("Validada por: " + validatedBy);
+                }
+            }
+        }
 
         JPanel infoPanel = new JPanel();
         infoPanel.setOpaque(false);
@@ -1467,6 +1607,211 @@ public class PatientDashboardPanel extends JPanel {
             Window window = SwingUtilities.getWindowAncestor(this);
             window.dispose();
             new LoginFrame().setVisible(true);
+        }
+    }
+    
+    /**
+     * Muestra el diálogo de detalle de una alerta
+     */
+    private void showAlertDetail(JsonObject alert) {
+        Window parentWindow = SwingUtilities.getWindowAncestor(this);
+        AlertDetailDialog dialog = new AlertDetailDialog(parentWindow, alert);
+        dialog.setVisible(true);
+    }
+
+    // Clase interna para almacenar información de dispositivos
+    private static class DeviceInfo {
+        String id;
+        String serial;
+        String brand;
+        String model;
+        String typeLabel;
+        boolean hasActiveStream;
+
+        public String getDisplayName() {
+            return String.format("%s - %s %s", serial, brand != null ? brand : "N/A", model != null ? model : "N/A");
+        }
+
+        public String getShortInfo() {
+            return String.format("%s | %s", serial, typeLabel != null ? typeLabel : "Dispositivo");
+        }
+    }
+
+    // Cargar dispositivos del paciente y actualizar UI
+    private void loadDevicesForVitalSigns() {
+        patientDevices.clear();
+        deviceSelector.removeAllItems();
+        deviceSelector.setVisible(false);
+        deviceInfoLabel.setText("");
+        vitalSignsChartContainerPanel.removeAll();
+
+        // Llamada asíncrona para obtener dispositivos
+        apiClient.getPatientDevicesAsync(accessToken)
+            .thenApplyAsync(response -> {
+                if (response != null && response.has("devices")) {
+                    return response.getAsJsonArray("devices");
+                }
+                return new JsonArray();
+            })
+            .thenAccept(devicesArray -> SwingUtilities.invokeLater(() -> processDevicesForVitalSigns(devicesArray)))
+            .exceptionally(ex -> {
+                JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                        "<b>Error al cargar dispositivos</b><br><br>" +
+                        "No se pudieron cargar los dispositivos del paciente." +
+                        "</div></html>");
+                errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                errorLabel.setForeground(DANGER_COLOR);
+                vitalSignsChartContainerPanel.add(errorLabel, BorderLayout.CENTER);
+                vitalSignsChartContainerPanel.revalidate();
+                vitalSignsChartContainerPanel.repaint();
+                return null;
+            });
+    }
+
+    // Procesar dispositivos y actualizar UI
+    private void processDevicesForVitalSigns(JsonArray devicesArray) {
+        patientDevices.clear();
+        chartPanelCache.clear();
+        vitalSignsChartContainerPanel.removeAll();
+
+        if (devicesArray == null || devicesArray.size() == 0) {
+            deviceInfoLabel.setText("");
+            deviceSelector.setVisible(false);
+            JLabel noDeviceLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                    "<b>Sin dispositivos activos</b><br><br>" +
+                    "Este paciente no tiene dispositivos asignados o<br>" +
+                    "ninguno está generando datos actualmente." +
+                    "</div></html>");
+            noDeviceLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            noDeviceLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            noDeviceLabel.setForeground(TEXT_SECONDARY_COLOR);
+            vitalSignsChartContainerPanel.add(noDeviceLabel, BorderLayout.CENTER);
+            vitalSignsChartContainerPanel.revalidate();
+            vitalSignsChartContainerPanel.repaint();
+            return;
+        }
+
+        // Parsear dispositivos
+        for (JsonElement element : devicesArray) {
+            if (!element.isJsonObject()) continue;
+            JsonObject deviceObj = element.getAsJsonObject();
+
+            DeviceInfo device = new DeviceInfo();
+            device.id = deviceObj.has("id") ? deviceObj.get("id").getAsString() : null;
+            device.serial = deviceObj.has("serial") ? deviceObj.get("serial").getAsString() : "N/A";
+            device.brand = deviceObj.has("brand") && !deviceObj.get("brand").isJsonNull()
+                    ? deviceObj.get("brand").getAsString() : null;
+            device.model = deviceObj.has("model") && !deviceObj.get("model").isJsonNull()
+                    ? deviceObj.get("model").getAsString() : null;
+
+            JsonObject deviceType = deviceObj.has("device_type") && deviceObj.get("device_type").isJsonObject()
+                    ? deviceObj.getAsJsonObject("device_type")
+                    : null;
+            device.typeLabel = deviceType != null ? (deviceType.has("label") ? deviceType.get("label").getAsString() : null) : null;
+
+            JsonObject stream = deviceObj.has("stream") && deviceObj.get("stream").isJsonObject()
+                    ? deviceObj.getAsJsonObject("stream")
+                    : null;
+            device.hasActiveStream = stream != null && stream.has("is_active") && stream.get("is_active").getAsBoolean();
+
+            // Incluir todos los dispositivos del paciente (con o sin stream activo)
+            patientDevices.add(device);
+        }
+
+        if (patientDevices.size() == 1) {
+            DeviceInfo device = patientDevices.get(0);
+            deviceInfoLabel.setText("📱 " + device.getShortInfo());
+            deviceSelector.setVisible(false);
+            loadChartsForDevice(device);
+        } else {
+            deviceSelector.removeAllItems();
+            for (DeviceInfo device : patientDevices) {
+                deviceSelector.addItem(device.getDisplayName());
+            }
+            deviceSelector.setVisible(true);
+            if (deviceSelector.getItemCount() > 0) {
+                DeviceInfo firstDevice = patientDevices.get(0);
+                deviceInfoLabel.setText("📱 " + firstDevice.getShortInfo());
+                deviceSelector.setSelectedIndex(0);
+                loadChartsForDevice(firstDevice);
+            }
+        }
+        vitalSignsChartContainerPanel.revalidate();
+        vitalSignsChartContainerPanel.repaint();
+    }
+
+    // Callback cuando se selecciona un dispositivo del combo box
+    private void onDeviceSelected() {
+        int selectedIndex = deviceSelector.getSelectedIndex();
+        if (selectedIndex >= 0 && selectedIndex < patientDevices.size()) {
+            DeviceInfo selectedDevice = patientDevices.get(selectedIndex);
+            if (chartPanel != null && chartPanelCache.containsKey(selectedDevice.id)) {
+                VitalSignsChartPanel existingPanel = chartPanelCache.get(selectedDevice.id);
+                if (existingPanel == chartPanel) {
+                    deviceInfoLabel.setText("📱 " + selectedDevice.getShortInfo());
+                    return;
+                }
+            }
+            deviceInfoLabel.setText("📱 " + selectedDevice.getShortInfo());
+            loadChartsForDevice(selectedDevice);
+        }
+    }
+
+    // Carga las gráficas para un dispositivo específico (con caché para rendimiento)
+    private void loadChartsForDevice(DeviceInfo device) {
+        if (chartPanel != null) {
+            vitalSignsChartContainerPanel.remove(chartPanel);
+        }
+        VitalSignsChartPanel cachedPanel = chartPanelCache.get(device.id);
+        if (cachedPanel != null) {
+            chartPanel = cachedPanel;
+            vitalSignsChartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+            vitalSignsChartContainerPanel.revalidate();
+            vitalSignsChartContainerPanel.repaint();
+        } else {
+            JPanel loadingPanel = new JPanel(new BorderLayout());
+            loadingPanel.setOpaque(false);
+            JLabel loadingLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                    "<b style='font-size:16px;'>📈 Cargando gráficas...</b><br><br>" +
+                    "<span style='color:#64748b;'>Obteniendo datos de " + device.serial + "</span>" +
+                    "</div></html>");
+            loadingLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            loadingLabel.setFont(new Font("Segoe UI", Font.PLAIN, 14));
+            loadingPanel.add(loadingLabel, BorderLayout.CENTER);
+            vitalSignsChartContainerPanel.add(loadingPanel, BorderLayout.CENTER);
+            vitalSignsChartContainerPanel.revalidate();
+            vitalSignsChartContainerPanel.repaint();
+
+            SwingWorker<VitalSignsChartPanel, Void> chartWorker = new SwingWorker<>() {
+                @Override
+                protected VitalSignsChartPanel doInBackground() throws Exception {
+                    return new VitalSignsChartPanel(patientId, device.id, apiClient, 10);
+                }
+                @Override
+                protected void done() {
+                    try {
+                        VitalSignsChartPanel newPanel = get();
+                        vitalSignsChartContainerPanel.remove(loadingPanel);
+                        chartPanel = newPanel;
+                        chartPanelCache.put(device.id, chartPanel);
+                        vitalSignsChartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+                        vitalSignsChartContainerPanel.revalidate();
+                        vitalSignsChartContainerPanel.repaint();
+                        SwingUtilities.invokeLater(() -> chartPanel.startDataLoading());
+                    } catch (Exception e) {
+                        vitalSignsChartContainerPanel.remove(loadingPanel);
+                        JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                                "<b style='color:#dc3545;font-size:16px;'>Error al cargar gráficas</b><br><br>" +
+                                "<span style='color:#64748b;'>" + e.getMessage() + "</span>" +
+                                "</div></html>");
+                        errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                        vitalSignsChartContainerPanel.add(errorLabel, BorderLayout.CENTER);
+                        vitalSignsChartContainerPanel.revalidate();
+                        vitalSignsChartContainerPanel.repaint();
+                    }
+                }
+            };
+            chartWorker.execute();
         }
     }
 }

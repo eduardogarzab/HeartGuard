@@ -5,16 +5,18 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.heartguard.desktop.api.ApiClient;
 import com.heartguard.desktop.api.ApiException;
-import com.heartguard.desktop.api.InfluxDBService;
-import com.heartguard.desktop.config.AppConfig;
+import com.heartguard.desktop.models.alert.Alert;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
 import javax.swing.border.LineBorder;
 import java.awt.*;
+import java.awt.event.ActionListener;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Ventana modal con diseño profesional para mostrar detalles clínicos de un paciente.
@@ -40,13 +42,24 @@ public class PatientDetailDialog extends JDialog {
     private final String orgId;
     private final String patientId;
     private final String patientName;
-    private final InfluxDBService influxService;
 
     private final JLabel statusLabel = new JLabel(" ");
     private final JTextArea infoArea = new JTextArea();
     private final DefaultListModel<String> alertsModel = new DefaultListModel<>();
     private final DefaultListModel<String> notesModel = new DefaultListModel<>();
     private VitalSignsChartPanel chartPanel;
+    
+    // Alertas cargadas con metadata completa
+    private JsonArray loadedAlerts = new JsonArray();
+    
+    // Dispositivos del paciente
+    private java.util.List<DeviceInfo> patientDevices = new java.util.ArrayList<>();
+    private JPanel chartContainerPanel;
+    private JComboBox<String> deviceSelector;
+    private JLabel deviceInfoLabel;
+    
+    // Caché de paneles de gráficas por dispositivo (para evitar reconstrucción)
+    private final java.util.Map<String, VitalSignsChartPanel> chartPanelCache = new java.util.HashMap<>();
 
     public PatientDetailDialog(Frame owner, ApiClient apiClient, String token, String orgId, String patientId, String patientName) {
         super(owner, "Paciente: " + patientName, true);
@@ -56,16 +69,6 @@ public class PatientDetailDialog extends JDialog {
         this.patientId = patientId;
         this.patientName = patientName;
         
-        // Obtener configuración desde AppConfig (lee de .env o variables de entorno)
-        AppConfig config = AppConfig.getInstance();
-        
-        this.influxService = new InfluxDBService(
-            config.getInfluxdbUrl(),
-            config.getInfluxdbToken(),
-            config.getInfluxdbOrg(),
-            config.getInfluxdbBucket()
-        );
-        
         System.out.println("Initializing patient detail for: " + patientName + " (ID: " + patientId + ")");
         
         initComponents();
@@ -73,42 +76,42 @@ public class PatientDetailDialog extends JDialog {
     }
 
     private void initComponents() {
-        setSize(1000, 800);
+        // Ventana maximizada para mejor visualización
+        Dimension screenSize = Toolkit.getDefaultToolkit().getScreenSize();
+        int width = (int) (screenSize.width * 0.9);  // 90% del ancho de pantalla
+        int height = (int) (screenSize.height * 0.9); // 90% del alto de pantalla
+        setSize(width, height);
         setLocationRelativeTo(getOwner());
         setLayout(new BorderLayout());
         getContentPane().setBackground(GLOBAL_BG);
+        setMinimumSize(new Dimension(1400, 900));
 
-        // Encabezado con título y separador
+        // Encabezado compacto con título y separador
         JPanel header = new JPanel(new BorderLayout());
         header.setBorder(new CompoundBorder(
             new LineBorder(BORDER_LIGHT, 1, false),
-            new EmptyBorder(24, 24, 16, 24)
+            new EmptyBorder(12, 20, 12, 20)  // Reducido padding
         ));
         header.setBackground(CARD_BG);
 
-        JLabel title = new JLabel("Resumen Clínico");
-        title.setFont(TITLE_FONT);
+        JLabel title = new JLabel("📋 " + patientName);
+        title.setFont(new Font("Inter", Font.BOLD, 18));  // Un solo título
         title.setForeground(TEXT_PRIMARY);
         header.add(title, BorderLayout.WEST);
-
-        JLabel patientNameLabel = new JLabel(patientName);
-        patientNameLabel.setFont(new Font("Inter", Font.BOLD, 16));
-        patientNameLabel.setForeground(PRIMARY_BLUE);
-        header.add(patientNameLabel, BorderLayout.EAST);
 
         add(header, BorderLayout.NORTH);
 
         // Panel principal con scroll para contener tabs y gráficas
-        JPanel mainPanel = new JPanel(new BorderLayout(0, 12));
+        JPanel mainPanel = new JPanel(new BorderLayout(0, 8));
         mainPanel.setOpaque(false);
-        mainPanel.setBorder(new EmptyBorder(0, 16, 16, 16));
+        mainPanel.setBorder(new EmptyBorder(0, 12, 12, 12));  // Reducido padding
 
         // Tabs estilizados para métricas, alertas y notas
         JTabbedPane tabs = new JTabbedPane();
-        tabs.setFont(new Font("Inter", Font.PLAIN, 15));
+        tabs.setFont(new Font("Inter", Font.PLAIN, 14));
         tabs.setBackground(new Color(240, 242, 245));
         tabs.setForeground(TEXT_PRIMARY);
-        tabs.setPreferredSize(new Dimension(0, 250));
+        tabs.setPreferredSize(new Dimension(0, 220)); // Balance entre alertas y gráficas
 
         infoArea.setEditable(false);
         infoArea.setLineWrap(true);
@@ -122,13 +125,104 @@ public class PatientDetailDialog extends JDialog {
         tabs.addTab("MÉTRICAS", infoScroll);
 
         JList<String> alertsList = new JList<>(alertsModel);
-        alertsList.setFont(BODY_FONT);
+        alertsList.setFont(new Font("Inter", Font.PLAIN, 14));
         alertsList.setBackground(CARD_BG);
         alertsList.setBorder(new EmptyBorder(8, 8, 8, 8));
-        alertsList.setFixedCellHeight(50);
+        alertsList.setFixedCellHeight(80);
+        
+        // Renderer personalizado para colorear alertas según su estado
+        alertsList.setCellRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(JList<?> list, Object value, int index,
+                                                          boolean isSelected, boolean cellHasFocus) {
+                Component c = super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                
+                if (index < loadedAlerts.size()) {
+                    JsonObject alert = loadedAlerts.get(index).getAsJsonObject();
+                    String statusCode = alert.has("status") && alert.get("status").isJsonObject()
+                        ? alert.getAsJsonObject("status").has("code")
+                            ? alert.getAsJsonObject("status").get("code").getAsString()
+                            : "created"
+                        : "created";
+                    
+                    // Colorear según el estado
+                    if (isSelected) {
+                        c.setBackground(PRIMARY_BLUE);
+                        c.setForeground(Color.WHITE);
+                    } else if ("resolved".equalsIgnoreCase(statusCode) || "closed".equalsIgnoreCase(statusCode)) {
+                        // Alertas resueltas/cerradas - fondo gris claro
+                        c.setBackground(new Color(240, 240, 240));
+                        c.setForeground(new Color(120, 120, 120));
+                    } else if ("ack".equalsIgnoreCase(statusCode)) {
+                        // Alertas reconocidas - fondo amarillo suave
+                        c.setBackground(new Color(255, 248, 220));
+                        c.setForeground(new Color(139, 90, 0));
+                    } else {
+                        // Alertas abiertas (created, notified) - fondo rojo suave
+                        c.setBackground(new Color(255, 240, 240));
+                        c.setForeground(new Color(200, 50, 50));
+                    }
+                }
+                
+                if (c instanceof JLabel) {
+                    ((JLabel) c).setBorder(new EmptyBorder(8, 12, 8, 12));
+                }
+                
+                return c;
+            }
+        });
+        
+        // Panel para alertas con botón de validación
+        JPanel alertsPanel = new JPanel(new BorderLayout(0, 8));
+        alertsPanel.setOpaque(false);
+        
         JScrollPane alertsScroll = new JScrollPane(alertsList);
         alertsScroll.setBorder(new LineBorder(BORDER_LIGHT, 1));
-        tabs.addTab("ALERTAS", alertsScroll);
+        alertsPanel.add(alertsScroll, BorderLayout.CENTER);
+        
+        // Botón para validar alerta seleccionada
+        JButton validateAlertButton = new JButton("🔍 Validar Alerta Seleccionada");
+        validateAlertButton.setFont(new Font("Inter", Font.BOLD, 13));
+        validateAlertButton.setBackground(PRIMARY_BLUE);
+        validateAlertButton.setForeground(Color.WHITE);
+        validateAlertButton.setFocusPainted(false);
+        validateAlertButton.setBorder(new EmptyBorder(10, 16, 10, 16));
+        
+        // Listener para habilitar/deshabilitar el botón según el estado de la alerta
+        alertsList.addListSelectionListener(e -> {
+            if (!e.getValueIsAdjusting()) {
+                int selectedIndex = alertsList.getSelectedIndex();
+                if (selectedIndex >= 0 && selectedIndex < loadedAlerts.size()) {
+                    JsonObject alert = loadedAlerts.get(selectedIndex).getAsJsonObject();
+                    String statusCode = alert.has("status") && alert.get("status").isJsonObject()
+                        ? alert.getAsJsonObject("status").has("code")
+                            ? alert.getAsJsonObject("status").get("code").getAsString()
+                            : "created"
+                        : "created";
+                    
+                    // Deshabilitar si ya está resuelta o cerrada
+                    boolean isResolved = "resolved".equalsIgnoreCase(statusCode) || "closed".equalsIgnoreCase(statusCode);
+                    validateAlertButton.setEnabled(!isResolved);
+                    
+                    if (isResolved) {
+                        validateAlertButton.setText("✓ Alerta Ya Resuelta");
+                        validateAlertButton.setBackground(new Color(160, 160, 160));
+                    } else {
+                        validateAlertButton.setText("🔍 Validar Alerta Seleccionada");
+                        validateAlertButton.setBackground(PRIMARY_BLUE);
+                    }
+                } else {
+                    validateAlertButton.setEnabled(true);
+                    validateAlertButton.setText("🔍 Validar Alerta Seleccionada");
+                    validateAlertButton.setBackground(PRIMARY_BLUE);
+                }
+            }
+        });
+        
+        validateAlertButton.addActionListener(e -> validateSelectedAlert(alertsList.getSelectedIndex()));
+        alertsPanel.add(validateAlertButton, BorderLayout.SOUTH);
+        
+        tabs.addTab("ALERTAS", alertsPanel);
 
         JList<String> notesList = new JList<>(notesModel);
         notesList.setFont(BODY_FONT);
@@ -141,48 +235,59 @@ public class PatientDetailDialog extends JDialog {
         mainPanel.add(tabs, BorderLayout.NORTH);
 
         // Panel de gráficas en tiempo real
-        JPanel chartContainer = new JPanel(new BorderLayout());
-        chartContainer.setOpaque(false);
-        chartContainer.setBorder(new CompoundBorder(
+        chartContainerPanel = new JPanel(new BorderLayout());
+        chartContainerPanel.setOpaque(false);
+        chartContainerPanel.setBorder(new CompoundBorder(
             new LineBorder(BORDER_LIGHT, 1, true),
             new EmptyBorder(8, 8, 8, 8)
         ));
 
+        // Título y selector de dispositivo
+        JPanel headerPanel = new JPanel(new BorderLayout(12, 0));
+        headerPanel.setOpaque(false);
+        
         JLabel chartTitle = new JLabel("📊 Signos Vitales en Tiempo Real");
-        chartTitle.setFont(new Font("Inter", Font.BOLD, 16));
+        chartTitle.setFont(new Font("Inter", Font.BOLD, 18));
         chartTitle.setForeground(TEXT_PRIMARY);
-        chartTitle.setBorder(new EmptyBorder(0, 0, 8, 0));
-        chartContainer.add(chartTitle, BorderLayout.NORTH);
+        chartTitle.setBorder(new EmptyBorder(8, 0, 8, 0));
+        headerPanel.add(chartTitle, BorderLayout.WEST);
+        
+        // Panel para selector de dispositivo e info
+        JPanel devicePanel = new JPanel(new FlowLayout(FlowLayout.RIGHT, 8, 0));
+        devicePanel.setOpaque(false);
+        
+        deviceInfoLabel = new JLabel("");
+        deviceInfoLabel.setFont(new Font("Inter", Font.PLAIN, 12));
+        deviceInfoLabel.setForeground(TEXT_SECONDARY);
+        devicePanel.add(deviceInfoLabel);
+        
+        deviceSelector = new JComboBox<>();
+        deviceSelector.setFont(new Font("Inter", Font.PLAIN, 13));
+        deviceSelector.setVisible(false); // Oculto por defecto
+        deviceSelector.addActionListener(e -> onDeviceSelected());
+        devicePanel.add(deviceSelector);
+        
+        headerPanel.add(devicePanel, BorderLayout.EAST);
+        headerPanel.setBorder(new EmptyBorder(0, 0, 8, 0));
+        
+        chartContainerPanel.add(headerPanel, BorderLayout.NORTH);
 
-        // Crear panel de gráficas (se actualiza cada 10 segundos)
-        try {
-            System.out.println("[PatientDetail] Creating VitalSignsChartPanel for patient " + patientId);
-            chartPanel = new VitalSignsChartPanel(patientId, influxService, 10);
-            chartContainer.add(chartPanel, BorderLayout.CENTER);
-            System.out.println("[PatientDetail] VitalSignsChartPanel created successfully");
-        } catch (Exception e) {
-            System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
-            e.printStackTrace();
-            
-            // Mostrar mensaje de error en lugar del panel
-            JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:20px;'>" +
-                    "<b>Error al cargar gráficas:</b><br>" + 
-                    e.getMessage() + 
-                    "</div></html>");
-            errorLabel.setForeground(DANGER_RED);
-            errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
-            chartContainer.add(errorLabel, BorderLayout.CENTER);
-        }
+        // Placeholder para gráficas (se carga después de obtener dispositivos)
+        JLabel loadingLabel = new JLabel("Cargando información de dispositivos...");
+        loadingLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        loadingLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+        loadingLabel.setForeground(TEXT_SECONDARY);
+        chartContainerPanel.add(loadingLabel, BorderLayout.CENTER);
 
-        mainPanel.add(chartContainer, BorderLayout.CENTER);
+        mainPanel.add(chartContainerPanel, BorderLayout.CENTER);
 
         add(mainPanel, BorderLayout.CENTER);
 
-        // Footer con estado y botón cerrar
+        // Footer compacto con estado y botón cerrar
         JPanel footer = new JPanel(new BorderLayout());
         footer.setBorder(new CompoundBorder(
             new LineBorder(BORDER_LIGHT, 1, false),
-            new EmptyBorder(16, 24, 16, 24)
+            new EmptyBorder(10, 20, 10, 20)  // Reducido padding
         ));
         footer.setBackground(CARD_BG);
 
@@ -215,6 +320,11 @@ public class PatientDetailDialog extends JDialog {
         setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
 
         SwingWorker<Void, Void> worker = new SwingWorker<>() {
+            private JsonObject patient;
+            private JsonArray alerts;
+            private JsonArray notes;
+            private JsonArray devices;
+            
             @Override
             protected Void doInBackground() throws Exception {
                 // Si orgId es null, el paciente es del caregiver (sin organización)
@@ -223,30 +333,32 @@ public class PatientDetailDialog extends JDialog {
                     // Endpoints para pacientes del caregiver
                     JsonObject detailResponse = apiClient.getCaregiverPatientDetail(token, patientId);
                     JsonObject detailData = detailResponse.getAsJsonObject("data");
-                    JsonObject patient = detailData.getAsJsonObject("patient");
-                    updateInfoArea(patient);
+                    patient = detailData.getAsJsonObject("patient");
 
                     JsonObject alertsResponse = apiClient.getCaregiverPatientAlerts(token, patientId, 20);
-                    JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
-                    updateAlerts(alerts);
+                    alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
 
                     JsonObject notesResponse = apiClient.getCaregiverPatientNotes(token, patientId, 20);
-                    JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
-                    updateNotes(notes);
+                    notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
+                    
+                    // Cargar dispositivos del paciente
+                    JsonObject devicesResponse = apiClient.getCaregiverPatientDevices(token, patientId);
+                    devices = devicesResponse.getAsJsonObject("data").getAsJsonArray("devices");
                 } else {
                     // Endpoints para pacientes de organización
                     JsonObject detailResponse = apiClient.getOrganizationPatientDetail(token, orgId, patientId);
                     JsonObject detailData = detailResponse.getAsJsonObject("data");
-                    JsonObject patient = detailData.getAsJsonObject("patient");
-                    updateInfoArea(patient);
+                    patient = detailData.getAsJsonObject("patient");
 
                     JsonObject alertsResponse = apiClient.getOrganizationPatientAlerts(token, orgId, patientId, 20);
-                    JsonArray alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
-                    updateAlerts(alerts);
+                    alerts = alertsResponse.getAsJsonObject("data").getAsJsonArray("alerts");
 
                     JsonObject notesResponse = apiClient.getOrganizationPatientNotes(token, orgId, patientId, 20);
-                    JsonArray notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
-                    updateNotes(notes);
+                    notes = notesResponse.getAsJsonObject("data").getAsJsonArray("notes");
+                    
+                    // Cargar dispositivos del paciente
+                    JsonObject devicesResponse = apiClient.getOrganizationPatientDevices(token, orgId, patientId);
+                    devices = devicesResponse.getAsJsonObject("data").getAsJsonArray("devices");
                 }
                 return null;
             }
@@ -256,6 +368,12 @@ public class PatientDetailDialog extends JDialog {
                 setCursor(Cursor.getDefaultCursor());
                 try {
                     get();
+                    // Actualizar UI en el EDT
+                    updateInfoArea(patient);
+                    updateAlerts(alerts);
+                    updateNotes(notes);
+                    loadDevices(devices);
+                    
                     statusLabel.setForeground(SUCCESS_GREEN);
                     statusLabel.setText("Información actualizada");
                 } catch (Exception ex) {
@@ -294,6 +412,9 @@ public class PatientDetailDialog extends JDialog {
 
     private void updateAlerts(JsonArray alerts) {
         SwingUtilities.invokeLater(() -> {
+            // Guardar las alertas completas para usarlas después
+            loadedAlerts = alerts != null ? alerts : new JsonArray();
+            
             alertsModel.clear();
             if (alerts == null || alerts.isEmpty()) {
                 alertsModel.addElement("Sin alertas registradas");
@@ -353,11 +474,296 @@ public class PatientDetailDialog extends JDialog {
     }
 
     /**
+     * Valida una alerta seleccionada abriendo el diálogo de validación
+     */
+    private void validateSelectedAlert(int selectedIndex) {
+        if (selectedIndex < 0 || selectedIndex >= loadedAlerts.size()) {
+            JOptionPane.showMessageDialog(this,
+                    "Por favor selecciona una alerta de la lista",
+                    "Selección requerida",
+                    JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        try {
+            JsonObject alertJson = loadedAlerts.get(selectedIndex).getAsJsonObject();
+            Alert alert = Alert.fromJson(alertJson);
+            
+            AlertValidationDialog dialog = new AlertValidationDialog(
+                    this,
+                    alert,
+                    orgId,
+                    null, // userId lo toma del token
+                    token,
+                    patientName // Pasar el nombre del paciente
+            );
+            dialog.setVisible(true);
+            
+            // Recargar alertas después de validar
+            if (dialog.isValidated()) {
+                loadData();
+            }
+        } catch (Exception ex) {
+            ex.printStackTrace();
+            JOptionPane.showMessageDialog(this,
+                    "<html><body style='width: 300px'>" +
+                    "<h3>❌ Error al abrir diálogo</h3>" +
+                    "<p>" + ex.getMessage() + "</p>" +
+                    "<p><i>Revisa la consola para más detalles</i></p>" +
+                    "</body></html>",
+                    "Error",
+                    JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    /**
      * Limpiar recursos al cerrar el diálogo
      */
     private void cleanup() {
+        // Limpiar todos los paneles cacheados
+        for (VitalSignsChartPanel panel : chartPanelCache.values()) {
+            if (panel != null) {
+                panel.cleanup();
+            }
+        }
+        chartPanelCache.clear();
+    }
+    
+    /**
+     * Clase interna para almacenar información de dispositivos
+     */
+    private static class DeviceInfo {
+        String id;
+        String serial;
+        String brand;
+        String model;
+        String typeLabel;
+        boolean hasActiveStream;
+        
+        public String getDisplayName() {
+            return String.format("%s - %s %s", serial, brand != null ? brand : "N/A", model != null ? model : "N/A");
+        }
+        
+        public String getShortInfo() {
+            return String.format("%s | %s", serial, typeLabel != null ? typeLabel : "Dispositivo");
+        }
+    }
+    
+    /**
+     * Procesa la lista de dispositivos y actualiza la UI
+     */
+    private void loadDevices(JsonArray devicesArray) {
+        patientDevices.clear();
+        
+        if (devicesArray == null || devicesArray.isEmpty()) {
+            SwingUtilities.invokeLater(this::showNoDevicesMessage);
+            return;
+        }
+        
+        // Parsear dispositivos
+        for (JsonElement element : devicesArray) {
+            if (!element.isJsonObject()) continue;
+            JsonObject deviceObj = element.getAsJsonObject();
+            
+            DeviceInfo device = new DeviceInfo();
+            device.id = safe(deviceObj.get("id"));
+            device.serial = safe(deviceObj.get("serial"));
+            device.brand = safe(deviceObj.get("brand"));
+            device.model = safe(deviceObj.get("model"));
+            
+            JsonObject deviceType = deviceObj.has("device_type") && deviceObj.get("device_type").isJsonObject()
+                    ? deviceObj.getAsJsonObject("device_type")
+                    : null;
+            device.typeLabel = deviceType != null ? safe(deviceType.get("label")) : null;
+            
+            JsonObject stream = deviceObj.has("stream") && deviceObj.get("stream").isJsonObject()
+                    ? deviceObj.getAsJsonObject("stream")
+                    : null;
+            device.hasActiveStream = stream != null && stream.has("is_active") && stream.get("is_active").getAsBoolean();
+            
+            // Incluir todos los dispositivos del paciente (con o sin stream activo)
+            patientDevices.add(device);
+        }
+        
+        SwingUtilities.invokeLater(this::updateDeviceUI);
+    }
+    
+    /**
+     * Actualiza la UI según la cantidad de dispositivos disponibles
+     */
+    private void updateDeviceUI() {
+        // Limpiar el centro del chartContainerPanel (excepto el header)
+        Component[] components = chartContainerPanel.getComponents();
+        for (int i = components.length - 1; i >= 0; i--) {
+            if (components[i] != chartContainerPanel.getComponent(0)) { // No remover el header
+                chartContainerPanel.remove(components[i]);
+            }
+        }
+        
+        if (patientDevices.isEmpty()) {
+            showNoDevicesMessage();
+            return;
+        }
+        
+        if (patientDevices.size() == 1) {
+            // Un solo dispositivo - mostrar info y gráficas directamente
+            DeviceInfo device = patientDevices.get(0);
+            deviceInfoLabel.setText("📱 " + device.getShortInfo());
+            deviceSelector.setVisible(false);
+            loadChartsForDevice(device);
+        } else {
+            // Múltiples dispositivos - configurar selector
+            // OPTIMIZACIÓN: Remover listener temporalmente para evitar eventos durante población
+            ActionListener[] listeners = deviceSelector.getActionListeners();
+            for (ActionListener listener : listeners) {
+                deviceSelector.removeActionListener(listener);
+            }
+            
+            deviceSelector.removeAllItems();
+            for (DeviceInfo device : patientDevices) {
+                deviceSelector.addItem(device.getDisplayName());
+            }
+            
+            // Restaurar listeners
+            for (ActionListener listener : listeners) {
+                deviceSelector.addActionListener(listener);
+            }
+            
+            deviceSelector.setVisible(true);
+            
+            // Cargar primer dispositivo directamente
+            if (deviceSelector.getItemCount() > 0) {
+                DeviceInfo firstDevice = patientDevices.get(0);
+                deviceInfoLabel.setText("📱 " + firstDevice.getShortInfo());
+                deviceSelector.setSelectedIndex(0);
+                loadChartsForDevice(firstDevice);
+            }
+        }
+        
+        chartContainerPanel.revalidate();
+        chartContainerPanel.repaint();
+    }
+    
+    /**
+     * Muestra mensaje cuando no hay dispositivos activos
+     */
+    private void showNoDevicesMessage() {
+        deviceInfoLabel.setText("");
+        deviceSelector.setVisible(false);
+        
+        JLabel noDeviceLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                "<b>Sin dispositivos activos</b><br><br>" +
+                "Este paciente no tiene dispositivos asignados o<br>" +
+                "ninguno está generando datos actualmente." +
+                "</div></html>");
+        noDeviceLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        noDeviceLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+        noDeviceLabel.setForeground(TEXT_SECONDARY);
+        
+        chartContainerPanel.add(noDeviceLabel, BorderLayout.CENTER);
+        chartContainerPanel.revalidate();
+        chartContainerPanel.repaint();
+    }
+    
+    /**
+     * Callback cuando se selecciona un dispositivo del combo box
+     */
+    private void onDeviceSelected() {
+        int selectedIndex = deviceSelector.getSelectedIndex();
+        if (selectedIndex >= 0 && selectedIndex < patientDevices.size()) {
+            DeviceInfo selectedDevice = patientDevices.get(selectedIndex);
+            
+            // Evitar recarga si ya estamos mostrando este dispositivo
+            if (chartPanel != null && chartPanelCache.containsKey(selectedDevice.id)) {
+                VitalSignsChartPanel existingPanel = chartPanelCache.get(selectedDevice.id);
+                if (existingPanel == chartPanel) {
+                    // Ya está mostrando este dispositivo, solo actualizar label
+                    deviceInfoLabel.setText("📱 " + selectedDevice.getShortInfo());
+                    return;
+                }
+            }
+            
+            deviceInfoLabel.setText("📱 " + selectedDevice.getShortInfo());
+            loadChartsForDevice(selectedDevice);
+        }
+    }
+    
+    /**
+     * Carga las gráficas para un dispositivo específico (con caché para rendimiento)
+     * OPTIMIZACIÓN: Carga en background para no bloquear la UI
+     */
+    private void loadChartsForDevice(DeviceInfo device) {
+        // Remover panel actual del contenedor (pero NO hacer cleanup todavía)
         if (chartPanel != null) {
-            chartPanel.cleanup();
+            chartContainerPanel.remove(chartPanel);
+        }
+        
+        // Verificar si ya tenemos un panel cacheado para este dispositivo
+        VitalSignsChartPanel cachedPanel = chartPanelCache.get(device.id);
+        
+        if (cachedPanel != null) {
+            // Reutilizar panel existente - mucho más rápido
+            System.out.println("[PatientDetail] Reusing cached panel for device: " + device.serial);
+            chartPanel = cachedPanel;
+            chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+            chartContainerPanel.revalidate();
+            chartContainerPanel.repaint();
+        } else {
+            // Mostrar mensaje de carga mientras se crea el panel en background
+            JPanel loadingPanel = new JPanel(new BorderLayout());
+            loadingPanel.setOpaque(false);
+            JLabel loadingLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                    "<b style='font-size:16px;'>📊 Cargando gráficas...</b><br><br>" +
+                    "<span style='color:#64748b;'>Obteniendo datos de " + device.serial + "</span>" +
+                    "</div></html>");
+            loadingLabel.setHorizontalAlignment(SwingConstants.CENTER);
+            loadingLabel.setFont(new Font("Inter", Font.PLAIN, 14));
+            loadingPanel.add(loadingLabel, BorderLayout.CENTER);
+            chartContainerPanel.add(loadingPanel, BorderLayout.CENTER);
+            chartContainerPanel.revalidate();
+            chartContainerPanel.repaint();
+            
+            // Crear panel en background worker para no bloquear UI
+            SwingWorker<VitalSignsChartPanel, Void> chartWorker = new SwingWorker<>() {
+                @Override
+                protected VitalSignsChartPanel doInBackground() throws Exception {
+                    System.out.println("[PatientDetail] Creating NEW VitalSignsChartPanel for device: " + device.serial);
+                    return new VitalSignsChartPanel(patientId, device.id, apiClient, 10);
+                }
+                
+                @Override
+                protected void done() {
+                    try {
+                        VitalSignsChartPanel newPanel = get();
+                        chartContainerPanel.remove(loadingPanel);
+                        chartPanel = newPanel;
+                        chartPanelCache.put(device.id, chartPanel);
+                        chartContainerPanel.add(chartPanel, BorderLayout.CENTER);
+                        chartContainerPanel.revalidate();
+                        chartContainerPanel.repaint();
+                        
+                        // OPTIMIZACIÓN: Iniciar carga de datos DESPUÉS de que el panel esté visible
+                        SwingUtilities.invokeLater(() -> {
+                            chartPanel.startDataLoading();
+                        });
+                        
+                        System.out.println("[PatientDetail] VitalSignsChartPanel created and cached for device " + device.serial);
+                    } catch (Exception e) {
+                        System.err.println("[PatientDetail] ERROR creating chart panel: " + e.getMessage());
+                        e.printStackTrace();
+                        chartContainerPanel.remove(loadingPanel);
+                        JLabel errorLabel = new JLabel("<html><div style='text-align:center;padding:40px;'>" +
+                                "<b style='color:#dc3545;font-size:16px;'>Error al cargar gráficas</b><br><br>" +
+                                "<span style='color:#64748b;'>" + e.getMessage() + "</span>" +
+                                "</div></html>");
+                        errorLabel.setHorizontalAlignment(SwingConstants.CENTER);
+                        chartContainerPanel.add(errorLabel, BorderLayout.CENTER);
+                        chartContainerPanel.revalidate();
+                        chartContainerPanel.repaint();
+                    }
+                }
+            };
+            chartWorker.execute();
         }
     }
 }

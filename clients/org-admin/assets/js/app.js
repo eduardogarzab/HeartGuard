@@ -263,6 +263,19 @@
 
     const closeModal = () => {
         if (!el.modal.overlay) return;
+        
+        // Limpiar timers de actualizaci\u00f3n de signos vitales
+        vitalSignsState.timers.forEach((timer) => {
+            clearInterval(timer);
+        });
+        vitalSignsState.timers.clear();
+        
+        // Destruir instancias de gr\u00e1ficas
+        vitalSignsState.charts.forEach((chart) => {
+            chart.destroy();
+        });
+        vitalSignsState.charts.clear();
+        
         el.modal.overlay.classList.add("hidden");
         const content = getModalContent();
         if (content) {
@@ -1415,6 +1428,407 @@
         `.trim();
     };
 
+    const renderVitalSignsCharts = (patientId, devices = []) => {
+        console.log('🎨 renderVitalSignsCharts llamado:', { patientId, deviceCount: devices.length });
+        
+        if (!hasItems(devices)) {
+            console.log('⚠️ No hay dispositivos disponibles');
+            return `
+                <div class="vital-signs-placeholder">
+                    <p class="muted">📊 No hay dispositivos con datos de signos vitales disponibles</p>
+                </div>
+            `.trim();
+        }
+
+        // ID único para el contenedor
+        const containerId = `vital-signs-${patientId}`;
+        const deviceSelectId = `device-select-${patientId}`;
+        
+        console.log('✅ Generando contenedor de signos vitales:', containerId);
+        
+        // Si solo hay un dispositivo, lo mostramos directamente
+        const deviceOptions = devices
+            .map((device, idx) => {
+                const label = device.deviceTypeLabel || device.serial || `Dispositivo ${idx + 1}`;
+                return `<option value="${escapeHtml(device.id)}">${escapeHtml(label)} (${escapeHtml(device.serial || 'S/N')})</option>`;
+            })
+            .join('');
+
+        const selectorHtml = devices.length > 1
+            ? `
+                <div class="vital-signs-selector">
+                    <label for="${deviceSelectId}">Seleccionar dispositivo:</label>
+                    <select id="${deviceSelectId}" class="form-select">
+                        ${deviceOptions}
+                    </select>
+                </div>
+            `
+            : '';
+
+        return `
+            <div class="vital-signs-container" id="${containerId}">
+                ${selectorHtml}
+                <div class="vital-signs-charts" id="${containerId}-charts">
+                    <div class="vital-signs-loading">
+                        <p>⏳ Cargando datos de signos vitales...</p>
+                    </div>
+                </div>
+                <div class="vital-signs-update-indicator" style="text-align: center; padding: 0.5rem; font-size: 0.75rem; color: #10b981;">
+                    <span class="pulse-dot" style="display: inline-block; width: 8px; height: 8px; background: #10b981; border-radius: 50%; margin-right: 6px; animation: pulse 2s infinite;"></span>
+                    Actualización en tiempo real activa
+                </div>
+            </div>
+        `.trim();
+    };
+
+    // Objeto global para almacenar las instancias de gráficas y timers
+    const vitalSignsState = {
+        charts: new Map(),
+        timers: new Map(),
+        isUpdating: new Map() // Para evitar peticiones simultáneas
+    };
+
+    const loadVitalSignsData = async (patientId, deviceId, containerId, isUpdate = false) => {
+        const chartsContainer = document.querySelector(`#${containerId}-charts`);
+        if (!chartsContainer) {
+            console.error('❌ No se encontró el contenedor de gráficas:', `${containerId}-charts`);
+            return;
+        }
+
+        // Evitar peticiones simultáneas
+        const updateKey = `${patientId}-${deviceId}`;
+        if (isUpdate && vitalSignsState.isUpdating.get(updateKey)) {
+            return; // Ya hay una actualización en curso
+        }
+
+        try {
+            if (isUpdate) {
+                vitalSignsState.isUpdating.set(updateKey, true);
+            }
+            
+            if (!isUpdate) {
+                console.log('🔍 Iniciando carga de signos vitales:', { patientId, deviceId, containerId });
+                chartsContainer.innerHTML = '<div class="vital-signs-loading"><p>⏳ Cargando datos...</p></div>';
+            }
+            
+            const response = await Api.admin.getPatientVitalSigns(state.token, patientId, deviceId, 100);
+            
+            console.log('📊 Respuesta completa de signos vitales:', {
+                response,
+                patientId: response?.patient_id,
+                deviceId: response?.device_id,
+                measurement: response?.measurement,
+                readingsCount: response?.readings?.length,
+                readings: response?.readings
+            });
+            
+            if (!response) {
+                console.error('❌ Response es null o undefined');
+                chartsContainer.innerHTML = '<p class="form-error">❌ Error: No se recibió respuesta del servidor</p>';
+                return;
+            }
+            
+            if (!response.readings) {
+                console.warn('⚠️ No hay propiedad "readings" en la respuesta');
+                chartsContainer.innerHTML = '<p class="muted">📊 No hay estructura de lecturas en la respuesta</p>';
+                return;
+            }
+            
+            if (response.readings.length === 0) {
+                console.warn('⚠️ Array de readings está vacío');
+                chartsContainer.innerHTML = '<p class="muted">📊 No hay lecturas recientes de signos vitales</p>';
+                return;
+            }
+
+            const readings = response.readings;
+            console.log('✅ Procesando', readings.length, 'lecturas');
+            console.log('📝 Primera lectura:', readings[0]);
+            console.log('📝 Última lectura:', readings[readings.length - 1]);
+            
+            // Procesar datos por tipo de signo vital
+            const vitalSignsData = {
+                heart_rate: { labels: [], values: [], unit: 'bpm', color: '#ef4444', label: 'Frecuencia Cardíaca' },
+                spo2: { labels: [], values: [], unit: '%', color: '#3b82f6', label: 'SpO₂' },
+                temperature: { labels: [], values: [], unit: '°C', color: '#f97316', label: 'Temperatura' },
+                systolic_bp: { labels: [], values: [], unit: 'mmHg', color: '#8b5cf6', label: 'Presión Sistólica' },
+                diastolic_bp: { labels: [], values: [], unit: 'mmHg', color: '#6366f1', label: 'Presión Diastólica' },
+                respiratory_rate: { labels: [], values: [], unit: 'rpm', color: '#10b981', label: 'Frecuencia Respiratoria' },
+            };
+
+            // Extraer datos de las lecturas
+            readings.forEach((reading, idx) => {
+                // El timestamp puede venir como 'time', '_time' o 'timestamp'
+                const timestamp = new Date(reading.timestamp || reading.time || reading._time);
+                const timeLabel = timestamp.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
+                
+                if (idx === 0) {
+                    console.log('🔬 Analizando primera lectura:', {
+                        timestamp,
+                        timeLabel,
+                        keys: Object.keys(reading),
+                        reading
+                    });
+                }
+                
+                Object.keys(vitalSignsData).forEach(key => {
+                    if (reading[key] !== undefined && reading[key] !== null) {
+                        vitalSignsData[key].labels.push(timeLabel);
+                        vitalSignsData[key].values.push(Number(reading[key]));
+                        
+                        if (idx === 0) {
+                            console.log(`   ✅ ${key}: ${reading[key]}`);
+                        }
+                    }
+                });
+            });
+            
+            // Log de datos procesados
+            Object.entries(vitalSignsData).forEach(([key, data]) => {
+                if (data.values.length > 0) {
+                    console.log(`📈 ${data.label}: ${data.values.length} puntos de datos`);
+                }
+            });
+
+            // Renderizar gráficas solo para signos vitales con datos
+            const chartsHtml = Object.entries(vitalSignsData)
+                .filter(([_, data]) => data.values.length > 0)
+                .map(([key, data]) => {
+                    const canvasId = `chart-${patientId}-${deviceId}-${key}`;
+                    const statsId = `stats-${patientId}-${deviceId}-${key}`;
+                    const avgValue = (data.values.reduce((a, b) => a + b, 0) / data.values.length).toFixed(1);
+                    const minValue = Math.min(...data.values).toFixed(1);
+                    const maxValue = Math.max(...data.values).toFixed(1);
+                    const latestValue = data.values[data.values.length - 1].toFixed(1);
+                    
+                    return `
+                        <div class="vital-sign-card">
+                            <div class="vital-sign-header">
+                                <h5>${data.label}</h5>
+                                <div class="vital-sign-stats" id="${statsId}">
+                                    <span class="vital-sign-current" style="color: ${data.color}; font-weight: bold; font-size: 1.2em;">
+                                        ${latestValue} ${data.unit}
+                                    </span>
+                                    <span class="vital-sign-range" style="font-size: 0.85em; color: #6b7280;">
+                                        Min: ${minValue} | Max: ${maxValue} | Prom: ${avgValue}
+                                    </span>
+                                </div>
+                            </div>
+                            <div class="vital-sign-chart-wrapper">
+                                <canvas id="${canvasId}"></canvas>
+                            </div>
+                        </div>
+                    `;
+                })
+                .join('');
+
+            if (!chartsHtml) {
+                console.warn('⚠️ No se generó HTML para las gráficas (no hay datos)');
+                chartsContainer.innerHTML = '<p class="muted">📊 No hay datos de signos vitales para mostrar</p>';
+                return;
+            }
+            
+            if (!isUpdate) {
+                console.log('✅ Renderizando gráficas HTML');
+                chartsContainer.innerHTML = `<div class="vital-signs-grid">${chartsHtml}</div>`;
+            }
+
+            // Crear o actualizar gráficas con Chart.js
+            if (!isUpdate) {
+                console.log('🎨 Iniciando creación de gráficas con Chart.js');
+            }
+            
+            Object.entries(vitalSignsData)
+                .filter(([_, data]) => data.values.length > 0)
+                .forEach(([key, data]) => {
+                    const canvasId = `chart-${patientId}-${deviceId}-${key}`;
+                    const chartKey = `${patientId}-${deviceId}-${key}`;
+                    const statsId = `stats-${patientId}-${deviceId}-${key}`;
+                    
+                    if (!isUpdate) {
+                        console.log(`   🖼️ Creando gráfica: ${canvasId}`);
+                    }
+                    
+                    const canvas = document.getElementById(canvasId);
+                    if (!canvas) {
+                        if (!isUpdate) console.error(`   ❌ No se encontró canvas: ${canvasId}`);
+                        return;
+                    }
+
+                    if (typeof Chart === 'undefined') {
+                        console.error('   ❌ Chart.js no está cargado');
+                        chartsContainer.innerHTML = '<p class="form-error">❌ Error: Chart.js no está disponible. Recarga la página.</p>';
+                        return;
+                    }
+                    
+                    // Calcular estadísticas
+                    const avgValue = (data.values.reduce((a, b) => a + b, 0) / data.values.length).toFixed(1);
+                    const minValue = Math.min(...data.values).toFixed(1);
+                    const maxValue = Math.max(...data.values).toFixed(1);
+                    const latestValue = data.values[data.values.length - 1].toFixed(1);
+                    
+                    // Actualizar estadísticas en el DOM
+                    const statsElement = document.getElementById(statsId);
+                    if (statsElement) {
+                        statsElement.innerHTML = `
+                            <span class="vital-sign-current" style="color: ${data.color}; font-weight: bold; font-size: 1.2em;">
+                                ${latestValue} ${data.unit}
+                            </span>
+                            <span class="vital-sign-range" style="font-size: 0.85em; color: #6b7280;">
+                                Min: ${minValue} | Max: ${maxValue} | Prom: ${avgValue}
+                            </span>
+                        `;
+                    }
+                    
+                    // Actualizar gráfica existente o crear nueva
+                    if (isUpdate && vitalSignsState.charts.has(chartKey)) {
+                        const chart = vitalSignsState.charts.get(chartKey);
+                        chart.data.labels = data.labels;
+                        chart.data.datasets[0].data = data.values;
+                        chart.update('none'); // Actualización sin animación para ser más fluido
+                    } else {
+                        if (!isUpdate) console.log(`   ✅ Renderizando ${data.label} con ${data.values.length} puntos`);
+                        
+                        const chart = new Chart(canvas, {
+                            type: 'line',
+                            data: {
+                                labels: data.labels,
+                                datasets: [{
+                                    label: `${data.label} (${data.unit})`,
+                                    data: data.values,
+                                    borderColor: data.color,
+                                    backgroundColor: data.color + '15',
+                                    borderWidth: 3,
+                                    fill: true,
+                                    tension: 0.4,
+                                    pointRadius: 0,
+                                    pointHoverRadius: 6,
+                                    pointHoverBackgroundColor: data.color,
+                                    pointHoverBorderColor: '#fff',
+                                    pointHoverBorderWidth: 2,
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                animation: {
+                                    duration: 0
+                                },
+                                plugins: {
+                                    legend: {
+                                        display: false
+                                    },
+                                    tooltip: {
+                                        mode: 'index',
+                                        intersect: false,
+                                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                        padding: 12,
+                                        cornerRadius: 8,
+                                        titleFont: {
+                                            size: 13,
+                                            weight: '600'
+                                        },
+                                        bodyFont: {
+                                            size: 14,
+                                            weight: '700'
+                                        },
+                                        displayColors: false,
+                                        callbacks: {
+                                            label: function(context) {
+                                                return `${context.parsed.y} ${data.unit}`;
+                                            }
+                                        }
+                                    }
+                                },
+                                scales: {
+                                    x: {
+                                        ticks: { 
+                                            color: '#6b7280',
+                                            font: {
+                                                size: 11
+                                            },
+                                            maxRotation: 0,
+                                            minRotation: 0,
+                                            maxTicksLimit: 8
+                                        },
+                                        grid: {
+                                            display: false
+                                        }
+                                    },
+                                    y: {
+                                        ticks: { 
+                                            color: '#6b7280',
+                                            font: {
+                                                size: 11,
+                                                weight: '600'
+                                            },
+                                            padding: 8
+                                        },
+                                        beginAtZero: false,
+                                        grid: {
+                                            color: 'rgba(15, 23, 42, 0.05)',
+                                            lineWidth: 1
+                                        }
+                                    }
+                                },
+                                interaction: {
+                                    mode: 'index',
+                                    intersect: false
+                                }
+                            }
+                        });
+                        
+                        vitalSignsState.charts.set(chartKey, chart);
+                    }
+                });
+            
+            // Configurar actualización automática cada segundo (solo en la primera carga)
+            if (!isUpdate) {
+                // Limpiar timer anterior si existe
+                const timerKey = `${patientId}-${deviceId}`;
+                if (vitalSignsState.timers.has(timerKey)) {
+                    clearInterval(vitalSignsState.timers.get(timerKey));
+                }
+                
+                // Crear nuevo timer para actualización automática - EXACTAMENTE CADA 1 SEGUNDO
+                const timer = setInterval(() => {
+                    loadVitalSignsData(patientId, deviceId, containerId, true);
+                }, 1000); // 1000ms = 1 segundo
+                
+                vitalSignsState.timers.set(timerKey, timer);
+                console.log('⏰ Actualización automática activada (cada 1 segundo exacto)');
+            }
+            
+            // Liberar bandera de actualización
+            if (isUpdate) {
+                vitalSignsState.isUpdating.set(updateKey, false);
+            }
+
+        } catch (error) {
+            console.error('❌ Error crítico cargando signos vitales:', error);
+            console.error('   Stack:', error.stack);
+            console.error('   Tipo:', error.constructor.name);
+            console.error('   Status:', error.status);
+            
+            // Liberar bandera de actualización en caso de error
+            if (isUpdate) {
+                vitalSignsState.isUpdating.set(updateKey, false);
+            }
+            
+            if (!isUpdate) {
+                chartsContainer.innerHTML = `
+                    <div class="vital-signs-error">
+                        <p class="form-error">❌ Error al cargar los datos de signos vitales</p>
+                        <p class="muted">Error: ${escapeHtml(error.message || 'Error desconocido')}</p>
+                        ${error.status ? `<p class="muted">Status HTTP: ${error.status}</p>` : ''}
+                        <p class="muted" style="font-size: 0.8em; margin-top: 10px;">
+                            💡 Abre la consola del navegador (F12) para más detalles
+                        </p>
+                    </div>
+                `;
+            }
+        }
+    };
+
     const renderPatientProfileView = (profile) => {
         if (!profile || !profile.patient) {
             return '<p class="form-error">No se encontró la información del paciente.</p>';
@@ -1598,6 +2012,10 @@
                     </div>
                 </section>
                 ${statsHtml}
+                <section class="profile-section">
+                    <h4>📊 Signos Vitales en Tiempo Real</h4>
+                    ${renderVitalSignsCharts(patient.id, devices)}
+                </section>
                 <section class="profile-section">
                     <h4>Ubicación reciente</h4>
                     ${buildMapSection(latestLocation)}
@@ -1840,6 +2258,35 @@
             const title = profile.patient?.name ? `👤 ${profile.patient.name}` : 'Perfil del paciente';
             setModalTitle(title);
             setModalBody(renderPatientProfileView(profile));
+            
+            // Inicializar signos vitales si hay dispositivos
+            console.log('🔍 Verificando dispositivos en perfil:', profile.devices?.length);
+            if (profile.devices && profile.devices.length > 0) {
+                const containerId = `vital-signs-${profile.patient.id}`;
+                const deviceSelectId = `device-select-${profile.patient.id}`;
+                const firstDeviceId = profile.devices[0].id;
+                
+                console.log('🚀 Iniciando carga de signos vitales para dispositivo:', firstDeviceId);
+                
+                // Cargar datos del primer dispositivo
+                setTimeout(() => {
+                    console.log('⏰ Ejecutando loadVitalSignsData...');
+                    loadVitalSignsData(profile.patient.id, firstDeviceId, containerId);
+                }, 100);
+                
+                // Si hay selector de dispositivos, agregar evento de cambio
+                if (profile.devices.length > 1) {
+                    setTimeout(() => {
+                        const deviceSelect = document.getElementById(deviceSelectId);
+                        if (deviceSelect) {
+                            deviceSelect.addEventListener('change', (e) => {
+                                const selectedDeviceId = e.target.value;
+                                loadVitalSignsData(profile.patient.id, selectedDeviceId, containerId);
+                            });
+                        }
+                    }, 100);
+                }
+            }
         } catch (error) {
             handleApiError(error);
             if (error?.status === 401 || error?.status === 403) {
