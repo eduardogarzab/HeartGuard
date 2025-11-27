@@ -1,0 +1,19 @@
+"""
+Archivo de requisitos para las pruebas de carga con Locust.
+
+Instalación:
+    pip install -r requirements.txt
+"""
+
+# Locust - Framework de pruebas de carga
+locust>=2.15.0
+
+# Requests - Cliente HTTP
+requests>=2.31.0
+
+# Para mejor logging
+colorlog>=6.7.0
+
+# Para análisis de resultados (opcional)
+pandas>=2.0.0
+matplotlib>=3.7.0
