@@ -48,6 +48,15 @@ def get_db_cursor(commit: bool = False) -> Generator[RealDictCursor, None, None]
         raise RuntimeError("Database pool no inicializado")
 
     conn = _DB_POOL.getconn()
+
+    # Verificar si la conexión está viva antes de usarla
+    try:
+        conn.isolation_level
+    except psycopg2.OperationalError:
+        # Conexión muerta, reconectar
+        _DB_POOL.putconn(conn, close=True)
+        conn = _DB_POOL.getconn()
+        
     try:
         cursor = conn.cursor(cursor_factory=RealDictCursor)
         yield cursor

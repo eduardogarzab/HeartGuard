@@ -79,6 +79,12 @@ def _ensure_org_member(org_id: str, user_id: str | None):
     return None
 
 
+@bp.route("/", methods=["OPTIONS"])
+def options_ground_truth_list(org_id: str, patient_id: str):
+    """Handle preflight requests for CORS."""
+    return "", 204
+
+
 @bp.get("/")
 @require_org_admin
 def list_ground_truth(org_id: str, patient_id: str):
@@ -89,6 +95,12 @@ def list_ground_truth(org_id: str, patient_id: str):
     offset = _coerce_int(request.args.get("offset"), default=0, minimum=0)
     labels = _repo.list_for_patient(patient_id, limit=limit, offset=offset)
     return xml_response({"ground_truth_labels": labels})
+
+
+@bp.route("/<label_id>", methods=["OPTIONS"])
+def options_ground_truth_detail(org_id: str, patient_id: str, label_id: str):
+    """Handle preflight requests for CORS."""
+    return "", 204
 
 
 @bp.get("/<label_id>")

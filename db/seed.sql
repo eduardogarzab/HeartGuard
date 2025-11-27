@@ -2,6 +2,12 @@
 -- HeartGuard DB (v2.5) - SEED (datos iniciales)
 -- =========================================================
 
+-- Conectarse a la base de datos heartguard
+\connect heartguard
+
+-- Configurar search_path para usar el schema heartguard
+SET search_path = heartguard, public;
+
 -- Requerido para bcrypt (crypt/gen_salt) y gen_random_uuid()
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
@@ -452,6 +458,7 @@ VALUES
   )
 ON CONFLICT (patient_id, ts) DO NOTHING;
 
+-- Ground truth para María Delgado (8c9436b4-f085-405f-a3d2-87cb1d1cf097)
 INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
 SELECT
   '6212c577-1103-46b0-a314-9800a3995c61'::uuid,
@@ -466,6 +473,52 @@ FROM event_types et
 WHERE et.code='AFIB'
 ON CONFLICT (id) DO NOTHING;
 
+-- Ground truth adicional para María Delgado - Arritmia
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  'a1b2c3d4-5678-90ab-cdef-000000000001'::uuid,
+  '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
+  et.id,
+  NOW() - INTERVAL '48 hours',
+  NOW() - INTERVAL '47 hours 45 minutes',
+  (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+  'manual-review',
+  'Episodio de taquicardia sinusal durante actividad física moderada'
+FROM event_types et
+WHERE et.code='ARRHYTHMIA'
+ON CONFLICT (id) DO NOTHING;
+
+-- Ground truth adicional para María Delgado - Desaturación
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  'b2c3d4e5-6789-01bc-def1-000000000002'::uuid,
+  '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
+  et.id,
+  NOW() - INTERVAL '72 hours',
+  NOW() - INTERVAL '71 hours 20 minutes',
+  (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+  'device-sync',
+  'Episodio leve de desaturación durante ejercicio - patrón normal'
+FROM event_types et
+WHERE et.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+-- Ground truth adicional para María Delgado - Hipertensión
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  'f1e2d3c4-b5a6-9788-0abc-000000000006'::uuid,
+  '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
+  et.id,
+  NOW() - INTERVAL '96 hours',
+  NOW() - INTERVAL '95 hours 30 minutes',
+  (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+  'manual-review',
+  'Pico hipertensivo relacionado con estrés - controlado'
+FROM event_types et
+WHERE et.code='HYPERTENSION'
+ON CONFLICT (id) DO NOTHING;
+
+-- Ground truth para José Hernández (fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21)
 INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
 SELECT
   '5374534c-783a-49c8-a976-0913eec27c93'::uuid,
@@ -478,6 +531,51 @@ SELECT
   'Evento de desaturación confirmado con oxímetro domiciliario'
 FROM event_types et
 WHERE et.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+-- Ground truth para Valeria Ortiz (ae15cd87-5ac2-4f90-8712-184b02c541a5)
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  'c3d4e5f6-7890-12cd-ef23-000000000003'::uuid,
+  'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid,
+  et.id,
+  NOW() - INTERVAL '12 hours',
+  NOW() - INTERVAL '11 hours 40 minutes',
+  (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+  'manual-review',
+  'Arritmia leve detectada - episodio breve auto-limitado'
+FROM event_types et
+WHERE et.code='ARRHYTHMIA'
+ON CONFLICT (id) DO NOTHING;
+
+-- Ground truth adicional para Valeria Ortiz - Riesgo general
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  'd4e5f6a7-8901-23de-f456-000000000004'::uuid,
+  'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid,
+  et.id,
+  NOW() - INTERVAL '24 hours',
+  NOW() - INTERVAL '23 hours 50 minutes',
+  (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+  'device-sync',
+  'Patrón de riesgo bajo detectado durante ejercicio'
+FROM event_types et
+WHERE et.code='GENERAL_RISK'
+ON CONFLICT (id) DO NOTHING;
+
+-- Ground truth adicional para Valeria Ortiz - Hipotensión
+INSERT INTO ground_truth_labels (id, patient_id, event_type_id, onset, offset_at, annotated_by_user_id, source, note)
+SELECT
+  'e5f6a7b8-9012-34ef-5678-000000000005'::uuid,
+  'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid,
+  et.id,
+  NOW() - INTERVAL '36 hours',
+  NOW() - INTERVAL '35 hours 45 minutes',
+  (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+  'manual-review',
+  'Episodio breve de hipotensión postural - sin complicaciones'
+FROM event_types et
+WHERE et.code='HYPOTENSION'
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO devices (id, org_id, serial, brand, model, device_type_id, owner_patient_id, registered_at, active)
