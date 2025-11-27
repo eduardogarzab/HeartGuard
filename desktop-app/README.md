@@ -263,7 +263,7 @@ java -jar target/heartguard-desktop-1.0-SNAPSHOT.jar
 ### No se muestran datos en las gráficas
 
 **Verificar**:
-1. El servicio realtime-data-generator está corriendo
+1. El servicio influxdb-service está corriendo
 2. InfluxDB es accesible desde tu máquina
 3. El token de InfluxDB es correcto
 4. Hay datos para el paciente seleccionado

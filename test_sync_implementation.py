@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 # Add the generator module to the path
-sys.path.insert(0, str(Path(__file__).parent / 'services' / 'realtime-data-generator' / 'src'))
+sys.path.insert(0, str(Path(__file__).parent / 'services' / 'influxdb-service' / 'src'))
 
 from generator.data_generator import Patient, StreamConfig, VitalSignsGenerator
 
@@ -154,7 +154,7 @@ def main():
         print("\nNext steps:")
         print("  1. Start Docker containers: docker-compose up -d")
         print("  2. Run SQL script: psql -U heartguard_app -d heartguard -f db/init_sync_data.sql")
-        print("  3. Restart realtime-data-generator service")
+        print("  3. Restart influxdb-service service")
         print("  4. Verify InfluxDB data has stream_id and device_id tags")
         
     except AssertionError as e:

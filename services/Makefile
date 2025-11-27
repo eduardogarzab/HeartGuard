@@ -5,7 +5,7 @@
 # =============================================================================
 
 SHELL := /bin/bash
-SERVICES := auth admin user patient media gateway realtime ai aimonitor
+SERVICES := auth admin user patient media gateway influxdb ai aimonitor
 PYTHON := python3
 VENV := .venv
 
@@ -42,7 +42,7 @@ help:
 	@echo "    make install-patient      - Instalar solo patient-service"
 	@echo "    make install-media        - Instalar solo media-service"
 	@echo "    make install-gateway      - Instalar solo gateway"
-	@echo "    make install-realtime     - Instalar solo realtime-data-generator"
+	@echo "    make install-influxdb     - Instalar solo influxdb-service"
 	@echo "    make install-ai           - Instalar solo ai-prediction"
 	@echo "    make install-aimonitor    - Instalar solo ai-monitor"
 	@echo ""
@@ -54,7 +54,7 @@ help:
 	@echo "    make start-patient        - Iniciar solo patient-service"
 	@echo "    make start-media          - Iniciar solo media-service"
 	@echo "    make start-gateway        - Iniciar solo gateway"
-	@echo "    make start-realtime       - Iniciar solo realtime-data-generator"
+	@echo "    make start-influxdb       - Iniciar solo influxdb-service"
 	@echo "    make start-ai             - Iniciar solo ai-prediction"
 	@echo "    make start-aimonitor      - Iniciar solo ai-monitor"
 	@echo ""
@@ -66,7 +66,7 @@ help:
 	@echo "    make restart-patient      - Reiniciar solo patient-service"
 	@echo "    make restart-media        - Reiniciar solo media-service"
 	@echo "    make restart-gateway      - Reiniciar solo gateway"
-	@echo "    make restart-realtime     - Reiniciar solo realtime-data-generator"
+	@echo "    make restart-influxdb     - Reiniciar solo influxdb-service"
 	@echo "    make restart-ai           - Reiniciar solo ai-prediction"
 	@echo "    make restart-aimonitor    - Reiniciar solo ai-monitor"
 	@echo ""
@@ -78,7 +78,7 @@ help:
 	@echo "    make stop-patient         - Detener solo patient-service"
 	@echo "    make stop-media           - Detener solo media-service"
 	@echo "    make stop-gateway         - Detener solo gateway"
-	@echo "    make stop-realtime        - Detener solo realtime-data-generator"
+	@echo "    make stop-influxdb        - Detener solo influxdb-service"
 	@echo "    make stop-ai              - Detener solo ai-prediction"
 	@echo "    make stop-aimonitor       - Detener solo ai-monitor"
 	@echo ""
@@ -91,7 +91,7 @@ help:
 	@echo "    make logs-patient         - Ver logs de patient-service"
 	@echo "    make logs-media           - Ver logs de media-service"
 	@echo "    make logs-gateway         - Ver logs de gateway"
-	@echo "    make logs-realtime        - Ver logs de realtime-data-generator"
+	@echo "    make logs-influxdb        - Ver logs de influxdb-service"
 	@echo "    make logs-ai              - Ver logs de ai-prediction"
 	@echo "    make logs-aimonitor       - Ver logs de ai-monitor"
 	@echo "    make tail                 - Seguir logs en tiempo real (todos)"
@@ -101,7 +101,7 @@ help:
 	@echo "    make tail-patient         - Seguir logs de patient-service"
 	@echo "    make tail-media           - Seguir logs de media-service"
 	@echo "    make tail-gateway         - Seguir logs de gateway"
-	@echo "    make tail-realtime        - Seguir logs de realtime-data-generator"
+	@echo "    make tail-influxdb        - Seguir logs de influxdb-service"
 	@echo "    make tail-ai              - Seguir logs de ai-prediction"
 	@echo "    make tail-aimonitor       - Seguir logs de ai-monitor"
 	@echo ""
@@ -113,7 +113,7 @@ help:
 	@echo "    make test-patient         - Ejecutar tests de patient-service"
 	@echo "    make test-media           - Ejecutar tests de media-service"
 	@echo "    make test-gateway         - Ejecutar tests de gateway"
-	@echo "    make test-realtime        - Ejecutar tests de realtime-data-generator"
+	@echo "    make test-influxdb        - Ejecutar tests de influxdb-service"
 	@echo "    make test-ai              - Ejecutar tests de ai-prediction"
 	@echo "    make test-aimonitor       - Ejecutar tests de ai-monitor"
 	@echo ""
@@ -127,7 +127,7 @@ help:
 # =============================================================================
 # Instalación
 # =============================================================================
-install: install-auth install-admin install-user install-patient install-media install-gateway install-realtime install-ai install-aimonitor
+install: install-auth install-admin install-user install-patient install-media install-gateway install-influxdb install-ai install-aimonitor
 	@echo "✓ Todas las dependencias instaladas"
 
 install-auth:
@@ -154,9 +154,9 @@ install-gateway:
 	@echo "📦 Instalando gateway..."
 	@cd gateway && $(MAKE) install
 
-install-realtime:
-	@echo "📦 Instalando realtime-data-generator..."
-	@cd realtime-data-generator && $(MAKE) install
+install-influxdb:
+	@echo "📦 Instalando influxdb-service..."
+	@cd influxdb-service && $(MAKE) install
 
 install-ai:
 	@echo "📦 Instalando ai-prediction..."
@@ -175,7 +175,7 @@ $(LOG_DIR):
 $(PID_DIR):
 	@mkdir -p $(PID_DIR)
 
-start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway start-realtime wait-realtime start-ai wait-ai start-aimonitor wait-aimonitor
+start: $(LOG_DIR) $(PID_DIR) start-auth wait-auth start-admin wait-admin start-user wait-user start-patient wait-patient start-media wait-media start-gateway wait-gateway start-influxdb wait-influxdb start-ai wait-ai start-aimonitor wait-aimonitor
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@echo "  ✓ Todos los servicios iniciados correctamente"
@@ -242,9 +242,9 @@ start-gateway: $(LOG_DIR) $(PID_DIR)
 		echo $$! > $(PID_DIR)/gateway.pid
 	@echo "  PID: $$(cat $(PID_DIR)/gateway.pid)"
 
-start-realtime: $(LOG_DIR) $(PID_DIR)
-	@echo "🚀 Iniciando realtime-data-generator en puerto $(REALTIME_PORT)..."
-	@cd realtime-data-generator && \
+start-influxdb: $(LOG_DIR) $(PID_DIR)
+	@echo "🚀 Iniciando influxdb-service en puerto $(REALTIME_PORT)..."
+	@cd influxdb-service && \
 		source $(VENV)/bin/activate && \
 		PYTHONPATH=src FLASK_APP=generator.app $(PYTHON) -m flask run \
 			--host=0.0.0.0 --port=$(REALTIME_PORT) --no-reload \
@@ -357,15 +357,15 @@ wait-gateway:
 		sleep 1; \
 	done
 
-wait-realtime:
-	@echo "  ⏳ Esperando a que realtime-data-generator esté listo..."
+wait-influxdb:
+	@echo "  ⏳ Esperando a que influxdb-service esté listo..."
 	@for i in {1..30}; do \
 		if curl -s http://localhost:$(REALTIME_PORT)/health > /dev/null 2>&1; then \
-			echo "  ✓ Realtime-data-generator respondiendo"; \
+			echo "  ✓ InfluxDB-service respondiendo"; \
 			break; \
 		fi; \
 		if [ $$i -eq 30 ]; then \
-			echo "  ✗ Timeout esperando realtime-data-generator"; \
+			echo "  ✗ Timeout esperando influxdb-service"; \
 			exit 1; \
 		fi; \
 		sleep 1; \
@@ -473,16 +473,16 @@ stop-gateway:
 	@lsof -ti :$(GATEWAY_PORT) | xargs kill -9 2>/dev/null || true
 	@echo "  ✓ Gateway detenido"
 
-stop-realtime:
+stop-influxdb:
 	@if [ -f $(PID_DIR)/realtime.pid ]; then \
-		echo "🛑 Deteniendo realtime-data-generator (PID: $$(cat $(PID_DIR)/realtime.pid))..."; \
+		echo "🛑 Deteniendo influxdb-service (PID: $$(cat $(PID_DIR)/realtime.pid))..."; \
 		kill $$(cat $(PID_DIR)/realtime.pid) 2>/dev/null || true; \
 		sleep 1; \
 		kill -9 $$(cat $(PID_DIR)/realtime.pid) 2>/dev/null || true; \
 		rm -f $(PID_DIR)/realtime.pid; \
 	fi
 	@lsof -ti :$(REALTIME_PORT) | xargs kill -9 2>/dev/null || true
-	@echo "  ✓ Realtime-data-generator detenido"
+	@echo "  ✓ InfluxDB-service detenido"
 
 stop-ai:
 	@if [ -f $(PID_DIR)/ai.pid ]; then \
@@ -529,8 +529,8 @@ restart-media: stop-media start-media wait-media
 restart-gateway: stop-gateway start-gateway wait-gateway
 	@echo "✓ Gateway reiniciado"
 
-restart-realtime: stop-realtime start-realtime wait-realtime
-	@echo "✓ Realtime-data-generator reiniciado"
+restart-influxdb: stop-influxdb start-influxdb wait-influxdb
+	@echo "✓ InfluxDB-service reiniciado"
 
 restart-ai: stop-ai start-ai wait-ai
 	@echo "✓ AI-prediction reiniciado"
@@ -677,9 +677,9 @@ logs:
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@tail -n 50 $(LOG_DIR)/gateway.log 2>/dev/null || echo "  (sin logs)"
 	@echo ""
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-	@echo "  Logs - realtime-data-generator"
-	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+	@echo "  Logs - influxdb-service"
+	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 	@tail -n 50 $(LOG_DIR)/realtime.log 2>/dev/null || echo "  (sin logs)"
 	@echo ""
 	@echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -710,8 +710,8 @@ logs-media:
 logs-gateway:
 	@tail -n 100 $(LOG_DIR)/gateway.log 2>/dev/null || echo "Sin logs de gateway"
 
-logs-realtime:
-	@tail -n 100 $(LOG_DIR)/realtime.log 2>/dev/null || echo "Sin logs de realtime-data-generator"
+logs-influxdb:
+	@tail -n 100 $(LOG_DIR)/realtime.log 2>/dev/null || echo "Sin logs de influxdb-service"
 
 logs-ai:
 	@tail -n 100 $(LOG_DIR)/ai.log 2>/dev/null || echo "Sin logs de ai-prediction"
@@ -740,7 +740,7 @@ tail-media:
 tail-gateway:
 	@tail -f $(LOG_DIR)/gateway.log
 
-tail-realtime:
+tail-influxdb:
 	@tail -f $(LOG_DIR)/realtime.log
 
 tail-ai:
@@ -752,7 +752,7 @@ tail-aimonitor:
 # =============================================================================
 # Testing
 # =============================================================================
-test: test-auth test-admin test-user test-patient test-media test-gateway test-realtime test-ai test-aimonitor
+test: test-auth test-admin test-user test-patient test-media test-gateway test-influxdb test-ai test-aimonitor
 	@echo "✓ Todos los tests completados"
 
 test-auth:
@@ -791,12 +791,12 @@ test-gateway:
 	@echo "🧪 Ejecutando tests de gateway..."
 	@cd gateway && ./test_gateway.sh
 
-test-realtime:
-	@if [ -d realtime-data-generator/tests ]; then \
-		echo "🧪 Ejecutando tests de realtime-data-generator..."; \
-		cd realtime-data-generator && $(MAKE) test; \
+test-influxdb:
+	@if [ -d influxdb-service/tests ]; then \
+		echo "🧪 Ejecutando tests de influxdb-service..."; \
+		cd influxdb-service && $(MAKE) test; \
 	else \
-		echo "⚠️  realtime-data-generator no tiene pruebas definidas"; \
+		echo "⚠️  influxdb-service no tiene pruebas definidas"; \
 	fi
 
 test-ai:

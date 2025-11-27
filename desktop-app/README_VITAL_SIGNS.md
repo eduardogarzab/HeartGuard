@@ -190,7 +190,7 @@ Si estos comandos funcionan, el desktop app podrá conectarse y mostrar los dato
 
 **Posibles causas**:
 
-1. **El servicio realtime-data-generator no está corriendo**
+1. **El servicio influxdb-service no está corriendo**
    ```bash
    cd /root/HeartGuard/services
    make status

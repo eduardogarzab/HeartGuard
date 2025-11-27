@@ -166,7 +166,7 @@ def main():
     # 2. Verificar servicio realtime
     if not test_realtime_service():
         print("\n⚠️ El servicio realtime no está disponible.")
-        print("   Ejecuta: docker-compose up -d realtime-data-generator")
+        print("   Ejecuta: docker-compose up -d influxdb-service")
         return
     
     # 3. Probar endpoint directo

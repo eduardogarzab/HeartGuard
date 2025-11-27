@@ -69,7 +69,7 @@ read -p "¿Continuar? (s/n): " -n 1 -r
 echo ""
 
 if [[ $REPLY =~ ^[Ss]$ ]]; then
-    cd "$(dirname "$0")/services/realtime-data-generator"
+    cd "$(dirname "$0")/services/influxdb-service"
     
     # Activar entorno virtual
     if [ -d "venv" ]; then
@@ -84,7 +84,7 @@ if [[ $REPLY =~ ^[Ss]$ ]]; then
 else
     echo ""
     print_warning "Para iniciar manualmente:"
-    echo "  cd services/realtime-data-generator"
+    echo "  cd services/influxdb-service"
     echo "  ./start.sh"
     echo ""
 fi

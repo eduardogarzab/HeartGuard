@@ -44,7 +44,7 @@ echo ""
 check_service "Gateway" "http://localhost:8080/health/" "heartguard-gateway" || ((errors++))
 
 # Realtime Generator
-check_service "Realtime Generator" "http://localhost:8080/realtime/health" "realtime-data-generator" || ((errors++))
+check_service "InfluxDB Service" "http://localhost:8080/realtime/health" "influxdb-service" || ((errors++))
 
 echo ""
 echo "2. Verificando base de datos..."

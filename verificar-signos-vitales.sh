@@ -20,8 +20,8 @@ files=(
     "clients/org-admin/assets/js/api.js"
     "clients/org-admin/assets/css/app.css"
     "clients/org-admin/index.html"
-    "services/realtime-data-generator/src/generator/app.py"
-    "services/realtime-data-generator/src/generator/xml.py"
+    "services/influxdb-service/src/generator/app.py"
+    "services/influxdb-service/src/generator/xml.py"
 )
 
 for file in "${files[@]}"; do
@@ -109,31 +109,31 @@ else
 fi
 
 echo ""
-echo "6️⃣  Verificando servicio realtime-data-generator..."
+echo "6️⃣  Verificando servicio influxdb-service..."
 echo ""
 
-if [ -f "services/realtime-data-generator/src/generator/xml.py" ]; then
+if [ -f "services/influxdb-service/src/generator/xml.py" ]; then
     echo -e "${GREEN}✅${NC} Módulo xml.py creado"
     
     # Verificar funciones
-    if grep -q "def xml_response" services/realtime-data-generator/src/generator/xml.py; then
+    if grep -q "def xml_response" services/influxdb-service/src/generator/xml.py; then
         echo -e "${GREEN}✅${NC} Función xml_response encontrada"
     fi
     
-    if grep -q "def dict_to_xml" services/realtime-data-generator/src/generator/xml.py; then
+    if grep -q "def dict_to_xml" services/influxdb-service/src/generator/xml.py; then
         echo -e "${GREEN}✅${NC} Función dict_to_xml encontrada"
     fi
 else
     echo -e "${RED}❌${NC} Módulo xml.py NO encontrado"
 fi
 
-if grep -q "from .xml import" services/realtime-data-generator/src/generator/app.py; then
+if grep -q "from .xml import" services/influxdb-service/src/generator/app.py; then
     echo -e "${GREEN}✅${NC} Import de xml en app.py"
 else
     echo -e "${RED}❌${NC} Import de xml NO encontrado en app.py"
 fi
 
-if grep -q "wants_xml" services/realtime-data-generator/src/generator/app.py; then
+if grep -q "wants_xml" services/influxdb-service/src/generator/app.py; then
     echo -e "${GREEN}✅${NC} Función wants_xml implementada"
 else
     echo -e "${RED}❌${NC} Función wants_xml NO implementada"
@@ -146,14 +146,14 @@ echo ""
 cd services 2>/dev/null
 
 if [ -f "docker-compose.yml" ]; then
-    if docker-compose ps | grep -q "realtime-data-generator"; then
-        if docker-compose ps | grep "realtime-data-generator" | grep -q "Up"; then
-            echo -e "${GREEN}✅${NC} Servicio realtime-data-generator corriendo"
+    if docker-compose ps | grep -q "influxdb-service"; then
+        if docker-compose ps | grep "influxdb-service" | grep -q "Up"; then
+            echo -e "${GREEN}✅${NC} Servicio influxdb-service corriendo"
         else
-            echo -e "${YELLOW}⚠️${NC}  Servicio realtime-data-generator existe pero no está corriendo"
+            echo -e "${YELLOW}⚠️${NC}  Servicio influxdb-service existe pero no está corriendo"
         fi
     else
-        echo -e "${YELLOW}⚠️${NC}  Servicio realtime-data-generator no encontrado"
+        echo -e "${YELLOW}⚠️${NC}  Servicio influxdb-service no encontrado"
     fi
     
     if docker-compose ps | grep -q "influxdb"; then
