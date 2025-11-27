@@ -1,0 +1,263 @@
+version: "3.9"
+
+# =============================================================================
+# HeartGuard Microservices Stack
+# =============================================================================
+# Este archivo se ejecuta en la VM 129.212.181.53 y asume que las bases de
+# datos + backend Go están disponibles vía red en la VM 134.199.204.58.
+# =============================================================================
+
+x-python-build: &python-build
+  context: ../..
+  dockerfile: docker/python-service.Dockerfile
+
+x-default-env: &default-env
+  FLASK_RUN_HOST: 0.0.0.0
+  PYTHONUNBUFFERED: "1"
+
+networks:
+  micro_net:
+    driver: bridge
+
+services:
+  auth-service:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/auth
+    container_name: heartguard-auth
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/auth/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: auth.app
+    command: flask run --host=0.0.0.0 --port=5001 --no-reload
+    ports:
+      - "5001:5001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5001/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  admin-service:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/admin
+    container_name: heartguard-admin
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/admin/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: admin.app
+    command: flask run --host=0.0.0.0 --port=5002 --no-reload
+    ports:
+      - "5002:5002"
+    depends_on:
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5002/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  user-service:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/user
+    container_name: heartguard-user
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/user/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: src.user.app
+    command: flask run --host=0.0.0.0 --port=5003 --no-reload
+    ports:
+      - "5003:5003"
+    depends_on:
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5003/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  patient-service:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/patient
+    container_name: heartguard-patient
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/patient/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: src.patient.app
+    command: flask run --host=0.0.0.0 --port=5004 --no-reload
+    ports:
+      - "5004:5004"
+    depends_on:
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5004/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  media-service:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/media
+    container_name: heartguard-media
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/media/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: media.app
+    command: flask run --host=0.0.0.0 --port=5005 --no-reload
+    ports:
+      - "5005:5005"
+    depends_on:
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5005/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  realtime-service:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/influxdb-service
+    container_name: heartguard-realtime
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/influxdb-service/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: generator.app
+    command: flask run --host=0.0.0.0 --port=5006 --no-reload
+    ports:
+      - "5006:5006"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5006/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  ai-prediction:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/ai-prediction
+    container_name: heartguard-ai
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/ai-prediction/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: src.app
+    command: flask run --host=0.0.0.0 --port=5007 --no-reload
+    ports:
+      - "5007:5007"
+    depends_on:
+      auth-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5007/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  ai-monitor:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/ai-monitor
+    container_name: heartguard-ai-monitor
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/ai-monitor/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: src.app
+    command: flask run --host=0.0.0.0 --port=5008 --no-reload
+    ports:
+      - "5008:5008"
+    depends_on:
+      ai-prediction:
+        condition: service_started
+      realtime-service:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5008/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net
+
+  gateway:
+    build:
+      <<: *python-build
+      args:
+        SERVICE_PATH: micro-services/gateway
+    container_name: heartguard-gateway
+    restart: unless-stopped
+    env_file:
+      - ../../micro-services/gateway/.env
+    environment:
+      <<: *default-env
+      FLASK_APP: gateway.app
+    command: flask run --host=0.0.0.0 --port=8080 --no-reload
+    ports:
+      - "8080:8080"
+    depends_on:
+      auth-service:
+        condition: service_started
+      admin-service:
+        condition: service_started
+      user-service:
+        condition: service_started
+      patient-service:
+        condition: service_started
+      media-service:
+        condition: service_started
+      realtime-service:
+        condition: service_started
+      ai-prediction:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - micro_net

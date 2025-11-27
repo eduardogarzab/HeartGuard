@@ -1,56 +1,66 @@
 version: "3.9"
 
 # =============================================================================
-# HeartGuard - Docker Compose
+# HeartGuard Backend Stack (DB + Redis + Influx + Go backend)
 # =============================================================================
-# Este archivo solo levanta los servicios de infraestructura (bases de datos).
-# Los microservicios (auth, admin, user, patient, gateway, ai-*, etc.)
-# se levantan en el servidor de microservicios (129.212.181.53) con:
-#   cd services && make restart
+# Este compose se ejecuta en la VM 134.199.204.58 y expone los puertos necesarios
+# para que los microservicios (en la VM 129.212.181.53) puedan consumir Postgres,
+# Redis, InfluxDB y el panel de superadmin en Go.
 # =============================================================================
 
 services:
   postgres:
     image: postgis/postgis:14-3.2
     container_name: heartguard-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres123
+      POSTGRES_USER: ${PGSUPER:-postgres}
+      POSTGRES_PASSWORD: ${PGSUPER_PASS:-postgres123}
     ports:
-      - "5432:5432"
+      - "${PGPORT:-5432}:5432"
     shm_size: "1g"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${PGSUPER:-postgres} -d postgres || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 30
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/10-heartguard-init.sql:ro
+      - ./db/seed.sql:/docker-entrypoint-initdb.d/20-heartguard-seed.sql:ro
+    networks:
+      - backend_net
 
   redis:
     image: redis:7-alpine
     container_name: heartguard-redis
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
     command: ["redis-server", "--appendonly", "no"]
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "PING"]
       interval: 5s
       timeout: 2s
       retries: 10
+    volumes:
+      - redis_data:/data
+    networks:
+      - backend_net
 
   influxdb:
     image: influxdb:2.7-alpine
     container_name: heartguard-influxdb
+    restart: unless-stopped
     ports:
-      - "8086:8086"
+      - "${INFLUXDB_PORT:-8086}:8086"
     environment:
       DOCKER_INFLUXDB_INIT_MODE: setup
-      DOCKER_INFLUXDB_INIT_USERNAME: admin
-      DOCKER_INFLUXDB_INIT_PASSWORD: influxdb123
-      DOCKER_INFLUXDB_INIT_ORG: heartguard
-      DOCKER_INFLUXDB_INIT_BUCKET: timeseries
-      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: heartguard-dev-token-change-me
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUXDB_USERNAME:-admin}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUXDB_PASSWORD:-influxdb123}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUXDB_ORG:-heartguard}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUXDB_BUCKET:-timeseries}
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUXDB_TOKEN:-heartguard-dev-token-change-me}
     healthcheck:
       test: ["CMD", "influx", "ping"]
       interval: 10s
@@ -59,8 +69,38 @@ services:
     volumes:
       - influxdb_data:/var/lib/influxdb2
       - influxdb_config:/etc/influxdb2
+    networks:
+      - backend_net
+
+  backend:
+    container_name: heartguard-backend
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - ./backend/.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    ports:
+      - "${BACKEND_HTTP_PORT:-8080}:8080"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - backend_net
+
+networks:
+  backend_net:
+    driver: bridge
 
 volumes:
   postgres_data:
+  redis_data:
   influxdb_data:
   influxdb_config:

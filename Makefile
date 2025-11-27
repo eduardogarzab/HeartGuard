@@ -32,6 +32,7 @@ help:
 	@echo "  dev / run / build / tidy / lint / test (backend dentro de ./backend)"
 	@echo "  db-init / db-seed / db-health / db-reset / db-psql"
 	@echo "  reset-all (baja servicios, recrea volúmenes, espera y re-inicializa DB)"
+	@echo "  bootstrap-envs (wizard para crear los .env)"
 
 # =========================
 # Docker (Compose services)
@@ -206,3 +207,7 @@ reset-all:
 	@$(MAKE) --no-print-directory db-seed
 
 	@echo ">> Reset completo OK"
+
+bootstrap-envs:
+	@echo ">> Generando archivos .env"
+	@./scripts/bootstrap-envs.sh

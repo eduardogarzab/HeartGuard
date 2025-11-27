@@ -36,6 +36,7 @@ INTERNAL_SERVICE_KEY = os.getenv("INTERNAL_SERVICE_KEY", "dev_internal_key")
 MONITOR_INTERVAL = int(os.getenv("MONITOR_INTERVAL", "60"))  # segundos
 LOOKBACK_WINDOW = int(os.getenv("LOOKBACK_WINDOW", "300"))  # 5 minutos
 BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10"))  # pacientes por batch
+ENABLE_NOTIFICATIONS = os.getenv("ENABLE_NOTIFICATIONS", "true").lower() in {"1", "true", "yes", "on"}
 
 # Flask Configuration
 FLASK_HOST = os.getenv("FLASK_HOST", "0.0.0.0")

@@ -1281,9 +1281,9 @@ curl -X POST "http://localhost:8080/admin/organizations/393b7d02-d3f8-48e5-829f-
 
 ## 📚 Recursos Adicionales
 
-- **Arquitectura**: `/services/README.md` - Documentación del sistema completo
-- **Gateway**: `/services/gateway/README.md` - Documentación del API Gateway
-- **Auth Service**: `/services/auth/README.md` - Documentación de autenticación
+- **Arquitectura**: `/micro-services/README.md` - Documentación del sistema completo y flujo Docker
+- **Gateway**: `/micro-services/gateway/README.md` - Documentación del API Gateway
+- **Auth Service**: `/micro-services/auth/README.md` - Documentación de autenticación
 - **Base de Datos**: `/db/init.sql` y `/db/seed.sql` - Schema y datos de prueba
 
 ---

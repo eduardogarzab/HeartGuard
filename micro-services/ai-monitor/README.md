@@ -117,11 +117,11 @@ Agregar al `docker-compose.yml` principal:
 ```yaml
 ai-monitor:
   build:
-    context: ./services/ai-monitor
+    context: ./micro-services/ai-monitor
     dockerfile: Dockerfile
   container_name: ai-monitor
   env_file:
-    - ./services/ai-monitor/.env
+    - ./micro-services/ai-monitor/.env
   depends_on:
     - influxdb
     - postgres

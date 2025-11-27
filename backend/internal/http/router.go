@@ -17,7 +17,10 @@ import (
 
 func NewRouter(logger authmw.Logger, cfg *config.Config, repo superadmin.Repository, rdb *redis.Client, sessions *session.Manager, authHandlers *auth.Handlers, uiHandlers *superadmin.Handlers) http.Handler {
 	r := chi.NewRouter()
-	r.Use(authmw.LoopbackOnly(logger))
+	// Apply LoopbackOnly only in production
+	if cfg.Env == "prod" {
+		r.Use(authmw.LoopbackOnly(logger))
+	}
 	r.Use(middleware.RequestID, middleware.RealIP, middleware.Recoverer)
 	r.Use(authmw.RateLimit(rdb, cfg.RateLimitRPS, cfg.RateLimitBurst))
 	r.Use(authmw.SecurityHeaders())

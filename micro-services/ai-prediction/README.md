@@ -26,7 +26,7 @@ Este servicio proporciona predicciones de problemas de salud basadas en signos v
 ## 📦 Instalación
 
 ```bash
-cd services/ai-prediction
+cd micro-services/ai-prediction
 pip install -r requirements.txt
 ```
 

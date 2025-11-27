@@ -1,8 +1,20 @@
-# HeartGuard Services
+# HeartGuard Micro-Services
 
-Gestión centralizada de microservicios HeartGuard (auth, admin, gateway).
+> **Docker Compose (recomendado):** `make bootstrap-envs && cd docker/microservices && docker compose up -d` levanta todos los servicios con las mismas imágenes utilizadas en las VMs. Los microservicios se conectan al stack de bases de datos expuesto por la VM del backend.
+
+Gestión centralizada de microservicios HeartGuard (auth, admin, gateway, patient, user, media, realtime, AI, etc.).
 
 ## 🚀 Inicio Rápido
+
+### Docker Compose (recomendado)
+
+```bash
+make bootstrap-envs                  # genera todos los .env necesarios
+cd docker/microservices
+docker compose up -d                 # levanta auth/admin/user/.../gateway
+```
+
+### Makefile legacy (hot reload local)
 
 ```bash
 # Instalar todas las dependencias
@@ -108,7 +120,7 @@ make clean-all            # Limpieza completa (stop + clean + clean-venv)
 ## 📁 Estructura de Archivos
 
 ```
-services/
+micro-services/
 ├── Makefile              # Makefile maestro (gestión centralizada)
 ├── README.md             # Esta documentación
 ├── auth/
@@ -128,10 +140,16 @@ services/
 ├── media/
 │   ├── Makefile          # Comandos específicos de media
 │   └── src/media/...
+├── influxdb-service/
+│   └── src/generator/...
+├── ai-prediction/
+│   └── src/
+├── ai-monitor/
+│   └── src/
 └── gateway/
-    ├── Makefile          # Comandos específicos de gateway
-    ├── test_gateway.sh
-    └── src/gateway/...
+  ├── Makefile          # Comandos específicos de gateway
+  ├── test_gateway.sh
+  └── src/gateway/...
 ```
 
 ## 🔍 Logs y PIDs
@@ -151,7 +169,7 @@ services/
 ### Iniciar todo el sistema
 
 ```bash
-cd services
+cd micro-services
 make install    # Primera vez
 make start      # Iniciar servicios
 make status     # Verificar estado
@@ -161,7 +179,7 @@ make status     # Verificar estado
 
 ```bash
 # Trabajar solo con auth-service
-cd services/auth
+cd micro-services/auth
 make dev        # Modo desarrollo con hot-reload
 ```
 
@@ -205,7 +223,7 @@ make logs
 Para trabajar en un servicio individual con recarga automática:
 
 ```bash
-cd services/auth    # o admin, o gateway
+cd micro-services/auth    # o admin, o gateway
 make dev
 ```
 
@@ -216,7 +234,7 @@ Esto inicia el servicio en modo desarrollo con Flask Debug y hot-reload activado
 Cada servicio tiene su propio `Makefile` con comandos consistentes:
 
 ```bash
-cd services/auth    # o admin, o gateway
+cd micro-services/auth    # o admin, o gateway
 make help           # Ver comandos disponibles
 make install        # Instalar dependencias
 make dev            # Modo desarrollo
@@ -228,9 +246,9 @@ make clean          # Limpiar
 
 Los scripts de prueba (`test_*.sh`) están ubicados en cada servicio:
 
-- `services/auth/test_auth_service.sh` - Pruebas de autenticación
-- `services/admin/test_admin_service.sh` - Pruebas de admin API
-- `services/gateway/test_gateway.sh` - Pruebas de gateway
+- `micro-services/auth/test_auth_service.sh` - Pruebas de autenticación
+- `micro-services/admin/test_admin_service.sh` - Pruebas de admin API
+- `micro-services/gateway/test_gateway.sh` - Pruebas de gateway
 
 Ejecutar con: `make test` o `make test-[servicio]`
 

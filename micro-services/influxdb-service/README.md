@@ -28,8 +28,8 @@ Este servicio genera datos sintéticos realistas de signos vitales para paciente
 # Desde el directorio del servicio
 make install
 
-# O desde el directorio services/
-cd /root/HeartGuard/services
+# O desde el directorio micro-services/
+cd /root/HeartGuard/micro-services
 make install-influxdb
 ```
 
@@ -56,7 +56,7 @@ make dev
 
 ### Producción (background):
 ```bash
-cd /root/HeartGuard/services
+cd /root/HeartGuard/micro-services
 make start-influxdb
 ```
 

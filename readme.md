@@ -7,7 +7,8 @@ Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositori
 -   **Repositorio monolítico:** servicios de datos (`db/`), backend SSR (`backend/`), templates (`backend/templates`) y assets compartidos (`backend/ui/assets`).
 -   **Base de datos:** PostgreSQL 14 + PostGIS, esquema y seeds listos para demos (`heartguard` schema).
 -   **Backend:** Panel administrativo SSR (Go 1.22) con autenticación basada en cookies JWT y Redis para sesiones, revocaciones y rate limiting. Middleware `LoopbackOnly` bloquea el tráfico externo.
--   **Infra local:** `docker-compose` expone Postgres y Redis; el backend se ejecuta con `make dev` cargando variables desde `.env`.
+-   **Microservicios:** APIs Flask (`auth`, `admin`, `user`, `patient`, `media`, `gateway`, `influxdb-service`, `ai-prediction`, `ai-monitor`) que consumen la misma base de datos y se coordinan mediante un gateway HTTP y claves internas.
+-   **Infra dockerizada:** `docker-compose.yml` orquesta Postgres/Redis/Influx + backend Go. Los microservicios Python/Flask viven en `micro-services/` y cuentan con su propio `docker/microservices/docker-compose.yml`.
 -   **Front-end SSR:** Formularios con protección CSRF y validaciones lado servidor para todos los flujos; no hay mapas embebidos, los listados geográficos se gestionan vía tablas y formularios manuales.
 
 ## Estructura
@@ -17,6 +18,46 @@ Plataforma demo para monitoreo y alertas de riesgo cardiovascular. El repositori
 -   `docker-compose.yml` — Postgres + Redis para desarrollo.
 -   `Makefile` — wrappers para migraciones, seeds y tareas de Go.
 -   `.env.example` — plantilla con todas las variables necesarias para clonar el entorno.
+
+## Orquestación con Docker Compose
+
+> Infra recomendada por ahora: **VM #1 (134.199.204.58)** para backend + bases de datos y **VM #2 (129.212.181.53)** para los microservicios.
+
+1. **Generar todos los `.env` automáticamente** (solo una vez por entorno):
+
+    ```bash
+    make bootstrap-envs   # script interactivo (scripts/bootstrap-envs.sh)
+    ```
+
+    El asistente solicita IPs, credenciales y llaves compartidas, y llena:
+
+    - `.env` raíz (Makefile/psql)
+    - `backend/.env` (Go SSR)
+    - `micro-services/*/.env` para cada microservicio (auth, admin, etc.)
+
+2. **Backend stack (VM backend)**
+
+    ```bash
+    docker compose up -d
+    # Servicios disponibles:
+    # - Postgres/PostGIS        :5432
+    # - Redis                   :6379
+    # - InfluxDB 2.7            :8086
+    # - Go Superadmin (SSR)     :8080
+    ```
+
+3. **Microservicios (VM microservices)**
+
+    ```bash
+    cd docker/microservices
+    docker compose up -d
+    # Puertos expuestos:
+    # 5001 auth, 5002 admin, 5003 user, 5004 patient, 5005 media,
+    # 5006 realtime (influxdb-service), 5007 ai-prediction,
+    # 5008 ai-monitor, 8080 gateway
+    ```
+
+Dentro de la red Docker de microservicios se consumen los servicios por nombre (`auth-service`, `ai-prediction`, etc.), mientras que Postgres/Redis/Influx se alcanzan vía la IP pública/privada de la VM del backend (valores que el script graba en cada `.env`).
 
 ## Requisitos previos
 
@@ -228,7 +269,7 @@ jq --version             # jq-1.6+ (opcional)
 
 ## Variables de entorno
 
-Duplica `.env.example` a `.env` y ajusta según tu entorno.
+    Ejecuta `make bootstrap-envs` para generar todos los `.env`. Si prefieres la vía manual, duplica `.env.example` a `.env` y ajusta según tu entorno.
 
 | Categoría             | Claves                                                | Comentarios                                                                |
 | --------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -246,26 +287,26 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
     git clone https://github.com/eduardogarzab/HeartGuard.git
     cd HeartGuard
     ```
-2. **Preparar variables:**
+2. **Generar `.env` (backend + microservicios):**
     ```sh
-    cp .env.example .env
-    # edita con tus credenciales
+    make bootstrap-envs
     ```
-3. **Arrancar Postgres + Redis:**
+3. **VM backend (DB + Go SSR):**
     ```sh
-    make up
+    make up                    # equivale a docker compose up -d
+    make compose-wait          # opcional, valida pg/redis
+    make db-init db-seed       # crea esquema y datos demo
+    make db-health             # smoke-check SQL
     ```
-4. **Esperar servicios y crear esquema:**
+4. **VM microservicios:**
     ```sh
-    make compose-wait     # opcional, espera a Postgres/Redis dentro de Docker
-    make db-init
-    make db-seed
-    make db-health
+    cd docker/microservices
+    docker compose up -d
     ```
-5. **Instalar dependencias Go y correr modo dev:**
+5. **Iterar sobre el backend Go (local opcional):**
     ```sh
-    make tidy             # solo la primera vez
-    make dev
+    make tidy                  # solo la primera vez
+    make dev                   # usa las mismas variables de .env
     ```
 6. **Verificaciones rápidas (desde localhost):**
     ```sh
@@ -274,6 +315,38 @@ Duplica `.env.example` a `.env` y ajusta según tu entorno.
 7. **Panel web:** abre <http://localhost:8080/> (redirige a `/login` si no hay sesión) e inicia sesión con las credenciales sembradas (`admin@heartguard.com / Admin#2025`).
 
 -   En caso de ejecutarlo en una VM remota, usa `ssh -L 8080:localhost:8080 usuario@ip_de_la_vm` para tunelizar el puerto.
+
+## Verificación Docker de punta a punta
+
+1. **Confirmar archivos `.env`:** `make bootstrap-envs` debe existir antes de cualquier `docker compose up` (backend y microservicios).
+2. **Stack backend listo:**
+
+    ```bash
+    docker compose up -d
+    docker compose ps
+    curl -f http://localhost:8080/healthz
+    ```
+
+    Usa `docker compose logs backend` para revisar el SSR si hay errores.
+
+3. **Stack de microservicios:**
+
+    ```bash
+    cd docker/microservices
+    docker compose up -d
+    docker compose ps
+    curl -f http://localhost:5001/health      # auth
+    curl -f http://localhost:8080/health      # gateway
+    ```
+
+4. **Smoke test vía gateway:**
+
+    ```bash
+    curl -H "X-Internal-Key: $INTERNAL_SERVICE_KEY" \
+         http://localhost:8080/realtime/health
+    ```
+
+    Todos los contenedores deben aparecer `healthy` con `docker compose ps`. Si alguno falla, consulta `docker compose logs -f <servicio>`.
 
 ## Comandos clave del `Makefile`
 

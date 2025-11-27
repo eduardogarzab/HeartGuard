@@ -87,4 +87,4 @@ Puedes sobrescribirlos antes de cargar `config.js` estableciendo `window.ORG_ADM
 
 ## Soporte
 
-Ante dudas sobre los endpoints revisa `services/admin/README.md`. Para reportar problemas contacta al equipo de plataforma HeartGuard.
+Ante dudas sobre los endpoints revisa `micro-services/admin/README.md`. Para reportar problemas contacta al equipo de plataforma HeartGuard.

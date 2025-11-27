@@ -1,0 +1,13 @@
+# Global docker ignore to keep build contexts small
+.git
+.gitignore
+**/.venv
+**/__pycache__
+**/*.pyc
+node_modules
+**/node_modules
+*.log
+clients/desktop-app/target
+clients/desktop-app/.mvn
+coverage
+.tmp

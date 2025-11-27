@@ -21,7 +21,7 @@ Microservicio encargado del ciclo de vida de la foto de perfil (usuario o pacien
 ### Estructura
 
 ```
-media/
+micro-services/media/
 ├── Makefile
 ├── requirements.txt
 ├── README.md
