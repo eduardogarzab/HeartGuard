@@ -588,7 +588,108 @@ Abre tu navegador en: `http://localhost:4000`
 
 ## Paso 3.4: Acceder a la aplicación de escritorio de Usuario/Paciente
 
+### Requisitos del Sistema
+
+| Componente | Versión Requerida | Verificar con |
+|------------|-------------------|---------------|
+| **Java (JDK)** | 21 o superior | `java -version` |
+| **Maven** | 3.6 o superior | `mvn -version` |
+
+### Instalar Java 21
+
+**Opción 1: Usando Scoop (recomendado)**
+```powershell
+# Instalar Scoop si no lo tienes
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+Invoke-RestMethod -Uri https://get.scoop.sh | Invoke-Expression
+
+# Instalar Java 21
+scoop bucket add java
+scoop install temurin21-jdk
+```
+
+### Instalar Maven (si no lo tienes)
+
+**Opción 1: Usando Scoop**
+```powershell
+scoop install maven
+```
+
+## Paso 3.4.1: Navegar al Proyecto
+
+```powershell
+cd C:\ruta\a\HeartGuard\clients\desktop-app
+```
+
+## Paso 3.4.2: Configurar Variables de Entorno
+
+### Crear archivo .env
+
+```powershell
+# Copiar plantilla
+Copy-Item .env.example .env
+
+# Editar con notepad
+notepad .env
+```
+
+### Contenido del archivo .env
+
+# Obtén tu licencia en: https://www.teamdev.com/jxbrowser
+JXBROWSER_LICENSE_KEY=OK6AEKNYF4FTMAWI6JGOZAZP6YFDI0H4TJB1KP38ONSMRPHLPQZNJSRM5LMK8BP3R3YTPEEPPK3W7XAWPVUEAYTWOBQ812CMYVXEVMEE1CAA0CG4YKJ2PE5I6E9Q92NTS48Z3FW45JT16IRC6
+
+# Gateway API Configuration
+GATEWAY_BASE_URL=http://IP_MICROSERVICIOS:8080
+
+
+**⚠️ Ajusta las IPs según tu configuración de servidores.**
+
+## Paso 3.4.3: Compilar el Proyecto
+
+```powershell
+# Limpiar y compilar
+mvn clean package
+
+**Salida esperada:**
+```
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+```
+
+El JAR ejecutable se genera en: `target\desktop-app-1.0.0.jar`
+
+## Paso 9.4: Ejecutar la Aplicación
+
+### Opción A: Ejecutar directamente
+
+```powershell
+java -jar target\desktop-app-1.0.0.jar
+```
+
+## Paso 3.4.4: Login en la Aplicación
+
+Una vez abierta la aplicación:
+Para usuario
+1. **Email**: `ana.ruiz@heartguard.com`
+2. **Password**: `Demo#2025`
+
+Para paciente
+1. **Email**: `maria.delgado@patients.heartguard.com`
+2. **Password**: `Paciente#2025`
+
 ---
+
+## Comandos Rápidos de Referencia (PowerShell)
+
+```powershell
+# Navegar al proyecto
+cd C:\ruta\a\HeartGuard\clients\desktop-app
+
+# Compilar
+mvn clean package -DskipTests
+
+# Ejecutar
+java -jar target\desktop-app-1.0.0.jar
 
 # 🔧 PARTE 4: Comandos Útiles
 
@@ -871,3 +972,4 @@ docker --version
 docker compose version
 make --version
 ```
+
