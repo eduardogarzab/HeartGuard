@@ -10,8 +10,8 @@ Guía paso a paso para desplegar HeartGuard en dos VMs usando Docker desde cero.
 │  ┌──────────────────────────────────────┐  │
 │  │ PostgreSQL + PostGIS      :5432      │  │
 │  │ Redis                     :6379      │  │
-│  │ InfluxDB 2.7             :8086      │  │
-│  │ Backend SSR (Go)         :8080      │  │
+│  │ InfluxDB 2.7             :8086       │  │
+│  │ Backend SSR (Go)         :8080       │  │
 │  └──────────────────────────────────────┘  │
 └────────────────────────────────────────────┘
               ↕ Conexión TCP/IP
@@ -31,6 +31,23 @@ Guía paso a paso para desplegar HeartGuard en dos VMs usando Docker desde cero.
 └────────────────────────────────────────────┘
 ```
 
+# VMs Requeridas:
+
+-   **VM 1: Backend**
+    - Puertos abiertos (entrantes): 5432, 6379, 8086, 8080 (desde la VM de microservicios)
+-   **VM 2: Microservicios**
+    - Puertos abiertos (entrantes): 8080 (público para el gateway)
+
+# Bucket de DigitalOcean Spaces
+
+- Crear un bucket en DigitalOcean Spaces para almacenamiento de medios.
+
+### Configuración Inicial
+
+Habilitar CORS en el bucket para permitir acceso desde el frontend para el público. Con todos los orígenes (`*`) y métodos `GET`, `PUT`, `POST`, `DELETE`, `HEAD`.
+
+Crear una clave de acceso (Access Key) y una clave secreta (Secret Key) para el bucket.
+
 ---
 
 # 🖥️ PARTE 1: Preparación VM del Backend
@@ -40,7 +57,7 @@ Guía paso a paso para desplegar HeartGuard en dos VMs usando Docker desde cero.
 Conectarse a la VM del backend:
 
 ```bash
-ssh root@134.199.204.58
+ssh root@IP_BACKEND
 ```
 
 ### Actualizar el sistema (CentOS 9)
@@ -139,12 +156,14 @@ make bootstrap-envs
 El script te pedirá la siguiente información:
 
 ### Configuración General
+
 ```
-IP/hostname del backend [134.199.204.58]: 134.199.204.58
-IP/hostname de microservicios [129.212.181.53]: 129.212.181.53
+IP/hostname del backend [134.199.204.58]: IP_BACKEND
+IP/hostname de microservicios [129.212.181.53]: IP_MICROSERVICIOS
 ```
 
 ### PostgreSQL
+
 ```
 Usuario superadmin [postgres]: postgres
 Password superadmin [oculto]: postgres123
@@ -155,6 +174,7 @@ Password app [oculto]: MySecurePass123
 ```
 
 ### Redis / Influx
+
 ```
 Puerto Redis [6379]: 6379
 Puerto Influx [8086]: 8086
@@ -166,6 +186,7 @@ Token [oculto]: heartguard-token-change-me-in-prod
 ```
 
 ### Claves Compartidas (IMPORTANTES - Guárdalas)
+
 ```
 JWT_SECRET [oculto]: <genera uno con: openssl rand -base64 32>
 INTERNAL_SERVICE_KEY [oculto]: <genera otro: openssl rand -base64 32>
@@ -173,6 +194,7 @@ AI_MODEL_ID [988e1fee-e18e-4eb9-9b9d-72ae7d48d8bc]: [Enter para usar default]
 ```
 
 Para generar claves seguras:
+
 ```bash
 # Generar JWT_SECRET
 openssl rand -base64 32
@@ -184,6 +206,7 @@ openssl rand -base64 32
 **⚠️ IMPORTANTE**: Guarda estas claves, las necesitarás para configurar los microservicios.
 
 ### DigitalOcean Spaces
+
 ```
 Spaces Access Key [DO00EXAMPLEID]: TU_ACCESS_KEY_REAL
 Spaces Secret Key [oculto]: TU_SECRET_KEY_REAL
@@ -191,6 +214,7 @@ Origin endpoint [https://...]: https://tu-bucket.region.digitaloceanspaces.com/
 ```
 
 ### Gateway
+
 ```
 FLASK_SECRET_KEY [oculto]: <genera otro: openssl rand -base64 32>
 ```
@@ -200,10 +224,10 @@ FLASK_SECRET_KEY [oculto]: <genera otro: openssl rand -base64 32>
 Editar el archivo de configuración del backend:
 
 ```bash
-nano /root/HeartGuard/backend/.env
+vi /root/HeartGuard/backend/.env
 ```
 
-Cambiar `ENV=prod` a `ENV=dev` para permitir acceso remoto:
+Cambiar `ENV=prod` a `ENV=dev` para permitir acceso remoto y desactivar las Secure Cookies:
 
 ```env
 ENV=dev
@@ -233,6 +257,7 @@ docker compose ps
 ```
 
 Deberías ver algo como:
+
 ```
 NAME                  IMAGE                    STATUS
 heartguard-backend    heartguard-backend       Up (healthy)
@@ -244,71 +269,44 @@ heartguard-redis      redis:7-alpine           Up (healthy)
 ## Paso 1.10: Verificar que Todo Funciona
 
 ### Verificar PostgreSQL
+
 ```bash
 docker compose exec -T postgres pg_isready -U postgres
 ```
+
 Debe responder: `accepting connections`
 
 ### Verificar Redis
+
 ```bash
 docker compose exec -T redis redis-cli PING
 ```
+
 Debe responder: `PONG`
 
 ### Verificar InfluxDB
+
 ```bash
 docker compose exec -T influxdb influx ping
 ```
+
 Debe responder: `OK`
 
 ### Verificar Backend Go
+
 ```bash
 curl http://localhost:8080/healthz
 ```
+
 Debe responder con un `200 OK`
 
 ### Ver logs del backend
+
 ```bash
 docker compose logs -f backend
 ```
 
 Presiona `Ctrl+C` para salir.
-
-## Paso 1.11: Inicializar la Base de Datos (si no se hizo automáticamente)
-
-Si los scripts de init/seed no se ejecutaron automáticamente:
-
-```bash
-make db-init
-make db-seed
-```
-
-### Verificar que los datos se cargaron
-```bash
-make db-health
-```
-
-Deberías ver conteos de roles, permisos, usuarios, etc.
-
-## Paso 1.12: Verificar Conectividad desde Otra VM
-
-Desde tu máquina local o la otra VM, prueba:
-
-```bash
-# PostgreSQL
-nc -zv 134.199.204.58 5432
-
-# Redis
-nc -zv 134.199.204.58 6379
-
-# InfluxDB
-nc -zv 134.199.204.58 8086
-
-# Backend
-curl http://134.199.204.58:8080/healthz
-```
-
-Todos deben responder exitosamente.
 
 ---
 
@@ -319,7 +317,7 @@ Todos deben responder exitosamente.
 Conectarse a la VM de microservicios (en otra terminal o desconectarse de la anterior):
 
 ```bash
-ssh root@129.212.181.53
+ssh root@IP_MICROSERVICIOS
 ```
 
 ### Actualizar el sistema (CentOS 9)
@@ -386,16 +384,17 @@ cd HeartGuard
 
 ```bash
 # PostgreSQL
-nc -zv 134.199.204.58 5432
+nc -zv IP_BACKEND 5432
 
 # Redis
-nc -zv 134.199.204.58 6379
+nc -zv IP_BACKEND 6379
 
 # InfluxDB
-nc -zv 134.199.204.58 8086
+nc -zv IP_BACKEND 8086
 ```
 
 Si alguno falla:
+
 1. Verifica el firewall en la VM del backend (Paso 1.6)
 2. Verifica las reglas de seguridad del cloud provider
 3. Verifica que los servicios estén corriendo en el backend
@@ -410,12 +409,14 @@ make bootstrap-envs
 **⚠️ CRÍTICO**: Usa las **MISMAS** credenciales y claves que usaste en el backend.
 
 ### Configuración General
+
 ```
-IP/hostname del backend [134.199.204.58]: 134.199.204.58
-IP/hostname de microservicios [129.212.181.53]: 129.212.181.53
+IP/hostname del backend [134.199.204.58]: IP_BACKEND
+IP/hostname de microservicios [129.212.181.53]: IP_MICROSERVICIOS
 ```
 
 ### PostgreSQL (USAR LOS MISMOS VALORES DEL BACKEND)
+
 ```
 Usuario superadmin [postgres]: postgres
 Password superadmin [oculto]: postgres123
@@ -426,6 +427,7 @@ Password app [oculto]: MySecurePass123  <-- MISMO que en backend
 ```
 
 ### Redis / Influx (USAR LOS MISMOS VALORES DEL BACKEND)
+
 ```
 Puerto Redis [6379]: 6379
 Puerto Influx [8086]: 8086
@@ -437,6 +439,7 @@ Token [oculto]: heartguard-token-change-me-in-prod  <-- MISMO que en backend
 ```
 
 ### Claves Compartidas (USAR LAS MISMAS DEL BACKEND)
+
 ```
 JWT_SECRET [oculto]: <EXACTAMENTE EL MISMO que en backend>
 INTERNAL_SERVICE_KEY [oculto]: <EXACTAMENTE EL MISMO que en backend>
@@ -444,6 +447,7 @@ AI_MODEL_ID: [Enter para usar default]
 ```
 
 ### DigitalOcean Spaces (USAR LOS MISMOS)
+
 ```
 Spaces Access Key: TU_ACCESS_KEY_REAL
 Spaces Secret Key: TU_SECRET_KEY_REAL
@@ -451,6 +455,7 @@ Origin endpoint: https://tu-bucket.region.digitaloceanspaces.com/
 ```
 
 ### Gateway
+
 ```
 FLASK_SECRET_KEY [oculto]: <genera uno nuevo: openssl rand -base64 32>
 ```
@@ -462,6 +467,7 @@ ls -la micro-services/*/.env
 ```
 
 Deberías ver 9 archivos `.env`:
+
 ```
 micro-services/admin/.env
 micro-services/ai-monitor/.env
@@ -481,7 +487,7 @@ micro-services/user/.env
 grep JWT_SECRET micro-services/auth/.env
 
 # Compara con el del backend (conéctate al backend en otra terminal)
-ssh root@134.199.204.58 'grep JWT_SECRET /root/HeartGuard/backend/.env'
+ssh root@IP_BACKEND 'grep JWT_SECRET /root/HeartGuard/backend/.env'
 ```
 
 **DEBEN SER IDÉNTICOS**. Si no coinciden, edítalos manualmente.
@@ -499,9 +505,10 @@ docker compose logs -f
 ```
 
 Este proceso puede tomar 2-5 minutos en la primera ejecución porque debe:
-- Descargar imágenes base de Python
-- Construir las imágenes de cada servicio
-- Instalar dependencias de Python
+
+-   Descargar imágenes base de Python
+-   Construir las imágenes de cada servicio
+-   Instalar dependencias de Python
 
 Presiona `Ctrl+C` cuando veas que todos están iniciando.
 
@@ -538,54 +545,48 @@ docker compose logs <nombre-servicio>
 
 ## Paso 3.1: Acceder al Panel de Superadmin
 
-Desde tu computadora local, crea un túnel SSH:
-
-```bash
-ssh -L 8080:localhost:8080 root@134.199.204.58
-```
-
-Abre tu navegador en: `http://localhost:8080/login`
+Abre tu navegador en: `http://IP_BACKEND:8080/login`
 
 **Credenciales por defecto**:
-- Email: `admin@heartguard.com`
-- Password: `Admin#2025`
+
+-   Email: `admin@heartguard.com`
+-   Password: `Admin#2025`
 
 ## Paso 3.2: Probar el Gateway de Microservicios
 
-Crea otro túnel SSH para el gateway:
+En tu navegador: `http://IP_MICROSERVICIOS:8080/health`
+
+## Paso 3.3: Acceder al Panel del Org Admin
+
+**Se requiere python instalado localmente**
+
+En tu computadora local, clona el repositorio:
 
 ```bash
-ssh -L 9080:localhost:8080 root@129.212.181.53
+git clone https://github.com/eduardogarzab/HeartGuard.git
+cd HeartGuard
 ```
 
-En tu navegador: `http://localhost:9080/health`
-
-## Paso 3.3: Probar la Autenticación Completa
-
-### Desde la VM de microservicios, hacer un login completo:
+Navega a la carpeta del panel web:
 
 ```bash
-# Login
-curl -X POST http://localhost:8080/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email": "admin@heartguard.com",
-    "password": "Admin#2025"
-  }'
+cd clients/org-admin
 ```
 
-Deberías recibir un token JWT. Guarda el `access_token` de la respuesta.
-
-### Probar una petición autenticada
+Crea un servidor http local:
 
 ```bash
-TOKEN="<access_token_de_la_respuesta_anterior>"
-
-curl http://localhost:8080/user/me \
-  -H "Authorization: Bearer $TOKEN"
+python3 -m http.server 4000
 ```
 
-Deberías ver los datos del usuario admin.
+Abre tu navegador en: `http://localhost:4000`
+
+**Credenciales por defecto**:
+
+-   Email: `ana.ruiz@heartguard.com`
+-   Password: `Demo#2025`
+
+## Paso 3.4: Acceder a la aplicación de escritorio de Usuario/Paciente
 
 ---
 
@@ -594,6 +595,7 @@ Deberías ver los datos del usuario admin.
 ## En la VM del Backend
 
 ### Ver logs
+
 ```bash
 cd /root/HeartGuard
 docker compose logs -f backend
@@ -603,43 +605,48 @@ docker compose logs -f influxdb
 ```
 
 ### Reiniciar servicios
+
 ```bash
 docker compose restart backend
 docker compose restart postgres
 ```
 
 ### Acceder a PostgreSQL
+
 ```bash
 docker compose exec postgres psql -U heartguard_app -d heartguard
 ```
 
 ### Backup de la base de datos
+
 ```bash
 docker compose exec postgres pg_dump -U postgres heartguard > backup_$(date +%Y%m%d).sql
 ```
 
 ### Detener todo
+
 ```bash
 docker compose down
 ```
 
 ### Limpiar todo y empezar de nuevo
+
 ```bash
 docker compose down -v
 docker compose up -d
-make db-init
-make db-seed
 ```
 
 ## En la VM de Microservicios
 
 ### Ver logs de todos los servicios
+
 ```bash
 cd /root/HeartGuard/docker/microservices
 docker compose logs -f
 ```
 
 ### Ver logs de un servicio específico
+
 ```bash
 docker compose logs -f auth-service
 docker compose logs -f gateway
@@ -647,26 +654,31 @@ docker compose logs -f ai-monitor
 ```
 
 ### Reiniciar un servicio
+
 ```bash
 docker compose restart auth-service
 ```
 
 ### Reconstruir un servicio
+
 ```bash
 docker compose up -d --build auth-service
 ```
 
 ### Ver uso de recursos
+
 ```bash
 docker stats
 ```
 
 ### Detener todo
+
 ```bash
 docker compose down
 ```
 
 ### Limpiar y reconstruir
+
 ```bash
 docker compose down
 docker compose build --no-cache
@@ -684,26 +696,30 @@ docker compose up -d
 **Solución**:
 
 1. Verifica que PostgreSQL esté escuchando en todas las interfaces:
+
 ```bash
 # En VM del backend
 docker compose exec postgres grep "listen_addresses" /var/lib/postgresql/data/postgresql.conf
 ```
 
 2. Verifica el firewall:
+
 ```bash
 # En VM del backend
 firewall-cmd --list-ports | grep 5432
 ```
 
 3. Verifica que el mapeo de puertos sea correcto:
+
 ```bash
 docker port heartguard-postgres
 ```
 
 4. Prueba conexión manual desde la VM de microservicios:
+
 ```bash
 # En VM de microservicios
-nc -zv 134.199.204.58 5432
+nc -zv IP_BACKEND 5432
 ```
 
 ## Problema: "JWT verification failed"
@@ -715,16 +731,19 @@ nc -zv 134.199.204.58 5432
 **Solución**:
 
 1. Verifica el secret en el backend:
+
 ```bash
-ssh root@134.199.204.58 'cat /root/HeartGuard/backend/.env | grep JWT_SECRET'
+ssh root@IP_BACKEND 'cat /root/HeartGuard/backend/.env | grep JWT_SECRET'
 ```
 
 2. Verifica en microservicios:
+
 ```bash
-ssh root@129.212.181.53 'cat /root/HeartGuard/micro-services/auth/.env | grep JWT_SECRET'
+ssh root@IP_MICROSERVICIOS 'cat /root/HeartGuard/micro-services/auth/.env | grep JWT_SECRET'
 ```
 
 3. Si no coinciden, edítalos y reinicia:
+
 ```bash
 # Editar
 nano /root/HeartGuard/micro-services/auth/.env
@@ -739,21 +758,25 @@ docker compose restart
 **Solución**:
 
 1. Ver logs detallados:
+
 ```bash
 docker compose logs --tail=200 <nombre-servicio>
 ```
 
 2. Ver el healthcheck:
+
 ```bash
 docker inspect <nombre-contenedor> --format='{{json .State.Health}}' | python3 -m json.tool
 ```
 
 3. Entrar al contenedor para debugging:
+
 ```bash
 docker compose exec <nombre-servicio> sh
 ```
 
 4. Probar el healthcheck manualmente:
+
 ```bash
 docker compose exec <nombre-servicio> curl -f http://localhost:5001/health
 ```
@@ -765,14 +788,16 @@ docker compose exec <nombre-servicio> curl -f http://localhost:5001/health
 **Solución**:
 
 1. Ver qué proceso está usando el puerto:
+
 ```bash
 lsof -i :5432
 ```
 
 2. Detener el proceso o cambiar el puerto en docker-compose.yml:
+
 ```yaml
 ports:
-  - "5433:5432"  # Mapear al puerto 5433 del host
+    - "5433:5432" # Mapear al puerto 5433 del host
 ```
 
 3. Actualizar los `.env` con el nuevo puerto.
@@ -801,17 +826,20 @@ ls -la /var/run/docker.sock
 **Solución**:
 
 1. Verificar las redes:
+
 ```bash
 docker network ls
 docker network inspect microservices_micro_net
 ```
 
 2. Verificar que todos los servicios estén en la red:
+
 ```bash
 docker compose ps --format "{{.Name}}\t{{.Networks}}"
 ```
 
 3. Recrear la red:
+
 ```bash
 docker compose down
 docker network rm microservices_micro_net
@@ -832,12 +860,13 @@ openssl rand -base64 32  # Para cada servicio
 ```
 
 Editar todos los `.env` y cambiar:
-- `PGSUPER_PASS`
-- `DBPASS`
-- `INFLUXDB_PASSWORD`
-- `JWT_SECRET`
-- `INTERNAL_SERVICE_KEY`
-- `GATEWAY_SECRET`
+
+-   `PGSUPER_PASS`
+-   `DBPASS`
+-   `INFLUXDB_PASSWORD`
+-   `JWT_SECRET`
+-   `INTERNAL_SERVICE_KEY`
+-   `GATEWAY_SECRET`
 
 ### 2. Habilitar HTTPS
 
@@ -851,11 +880,12 @@ nano /etc/nginx/conf.d/backend.conf
 ```
 
 Ejemplo de configuración:
+
 ```nginx
 server {
     listen 80;
     server_name backend.heartguard.com;
-    
+
     location / {
         proxy_pass http://localhost:8080;
         proxy_set_header Host $host;
@@ -878,12 +908,14 @@ nano /root/HeartGuard/backend/.env
 ```
 
 Cambiar:
+
 ```env
 ENV=prod
 SECURE_COOKIES=true
 ```
 
 Reiniciar:
+
 ```bash
 docker compose restart backend
 ```
@@ -893,7 +925,7 @@ docker compose restart backend
 ```bash
 # Cerrar puertos públicos, permitir solo entre VMs
 firewall-cmd --permanent --remove-port=5432/tcp
-firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="129.212.181.53" port protocol="tcp" port="5432" accept'
+firewall-cmd --permanent --add-rich-rule='rule family="ipv4" source address="IP_MICROSERVICIOS" port protocol="tcp" port="5432" accept'
 firewall-cmd --reload
 ```
 
@@ -926,6 +958,7 @@ crontab -e
 ```
 
 Agregar:
+
 ```
 0 2 * * * /root/backup-heartguard.sh
 ```
@@ -936,12 +969,12 @@ Agregar a `/root/HeartGuard/docker-compose.yml`:
 
 ```yaml
 services:
-  backend:
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
+    backend:
+        logging:
+            driver: "json-file"
+            options:
+                max-size: "10m"
+                max-file: "3"
 ```
 
 ### 7. Monitoreo de salud
@@ -962,7 +995,7 @@ if ! curl -sf http://localhost:8080/healthz > /dev/null; then
 fi
 
 # Verificar microservicios
-if ! ssh root@129.212.181.53 'curl -sf http://localhost:8080/health' > /dev/null; then
+if ! ssh root@IP_MICROSERVICIOS 'curl -sf http://localhost:8080/health' > /dev/null; then
     curl -X POST $WEBHOOK_URL -d '{"text":"⚠️ Gateway está caído!"}'
 fi
 ```
@@ -975,6 +1008,7 @@ crontab -e
 ```
 
 Agregar:
+
 ```
 */5 * * * * /root/health-check.sh
 ```
@@ -1018,16 +1052,7 @@ docker system prune -a
 
 ---
 
-# 📞 PARTE 8: Soporte y Recursos
-
-## Documentación
-
-- **README principal**: `/root/HeartGuard/readme.md`
-- **Microservicios**: `/root/HeartGuard/micro-services/README.md`
-- **Base de datos**: `/root/HeartGuard/db/README.md`
-- **Cada microservicio**: `/root/HeartGuard/micro-services/<servicio>/README.md`
-
-## Comandos útiles de referencia rápida
+# Comandos útiles de referencia rápida
 
 ```bash
 # Ver todos los contenedores
@@ -1050,45 +1075,3 @@ docker --version
 docker compose version
 make --version
 ```
-
-## Checklist de despliegue exitoso
-
-### VM del Backend (134.199.204.58)
-- [ ] Docker instalado
-- [ ] Docker Compose instalado
-- [ ] Repositorio clonado
-- [ ] Firewall configurado (puertos 5432, 6379, 8086)
-- [ ] Archivos .env generados
-- [ ] ENV=dev en backend/.env
-- [ ] `docker compose up -d` ejecutado
-- [ ] Todos los contenedores healthy
-- [ ] PostgreSQL responde
-- [ ] Redis responde
-- [ ] InfluxDB responde
-- [ ] Backend responde en :8080
-
-### VM de Microservicios (129.212.181.53)
-- [ ] Docker instalado
-- [ ] Docker Compose instalado
-- [ ] Repositorio clonado
-- [ ] Conectividad al backend verificada
-- [ ] Archivos .env generados con MISMAS claves
-- [ ] JWT_SECRET coincide con backend
-- [ ] `docker compose up -d` en docker/microservices
-- [ ] Todos los contenedores healthy
-- [ ] Auth service responde
-- [ ] Gateway responde
-- [ ] Todos los servicios responden vía gateway
-
-### Pruebas End-to-End
-- [ ] Panel web accesible (túnel SSH)
-- [ ] Login funciona con admin@heartguard.com
-- [ ] Gateway accesible
-- [ ] Auth funciona (POST /auth/login)
-- [ ] Peticiones autenticadas funcionan
-
----
-
-**¡Listo!** Si completaste todos los pasos, tu sistema HeartGuard está funcionando correctamente en Docker.
-
-Para cualquier problema, consulta la sección de Troubleshooting o revisa los logs con `docker compose logs`.
