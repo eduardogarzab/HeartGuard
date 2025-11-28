@@ -823,6 +823,198 @@ FROM users u
 WHERE u.email='ana.ruiz@heartguard.com'
 ON CONFLICT (id) DO NOTHING;
 
+-- =========================================================
+-- ALERTAS ADICIONALES PARA METRICAS MTTA/MTTR
+-- =========================================================
+
+-- Alerta #3: Alerta resuelta con tiempos diferentes (últimos 7 días)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  'bbbbbbbb-1111-2222-3333-000000000001'::uuid,
+  '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
+  at.id,
+  '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+  '4f5f27ff-b251-4e72-82cc-4ae1b8ee1dab'::uuid,
+  (SELECT id FROM alert_levels WHERE code='medium'),
+  (SELECT id FROM alert_status WHERE code='resolved'),
+  NOW() - INTERVAL '5 hours',
+  'Arritmia detectada - seguimiento requerido',
+  ST_SetSRID(ST_MakePoint(-99.1360, 19.4325), 4326)
+FROM alert_types at
+WHERE at.code='ARRHYTHMIA'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  'cccccccc-1111-2222-3333-000000000001'::uuid,
+  'bbbbbbbb-1111-2222-3333-000000000001'::uuid,
+  u.id,
+  NOW() - INTERVAL '4 hours 45 minutes',
+  'Acuse recibido - evaluando paciente'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT
+  'dddddddd-1111-2222-3333-000000000001'::uuid,
+  'bbbbbbbb-1111-2222-3333-000000000001'::uuid,
+  u.id,
+  NOW() - INTERVAL '3 hours',
+  'Resolved',
+  'Paciente estabilizado tras intervención telefónica'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+-- Alerta #4: Alerta con tiempo de respuesta rápido (últimos 7 días)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  'bbbbbbbb-2222-3333-4444-000000000002'::uuid,
+  'fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21'::uuid,
+  at.id,
+  'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
+  '7e4b8ccd-57c8-460f-bfb9-ff96cff54b0c'::uuid,
+  (SELECT id FROM alert_levels WHERE code='high'),
+  (SELECT id FROM alert_status WHERE code='resolved'),
+  NOW() - INTERVAL '2 days',
+  'Desaturación severa detectada',
+  ST_SetSRID(ST_MakePoint(-98.2050, 19.0415), 4326)
+FROM alert_types at
+WHERE at.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  'cccccccc-2222-3333-4444-000000000002'::uuid,
+  'bbbbbbbb-2222-3333-4444-000000000002'::uuid,
+  u.id,
+  NOW() - INTERVAL '2 days' + INTERVAL '5 minutes',
+  'Acuse inmediato - alerta crítica'
+FROM users u
+WHERE u.email='martin.ops@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT
+  'dddddddd-2222-3333-4444-000000000002'::uuid,
+  'bbbbbbbb-2222-3333-4444-000000000002'::uuid,
+  u.id,
+  NOW() - INTERVAL '2 days' + INTERVAL '25 minutes',
+  'Escalated',
+  'Paciente trasladado a urgencias'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+-- Alerta #5: Alerta con tiempo medio de respuesta (últimos 30 días)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  'bbbbbbbb-3333-4444-5555-000000000003'::uuid,
+  'ae15cd87-5ac2-4f90-8712-184b02c541a5'::uuid,
+  at.id,
+  '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+  '4f5f27ff-b251-4e72-82cc-4ae1b8ee1dab'::uuid,
+  (SELECT id FROM alert_levels WHERE code='low'),
+  (SELECT id FROM alert_status WHERE code='resolved'),
+  NOW() - INTERVAL '5 days',
+  'Arritmia leve - monitoreo continuo',
+  ST_SetSRID(ST_MakePoint(-100.3170, 25.6870), 4326)
+FROM alert_types at
+WHERE at.code='ARRHYTHMIA'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  'cccccccc-3333-4444-5555-000000000003'::uuid,
+  'bbbbbbbb-3333-4444-5555-000000000003'::uuid,
+  u.id,
+  NOW() - INTERVAL '5 days' + INTERVAL '30 minutes',
+  'Recibido - priorizando casos críticos primero'
+FROM users u
+WHERE u.email='sofia.care@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT
+  'dddddddd-3333-4444-5555-000000000003'::uuid,
+  'bbbbbbbb-3333-4444-5555-000000000003'::uuid,
+  u.id,
+  NOW() - INTERVAL '5 days' + INTERVAL '2 hours',
+  'Stabilized',
+  'Paciente asintomático - seguimiento ambulatorio'
+FROM users u
+WHERE u.email='sofia.care@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+-- Alerta #6: Alerta reciente pendiente (sin resolver - para métricas actuales)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  'bbbbbbbb-4444-5555-6666-000000000004'::uuid,
+  '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid,
+  at.id,
+  '7baf7389-9677-4bb5-b533-f0067d2fa4ac'::uuid,
+  '4f5f27ff-b251-4e72-82cc-4ae1b8ee1dab'::uuid,
+  (SELECT id FROM alert_levels WHERE code='medium'),
+  (SELECT id FROM alert_status WHERE code='acknowledged'),
+  NOW() - INTERVAL '1 hour',
+  'Taquicardia detectada - en evaluación',
+  ST_SetSRID(ST_MakePoint(-99.1345, 19.4315), 4326)
+FROM alert_types at
+WHERE at.code='ARRHYTHMIA'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  'cccccccc-4444-5555-6666-000000000004'::uuid,
+  'bbbbbbbb-4444-5555-6666-000000000004'::uuid,
+  u.id,
+  NOW() - INTERVAL '50 minutes',
+  'En evaluación - monitoreando signos vitales'
+FROM users u
+WHERE u.email='martin.ops@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+-- Alerta #7: Alerta con tiempo de resolución largo (últimos 30 días)
+INSERT INTO alerts (id, patient_id, type_id, created_by_model_id, source_inference_id, alert_level_id, status_id, created_at, description, location)
+SELECT
+  'bbbbbbbb-5555-6666-7777-000000000005'::uuid,
+  'fea1a34e-3fb6-43f4-ad2d-caa9ede5ac21'::uuid,
+  at.id,
+  'e6f09e19-d4c6-4525-976f-316404e4c228'::uuid,
+  '7e4b8ccd-57c8-460f-bfb9-ff96cff54b0c'::uuid,
+  (SELECT id FROM alert_levels WHERE code='low'),
+  (SELECT id FROM alert_status WHERE code='resolved'),
+  NOW() - INTERVAL '15 days',
+  'Episodio nocturno de desaturación',
+  ST_SetSRID(ST_MakePoint(-98.2040, 19.0408), 4326)
+FROM alert_types at
+WHERE at.code='DESAT'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT
+  'cccccccc-5555-6666-7777-000000000005'::uuid,
+  'bbbbbbbb-5555-6666-7777-000000000005'::uuid,
+  u.id,
+  NOW() - INTERVAL '15 days' + INTERVAL '1 hour',
+  'Acuse nocturno - evaluación pendiente turno día'
+FROM users u
+WHERE u.email='ana.ruiz@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
+INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
+SELECT
+  'dddddddd-5555-6666-7777-000000000005'::uuid,
+  'bbbbbbbb-5555-6666-7777-000000000005'::uuid,
+  u.id,
+  NOW() - INTERVAL '15 days' + INTERVAL '8 hours',
+  'Resolved',
+  'Evaluación completa - ajuste de medicación'
+FROM users u
+WHERE u.email='sofia.care@heartguard.com'
+ON CONFLICT (id) DO NOTHING;
+
 INSERT INTO alert_delivery (id, alert_id, channel_id, target, sent_at, delivery_status_id, response_payload)
 SELECT
   'c7e07f0a-eafb-49cb-b203-603f718bf251'::uuid,
@@ -1190,6 +1382,18 @@ WHERE p.id = '8c9436b4-f085-405f-a3d2-87cb1d1cf097'::uuid
       AND a.created_at > NOW() - INTERVAL '7 days'
   );
 
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+SELECT gen_random_uuid()::uuid,
+       a.id,
+       (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+       NOW() - INTERVAL '9 hours 45 minutes',
+       'Acuse de alerta demo - en evaluación'
+FROM alerts a
+WHERE a.description = 'Alerta resuelta demo para cálculo MTTR'
+  AND NOT EXISTS (
+    SELECT 1 FROM alert_ack aa WHERE aa.alert_id = a.id AND aa.ack_at > NOW() - INTERVAL '24 hours'
+  );
+
 INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
 SELECT gen_random_uuid()::uuid,
        a.id,
@@ -1242,6 +1446,15 @@ VALUES (
   ST_SetSRID(ST_MakePoint(-99.1370, 19.4340), 4326)
 );
 
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+VALUES (
+  'aaaaaaaa-1111-aaaa-1111-000000000001'::uuid,
+  'aaaaaaaa-1111-1111-1111-000000000001'::uuid,
+  (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+  NOW() - INTERVAL '2 hours 50 minutes',
+  'Acuse Demo MTTR - respuesta rápida'
+);
+
 INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
 VALUES (
   'bbbbbbbb-1111-1111-1111-000000000001'::uuid,
@@ -1267,6 +1480,15 @@ VALUES (
   ST_SetSRID(ST_MakePoint(-99.1380, 19.4350), 4326)
 );
 
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+VALUES (
+  'aaaaaaaa-2222-aaaa-2222-000000000002'::uuid,
+  'aaaaaaaa-2222-2222-2222-000000000002'::uuid,
+  (SELECT id FROM users WHERE email='ana.ruiz@heartguard.com'),
+  NOW() - INTERVAL '7 hours 30 minutes',
+  'Acuse Demo MTTR - evaluación en curso'
+);
+
 INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
 VALUES (
   'bbbbbbbb-2222-2222-2222-000000000002'::uuid,
@@ -1290,6 +1512,15 @@ VALUES (
   NOW() - INTERVAL '20 minutes',
   '⚡ PRUEBA DINAMICA: 10 minutos MTTR',
   ST_SetSRID(ST_MakePoint(-99.1355, 19.4325), 4326)
+);
+
+INSERT INTO alert_ack (id, alert_id, ack_by_user_id, ack_at, note)
+VALUES (
+  'aaaaaaaa-9999-aaaa-9999-000000000999'::uuid,
+  'aaaaaaaa-9999-9999-9999-000000000999'::uuid,
+  (SELECT id FROM users WHERE email='martin.ops@heartguard.com'),
+  NOW() - INTERVAL '18 minutes',
+  '⚡ Acuse rápido - prioridad alta'
 );
 
 INSERT INTO alert_resolution (id, alert_id, resolved_by_user_id, resolved_at, outcome, note)
